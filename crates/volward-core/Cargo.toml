@@ -1,0 +1,16 @@
+[package]
+name = "volward-core"
+description = "Volward domain: models, platform trait, scan/classify orchestration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

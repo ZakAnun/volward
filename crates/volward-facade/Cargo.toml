@@ -1,0 +1,16 @@
+[package]
+name = "volward-facade"
+description = "Volward Flutter-Rust bridge facade"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+volward-core = { path = "../volward-core" }
+platform-desktop = { path = "../platform-desktop" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "platform-desktop"
+description = "Desktop PlatformStorage (macOS / Windows / Linux)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+volward-core = { path = "../volward-core" }
+jwalk = { workspace = true }
+trash = { workspace = true }
+dirs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

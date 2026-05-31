@@ -1,0 +1,48 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Flutter / Dart (apps/volward)
+apps/volward/.dart_tool/
+apps/volward/.fvm/flutter_sdk
+apps/volward/.fvm/versions
+apps/volward/.fvm/release
+apps/volward/.fvm/version
+apps/volward/build/
+apps/volward/.flutter-plugins
+apps/volward/.flutter-plugins-dependencies
+apps/volward/.pub-cache/
+apps/volward/.pub/
+
+# macOS / iOS
+apps/volward/macos/Pods/
+apps/volward/macos/Flutter/ephemeral/
+apps/volward/ios/Pods/
+apps/volward/ios/.symlinks/
+apps/volward/ios/Flutter/ephemeral/
+**/DerivedData/
+
+# Android
+apps/volward/android/.gradle/
+apps/volward/android/local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.p12
+**/*.keystore
+**/credentials.json
+
+# OS
+.DS_Store
+
+# Misc
+coverage/
+*.log

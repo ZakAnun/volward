@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/volward-core",
+    "crates/platform-desktop",
+    "crates/volward-facade",
+    "crates/volward-cli",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+authors = ["Volward Contributors"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+jwalk = "0.8"
+trash = "5"
+regex = "1"
+dirs = "5"

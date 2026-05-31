@@ -1,0 +1,5 @@
+rust_input: crate::api
+rust_root: crates/volward-facade/
+dart_output: apps/volward/lib/src/rust
+dart_entrypoint_class_name: VolwardBridge
+web: false

@@ -1,0 +1,11 @@
+# Volward desktop classification rules (loaded in later milestones)
+version: 1
+protected_prefixes:
+  - /System
+  - /usr
+cache_patterns:
+  - "(?i)/Caches/"
+  - "(?i)/cache/"
+temp_patterns:
+  - "(?i)/tmp/"
+  - "(?i)/temp/"
