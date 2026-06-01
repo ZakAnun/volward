@@ -42,7 +42,7 @@ class _ScanPageState extends State<ScanPage> {
         children: [
           Text('Scan', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 12),
-          Text(
+          const Text(
             'Scans your home directory via Rust Core + platform-desktop (max depth 8). '
             'The UI stays responsive while scanning.',
           ),

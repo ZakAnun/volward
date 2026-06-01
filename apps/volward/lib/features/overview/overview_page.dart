@@ -76,6 +76,26 @@ class OverviewPage extends StatelessWidget {
               child: Text('• $h'),
             ),
           ),
+          if (!session.deepScanReady) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final ok = await session.openPermissionSettings();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? 'Opened Full Disk Access settings — grant access, then refresh.'
+                          : session.lastError ?? 'Could not open system settings',
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.settings),
+              label: const Text('Open Full Disk Access settings'),
+            ),
+          ],
         ],
         const SizedBox(height: 24),
         FilledButton.icon(

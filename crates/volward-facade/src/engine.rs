@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
+use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{
     DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot,
 };
@@ -38,6 +39,18 @@ impl VolwardEngine {
 
     pub fn is_deep_scan_ready(&self) -> bool {
         self.platform.is_deep_scan_ready()
+    }
+
+    pub fn open_permission_settings(&self) -> Result<(), String> {
+        self.platform
+            .open_permission_settings()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn set_last_snapshot(&self, snapshot: StorageSnapshot) {
+        if let Ok(mut g) = self.last_snapshot.lock() {
+            *g = Some(snapshot);
+        }
     }
 
     pub fn start_scan(&self, job_id: String, roots: Vec<String>) -> String {
@@ -76,13 +89,20 @@ impl VolwardEngine {
         self.last_progress.lock().ok().and_then(|g| g.clone())
     }
 
-    pub fn delete_to_trash(&self, paths: Vec<String>) -> DeleteReport {
-        self.platform
-            .trash_paths(&paths)
-            .unwrap_or(DeleteReport {
-                deleted_count: 0,
-                failed_paths: paths,
-            })
+    pub fn delete_entries(
+        &self,
+        snapshot_id: &str,
+        entry_ids: Vec<String>,
+        dry_run: bool,
+    ) -> Result<DeleteReport, String> {
+        let snapshot = self
+            .get_last_snapshot()
+            .ok_or_else(|| "No snapshot loaded".to_string())?;
+        if snapshot.snapshot_id != snapshot_id {
+            return Err("Snapshot expired or mismatch".to_string());
+        }
+        DeleteOrchestrator::delete_entries(&snapshot, &entry_ids, dry_run, &self.platform)
+            .map_err(|e| e.to_string())
     }
 
     pub fn probe_capabilities_json(&self) -> String {
@@ -99,7 +119,22 @@ impl VolwardEngine {
             .and_then(|p| serde_json::to_string(&p).ok())
     }
 
-    pub fn delete_to_trash_json(&self, paths: Vec<String>) -> String {
-        serde_json::to_string(&self.delete_to_trash(paths)).unwrap_or_else(|_| "{}".to_string())
+    pub fn set_last_snapshot_json(&self, json: &str) -> Result<(), String> {
+        let snapshot: StorageSnapshot =
+            serde_json::from_str(json).map_err(|e| format!("invalid snapshot json: {e}"))?;
+        self.set_last_snapshot(snapshot);
+        Ok(())
+    }
+
+    pub fn delete_entries_json(
+        &self,
+        snapshot_id: &str,
+        entry_ids: Vec<String>,
+        dry_run: bool,
+    ) -> String {
+        match self.delete_entries(snapshot_id, entry_ids, dry_run) {
+            Ok(report) => serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()),
+            Err(e) => serde_json::json!({ "error": e }).to_string(),
+        }
     }
 }

@@ -165,7 +165,23 @@ impl PlatformStorage for DesktopPlatform {
         Ok(DeleteReport {
             deleted_count,
             failed_paths,
+            freed_bytes: 0,
         })
+    }
+
+    fn open_permission_settings(&self) -> Result<(), PlatformError> {
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open")
+                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+                .spawn()
+                .map(|_| ())
+                .map_err(PlatformError::Io)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err(PlatformError::Unsupported("open_permission_settings"))
+        }
     }
 
     fn volume_stats(&self, root: &ScanRoot) -> Result<VolumeStats, PlatformError> {

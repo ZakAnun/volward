@@ -37,6 +37,10 @@ pub trait PlatformStorage: Send + Sync {
     fn trash_paths(&self, paths: &[String]) -> Result<DeleteReport, PlatformError>;
 
     fn volume_stats(&self, root: &ScanRoot) -> Result<VolumeStats, PlatformError>;
+
+    fn open_permission_settings(&self) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("open_permission_settings"))
+    }
 }
 
 pub fn is_cancelled(cancel: &AtomicBool) -> bool {

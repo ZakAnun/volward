@@ -36,6 +36,31 @@ typedef VolwardCancelScan = void Function(Pointer<Void>);
 typedef VolwardGetLastSnapshotJsonNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardGetLastSnapshotJson = Pointer<Utf8> Function(Pointer<Void>);
 
+typedef VolwardSetLastSnapshotJsonNative = Bool Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+);
+typedef VolwardSetLastSnapshotJson = bool Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+);
+
+typedef VolwardOpenPermissionSettingsNative = Bool Function(Pointer<Void>);
+typedef VolwardOpenPermissionSettings = bool Function(Pointer<Void>);
+
+typedef VolwardDeleteEntriesJsonNative = Pointer<Utf8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Bool,
+);
+typedef VolwardDeleteEntriesJson = Pointer<Utf8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  bool,
+);
+
 final class VolwardNativeBridge {
   VolwardNativeBridge._(this._lib) {
     _create = _lib
@@ -68,6 +93,21 @@ final class VolwardNativeBridge {
           'volward_get_last_snapshot_json',
         )
         .asFunction();
+    _setLastSnapshotJson = _lib
+        .lookup<NativeFunction<VolwardSetLastSnapshotJsonNative>>(
+          'volward_set_last_snapshot_json',
+        )
+        .asFunction();
+    _openPermissionSettings = _lib
+        .lookup<NativeFunction<VolwardOpenPermissionSettingsNative>>(
+          'volward_open_permission_settings',
+        )
+        .asFunction();
+    _deleteEntriesJson = _lib
+        .lookup<NativeFunction<VolwardDeleteEntriesJsonNative>>(
+          'volward_delete_entries_json',
+        )
+        .asFunction();
   }
 
   static VolwardNativeBridge? _instance;
@@ -88,6 +128,9 @@ final class VolwardNativeBridge {
   late final VolwardStartScan _startScan;
   late final VolwardCancelScan _cancelScan;
   late final VolwardGetLastSnapshotJson _getLastSnapshotJson;
+  late final VolwardSetLastSnapshotJson _setLastSnapshotJson;
+  late final VolwardOpenPermissionSettings _openPermissionSettings;
+  late final VolwardDeleteEntriesJson _deleteEntriesJson;
 
   Pointer<Void> createEngine() => _create();
 
@@ -120,6 +163,35 @@ final class VolwardNativeBridge {
       return null;
     }
     return _decodeJsonPtr(ptr);
+  }
+
+  bool setLastSnapshot(Pointer<Void> engine, Map<String, dynamic> snapshot) {
+    final jsonPtr = jsonEncode(snapshot).toNativeUtf8();
+    try {
+      return _setLastSnapshotJson(engine, jsonPtr);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  bool openPermissionSettings(Pointer<Void> engine) =>
+      _openPermissionSettings(engine);
+
+  Map<String, dynamic> deleteEntries(
+    Pointer<Void> engine,
+    String snapshotId,
+    List<String> entryIds, {
+    bool dryRun = false,
+  }) {
+    final snapshotPtr = snapshotId.toNativeUtf8();
+    final idsPtr = jsonEncode(entryIds).toNativeUtf8();
+    try {
+      final out = _deleteEntriesJson(engine, snapshotPtr, idsPtr, dryRun);
+      return _decodeJsonPtr(out);
+    } finally {
+      calloc.free(snapshotPtr);
+      calloc.free(idsPtr);
+    }
   }
 
   Map<String, dynamic> _decodeJsonPtr(Pointer<Utf8> ptr) {

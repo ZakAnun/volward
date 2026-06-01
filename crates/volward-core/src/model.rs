@@ -110,4 +110,5 @@ pub struct VolumeStats {
 pub struct DeleteReport {
     pub deleted_count: usize,
     pub failed_paths: Vec<String>,
+    pub freed_bytes: u64,
 }

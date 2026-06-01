@@ -19,8 +19,10 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic> _capabilities = {};
   bool _deepScanReady = false;
   bool _scanning = false;
+  bool _deleting = false;
   String? _lastJobId;
   Map<String, dynamic>? _lastSnapshot;
+  Map<String, dynamic>? _lastDeleteReport;
 
   bool get ready => _ready;
   String? get initError => _initError;
@@ -28,8 +30,10 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic> get capabilities => _capabilities;
   bool get deepScanReady => _deepScanReady;
   bool get scanning => _scanning;
+  bool get deleting => _deleting;
   String? get lastJobId => _lastJobId;
   Map<String, dynamic>? get lastSnapshot => _lastSnapshot;
+  Map<String, dynamic>? get lastDeleteReport => _lastDeleteReport;
 
   List<String> get permissionHints {
     final hints = _capabilities['permission_hints'];
@@ -40,7 +44,6 @@ class VolwardSession extends ChangeNotifier {
   }
 
   Future<void> _initialize() async {
-    // Let the first frame paint before loading the dylib on the UI isolate.
     await Future<void>.delayed(Duration.zero);
     try {
       final bridge = VolwardNativeBridge.instance;
@@ -55,6 +58,11 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _syncSnapshotToEngine(Map<String, dynamic>? snapshot) {
+    if (!_ready || _engine == null || snapshot == null) return;
+    VolwardNativeBridge.instance.setLastSnapshot(_engine!, snapshot);
+  }
+
   Future<void> refreshCapabilities() async {
     if (!_ready || _engine == null) return;
     _lastError = null;
@@ -67,18 +75,30 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> openPermissionSettings() async {
+    if (!_ready || _engine == null) return false;
+    _lastError = null;
+    try {
+      return VolwardNativeBridge.instance.openPermissionSettings(_engine!);
+    } catch (e) {
+      _lastError = '$e';
+      return false;
+    }
+  }
+
   Future<String> runScan({List<String> roots = const []}) async {
     if (!_ready) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
     _scanning = true;
     _lastError = null;
+    _lastDeleteReport = null;
     notifyListeners();
     try {
       final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
       _lastJobId = jobId;
-      // Scan runs in a worker isolate so jwalk does not freeze the UI thread.
       _lastSnapshot = await Isolate.run(() => volwardScanWorker(roots));
+      _syncSnapshotToEngine(_lastSnapshot);
       notifyListeners();
       return _lastSnapshot?['snapshot_id']?.toString() ?? 'done';
     } catch (e, st) {
@@ -87,6 +107,49 @@ class VolwardSession extends ChangeNotifier {
       rethrow;
     } finally {
       _scanning = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteEntries(
+    List<String> entryIds, {
+    bool dryRun = false,
+    bool rescanAfterDelete = false,
+  }) async {
+    if (!_ready || _engine == null) {
+      throw StateError(_initError ?? 'Native engine not ready');
+    }
+    final snapshotId = _lastSnapshot?['snapshot_id']?.toString();
+    if (snapshotId == null || snapshotId.isEmpty) {
+      throw StateError('No scan snapshot — run a scan first');
+    }
+
+    _deleting = true;
+    _lastError = null;
+    notifyListeners();
+    try {
+      final report = VolwardNativeBridge.instance.deleteEntries(
+        _engine!,
+        snapshotId,
+        entryIds,
+        dryRun: dryRun,
+      );
+      if (report.containsKey('error')) {
+        throw StateError(report['error'].toString());
+      }
+      if (!dryRun) {
+        _lastDeleteReport = report;
+      }
+      if (!dryRun && rescanAfterDelete) {
+        await runScan();
+      }
+      return report;
+    } catch (e, st) {
+      _lastError = '$e';
+      debugPrint('VolwardSession delete failed: $e\n$st');
+      rethrow;
+    } finally {
+      _deleting = false;
       notifyListeners();
     }
   }
