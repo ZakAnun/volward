@@ -30,6 +30,23 @@ typedef VolwardStartScan = Pointer<Utf8> Function(
   Pointer<Utf8>,
 );
 
+typedef VolwardStartScanAsyncNative = Pointer<Utf8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+);
+typedef VolwardStartScanAsync = Pointer<Utf8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+);
+
+typedef VolwardIsScanRunningNative = Bool Function(Pointer<Void>);
+typedef VolwardIsScanRunning = bool Function(Pointer<Void>);
+
+typedef VolwardGetLastProgressJsonNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetLastProgressJson = Pointer<Utf8> Function(Pointer<Void>);
+
 typedef VolwardCancelScanNative = Void Function(Pointer<Void>);
 typedef VolwardCancelScan = void Function(Pointer<Void>);
 
@@ -85,12 +102,23 @@ final class VolwardNativeBridge {
     _startScan = _lib
         .lookup<NativeFunction<VolwardStartScanNative>>('volward_start_scan')
         .asFunction();
+    _startScanAsync = _lib
+        .lookup<NativeFunction<VolwardStartScanAsyncNative>>('volward_start_scan_async')
+        .asFunction();
+    _isScanRunning = _lib
+        .lookup<NativeFunction<VolwardIsScanRunningNative>>('volward_is_scan_running')
+        .asFunction();
     _cancelScan = _lib
         .lookup<NativeFunction<VolwardCancelScanNative>>('volward_cancel_scan')
         .asFunction();
     _getLastSnapshotJson = _lib
         .lookup<NativeFunction<VolwardGetLastSnapshotJsonNative>>(
           'volward_get_last_snapshot_json',
+        )
+        .asFunction();
+    _getLastProgressJson = _lib
+        .lookup<NativeFunction<VolwardGetLastProgressJsonNative>>(
+          'volward_get_last_progress_json',
         )
         .asFunction();
     _setLastSnapshotJson = _lib
@@ -126,8 +154,11 @@ final class VolwardNativeBridge {
   late final VolwardProbeCapabilitiesJson _probeCapabilitiesJson;
   late final VolwardIsDeepScanReady _isDeepScanReady;
   late final VolwardStartScan _startScan;
+  late final VolwardStartScanAsync _startScanAsync;
+  late final VolwardIsScanRunning _isScanRunning;
   late final VolwardCancelScan _cancelScan;
   late final VolwardGetLastSnapshotJson _getLastSnapshotJson;
+  late final VolwardGetLastProgressJson _getLastProgressJson;
   late final VolwardSetLastSnapshotJson _setLastSnapshotJson;
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
@@ -153,6 +184,28 @@ final class VolwardNativeBridge {
       calloc.free(jobPtr);
       calloc.free(rootsPtr);
     }
+  }
+
+  String startScanAsync(Pointer<Void> engine, String jobId, List<String> roots) {
+    final jobPtr = jobId.toNativeUtf8();
+    final rootsPtr = jsonEncode(roots).toNativeUtf8();
+    try {
+      final out = _startScanAsync(engine, jobPtr, rootsPtr);
+      return out.toDartString();
+    } finally {
+      calloc.free(jobPtr);
+      calloc.free(rootsPtr);
+    }
+  }
+
+  bool isScanRunning(Pointer<Void> engine) => _isScanRunning(engine);
+
+  Map<String, dynamic>? getLastProgress(Pointer<Void> engine) {
+    final ptr = _getLastProgressJson(engine);
+    if (ptr == nullptr) {
+      return null;
+    }
+    return _decodeJsonPtr(ptr);
   }
 
   void cancelScan(Pointer<Void> engine) => _cancelScan(engine);

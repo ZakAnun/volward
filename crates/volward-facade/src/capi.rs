@@ -73,6 +73,29 @@ pub unsafe extern "C" fn volward_start_scan(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_start_scan_async(
+    engine: *mut VolwardEngine,
+    job_id: *const c_char,
+    roots_json: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let job = cstr_to_string(job_id).unwrap_or_else(|| "flutter-job".to_string());
+    let roots: Vec<String> = cstr_to_string(roots_json)
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    to_c_string(e.start_scan_async(job, roots))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_is_scan_running(engine: *mut VolwardEngine) -> bool {
+    engine_ref(engine)
+        .map(|e| e.is_scan_running())
+        .unwrap_or(false)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_cancel_scan(engine: *mut VolwardEngine) {
     if let Some(e) = engine_ref(engine) {
         e.cancel_scan();

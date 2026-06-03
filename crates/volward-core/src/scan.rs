@@ -64,6 +64,7 @@ impl<'a> ScanOrchestrator<'a> {
         });
 
         let mut last_path: Option<String> = None;
+        let mut progress_counter = 0u64;
         let mut walk = |e: crate::model::RawFsEntry| -> WalkAction {
             if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                 return WalkAction::Stop;
@@ -71,6 +72,18 @@ impl<'a> ScanOrchestrator<'a> {
             paths_seen += 1;
             bytes_seen = bytes_seen.saturating_add(e.size_bytes);
             last_path = Some(e.path.clone());
+            progress_counter += 1;
+            // Throttled progress — emit every 500 entries so the poll loop
+            // can show live paths_seen / current_path without choking.
+            if progress_counter % 500 == 0 {
+                on_progress(ScanProgress {
+                    job_id: job_id.clone(),
+                    phase: ScanPhase::Walking,
+                    paths_seen,
+                    bytes_seen,
+                    current_path: last_path.clone(),
+                });
+            }
             if entries.len() < MAX_ENTRIES && !e.is_dir {
                 let classified =
                     self.classifier

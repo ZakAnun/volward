@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
 
@@ -23,6 +24,10 @@ class VolwardSession extends ChangeNotifier {
   String? _lastJobId;
   Map<String, dynamic>? _lastSnapshot;
   Map<String, dynamic>? _lastDeleteReport;
+  Map<String, dynamic>? _scanProgress;
+  List<String> _scanRoots = [];
+  final Set<String> _selectedEntryIds = {};
+  SendPort? _workerCancelPort;
 
   bool get ready => _ready;
   String? get initError => _initError;
@@ -34,6 +39,12 @@ class VolwardSession extends ChangeNotifier {
   String? get lastJobId => _lastJobId;
   Map<String, dynamic>? get lastSnapshot => _lastSnapshot;
   Map<String, dynamic>? get lastDeleteReport => _lastDeleteReport;
+  Map<String, dynamic>? get scanProgress => _scanProgress;
+  List<String> get scanRoots => List.unmodifiable(_scanRoots);
+  Set<String> get selectedEntryIds => Set.unmodifiable(_selectedEntryIds);
+
+  String get scanTargetLabel =>
+      _scanRoots.isEmpty ? 'Home (default)' : _scanRoots.join(', ');
 
   List<String> get permissionHints {
     final hints = _capabilities['permission_hints'];
@@ -63,6 +74,28 @@ class VolwardSession extends ChangeNotifier {
     VolwardNativeBridge.instance.setLastSnapshot(_engine!, snapshot);
   }
 
+  void setScanRoots(List<String> roots) {
+    _scanRoots = List.from(roots);
+    notifyListeners();
+  }
+
+  void clearScanRoots() {
+    _scanRoots = [];
+    notifyListeners();
+  }
+
+  void setSelectedEntryIds(Set<String> ids) {
+    _selectedEntryIds
+      ..clear()
+      ..addAll(ids);
+    notifyListeners();
+  }
+
+  void clearSelectedEntryIds() {
+    _selectedEntryIds.clear();
+    notifyListeners();
+  }
+
   Future<void> refreshCapabilities() async {
     if (!_ready || _engine == null) return;
     _lastError = null;
@@ -86,27 +119,84 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<String> runScan({List<String> roots = const []}) async {
+  Future<String> runScan() async {
     if (!_ready) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
     _scanning = true;
     _lastError = null;
     _lastDeleteReport = null;
+    _scanProgress = null;
+    _workerCancelPort = null;
     notifyListeners();
+
+    final receivePort = ReceivePort();
+    final cancelPort = ReceivePort(); // receives worker's cancel SendPort
+    final completer = Completer<Map<String, dynamic>?>();
+    late StreamSubscription<dynamic> sub;
+
+    // Listen for progress / done / error from the worker.
+    var scanFinished = false;
+    sub = receivePort.listen((msg) {
+      if (scanFinished) return;
+      if (msg is! Map) return;
+      final m = Map<String, dynamic>.from(msg);
+      final type = m['type']?.toString();
+      if (type == 'progress') {
+        _scanProgress = Map<String, dynamic>.from(m)..remove('type');
+        notifyListeners();
+      } else if (type == 'done') {
+        scanFinished = true;
+        final snap = m['snapshot'];
+        completer.complete(
+          snap is Map ? Map<String, dynamic>.from(snap) : null,
+        );
+        sub.cancel();
+        receivePort.close();
+        cancelPort.close();
+      } else if (type == 'error') {
+        scanFinished = true;
+        completer.completeError(m['error']?.toString() ?? 'Scan failed');
+        sub.cancel();
+        receivePort.close();
+        cancelPort.close();
+      }
+    });
+
+    // Receive the worker's cancel receive-port SendPort.
+    cancelPort.listen((msg) {
+      if (msg is SendPort) {
+        _workerCancelPort = msg;
+      }
+    });
+
     try {
       final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
       _lastJobId = jobId;
-      _lastSnapshot = await Isolate.run(() => volwardScanWorker(roots));
+      await Isolate.spawn(volwardScanIsolate, [
+        receivePort.sendPort,
+        _scanRoots,
+        cancelPort.sendPort,
+      ]);
+      _lastSnapshot = await completer.future.timeout(
+        const Duration(minutes: 30),
+      );
       _syncSnapshotToEngine(_lastSnapshot);
       notifyListeners();
       return _lastSnapshot?['snapshot_id']?.toString() ?? 'done';
     } catch (e, st) {
+      if (!scanFinished) {
+        scanFinished = true;
+        sub.cancel();
+        receivePort.close();
+        cancelPort.close();
+      }
       _lastError = '$e';
       debugPrint('VolwardSession scan failed: $e\n$st');
       rethrow;
     } finally {
       _scanning = false;
+      _workerCancelPort = null;
       notifyListeners();
     }
   }
@@ -155,8 +245,10 @@ class VolwardSession extends ChangeNotifier {
   }
 
   void cancelScan() {
-    if (_engine != null) {
-      VolwardNativeBridge.instance.cancelScan(_engine!);
+    final cancelPort = _workerCancelPort;
+    if (cancelPort != null) {
+      cancelPort.send('cancel');
+      _workerCancelPort = null;
     }
     _scanning = false;
     notifyListeners();

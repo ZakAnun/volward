@@ -2,6 +2,7 @@ pub mod classify;
 pub mod delete;
 pub mod model;
 pub mod platform;
+pub mod rules;
 pub mod scan;
 
 pub use classify::Classifier;

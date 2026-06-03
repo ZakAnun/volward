@@ -1,4 +1,4 @@
-# Volward desktop classification rules (loaded in later milestones)
+# Volward desktop classification rules
 version: 1
 protected_prefixes:
   - /System
@@ -9,3 +9,12 @@ cache_patterns:
 temp_patterns:
   - "(?i)/tmp/"
   - "(?i)/temp/"
+media_extensions:
+  - ".jpg"
+  - ".jpeg"
+  - ".png"
+  - ".gif"
+  - ".mp4"
+  - ".mov"
+  - ".pdf"
+  - ".dmg"

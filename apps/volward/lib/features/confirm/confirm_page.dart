@@ -23,6 +23,28 @@ class ConfirmPage extends StatefulWidget {
 class _ConfirmPageState extends State<ConfirmPage> {
   final Set<String> _selected = {};
 
+  @override
+  void initState() {
+    super.initState();
+    _selected.addAll(widget.session.selectedEntryIds);
+    widget.session.addListener(_onSessionChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.session.removeListener(_onSessionChanged);
+    super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (widget.session.selectedEntryIds.isEmpty) return;
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(widget.session.selectedEntryIds);
+    });
+  }
+
   List<Map<String, dynamic>> _deletableEntries() {
     final snap = widget.session.lastSnapshot;
     final out = <Map<String, dynamic>>[];
@@ -83,6 +105,7 @@ class _ConfirmPageState extends State<ConfirmPage> {
       );
       if (!context.mounted) return;
       setState(_selected.clear);
+      widget.session.clearSelectedEntryIds();
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
       final failed = report['failed_paths'];
       final failedCount = failed is List ? failed.length : 0;

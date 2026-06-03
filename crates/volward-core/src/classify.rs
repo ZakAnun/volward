@@ -1,11 +1,12 @@
 use regex::Regex;
 
 use crate::model::{EntryCategory, RiskLevel, SourceType, StorageEntry};
+use crate::rules::DesktopRules;
 
 pub struct Classifier {
-    cache_re: Regex,
-    temp_re: Regex,
-    media_exts: Vec<&'static str>,
+    cache_res: Vec<Regex>,
+    temp_res: Vec<Regex>,
+    media_exts: Vec<String>,
     protected_prefixes: Vec<String>,
 }
 
@@ -18,11 +19,41 @@ impl Default for Classifier {
 impl Classifier {
     pub fn new(protected_prefixes: Vec<String>) -> Self {
         Self {
-            cache_re: Regex::new(r"(?i)(/Caches/|/cache/|\.cache/)").expect("cache regex"),
-            temp_re: Regex::new(r"(?i)(/tmp/|/temp/|\.tmp$)").expect("temp regex"),
+            cache_res: vec![Regex::new(r"(?i)(/Caches/|/cache/|\.cache/)").expect("cache regex")],
+            temp_res: vec![Regex::new(r"(?i)(/tmp/|/temp/|\.tmp$)").expect("temp regex")],
             media_exts: vec![
-                ".jpg", ".jpeg", ".png", ".gif", ".mp4", ".mov", ".pdf", ".dmg",
+                ".jpg".into(),
+                ".jpeg".into(),
+                ".png".into(),
+                ".gif".into(),
+                ".mp4".into(),
+                ".mov".into(),
+                ".pdf".into(),
+                ".dmg".into(),
             ],
+            protected_prefixes,
+        }
+    }
+
+    pub fn from_rules(rules: &DesktopRules, extra_protected: &[String]) -> Self {
+        let mut protected_prefixes: Vec<String> = extra_protected.to_vec();
+        protected_prefixes.extend(rules.protected_prefixes.clone());
+
+        let cache_res = rules
+            .cache_patterns
+            .iter()
+            .map(|p| Regex::new(p).expect("cache pattern"))
+            .collect();
+        let temp_res = rules
+            .temp_patterns
+            .iter()
+            .map(|p| Regex::new(p).expect("temp pattern"))
+            .collect();
+
+        Self {
+            cache_res,
+            temp_res,
+            media_exts: rules.media_extensions.clone(),
             protected_prefixes,
         }
     }
@@ -57,7 +88,7 @@ impl Classifier {
             }
         }
 
-        if self.cache_re.is_match(path) {
+        if self.cache_res.iter().any(|re| re.is_match(path)) {
             return entry(
                 entry_id_seed,
                 path,
@@ -71,7 +102,7 @@ impl Classifier {
             );
         }
 
-        if self.temp_re.is_match(path) {
+        if self.temp_res.iter().any(|re| re.is_match(path)) {
             return entry(
                 entry_id_seed,
                 path,
@@ -160,5 +191,21 @@ mod tests {
         let e = c.classify_path("/System/Library", 10, true, "t");
         assert_eq!(e.category, EntryCategory::System);
         assert!(!e.deletable);
+    }
+
+    #[test]
+    fn from_rules_classifies_yaml_cache_pattern() {
+        let rules = DesktopRules::parse_yaml(
+            r#"
+version: 1
+protected_prefixes: []
+cache_patterns: ["(?i)/Caches/"]
+temp_patterns: []
+"#,
+        )
+        .unwrap();
+        let c = Classifier::from_rules(&rules, &[]);
+        let e = c.classify_path("/Users/x/Library/Caches/foo", 10, false, "t");
+        assert_eq!(e.category, EntryCategory::Cache);
     }
 }
