@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/apple_tokens.dart';
 import '../../volward_session.dart';
+import '../../widgets/apple_widgets.dart';
 
 String _formatBytes(num bytes) {
   if (bytes < 1024) return '${bytes.toInt()} B';
@@ -90,8 +92,15 @@ class _ConfirmPageState extends State<ConfirmPage> {
           'You can restore them from Trash if needed.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          AppleButton(
+            label: 'Cancel',
+            variant: AppleButtonVariant.pearl,
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          AppleButton(
+            label: 'Delete',
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
         ],
       ),
     );
@@ -131,74 +140,116 @@ class _ConfirmPageState extends State<ConfirmPage> {
     final deletable = _deletableEntries();
     final busy = widget.session.deleting || widget.session.scanning;
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
+    return ColoredBox(
+      color: AppleColors.canvasParchment,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Confirm cleanup', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text(
-            deletable.isEmpty
-                ? 'Run a scan first, or no deletable items were found.'
-                : 'Select items to move to Trash (${deletable.length} deletable).',
-          ),
-          if (widget.session.lastDeleteReport != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Last cleanup freed ${_formatBytes((widget.session.lastDeleteReport!['freed_bytes'] as num?) ?? 0)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-          const SizedBox(height: 16),
           Expanded(
-            child: deletable.isEmpty
-                ? const Center(child: Text('Nothing to delete yet.'))
-                : ListView.builder(
-                    itemCount: deletable.length,
-                    itemBuilder: (context, i) {
-                      final e = deletable[i];
-                      final id = e['id']?.toString() ?? '$i';
-                      final name = e['display_name']?.toString() ?? id;
-                      final size = (e['size_bytes'] as num?)?.toInt() ?? 0;
-                      return CheckboxListTile(
-                        value: _selected.contains(id),
-                        onChanged: busy
-                            ? null
-                            : (v) {
-                                setState(() {
-                                  if (v == true) {
-                                    _selected.add(id);
-                                  } else {
-                                    _selected.remove(id);
-                                  }
-                                });
-                              },
-                        title: Text(name),
-                        subtitle: Text(_formatBytes(size)),
-                        secondary: const Icon(Icons.delete_outline),
-                      );
-                    },
+            child: ApplePageShell(
+              maxWidth: 980,
+              padding: const EdgeInsets.fromLTRB(
+                AppleSpacing.xl,
+                AppleSpacing.xl,
+                AppleSpacing.xl,
+                AppleSpacing.sm,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppleSectionHeader(
+                    title: 'Confirm cleanup',
+                    subtitle: deletable.isEmpty
+                        ? 'Run a scan first, or no deletable items were found.'
+                        : 'Select items to move to Trash (${deletable.length} deletable).',
                   ),
-          ),
-          if (_selected.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Selected: ${_selected.length} · ${_formatBytes(_selectedBytes())}',
-                style: Theme.of(context).textTheme.titleSmall,
+                  if (widget.session.lastDeleteReport != null) ...[
+                    const SizedBox(height: AppleSpacing.sm),
+                    Text(
+                      'Last cleanup freed ${_formatBytes((widget.session.lastDeleteReport!['freed_bytes'] as num?) ?? 0)}',
+                      style: AppleTypography.caption,
+                    ),
+                  ],
+                ],
               ),
             ),
-          FilledButton.icon(
-            onPressed: busy || _selected.isEmpty ? null : () => _confirmDelete(context),
-            icon: busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          Expanded(
+            flex: 3,
+            child: deletable.isEmpty
+                ? const Center(
+                    child: Text('Nothing to delete yet.', style: AppleTypography.body),
                   )
-                : const Icon(Icons.delete_forever),
-            label: Text(busy ? 'Working…' : 'Move selected to Trash'),
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppleColors.canvas,
+                      border: Border.all(color: AppleColors.hairline),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppleRadius.lg)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppleRadius.lg)),
+                      child: ListView.separated(
+                        itemCount: deletable.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, i) {
+                          final e = deletable[i];
+                          final id = e['id']?.toString() ?? '$i';
+                          final name = e['display_name']?.toString() ?? id;
+                          final size = (e['size_bytes'] as num?)?.toInt() ?? 0;
+                          final selected = _selected.contains(id);
+
+                          return AppleListRow(
+                            title: name,
+                            subtitle: _formatBytes(size),
+                            selected: selected,
+                            leading: Checkbox(
+                              value: selected,
+                              onChanged: busy
+                                  ? null
+                                  : (v) {
+                                      setState(() {
+                                        if (v == true) {
+                                          _selected.add(id);
+                                        } else {
+                                          _selected.remove(id);
+                                        }
+                                      });
+                                    },
+                            ),
+                            trailing: const Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: AppleColors.inkMuted48,
+                            ),
+                            onTap: busy
+                                ? null
+                                : () {
+                                    setState(() {
+                                      if (selected) {
+                                        _selected.remove(id);
+                                      } else {
+                                        _selected.add(id);
+                                      }
+                                    });
+                                  },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+          ),
+          AppleStickyBar(
+            leading: Text(
+              _selected.isEmpty
+                  ? 'Select items to delete'
+                  : 'Selected: ${_selected.length} · ${_formatBytes(_selectedBytes())}',
+              style: AppleTypography.body,
+            ),
+            action: AppleButton(
+              label: busy ? 'Working…' : 'Move to Trash',
+              icon: busy ? null : Icons.delete_outline,
+              onPressed: busy || _selected.isEmpty ? null : () => _confirmDelete(context),
+            ),
           ),
         ],
       ),

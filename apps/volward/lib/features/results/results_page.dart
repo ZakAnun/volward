@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/apple_tokens.dart';
 import '../../volward_session.dart';
+import '../../widgets/apple_widgets.dart';
 
 String _formatBytes(num? bytes) {
   if (bytes == null) return '—';
@@ -84,128 +86,179 @@ class _ResultsPageState extends State<ResultsPage> {
     return total;
   }
 
+  String _sortLabel(_SortMode mode) {
+    switch (mode) {
+      case _SortMode.sizeDesc:
+        return 'Size ↓';
+      case _SortMode.sizeAsc:
+        return 'Size ↑';
+      case _SortMode.nameAsc:
+        return 'Name A–Z';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final snap = widget.session.lastSnapshot;
     if (snap == null) {
-      return const Center(
-        child: Text('No scan yet. Run a scan from the Scan tab.'),
+      return const ColoredBox(
+        color: AppleColors.canvasParchment,
+        child: Center(
+          child: Text(
+            'No scan yet. Run a scan from the Scan tab.',
+            style: AppleTypography.body,
+          ),
+        ),
       );
     }
 
     final entries = _filteredSortedEntries();
     final reclaimable = snap['reclaimable_estimate_bytes'];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Results', style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 8),
-              Text('Reclaimable estimate: ${_formatBytes(reclaimable)}'),
-              Text('Showing ${entries.length} entries'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: _categoryChips.map((cat) {
-                  final label = cat ?? 'All';
-                  final selected = _categoryFilter == cat;
-                  return FilterChip(
-                    label: Text(label),
-                    selected: selected,
-                    onSelected: (_) {
-                      setState(() => _categoryFilter = cat);
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  FilterChip(
-                    label: const Text('Deletable only'),
-                    selected: _deletableOnly,
-                    onSelected: (v) => setState(() => _deletableOnly = v),
-                  ),
-                  const SizedBox(width: 12),
-                  DropdownButton<_SortMode>(
-                    value: _sort,
-                    items: const [
-                      DropdownMenuItem(value: _SortMode.sizeDesc, child: Text('Size ↓')),
-                      DropdownMenuItem(value: _SortMode.sizeAsc, child: Text('Size ↑')),
-                      DropdownMenuItem(value: _SortMode.nameAsc, child: Text('Name A–Z')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _sort = v);
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const Divider(),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: entries.length,
-            itemBuilder: (context, i) {
-              final e = entries[i];
-              final id = e['id']?.toString() ?? '$i';
-              final name = e['display_name']?.toString() ?? id;
-              final category = e['category']?.toString() ?? '';
-              final deletable = e['deletable'] == true;
-              return CheckboxListTile(
-                value: _localSelected.contains(id),
-                onChanged: !deletable
-                    ? null
-                    : (v) {
-                        setState(() {
-                          if (v == true) {
-                            _localSelected.add(id);
-                          } else {
-                            _localSelected.remove(id);
-                          }
-                        });
-                      },
-                title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text('$category · ${_formatBytes(e['size_bytes'])}'),
-                secondary: deletable ? const Icon(Icons.delete_outline) : null,
-              );
-            },
-          ),
-        ),
-        if (_localSelected.isNotEmpty)
+    return ColoredBox(
+      color: AppleColors.canvasParchment,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text(
-              'Selected: ${_localSelected.length} · ${_formatBytes(_selectedBytes(entries))}',
+            padding: const EdgeInsets.fromLTRB(
+              AppleSpacing.xl,
+              AppleSpacing.xl,
+              AppleSpacing.xl,
+              AppleSpacing.sm,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const AppleSectionHeader(title: 'Results'),
+                const SizedBox(height: AppleSpacing.sm),
+                Text(
+                  'Reclaimable estimate: ${_formatBytes(reclaimable)}',
+                  style: AppleTypography.body,
+                ),
+                Text(
+                  'Showing ${entries.length} entries',
+                  style: AppleTypography.caption,
+                ),
+                const SizedBox(height: AppleSpacing.lg),
+                Wrap(
+                  spacing: AppleSpacing.xs,
+                  runSpacing: AppleSpacing.xs,
+                  children: _categoryChips.map((cat) {
+                    final label = cat ?? 'All';
+                    return AppleOptionChip(
+                      label: label,
+                      selected: _categoryFilter == cat,
+                      onSelected: (_) => setState(() => _categoryFilter = cat),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: AppleSpacing.sm),
+                Wrap(
+                  spacing: AppleSpacing.xs,
+                  runSpacing: AppleSpacing.xs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    AppleOptionChip(
+                      label: 'Deletable only',
+                      selected: _deletableOnly,
+                      onSelected: (v) => setState(() => _deletableOnly = v),
+                    ),
+                    for (final mode in _SortMode.values)
+                      AppleOptionChip(
+                        label: _sortLabel(mode),
+                        selected: _sort == mode,
+                        onSelected: (_) => setState(() => _sort = mode),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton(
-            onPressed: _localSelected.isEmpty
-                ? null
-                : () {
-                    widget.session.setSelectedEntryIds(_localSelected);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${_localSelected.length} items ready on Confirm tab',
-                        ),
+          Expanded(
+            child: entries.isEmpty
+                ? const Center(
+                    child: Text('No entries match the current filters.', style: AppleTypography.body),
+                  )
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppleColors.canvas,
+                      border: Border.all(color: AppleColors.hairline),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppleRadius.lg)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppleRadius.lg)),
+                      child: ListView.separated(
+                        itemCount: entries.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, i) {
+                          final e = entries[i];
+                          final id = e['id']?.toString() ?? '$i';
+                          final name = e['display_name']?.toString() ?? id;
+                          final category = e['category']?.toString() ?? '';
+                          final deletable = e['deletable'] == true;
+                          final selected = _localSelected.contains(id);
+
+                          return AppleListRow(
+                            title: name,
+                            subtitle: '$category · ${_formatBytes(e['size_bytes'])}',
+                            selected: selected,
+                            leading: Checkbox(
+                              value: selected,
+                              onChanged: !deletable
+                                  ? null
+                                  : (v) {
+                                      setState(() {
+                                        if (v == true) {
+                                          _localSelected.add(id);
+                                        } else {
+                                          _localSelected.remove(id);
+                                        }
+                                      });
+                                    },
+                            ),
+                            trailing: deletable
+                                ? Icon(Icons.delete_outline, size: 20, color: AppleColors.inkMuted48)
+                                : null,
+                            onTap: !deletable
+                                ? null
+                                : () {
+                                    setState(() {
+                                      if (selected) {
+                                        _localSelected.remove(id);
+                                      } else {
+                                        _localSelected.add(id);
+                                      }
+                                    });
+                                  },
+                          );
+                        },
                       ),
-                    );
-                  },
-            child: Text('Continue to Confirm (${_localSelected.length})'),
+                    ),
+                  ),
           ),
-        ),
-      ],
+          if (_localSelected.isNotEmpty)
+            AppleStickyBar(
+              leading: Text(
+                'Selected: ${_localSelected.length} · ${_formatBytes(_selectedBytes(entries))}',
+                style: AppleTypography.body,
+              ),
+              action: AppleButton(
+                label: 'Continue (${_localSelected.length})',
+                onPressed: () {
+                  widget.session.setSelectedEntryIds(_localSelected);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${_localSelected.length} items ready on Confirm tab',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

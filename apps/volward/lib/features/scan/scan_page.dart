@@ -1,7 +1,9 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../../theme/apple_tokens.dart';
 import '../../volward_session.dart';
+import '../../widgets/apple_widgets.dart';
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key, required this.session});
@@ -79,62 +81,97 @@ class _ScanPageState extends State<ScanPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
+    return ColoredBox(
+      color: AppleColors.canvasParchment,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Scan', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 12),
-          const Text(
-            'Scans via Rust Core + platform-desktop (max depth 8). '
-            'The UI stays responsive while scanning.',
-          ),
-          const SizedBox(height: 12),
-          Text('Target: ${widget.session.scanTargetLabel}'),
-          if (widget.session.scanning) ...[
-            const SizedBox(height: 16),
-            const LinearProgressIndicator(),
-            if (_progressLine() != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _progressLine()!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+          Expanded(
+            child: ApplePageShell(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const AppleSectionHeader(
+                    title: 'Scan',
+                    subtitle: 'Scans via Rust Core + platform-desktop (max depth 8). '
+                        'The UI stays responsive while scanning.',
+                  ),
+                  const SizedBox(height: AppleSpacing.xxl),
+                  AppleUtilityCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Target', style: AppleTypography.captionStrong),
+                        const SizedBox(height: 4),
+                        Text(widget.session.scanTargetLabel, style: AppleTypography.body),
+                        if (widget.session.scanning) ...[
+                          const SizedBox(height: AppleSpacing.lg),
+                          const ClipRRect(
+                            borderRadius: BorderRadius.all(Radius.circular(AppleRadius.pill)),
+                            child: LinearProgressIndicator(minHeight: 4),
+                          ),
+                          if (_progressLine() != null) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            Text(
+                              _progressLine()!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppleTypography.caption,
+                            ),
+                          ],
+                        ],
+                        if (_status != null) ...[
+                          const SizedBox(height: AppleSpacing.lg),
+                          Text(_status!, style: AppleTypography.caption),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppleSpacing.xxl),
+                  Wrap(
+                    spacing: AppleSpacing.sm,
+                    runSpacing: AppleSpacing.sm,
+                    children: [
+                      AppleButton(
+                        label: 'Choose folder…',
+                        icon: Icons.folder_open_outlined,
+                        variant: AppleButtonVariant.secondary,
+                        onPressed: widget.session.scanning ? null : _pickFolder,
+                      ),
+                      AppleButton(
+                        label: 'Reset to Home',
+                        icon: Icons.home_outlined,
+                        variant: AppleButtonVariant.pearl,
+                        onPressed: widget.session.scanning || widget.session.scanRoots.isEmpty
+                            ? null
+                            : () {
+                                widget.session.clearScanRoots();
+                                setState(() => _status = 'Reset to Home (default)');
+                              },
+                      ),
+                      if (widget.session.scanning)
+                        AppleButton(
+                          label: 'Cancel',
+                          icon: Icons.stop_outlined,
+                          variant: AppleButtonVariant.darkUtility,
+                          onPressed: widget.session.cancelScan,
+                        ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ],
-          const SizedBox(height: 24),
-          if (_status != null) Text(_status!),
-          const Spacer(),
-          OutlinedButton.icon(
-            onPressed: widget.session.scanning ? null : _pickFolder,
-            icon: const Icon(Icons.folder_open),
-            label: const Text('Choose folder…'),
+            ),
           ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: widget.session.scanning || widget.session.scanRoots.isEmpty
-                ? null
-                : () {
-                    widget.session.clearScanRoots();
-                    setState(() => _status = 'Reset to Home (default)');
-                  },
-            icon: const Icon(Icons.home),
-            label: const Text('Reset to Home'),
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: widget.session.scanning ? null : _start,
-            icon: const Icon(Icons.search),
-            label: Text(widget.session.scanning ? 'Scanning…' : 'Start scan'),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: widget.session.scanning ? widget.session.cancelScan : null,
-            icon: const Icon(Icons.stop),
-            label: const Text('Cancel'),
+          AppleStickyBar(
+            leading: Text(
+              widget.session.scanning ? 'Scan in progress…' : 'Ready to scan',
+              style: AppleTypography.body,
+            ),
+            action: AppleButton(
+              label: widget.session.scanning ? 'Scanning…' : 'Start scan',
+              icon: Icons.search,
+              onPressed: widget.session.scanning ? null : _start,
+            ),
           ),
         ],
       ),

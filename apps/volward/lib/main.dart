@@ -4,7 +4,9 @@ import 'features/confirm/confirm_page.dart';
 import 'features/overview/overview_page.dart';
 import 'features/results/results_page.dart';
 import 'features/scan/scan_page.dart';
+import 'theme/volward_theme.dart';
 import 'volward_session.dart';
+import 'widgets/volward_shell.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,10 +39,7 @@ class _VolwardAppState extends State<VolwardApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Volward',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B6B5C)),
-        useMaterial3: true,
-      ),
+      theme: buildVolwardTheme(),
       home: VolwardHome(session: _session),
     );
   }
@@ -57,6 +56,13 @@ class VolwardHome extends StatefulWidget {
 
 class _VolwardHomeState extends State<VolwardHome> {
   int _index = 0;
+
+  static const _destinations = [
+    ('Overview', Icons.dashboard_outlined),
+    ('Scan', Icons.search),
+    ('Results', Icons.list_alt),
+    ('Confirm', Icons.check_circle_outline),
+  ];
 
   @override
   void initState() {
@@ -81,18 +87,11 @@ class _VolwardHomeState extends State<VolwardHome> {
       ConfirmPage(session: widget.session),
     ];
 
-    return Scaffold(
+    return VolwardShell(
+      selectedIndex: _index,
+      onDestinationSelected: (i) => setState(() => _index = i),
+      destinations: _destinations,
       body: IndexedStack(index: _index, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Overview'),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Scan'),
-          NavigationDestination(icon: Icon(Icons.list_alt), label: 'Results'),
-          NavigationDestination(icon: Icon(Icons.check_circle_outline), label: 'Confirm'),
-        ],
-      ),
     );
   }
 }
