@@ -38,7 +38,7 @@ class _AppleButtonState extends State<AppleButton> {
           AppleColors.onPrimary,
           null,
           const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-          AppleTypography.body.copyWith(color: AppleColors.onPrimary),
+          AppleTypography.body.copyWith(color: AppleColors.onPrimary, height: 1.2),
         );
       case AppleButtonVariant.secondary:
         return (
@@ -322,8 +322,7 @@ class AppleStickyBar extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.xl, vertical: AppleSpacing.sm),
+          padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.xl, vertical: AppleSpacing.md),
           decoration: BoxDecoration(
             color: AppleColors.canvasParchment.withValues(alpha: 0.8),
             border: const Border(top: BorderSide(color: AppleColors.hairline)),

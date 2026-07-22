@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -123,6 +124,10 @@ class VolwardSession extends ChangeNotifier {
     if (!_ready) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
+    final effectiveRoots = _scanRoots.isNotEmpty
+        ? _scanRoots
+        : [Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '/'];
+
     _scanning = true;
     _lastError = null;
     _lastDeleteReport = null;
@@ -131,11 +136,10 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
 
     final receivePort = ReceivePort();
-    final cancelPort = ReceivePort(); // receives worker's cancel SendPort
+    final cancelPort = ReceivePort();
     final completer = Completer<Map<String, dynamic>?>();
     late StreamSubscription<dynamic> sub;
 
-    // Listen for progress / done / error from the worker.
     var scanFinished = false;
     sub = receivePort.listen((msg) {
       if (scanFinished) return;
@@ -163,7 +167,6 @@ class VolwardSession extends ChangeNotifier {
       }
     });
 
-    // Receive the worker's cancel receive-port SendPort.
     cancelPort.listen((msg) {
       if (msg is SendPort) {
         _workerCancelPort = msg;
@@ -175,7 +178,7 @@ class VolwardSession extends ChangeNotifier {
       _lastJobId = jobId;
       await Isolate.spawn(volwardScanIsolate, [
         receivePort.sendPort,
-        _scanRoots,
+        effectiveRoots,
         cancelPort.sendPort,
       ]);
       _lastSnapshot = await completer.future.timeout(
