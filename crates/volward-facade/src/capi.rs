@@ -62,21 +62,15 @@ pub unsafe extern "C" fn volward_start_scan(
     job_id: *const c_char,
     roots_json: *const c_char,
 ) -> *mut c_char {
-    let Some(e) = engine_ref(engine) else {
-        return ptr::null_mut();
-    };
-    let job = cstr_to_string(job_id).unwrap_or_else(|| "flutter-job".to_string());
-    let roots: Vec<String> = cstr_to_string(roots_json)
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    to_c_string(e.start_scan(job, roots))
+    volward_start_scan_with_options(engine, job_id, roots_json, false)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn volward_start_scan_async(
+pub unsafe extern "C" fn volward_start_scan_with_options(
     engine: *mut VolwardEngine,
     job_id: *const c_char,
     roots_json: *const c_char,
+    incremental: bool,
 ) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
@@ -85,7 +79,33 @@ pub unsafe extern "C" fn volward_start_scan_async(
     let roots: Vec<String> = cstr_to_string(roots_json)
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
-    to_c_string(e.start_scan_async(job, roots))
+    to_c_string(e.start_scan(job, roots, incremental))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_start_scan_async(
+    engine: *mut VolwardEngine,
+    job_id: *const c_char,
+    roots_json: *const c_char,
+) -> *mut c_char {
+    volward_start_scan_async_with_options(engine, job_id, roots_json, false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_start_scan_async_with_options(
+    engine: *mut VolwardEngine,
+    job_id: *const c_char,
+    roots_json: *const c_char,
+    incremental: bool,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let job = cstr_to_string(job_id).unwrap_or_else(|| "flutter-job".to_string());
+    let roots: Vec<String> = cstr_to_string(roots_json)
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    to_c_string(e.start_scan_async(job, roots, incremental))
 }
 
 #[no_mangle]
@@ -103,9 +123,7 @@ pub unsafe extern "C" fn volward_cancel_scan(engine: *mut VolwardEngine) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn volward_get_last_snapshot_json(
-    engine: *mut VolwardEngine,
-) -> *mut c_char {
+pub unsafe extern "C" fn volward_get_last_snapshot_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
     };
@@ -115,9 +133,7 @@ pub unsafe extern "C" fn volward_get_last_snapshot_json(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn volward_get_last_progress_json(
-    engine: *mut VolwardEngine,
-) -> *mut c_char {
+pub unsafe extern "C" fn volward_get_last_progress_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
     };
@@ -136,6 +152,36 @@ pub unsafe extern "C" fn volward_set_last_snapshot_json(
     };
     cstr_to_string(snapshot_json)
         .map(|json| e.set_last_snapshot_json(&json).is_ok())
+        .unwrap_or(false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_write_last_snapshot_to_path(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return to_c_string("error:null engine".to_string());
+    };
+    let Some(path) = cstr_to_string(path) else {
+        return to_c_string("error:null path".to_string());
+    };
+    match e.write_last_snapshot_to_path(&path) {
+        Ok(id) => to_c_string(id),
+        Err(msg) => to_c_string(msg),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_load_last_snapshot_from_path(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    cstr_to_string(path)
+        .map(|p| e.load_last_snapshot_from_path(&p).is_ok())
         .unwrap_or(false)
 }
 

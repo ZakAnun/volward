@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -5,9 +7,7 @@ use std::sync::{Arc, Mutex};
 use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
-use volward_core::model::{
-    DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot,
-};
+use volward_core::model::{DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot};
 use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
@@ -86,7 +86,7 @@ impl VolwardEngine {
         self.is_scanning.load(Ordering::Relaxed)
     }
 
-    pub fn start_scan(&self, job_id: String, roots: Vec<String>) -> String {
+    pub fn start_scan(&self, job_id: String, roots: Vec<String>, incremental: bool) -> String {
         // Reject if a scan is already in progress (defense-in-depth —
         // Dart callers use start_scan_async, but blocking path is also
         // exposed through C FFI).
@@ -105,7 +105,7 @@ impl VolwardEngine {
         let last_snapshot = self.last_snapshot.clone();
         let last_progress = self.last_progress.clone();
 
-        let result = orchestrator.run_scan(job_id, roots, &cancel, |progress| {
+        let result = orchestrator.run_scan(job_id, roots, incremental, &cancel, |progress| {
             if let Ok(mut g) = last_progress.lock() {
                 *g = Some(progress);
             }
@@ -125,7 +125,12 @@ impl VolwardEngine {
         }
     }
 
-    pub fn start_scan_async(&self, job_id: String, roots: Vec<String>) -> String {
+    pub fn start_scan_async(
+        &self,
+        job_id: String,
+        roots: Vec<String>,
+        incremental: bool,
+    ) -> String {
         // Reject if a scan is already in progress.
         if self
             .is_scanning
@@ -147,7 +152,7 @@ impl VolwardEngine {
         let handle = std::thread::spawn(move || {
             let classifier = load_classifier_from_arc(&platform);
             let orchestrator = ScanOrchestrator::new(platform.as_ref(), classifier);
-            match orchestrator.run_scan(job_id_clone, roots, &cancel, |progress| {
+            match orchestrator.run_scan(job_id_clone, roots, incremental, &cancel, |progress| {
                 if let Ok(mut g) = last_progress.lock() {
                     *g = Some(progress);
                 }
@@ -220,6 +225,28 @@ impl VolwardEngine {
         Ok(())
     }
 
+    /// Serializes the last snapshot directly to [path] without an intermediate Dart copy.
+    /// Returns the snapshot_id on success, or `error:…` on failure.
+    pub fn write_last_snapshot_to_path(&self, path: &str) -> Result<String, String> {
+        let snapshot = self
+            .get_last_snapshot()
+            .ok_or_else(|| "error:no snapshot".to_string())?;
+        let file = File::create(path).map_err(|e| format!("error:create snapshot: {e}"))?;
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, &snapshot)
+            .map_err(|e| format!("error:serialize snapshot: {e}"))?;
+        writer
+            .flush()
+            .map_err(|e| format!("error:flush snapshot: {e}"))?;
+        Ok(snapshot.snapshot_id)
+    }
+
+    /// Loads snapshot from [path] into this engine (single parse, for delete operations).
+    pub fn load_last_snapshot_from_path(&self, path: &str) -> Result<(), String> {
+        let json = std::fs::read_to_string(path).map_err(|e| format!("read snapshot: {e}"))?;
+        self.set_last_snapshot_json(&json)
+    }
+
     pub fn delete_entries_json(
         &self,
         snapshot_id: &str,
@@ -230,5 +257,74 @@ impl VolwardEngine {
             Ok(report) => serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()),
             Err(e) => serde_json::json!({ "error": e }).to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use volward_core::model::{
+        CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
+        StorageEntry, StorageSnapshot,
+    };
+
+    fn minimal_snapshot() -> StorageSnapshot {
+        StorageSnapshot {
+            snapshot_id: "test-snap".to_string(),
+            scanned_at_ms: 1,
+            capability: CapabilityLevel::FullPath,
+            volume_total_bytes: 100,
+            volume_used_bytes: 50,
+            reclaimable_estimate_bytes: 10,
+            entries: vec![StorageEntry {
+                id: "e1".to_string(),
+                display_name: "file".to_string(),
+                path_or_uri: "/tmp/file".to_string(),
+                size_bytes: 10,
+                category: EntryCategory::Cache,
+                risk_level: RiskLevel::Low,
+                source_type: SourceType::File,
+                deletable: true,
+                reason: "test".to_string(),
+            }],
+            tree: ScanTreeNode {
+                name: "root".to_string(),
+                path: "/".to_string(),
+                is_dir: true,
+                size_bytes: 10,
+                entry_id: None,
+                children: vec![],
+            },
+            stats: ScanStats::default(),
+            warnings: vec![],
+        }
+    }
+
+    #[test]
+    fn write_last_snapshot_roundtrip() {
+        let engine = VolwardEngine::new();
+        let snapshot = minimal_snapshot();
+        let expected_id = snapshot.snapshot_id.clone();
+        engine.set_last_snapshot(snapshot);
+
+        let path = std::env::temp_dir().join(format!(
+            "volward-write-snapshot-{}.json",
+            std::process::id()
+        ));
+        let path_str = path.to_string_lossy();
+
+        let id = engine
+            .write_last_snapshot_to_path(&path_str)
+            .expect("write should succeed");
+        assert_eq!(id, expected_id);
+
+        let engine2 = VolwardEngine::new();
+        engine2
+            .load_last_snapshot_from_path(&path_str)
+            .expect("load should succeed");
+        let loaded = engine2.get_last_snapshot().expect("snapshot loaded");
+        assert_eq!(loaded.snapshot_id, expected_id);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

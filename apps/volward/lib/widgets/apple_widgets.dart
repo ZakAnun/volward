@@ -37,23 +37,23 @@ class _AppleButtonState extends State<AppleButton> {
           AppleColors.primary,
           AppleColors.onPrimary,
           null,
-          const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-          AppleTypography.body.copyWith(color: AppleColors.onPrimary, height: 1.2),
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          AppleTypography.captionStrong.copyWith(color: AppleColors.onPrimary, height: 1.2),
         );
       case AppleButtonVariant.secondary:
         return (
           AppleColors.canvas,
           AppleColors.primary,
           const BorderSide(color: AppleColors.primary),
-          const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-          AppleTypography.body.copyWith(color: AppleColors.primary),
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          AppleTypography.captionStrong.copyWith(color: AppleColors.primary, height: 1.2),
         );
       case AppleButtonVariant.pearl:
         return (
           AppleColors.surfacePearl,
           AppleColors.inkMuted80,
-          const BorderSide(color: AppleColors.dividerSoft, width: 3),
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          const BorderSide(color: AppleColors.dividerSoft, width: 2),
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           AppleTypography.caption,
         );
       case AppleButtonVariant.darkUtility:
@@ -61,7 +61,7 @@ class _AppleButtonState extends State<AppleButton> {
           AppleColors.ink,
           AppleColors.bodyOnDark,
           null,
-          const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           AppleTypography.caption.copyWith(color: AppleColors.bodyOnDark),
         );
     }
@@ -100,7 +100,7 @@ class _AppleButtonState extends State<AppleButton> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (widget.icon != null) ...[
-                  Icon(widget.icon, size: 18, color: enabled ? fg : fg.withValues(alpha: 0.5)),
+                  Icon(widget.icon, size: 16, color: enabled ? fg : fg.withValues(alpha: 0.5)),
                   const SizedBox(width: AppleSpacing.xs),
                 ],
                 Text(
@@ -127,7 +127,7 @@ class AppleUtilityCard extends StatelessWidget {
   const AppleUtilityCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(AppleSpacing.lg),
+    this.padding = const EdgeInsets.all(AppleSpacing.md),
   });
 
   final Widget child;
@@ -151,13 +151,27 @@ class AppleSectionHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.compact = false,
   });
 
   final String title;
   final String? subtitle;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppleTypography.bodyStrong),
+          if (subtitle != null) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(subtitle!, style: AppleTypography.caption),
+          ],
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -199,10 +213,10 @@ class AppleOptionChip extends StatelessWidget {
         splashColor: Colors.transparent,
         highlightColor: Colors.transparent,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: Text(
             label,
-            style: AppleTypography.caption.copyWith(
+            style: AppleTypography.finePrint.copyWith(
               color: selected ? AppleColors.ink : AppleColors.inkMuted80,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
@@ -241,23 +255,28 @@ class AppleListRow extends StatelessWidget {
         highlightColor: AppleColors.canvasParchment,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppleSpacing.lg,
-            vertical: AppleSpacing.sm,
+            horizontal: AppleSpacing.md,
+            vertical: AppleSpacing.xs,
           ),
           child: Row(
             children: [
               if (leading != null) ...[
                 leading!,
-                const SizedBox(width: AppleSpacing.sm),
+                const SizedBox(width: AppleSpacing.xs),
               ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: AppleTypography.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      title,
+                      style: AppleTypography.captionStrong,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(subtitle!, style: AppleTypography.caption),
+                      const SizedBox(height: 1),
+                      Text(subtitle!, style: AppleTypography.finePrint),
                     ],
                   ],
                 ),
@@ -322,7 +341,7 @@ class AppleStickyBar extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.xl, vertical: AppleSpacing.md),
+          padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.lg, vertical: AppleSpacing.sm),
           decoration: BoxDecoration(
             color: AppleColors.canvasParchment.withValues(alpha: 0.8),
             border: const Border(top: BorderSide(color: AppleColors.hairline)),

@@ -13,75 +13,71 @@ typedef VolwardEngineFree = void Function(Pointer<Void>);
 typedef VolwardFreeStringNative = Void Function(Pointer<Utf8>);
 typedef VolwardFreeString = void Function(Pointer<Utf8>);
 
-typedef VolwardProbeCapabilitiesJsonNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardProbeCapabilitiesJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardProbeCapabilitiesJson = Pointer<Utf8> Function(Pointer<Void>);
 
 typedef VolwardIsDeepScanReadyNative = Bool Function(Pointer<Void>);
 typedef VolwardIsDeepScanReady = bool Function(Pointer<Void>);
 
-typedef VolwardStartScanNative = Pointer<Utf8> Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-);
-typedef VolwardStartScan = Pointer<Utf8> Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-);
+typedef VolwardStartScanNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartScan =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
-typedef VolwardStartScanAsyncNative = Pointer<Utf8> Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-);
-typedef VolwardStartScanAsync = Pointer<Utf8> Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-);
+typedef VolwardStartScanAsyncNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartScanAsync =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef VolwardStartScanAsyncWithOptionsNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
+typedef VolwardStartScanAsyncWithOptions =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
 
 typedef VolwardIsScanRunningNative = Bool Function(Pointer<Void>);
 typedef VolwardIsScanRunning = bool Function(Pointer<Void>);
 
-typedef VolwardGetLastProgressJsonNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetLastProgressJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardGetLastProgressJson = Pointer<Utf8> Function(Pointer<Void>);
 
 typedef VolwardCancelScanNative = Void Function(Pointer<Void>);
 typedef VolwardCancelScan = void Function(Pointer<Void>);
 
-typedef VolwardGetLastSnapshotJsonNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetLastSnapshotJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardGetLastSnapshotJson = Pointer<Utf8> Function(Pointer<Void>);
 
-typedef VolwardSetLastSnapshotJsonNative = Bool Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-);
-typedef VolwardSetLastSnapshotJson = bool Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-);
+typedef VolwardSetLastSnapshotJsonNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardSetLastSnapshotJson =
+    bool Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardWriteLastSnapshotToPathNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastSnapshotToPath =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardLoadLastSnapshotFromPathNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardLoadLastSnapshotFromPath =
+    bool Function(Pointer<Void>, Pointer<Utf8>);
 
 typedef VolwardOpenPermissionSettingsNative = Bool Function(Pointer<Void>);
 typedef VolwardOpenPermissionSettings = bool Function(Pointer<Void>);
 
-typedef VolwardDeleteEntriesJsonNative = Pointer<Utf8> Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Bool,
-);
-typedef VolwardDeleteEntriesJson = Pointer<Utf8> Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  bool,
-);
+typedef VolwardDeleteEntriesJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
+typedef VolwardDeleteEntriesJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
 
 final class VolwardNativeBridge {
   VolwardNativeBridge._(this._lib) {
     _create = _lib
-        .lookup<NativeFunction<VolwardEngineCreateNative>>('volward_engine_create')
+        .lookup<NativeFunction<VolwardEngineCreateNative>>(
+          'volward_engine_create',
+        )
         .asFunction();
     _free = _lib
         .lookup<NativeFunction<VolwardEngineFreeNative>>('volward_engine_free')
@@ -103,10 +99,15 @@ final class VolwardNativeBridge {
         .lookup<NativeFunction<VolwardStartScanNative>>('volward_start_scan')
         .asFunction();
     _startScanAsync = _lib
-        .lookup<NativeFunction<VolwardStartScanAsyncNative>>('volward_start_scan_async')
+        .lookup<NativeFunction<VolwardStartScanAsyncNative>>(
+          'volward_start_scan_async',
+        )
         .asFunction();
+    _startScanAsyncWithOptions = _tryLookupStartScanAsyncWithOptions();
     _isScanRunning = _lib
-        .lookup<NativeFunction<VolwardIsScanRunningNative>>('volward_is_scan_running')
+        .lookup<NativeFunction<VolwardIsScanRunningNative>>(
+          'volward_is_scan_running',
+        )
         .asFunction();
     _cancelScan = _lib
         .lookup<NativeFunction<VolwardCancelScanNative>>('volward_cancel_scan')
@@ -126,6 +127,8 @@ final class VolwardNativeBridge {
           'volward_set_last_snapshot_json',
         )
         .asFunction();
+    _writeLastSnapshotToPath = _tryLookupWriteSnapshot();
+    _loadLastSnapshotFromPath = _tryLookupLoadSnapshot();
     _openPermissionSettings = _lib
         .lookup<NativeFunction<VolwardOpenPermissionSettingsNative>>(
           'volward_open_permission_settings',
@@ -136,6 +139,42 @@ final class VolwardNativeBridge {
           'volward_delete_entries_json',
         )
         .asFunction();
+  }
+
+  VolwardStartScanAsyncWithOptions? _tryLookupStartScanAsyncWithOptions() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardStartScanAsyncWithOptionsNative>>(
+            'volward_start_scan_async_with_options',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardWriteLastSnapshotToPath? _tryLookupWriteSnapshot() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardWriteLastSnapshotToPathNative>>(
+            'volward_write_last_snapshot_to_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardLoadLastSnapshotFromPath? _tryLookupLoadSnapshot() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardLoadLastSnapshotFromPathNative>>(
+            'volward_load_last_snapshot_from_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
   }
 
   static VolwardNativeBridge? _instance;
@@ -155,13 +194,23 @@ final class VolwardNativeBridge {
   late final VolwardIsDeepScanReady _isDeepScanReady;
   late final VolwardStartScan _startScan;
   late final VolwardStartScanAsync _startScanAsync;
+  late final VolwardStartScanAsyncWithOptions? _startScanAsyncWithOptions;
   late final VolwardIsScanRunning _isScanRunning;
   late final VolwardCancelScan _cancelScan;
   late final VolwardGetLastSnapshotJson _getLastSnapshotJson;
   late final VolwardGetLastProgressJson _getLastProgressJson;
   late final VolwardSetLastSnapshotJson _setLastSnapshotJson;
+  late final VolwardWriteLastSnapshotToPath? _writeLastSnapshotToPath;
+  late final VolwardLoadLastSnapshotFromPath? _loadLastSnapshotFromPath;
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
+
+  /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
+  bool get hasSnapshotFileApi =>
+      _writeLastSnapshotToPath != null && _loadLastSnapshotFromPath != null;
+
+  /// True when the bundled dylib accepts incremental scan options.
+  bool get hasScanOptionsApi => _startScanAsyncWithOptions != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -186,11 +235,27 @@ final class VolwardNativeBridge {
     }
   }
 
-  String startScanAsync(Pointer<Void> engine, String jobId, List<String> roots) {
+  String startScanAsync(
+    Pointer<Void> engine,
+    String jobId,
+    List<String> roots,
+  ) {
+    return startScanAsyncWithOptions(engine, jobId, roots, incremental: false);
+  }
+
+  String startScanAsyncWithOptions(
+    Pointer<Void> engine,
+    String jobId,
+    List<String> roots, {
+    required bool incremental,
+  }) {
     final jobPtr = jobId.toNativeUtf8();
     final rootsPtr = jsonEncode(roots).toNativeUtf8();
     try {
-      final out = _startScanAsync(engine, jobPtr, rootsPtr);
+      final startWithOptions = _startScanAsyncWithOptions;
+      final out = startWithOptions != null
+          ? startWithOptions(engine, jobPtr, rootsPtr, incremental)
+          : _startScanAsync(engine, jobPtr, rootsPtr);
       return out.toDartString();
     } finally {
       calloc.free(jobPtr);
@@ -227,6 +292,32 @@ final class VolwardNativeBridge {
     }
   }
 
+  /// Rust serializes snapshot directly to [path]; returns snapshot_id or `error:…`.
+  String writeLastSnapshotToPath(Pointer<Void> engine, String path) {
+    final write = _writeLastSnapshotToPath;
+    if (write == null) {
+      return 'error:native dylib missing volward_write_last_snapshot_to_path — rebuild Rust';
+    }
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = write(engine, pathPtr);
+      return out.toDartString();
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  bool loadLastSnapshotFromPath(Pointer<Void> engine, String path) {
+    final load = _loadLastSnapshotFromPath;
+    if (load == null) return false;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      return load(engine, pathPtr);
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
   bool openPermissionSettings(Pointer<Void> engine) =>
       _openPermissionSettings(engine);
 
@@ -259,7 +350,8 @@ final class VolwardNativeBridge {
   static DynamicLibrary _openLibrary() {
     if (Platform.isMacOS) {
       final exe = Platform.resolvedExecutable;
-      final libPath = '${File(exe).parent.path}/../Frameworks/libvolward_facade.dylib';
+      final libPath =
+          '${File(exe).parent.path}/../Frameworks/libvolward_facade.dylib';
       return DynamicLibrary.open(libPath);
     }
     if (Platform.isLinux) {

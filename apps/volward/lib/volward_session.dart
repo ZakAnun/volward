@@ -1,12 +1,22 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io' show Platform;
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
+
+/// Thrown when the user cancels an in-progress scan.
+class ScanCancelledException implements Exception {
+  ScanCancelledException([this.message = 'Scan cancelled']);
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 /// Holds the native Volward engine pointer and exposes async wrappers for UI.
 class VolwardSession extends ChangeNotifier {
@@ -27,8 +37,17 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic>? _lastDeleteReport;
   Map<String, dynamic>? _scanProgress;
   List<String> _scanRoots = [];
+  bool _incrementalScan = false;
   final Set<String> _selectedEntryIds = {};
   SendPort? _workerCancelPort;
+  Timer? _scanElapsedTimer;
+  DateTime? _scanStartedAt;
+
+  Completer<Map<String, dynamic>?>? _activeScanCompleter;
+  StreamSubscription<dynamic>? _scanProgressSub;
+  ReceivePort? _scanReceivePort;
+  ReceivePort? _scanCancelInitPort;
+  bool _scanChannelsClosed = false;
 
   bool get ready => _ready;
   String? get initError => _initError;
@@ -42,7 +61,19 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic>? get lastDeleteReport => _lastDeleteReport;
   Map<String, dynamic>? get scanProgress => _scanProgress;
   List<String> get scanRoots => List.unmodifiable(_scanRoots);
+  bool get incrementalScan => _incrementalScan;
   Set<String> get selectedEntryIds => Set.unmodifiable(_selectedEntryIds);
+
+  /// Whether the bundled native library supports file-based snapshot I/O.
+  bool get hasSnapshotFileApi =>
+      VolwardNativeBridge.instance.hasSnapshotFileApi;
+
+  /// Whether the bundled native library supports incremental scan options.
+  bool get hasScanOptionsApi => VolwardNativeBridge.instance.hasScanOptionsApi;
+
+  /// Increment scan requires both snapshot file API and scan options FFI.
+  bool get canUseIncrementalScan =>
+      hasSnapshotFileApi && hasScanOptionsApi;
 
   String get scanTargetLabel =>
       _scanRoots.isEmpty ? 'Home (default)' : _scanRoots.join(', ');
@@ -55,6 +86,53 @@ class VolwardSession extends ChangeNotifier {
     return const [];
   }
 
+  /// Elapsed wall time since scan started (updates every second while scanning).
+  String? get scanElapsedLabel {
+    if (!_scanning || _scanStartedAt == null) return null;
+    final elapsed = DateTime.now().difference(_scanStartedAt!);
+    final m = elapsed.inMinutes;
+    final s = elapsed.inSeconds % 60;
+    if (m > 0) return '${m}m ${s}s';
+    return '${s}s';
+  }
+
+  void _startScanElapsedTimer() {
+    _scanStartedAt = DateTime.now();
+    _scanElapsedTimer?.cancel();
+    _scanElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_scanning) {
+        notifyListeners();
+      }
+    });
+  }
+
+  void _stopScanElapsedTimer() {
+    _scanElapsedTimer?.cancel();
+    _scanElapsedTimer = null;
+    _scanStartedAt = null;
+  }
+
+  void _setScanProgressPhase(String phase, {int? pathsSeen}) {
+    _scanProgress = {
+      'phase': phase,
+      if (pathsSeen != null) 'paths_seen': pathsSeen,
+      if (_scanProgress?['paths_seen'] != null && pathsSeen == null)
+        'paths_seen': _scanProgress!['paths_seen'],
+    };
+    notifyListeners();
+  }
+
+  void _closeScanChannels() {
+    if (_scanChannelsClosed) return;
+    _scanChannelsClosed = true;
+    _scanProgressSub?.cancel();
+    _scanProgressSub = null;
+    _scanReceivePort?.close();
+    _scanReceivePort = null;
+    _scanCancelInitPort?.close();
+    _scanCancelInitPort = null;
+  }
+
   Future<void> _initialize() async {
     await Future<void>.delayed(Duration.zero);
     try {
@@ -62,17 +140,18 @@ class VolwardSession extends ChangeNotifier {
       _engine = bridge.createEngine();
       _capabilities = bridge.probeCapabilities(_engine!);
       _deepScanReady = bridge.isDeepScanReady(_engine!);
+      if (!bridge.hasSnapshotFileApi) {
+        debugPrint(
+          'Volward: bundled libvolward_facade.dylib is outdated (missing snapshot file FFI). '
+          'Run: cd apps/volward/macos && bash build_rust.sh — then fully restart the app (R).',
+        );
+      }
       _ready = true;
     } catch (e, st) {
       _initError = '$e';
       debugPrint('VolwardSession init failed: $e\n$st');
     }
     notifyListeners();
-  }
-
-  void _syncSnapshotToEngine(Map<String, dynamic>? snapshot) {
-    if (!_ready || _engine == null || snapshot == null) return;
-    VolwardNativeBridge.instance.setLastSnapshot(_engine!, snapshot);
   }
 
   void setScanRoots(List<String> roots) {
@@ -82,6 +161,13 @@ class VolwardSession extends ChangeNotifier {
 
   void clearScanRoots() {
     _scanRoots = [];
+    notifyListeners();
+  }
+
+  void setIncrementalScan(bool incremental) {
+    if (incremental && !canUseIncrementalScan) return;
+    if (_incrementalScan == incremental) return;
+    _incrementalScan = incremental;
     notifyListeners();
   }
 
@@ -124,25 +210,46 @@ class VolwardSession extends ChangeNotifier {
     if (!_ready) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
+    if (_scanning) {
+      throw StateError('A scan is already in progress');
+    }
+    if (!hasSnapshotFileApi) {
+      throw StateError(
+        'Native library is outdated. Run: cd apps/volward/macos && bash build_rust.sh '
+        '— then fully restart the app (R).',
+      );
+    }
+    if (_incrementalScan && !canUseIncrementalScan) {
+      throw StateError(
+        'Incremental scan requires an updated native library. Run: cd apps/volward/macos && bash build_rust.sh '
+        '— then fully restart the app (R).',
+      );
+    }
+
     final effectiveRoots = _scanRoots.isNotEmpty
         ? _scanRoots
-        : [Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '/'];
+        : [
+            Platform.environment['HOME'] ??
+                Platform.environment['USERPROFILE'] ??
+                '/',
+          ];
 
     _scanning = true;
     _lastError = null;
     _lastDeleteReport = null;
     _scanProgress = null;
     _workerCancelPort = null;
+    _scanChannelsClosed = false;
+    _startScanElapsedTimer();
     notifyListeners();
 
-    final receivePort = ReceivePort();
-    final cancelPort = ReceivePort();
+    _scanReceivePort = ReceivePort();
+    _scanCancelInitPort = ReceivePort();
     final completer = Completer<Map<String, dynamic>?>();
-    late StreamSubscription<dynamic> sub;
+    _activeScanCompleter = completer;
 
-    var scanFinished = false;
-    sub = receivePort.listen((msg) {
-      if (scanFinished) return;
+    _scanProgressSub = _scanReceivePort!.listen((msg) {
+      if (_scanChannelsClosed || completer.isCompleted) return;
       if (msg is! Map) return;
       final m = Map<String, dynamic>.from(msg);
       final type = m['type']?.toString();
@@ -150,24 +257,35 @@ class VolwardSession extends ChangeNotifier {
         _scanProgress = Map<String, dynamic>.from(m)..remove('type');
         notifyListeners();
       } else if (type == 'done') {
-        scanFinished = true;
-        final snap = m['snapshot'];
-        completer.complete(
-          snap is Map ? Map<String, dynamic>.from(snap) : null,
-        );
-        sub.cancel();
-        receivePort.close();
-        cancelPort.close();
+        _closeScanChannels();
+        final path = m['snapshot_path']?.toString();
+        if (path != null && path.isNotEmpty) {
+          _loadSnapshotFromFile(path)
+              .then((snap) {
+                if (!completer.isCompleted) {
+                  completer.complete(snap);
+                }
+              })
+              .catchError((Object e, StackTrace st) {
+                if (!completer.isCompleted) {
+                  completer.completeError(e, st);
+                }
+              });
+        } else {
+          final snap = m['snapshot'];
+          completer.complete(
+            snap is Map ? Map<String, dynamic>.from(snap) : null,
+          );
+        }
       } else if (type == 'error') {
-        scanFinished = true;
-        completer.completeError(m['error']?.toString() ?? 'Scan failed');
-        sub.cancel();
-        receivePort.close();
-        cancelPort.close();
+        _closeScanChannels();
+        if (!completer.isCompleted) {
+          completer.completeError(m['error']?.toString() ?? 'Scan failed');
+        }
       }
     });
 
-    cancelPort.listen((msg) {
+    _scanCancelInitPort!.listen((msg) {
       if (msg is SendPort) {
         _workerCancelPort = msg;
       }
@@ -177,29 +295,31 @@ class VolwardSession extends ChangeNotifier {
       final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
       _lastJobId = jobId;
       await Isolate.spawn(volwardScanIsolate, [
-        receivePort.sendPort,
+        _scanReceivePort!.sendPort,
         effectiveRoots,
-        cancelPort.sendPort,
+        _scanCancelInitPort!.sendPort,
+        _incrementalScan,
       ]);
       _lastSnapshot = await completer.future.timeout(
         const Duration(minutes: 30),
       );
-      _syncSnapshotToEngine(_lastSnapshot);
       notifyListeners();
       return _lastSnapshot?['snapshot_id']?.toString() ?? 'done';
+    } on ScanCancelledException catch (e) {
+      _lastError = e.message;
+      rethrow;
     } catch (e, st) {
-      if (!scanFinished) {
-        scanFinished = true;
-        sub.cancel();
-        receivePort.close();
-        cancelPort.close();
+      if (!_scanChannelsClosed) {
+        _closeScanChannels();
       }
       _lastError = '$e';
       debugPrint('VolwardSession scan failed: $e\n$st');
       rethrow;
     } finally {
-      _scanning = false;
+      _activeScanCompleter = null;
       _workerCancelPort = null;
+      _scanning = false;
+      _stopScanElapsedTimer();
       notifyListeners();
     }
   }
@@ -247,22 +367,56 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  void cancelScan() {
-    final cancelPort = _workerCancelPort;
-    if (cancelPort != null) {
-      cancelPort.send('cancel');
-      _workerCancelPort = null;
+  Future<Map<String, dynamic>?> _loadSnapshotFromFile(String path) async {
+    final pathsSeen = (_scanProgress?['paths_seen'] as num?)?.toInt();
+    _setScanProgressPhase('LoadingResults', pathsSeen: pathsSeen);
+
+    if (!_ready || _engine == null) {
+      throw StateError('Native engine not ready');
     }
-    _scanning = false;
+
+    final snap = await Isolate.run(() => _decodeSnapshotJsonFile(path));
+    try {
+      await File(path).delete();
+    } catch (_) {}
+
+    if (snap == null) {
+      throw StateError('Invalid snapshot file');
+    }
+    if (!VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
+      throw StateError('Failed to load scan snapshot into engine');
+    }
+    return snap;
+  }
+
+  void cancelScan() {
+    if (!_scanning) return;
+
+    _workerCancelPort?.send('cancel');
+    _workerCancelPort = null;
+    _closeScanChannels();
+
+    final completer = _activeScanCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.completeError(ScanCancelledException());
+    }
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _stopScanElapsedTimer();
+    _closeScanChannels();
     final engine = _engine;
     if (engine != null) {
       VolwardNativeBridge.instance.freeEngine(engine);
     }
     super.dispose();
   }
+}
+
+Map<String, dynamic>? _decodeSnapshotJsonFile(String path) {
+  final raw = File(path).readAsStringSync();
+  final decoded = jsonDecode(raw);
+  return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
 }

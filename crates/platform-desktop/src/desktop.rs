@@ -1,14 +1,69 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use jwalk::WalkDir;
+use jwalk::{DirEntry, Error, WalkDir};
+use volward_core::manifest::DirFingerprint;
 use volward_core::model::{
     CapabilityLevel, DeleteReport, PlatformCapabilities, RawFsEntry, ScanRoot, VolumeStats,
 };
-use volward_core::platform::{is_cancelled, PlatformError, PlatformStorage, WalkAction};
+use volward_core::platform::{
+    is_cancelled, PlatformError, PlatformStorage, WalkAction, WalkOptions,
+};
 
-const MAX_DEPTH: usize = 8;
+use crate::walk_prune::{is_protected_path, prune_child_directories};
+
+fn system_time_secs(time: SystemTime) -> i64 {
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs().min(i64::MAX as u64) as i64,
+        Err(error) => -(error.duration().as_secs().min(i64::MAX as u64) as i64),
+    }
+}
+
+fn dir_fingerprint_from_read_dir(path: &Path, children: &[Result<DirEntry<((), ())>, Error>]) -> DirFingerprint {
+    let children_count = children.len().min(u32::MAX as usize) as u32;
+    let mtime_secs = fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .map(system_time_secs)
+        .unwrap_or(0);
+    let mut max_child_mtime_secs = 0i64;
+    for child in children.iter().flatten() {
+        max_child_mtime_secs = max_child_mtime_secs.max(entry_mtime_secs(&child.path()));
+    }
+    DirFingerprint {
+        mtime_secs,
+        children_count,
+        max_child_mtime_secs,
+    }
+}
+
+fn entry_mtime_secs(path: &Path) -> i64 {
+    let Ok(metadata) = fs::metadata(path) else {
+        return 0;
+    };
+    let mut max = metadata.modified().map(system_time_secs).unwrap_or(0);
+    if metadata.is_dir() {
+        if let Ok(read_dir) = fs::read_dir(path) {
+            for entry in read_dir.flatten() {
+                if let Ok(child_meta) = entry.metadata() {
+                    if child_meta.is_file() {
+                        max = max.max(
+                            child_meta
+                                .modified()
+                                .map(system_time_secs)
+                                .unwrap_or(0),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    max
+}
 
 pub struct DesktopPlatform {
     protected_prefixes: Vec<String>,
@@ -25,9 +80,12 @@ impl DesktopPlatform {
         let mut protected = vec![
             "/System".to_string(),
             "/private/var/db".to_string(),
+            "/private/var/vm".to_string(),
             "/usr".to_string(),
             "/bin".to_string(),
             "/sbin".to_string(),
+            "/dev".to_string(),
+            "/cores".to_string(),
         ];
         if let Some(home) = dirs::home_dir() {
             protected.push(home.join(".ssh").to_string_lossy().to_string());
@@ -45,11 +103,19 @@ impl DesktopPlatform {
         dirs::home_dir().map(|h| h.join("Library/Safari/Bookmarks.plist"))
     }
 
+    /// macOS only registers an app in the FDA list after a real read attempt
+    /// (metadata/stat alone does not trigger TCC). See Apple Developer Forums #757768.
+    fn touch_fda_probe() {
+        if let Some(probe) = Self::fda_probe_path() {
+            let _ = fs::read(&probe);
+        }
+    }
+
     fn has_full_disk_access() -> bool {
         let Some(probe) = Self::fda_probe_path() else {
             return false;
         };
-        fs::metadata(&probe).map(|m| m.is_file()).unwrap_or(false)
+        fs::read(&probe).is_ok()
     }
 }
 
@@ -59,7 +125,7 @@ impl PlatformStorage for DesktopPlatform {
         let mut hints = Vec::new();
         if !fda {
             hints.push(
-                "Grant Full Disk Access in System Settings → Privacy & Security → Full Disk Access."
+                "Enable Full Disk Access for Volward in System Settings → Privacy & Security → Full Disk Access to scan ~/Library caches and app data."
                     .to_string(),
             );
         }
@@ -103,9 +169,12 @@ impl PlatformStorage for DesktopPlatform {
     fn walk_entries(
         &self,
         roots: &[ScanRoot],
+        options: WalkOptions<'_>,
         cancel: &AtomicBool,
         on_entry: &mut dyn FnMut(RawFsEntry) -> WalkAction,
-    ) -> Result<(), PlatformError> {
+    ) -> Result<u64, PlatformError> {
+        let mut paths_skipped = 0u64;
+        let baseline_fingerprints = options.baseline_fingerprints.cloned().map(Arc::new);
         for root in roots {
             if is_cancelled(cancel) {
                 return Err(PlatformError::Cancelled);
@@ -114,43 +183,101 @@ impl PlatformStorage for DesktopPlatform {
             if !root_path.exists() {
                 continue;
             }
+            let dir_fingerprints_cache = Arc::new(Mutex::new(HashMap::<PathBuf, DirFingerprint>::new()));
+            let skipped_subtree_roots = Arc::new(Mutex::new(HashSet::<String>::new()));
             for entry in WalkDir::new(root_path)
                 .skip_hidden(false)
                 .follow_links(false)
-                .max_depth(MAX_DEPTH)
+                .sort(false)
+                .process_read_dir({
+                    let protected = self.protected_prefixes.clone();
+                    let dir_fingerprints_cache = dir_fingerprints_cache.clone();
+                    let skipped_subtree_roots = skipped_subtree_roots.clone();
+                    let baseline_fingerprints = baseline_fingerprints.clone();
+                    move |_depth, path, _state, children| {
+                        let current_fingerprint = dir_fingerprint_from_read_dir(path, children);
+                        if let Ok(mut cache) = dir_fingerprints_cache.lock() {
+                            cache.insert(path.to_path_buf(), current_fingerprint.clone());
+                        }
+                        let path_str = path.to_string_lossy().to_string();
+                        let unchanged = baseline_fingerprints
+                            .as_ref()
+                            .and_then(|fingerprints| fingerprints.get(&path_str))
+                            .is_some_and(|baseline| baseline.matches(&current_fingerprint));
+                        if unchanged {
+                            if let Ok(mut skipped) = skipped_subtree_roots.lock() {
+                                skipped.insert(path_str);
+                            }
+                            for child in children.iter_mut().flatten() {
+                                child.read_children_path = None;
+                            }
+                        }
+                        prune_child_directories(children, &protected);
+                    }
+                })
                 .into_iter()
-                .filter_map(|e| e.ok())
             {
                 if is_cancelled(cancel) {
                     return Err(PlatformError::Cancelled);
                 }
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(_) => {
+                        paths_skipped += 1;
+                        continue;
+                    }
+                };
                 let path = entry.path();
                 let path_str = path.to_string_lossy().to_string();
-                if self
-                    .protected_prefixes
-                    .iter()
-                    .any(|pfx| path_str.starts_with(pfx))
-                {
+                let is_below_skipped_root =
+                    skipped_subtree_roots.lock().ok().is_some_and(|skipped| {
+                        skipped
+                            .iter()
+                            .any(|root| is_strict_descendant(&path_str, root))
+                    });
+                if is_below_skipped_root {
                     continue;
                 }
-                let meta = match entry.metadata() {
-                    Ok(m) => m,
-                    Err(_) => continue,
+                if is_protected_path(&path, &self.protected_prefixes) {
+                    continue;
+                }
+                let is_dir = entry.file_type().is_dir();
+                let metadata = match entry.metadata() {
+                    Ok(metadata) => metadata,
+                    Err(_) => {
+                        paths_skipped += 1;
+                        continue;
+                    }
                 };
-                let is_dir = meta.is_dir();
-                let size_bytes = if is_dir { 0 } else { meta.len() };
+                let size_bytes = if is_dir { 0 } else { metadata.len() };
+                let dir_fingerprint = if is_dir {
+                    dir_fingerprints_cache
+                        .lock()
+                        .ok()
+                        .and_then(|cache| cache.get(&path).cloned())
+                        .or_else(|| {
+                            Some(DirFingerprint {
+                                mtime_secs: metadata.modified().map(system_time_secs).unwrap_or(0),
+                                children_count: 0,
+                                max_child_mtime_secs: 0,
+                            })
+                        })
+                } else {
+                    None
+                };
                 match on_entry(RawFsEntry {
                     path: path_str,
                     is_dir,
                     size_bytes,
+                    dir_fingerprint,
                 }) {
-                    WalkAction::Stop => return Ok(()),
+                    WalkAction::Stop => return Ok(paths_skipped),
                     WalkAction::SkipSubtree => continue,
                     WalkAction::Continue => {}
                 }
             }
         }
-        Ok(())
+        Ok(paths_skipped)
     }
 
     fn trash_paths(&self, paths: &[String]) -> Result<DeleteReport, PlatformError> {
@@ -172,11 +299,21 @@ impl PlatformStorage for DesktopPlatform {
     fn open_permission_settings(&self) -> Result<(), PlatformError> {
         #[cfg(target_os = "macos")]
         {
-            std::process::Command::new("open")
-                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
-                .spawn()
-                .map(|_| ())
-                .map_err(PlatformError::Io)
+            Self::touch_fda_probe();
+            const URLS: &[&str] = &[
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+            ];
+            let mut last_err = None;
+            for url in URLS {
+                match std::process::Command::new("open").arg(url).spawn() {
+                    Ok(_) => return Ok(()),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            Err(PlatformError::Io(last_err.unwrap_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "open settings failed")
+            })))
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -220,10 +357,18 @@ impl PlatformStorage for DesktopPlatform {
     }
 }
 
+fn is_strict_descendant(path: &str, root: &str) -> bool {
+    if path == root || !path.starts_with(root) {
+        return false;
+    }
+    root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use volward_core::platform::PlatformStorage;
+    use volward_core::platform::{PlatformStorage, WalkOptions};
+    use volward_core::{Classifier, ScanOrchestrator};
 
     #[test]
     fn discovers_home_when_empty_selection() {
@@ -231,5 +376,147 @@ mod tests {
         let roots = p.discover_roots(&[]).unwrap();
         assert!(!roots.is_empty());
         assert!(roots[0].path.contains("Users") || roots[0].label == "Home");
+    }
+
+    #[test]
+    fn walk_emits_directory_fingerprint_from_read_dir() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root_path = std::env::temp_dir().join(format!(
+            "volward-fingerprint-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root_path.join("subdir")).expect("create test directories");
+        fs::write(root_path.join("one.txt"), b"1").expect("write first file");
+        fs::write(root_path.join("two.txt"), b"2").expect("write second file");
+
+        let platform = DesktopPlatform::new();
+        let roots = vec![ScanRoot {
+            path: root_path.to_string_lossy().to_string(),
+            label: "test".to_string(),
+        }];
+        let cancel = AtomicBool::new(false);
+        let mut root_fingerprint = None;
+        platform
+            .walk_entries(
+                &roots,
+                WalkOptions {
+                    baseline_fingerprints: None,
+                },
+                &cancel,
+                &mut |entry| {
+                    if entry.path == roots[0].path {
+                        root_fingerprint = entry.dir_fingerprint;
+                    }
+                    WalkAction::Continue
+                },
+            )
+            .expect("walk should succeed");
+
+        let fingerprint = root_fingerprint.expect("root fingerprint should be emitted");
+        assert!(fingerprint.mtime_secs > 0);
+        assert_eq!(fingerprint.children_count, 3);
+
+        fs::remove_dir_all(root_path).expect("remove test directory");
+    }
+
+    #[test]
+    fn entry_mtime_includes_nested_file_changes() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!(
+            "volward-entry-mtime-{}-{unique}",
+            std::process::id()
+        ));
+        let nested = base.join("Caches");
+        fs::create_dir_all(&nested).expect("mkdir");
+        fs::write(nested.join("f.bin"), b"1").expect("write");
+        let before = entry_mtime_secs(&nested);
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        fs::write(nested.join("f.bin"), b"modified").expect("rewrite");
+        let after = entry_mtime_secs(&nested);
+        assert!(
+            after > before,
+            "nested file mtime should propagate (before={before}, after={after})"
+        );
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[test]
+    fn incremental_scan_reuses_unchanged_real_subtree() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let base_path = std::env::temp_dir().join(format!(
+            "volward-incremental-{}-{unique}",
+            std::process::id()
+        ));
+        let root_path = base_path.join("root");
+        let cache_path = base_path.join("cache");
+        fs::create_dir_all(root_path.join("Caches")).expect("create test directories");
+        fs::write(root_path.join("one.txt"), b"one").expect("write root file");
+        fs::write(root_path.join("Caches/two.bin"), b"two").expect("write cache file");
+
+        let platform = DesktopPlatform::new();
+        let orchestrator =
+            ScanOrchestrator::with_cache_dir(&platform, Classifier::default(), &cache_path);
+        let selected = vec![root_path.to_string_lossy().to_string()];
+        let cancel = AtomicBool::new(false);
+        let first = orchestrator
+            .run_scan(
+                "real-full".to_string(),
+                selected.clone(),
+                false,
+                &cancel,
+                |_| {},
+            )
+            .expect("full scan should succeed");
+        let second = orchestrator
+            .run_scan(
+                "real-incremental".to_string(),
+                selected.clone(),
+                true,
+                &cancel,
+                |_| {},
+            )
+            .expect("incremental scan should succeed");
+
+        assert!(first.stats.paths_seen > second.stats.paths_seen);
+        assert_eq!(first.tree.size_bytes, second.tree.size_bytes);
+        assert!(!first.entries.is_empty());
+        assert_eq!(first.entries.len(), second.entries.len());
+        assert_eq!(first.entries[0].path_or_uri, second.entries[0].path_or_uri);
+        assert!(second
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("reused 1 unchanged directories")));
+
+        fs::write(
+            root_path.join("new-after-modify.txt"),
+            b"new file",
+        )
+        .expect("add file to invalidate root fingerprint");
+        let third = orchestrator
+            .run_scan(
+                "real-incremental-after-modify".to_string(),
+                selected,
+                true,
+                &cancel,
+                |_| {},
+            )
+            .expect("incremental scan after file change should succeed");
+        assert!(
+            third.stats.paths_seen > second.stats.paths_seen,
+            "directory structure change should invalidate reuse (second={}, third={})",
+            second.stats.paths_seen,
+            third.stats.paths_seen
+        );
+
+        fs::remove_dir_all(base_path).expect("remove test directory");
     }
 }

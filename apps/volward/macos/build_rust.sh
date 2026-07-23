@@ -12,16 +12,41 @@ export PATH="${HOME}/.cargo/bin:${PATH}"
 
 cd "${WORKSPACE_ROOT}"
 export CARGO_TARGET_DIR="${WORKSPACE_ROOT}/target"
-if [ "${CONFIGURATION:-}" = "Debug" ]; then
+if [ "${CONFIGURATION:-Debug}" = "Debug" ]; then
   cargo build -p volward-facade
   DYLIB_SRC="${WORKSPACE_ROOT}/target/debug/libvolward_facade.dylib"
 else
   cargo build --release -p volward-facade
   DYLIB_SRC="${WORKSPACE_ROOT}/target/release/libvolward_facade.dylib"
 fi
-FRAMEWORKS_DIR="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
-mkdir -p "${FRAMEWORKS_DIR}"
-cp -f "${DYLIB_SRC}" "${FRAMEWORKS_DIR}/libvolward_facade.dylib"
-install_name_tool -id "@rpath/libvolward_facade.dylib" "${FRAMEWORKS_DIR}/libvolward_facade.dylib" 2>/dev/null || true
 
-echo "Volward Rust: copied ${DYLIB_SRC} -> ${FRAMEWORKS_DIR}"
+copy_dylib() {
+  local dest_dir="$1"
+  mkdir -p "${dest_dir}"
+  cp -f "${DYLIB_SRC}" "${dest_dir}/libvolward_facade.dylib"
+  install_name_tool -id "@rpath/libvolward_facade.dylib" "${dest_dir}/libvolward_facade.dylib" 2>/dev/null || true
+  echo "Volward Rust: copied ${DYLIB_SRC} -> ${dest_dir}/libvolward_facade.dylib"
+}
+
+if [ -n "${BUILT_PRODUCTS_DIR:-}" ] && [ -n "${FRAMEWORKS_FOLDER_PATH:-}" ]; then
+  copy_dylib "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+else
+  # Standalone (e.g. manual run after `flutter run` without Xcode env vars).
+  FLUTTER_APP_ROOT="${SCRIPT_DIR}/../build/macos/Build/Products"
+  copied=0
+  for config in Debug Release; do
+    dest="${FLUTTER_APP_ROOT}/${config}/volward.app/Contents/Frameworks"
+    if [ -d "${FLUTTER_APP_ROOT}/${config}/volward.app" ]; then
+      copy_dylib "${dest}"
+      copied=1
+    fi
+  done
+  if [ "${copied}" -eq 0 ]; then
+    echo "Volward Rust: built ${DYLIB_SRC} (no .app bundle found — run a full macOS build next)"
+  fi
+fi
+
+if [ -n "${DERIVED_FILE_DIR:-}" ]; then
+  mkdir -p "${DERIVED_FILE_DIR}"
+  touch "${DERIVED_FILE_DIR}/volward_rust_build.stamp"
+fi

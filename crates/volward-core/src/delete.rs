@@ -48,7 +48,9 @@ impl DeleteOrchestrator {
         let actual_freed = snapshot
             .entries
             .iter()
-            .filter(|e| paths.contains(&e.path_or_uri) && !report.failed_paths.contains(&e.path_or_uri))
+            .filter(|e| {
+                paths.contains(&e.path_or_uri) && !report.failed_paths.contains(&e.path_or_uri)
+            })
             .map(|e| e.size_bytes)
             .sum();
 
@@ -64,7 +66,8 @@ impl DeleteOrchestrator {
 mod tests {
     use super::*;
     use crate::model::{
-        CapabilityLevel, EntryCategory, RiskLevel, SourceType, StorageEntry, StorageSnapshot,
+        CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
+        StorageEntry, StorageSnapshot,
     };
     use std::sync::atomic::AtomicBool;
 
@@ -104,10 +107,11 @@ mod tests {
         fn walk_entries(
             &self,
             _roots: &[crate::model::ScanRoot],
+            _options: crate::platform::WalkOptions<'_>,
             _cancel: &AtomicBool,
             _on_entry: &mut dyn FnMut(crate::model::RawFsEntry) -> crate::platform::WalkAction,
-        ) -> Result<(), PlatformError> {
-            Ok(())
+        ) -> Result<u64, PlatformError> {
+            Ok(0)
         }
 
         fn trash_paths(&self, paths: &[String]) -> Result<DeleteReport, PlatformError> {
@@ -141,6 +145,30 @@ mod tests {
             volume_total_bytes: 0,
             volume_used_bytes: 0,
             reclaimable_estimate_bytes: 100,
+            tree: ScanTreeNode {
+                name: "tmp".to_string(),
+                path: "/tmp".to_string(),
+                is_dir: true,
+                size_bytes: 40,
+                entry_id: None,
+                children: vec![ScanTreeNode {
+                    name: "cache.bin".to_string(),
+                    path: "/tmp/cache.bin".to_string(),
+                    is_dir: false,
+                    size_bytes: 40,
+                    entry_id: Some("e1".to_string()),
+                    children: vec![],
+                }],
+            },
+            stats: ScanStats {
+                paths_seen: 2,
+                dirs_seen: 1,
+                files_seen: 1,
+                files_in_snapshot: 1,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
             warnings: vec![],
             entries: vec![
                 StorageEntry {

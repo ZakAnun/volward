@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::manifest::DirFingerprint;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CapabilityLevel {
     FullPath,
@@ -59,6 +61,28 @@ pub struct StorageEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanTreeNode {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size_bytes: u64,
+    pub entry_id: Option<String>,
+    pub children: Vec<ScanTreeNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ScanStats {
+    pub paths_seen: u64,
+    pub dirs_seen: u64,
+    pub files_seen: u64,
+    pub files_in_snapshot: u64,
+    /// Paths skipped due to permission or I/O errors during directory walk.
+    pub paths_skipped: u64,
+    pub truncated: bool,
+    pub incomplete_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageSnapshot {
     pub snapshot_id: String,
     pub scanned_at_ms: i64,
@@ -67,6 +91,8 @@ pub struct StorageSnapshot {
     pub volume_used_bytes: u64,
     pub reclaimable_estimate_bytes: u64,
     pub entries: Vec<StorageEntry>,
+    pub tree: ScanTreeNode,
+    pub stats: ScanStats,
     pub warnings: Vec<String>,
 }
 
@@ -98,6 +124,7 @@ pub struct RawFsEntry {
     pub path: String,
     pub is_dir: bool,
     pub size_bytes: u64,
+    pub dir_fingerprint: Option<DirFingerprint>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
