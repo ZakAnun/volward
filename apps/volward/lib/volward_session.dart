@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
+import 'scan_preview.dart';
+import 'scan_snapshot_merge.dart';
 import 'snapshot_cache.dart';
 
 /// Thrown when the user cancels an in-progress scan.
@@ -271,6 +273,35 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Instantly renders the chosen target's top-level directory listing,
+  /// before any deep scan starts. No-op if the native dylib doesn't support
+  /// quick_list_dir yet (old build) — callers fall back to the pre-scan
+  /// section in that case.
+  Future<void> previewTarget() async {
+    if (!_ready || _engine == null) return;
+    if (!VolwardNativeBridge.instance.hasQuickListApi) return;
+
+    final root = _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+    List<Map<String, dynamic>> entries;
+    try {
+      entries = await Isolate.run(() {
+        final bridge = VolwardNativeBridge.open();
+        final engine = bridge.createEngine();
+        try {
+          return bridge.quickListDir(engine, root);
+        } finally {
+          bridge.freeEngine(engine);
+        }
+      });
+    } catch (e, st) {
+      debugPrint('VolwardSession: previewTarget failed: $e\n$st');
+      return;
+    }
+
+    _lastSnapshot = buildPreviewSnapshot(rootPath: root, quickListEntries: entries);
+    notifyListeners();
+  }
+
   void setIncrementalScan(bool incremental) {
     if (incremental && !canUseIncrementalScan) return;
     if (_incrementalScan == incremental) return;
@@ -367,6 +398,11 @@ class VolwardSession extends ChangeNotifier {
         _touchScanActivity(phase: phase);
         _scanProgress = Map<String, dynamic>.from(m)..remove('type');
         notifyListeners();
+      } else if (type == 'checkpoint') {
+        final path = m['snapshot_path']?.toString();
+        if (path != null && path.isNotEmpty) {
+          unawaited(_applyCheckpointFromFile(path));
+        }
       } else if (type == 'done') {
         _touchScanActivity(phase: 'LoadingResults');
         _closeScanChannels();
@@ -499,6 +535,53 @@ class VolwardSession extends ChangeNotifier {
       throw StateError('Failed to load scan snapshot into engine');
     }
     return snap;
+  }
+
+  Future<void> _applyCheckpointFromFile(String path) async {
+    try {
+      final checkpoint = await Isolate.run(() => _decodeSnapshotJsonFile(path));
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      if (checkpoint == null) return;
+
+      final tree = checkpoint['tree'];
+      if (tree is! Map) return;
+      final rootPath = tree['path']?.toString();
+      if (rootPath == null || rootPath.isEmpty) return;
+
+      final entries = (checkpoint['entries'] is List)
+          ? (checkpoint['entries'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
+    } catch (e, st) {
+      debugPrint('VolwardSession: apply checkpoint failed: $e\n$st');
+    }
+  }
+
+  void _applyMerge(
+    String targetPath,
+    Map<String, dynamic> subtreeTree,
+    List<Map<String, dynamic>> subtreeEntries,
+  ) {
+    final current = _lastSnapshot;
+    if (current == null) return;
+    final merged = mergeSubtreeIntoSnapshot(
+      snapshot: current,
+      targetPath: targetPath,
+      subtreeTree: subtreeTree,
+      subtreeEntries: subtreeEntries,
+    );
+    // Force every merge to look like "new data" to snapshot_id-keyed UI
+    // caches, even though checkpoints from the same scan job would
+    // otherwise all share the same Rust-side snapshot_id.
+    merged['snapshot_id'] = 'live-${DateTime.now().microsecondsSinceEpoch}';
+    _lastSnapshot = merged;
+    notifyListeners();
   }
 
   void cancelScan() {
