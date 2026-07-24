@@ -227,7 +227,7 @@ class _FinderRowState extends State<_FinderRow> {
     final bg = _background(v);
 
     final subtitle = isDir
-        ? widget.formatBytes(widget.node.displayBytes)
+        ? (widget.node.scanned ? widget.formatBytes(widget.node.displayBytes) : '—')
         : widget.formatBytes(
             widget.node.entry?['size_bytes'] as num? ?? widget.node.sizeBytes,
           );
@@ -271,7 +271,16 @@ class _FinderRowState extends State<_FinderRow> {
                 ),
               ),
               if (isDir)
-                Icon(Icons.chevron_right, size: 14, color: muted)
+                (!widget.node.scanned)
+                    ? SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: muted,
+                        ),
+                      )
+                    : Icon(Icons.chevron_right, size: 14, color: muted)
               else
                 Text(
                   subtitle,

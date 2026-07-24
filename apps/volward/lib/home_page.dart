@@ -14,6 +14,7 @@ import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
 import 'widgets/scan_column_view.dart';
 import 'widgets/scan_filter_bar.dart';
+import 'scan_tree_navigation.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -68,8 +69,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_onSessionChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.session.restoreCachedSnapshotIfNeeded();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await widget.session.restoreCachedSnapshotIfNeeded();
+      if (!mounted) return;
+      if (widget.session.lastSnapshot == null) {
+        await widget.session.previewTarget();
+      }
     });
   }
 
@@ -125,11 +130,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
       });
-    }
-    if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
+    } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
       _columnChain.clear();
       _columnNavTick.value++;
       _invalidateSnapshotCaches();
+    } else if (_columnChain.isNotEmpty) {
+      // A background checkpoint (or Wave-2 peek) merged new data while the
+      // user is browsing: keep their position but refresh node references
+      // so newly-scanned children/sizes become visible.
+      _invalidateSnapshotCaches();
+      final freshRoot = _getDisplayTree();
+      if (freshRoot != null) {
+        _setColumnChain(refreshColumnChain(freshRoot, _columnChain));
+      }
     }
     _prevScanning = _s.scanning;
     setState(() {});
@@ -415,7 +428,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _pickFolder() async {
     final path = await getDirectoryPath(confirmButtonText: 'Select');
-    if (path != null) _s.setScanRoots([path]);
+    if (path == null) return;
+    _s.setScanRoots([path]);
+    await _s.previewTarget();
   }
 
   Future<void> _startScan() async {
@@ -590,9 +605,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   variant: AppleButtonVariant.pearl,
                   onPressed: _s.scanning
                       ? null
-                      : () {
+                      : () async {
                           _s.clearScanRoots();
                           setState(() => _scanStatus = null);
+                          await _s.previewTarget();
                         },
                 ),
               ],
@@ -1070,9 +1086,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         variant: AppleButtonVariant.pearl,
                         onPressed: _s.scanning
                             ? null
-                            : () {
+                            : () async {
                                 _s.clearScanRoots();
                                 setState(() => _scanStatus = null);
+                                await _s.previewTarget();
                               },
                       ),
                     if (_s.scanning)
@@ -1220,7 +1237,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        '${_fmt(size)} · $category'
+                        '${isDir && !focus.scanned ? '—' : _fmt(size)} · $category'
                         '${isDir ? ' · $subtreeItems items' : ''}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

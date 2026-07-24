@@ -93,4 +93,41 @@ void main() {
     expect(decoration.color, isNot(Colors.transparent));
     expect(decoration.color, isNot(Colors.white));
   });
+
+  testWidgets('ScanColumnView shows a placeholder for unscanned folders', (tester) async {
+    final root = ScanTreeNode(
+      name: 'root',
+      path: '/root',
+      isDirectory: true,
+      children: [
+        ScanTreeNode(
+          name: 'Pending',
+          path: '/root/Pending',
+          isDirectory: true,
+          scanned: false,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            height: 240,
+            width: 480,
+            child: ScanColumnView(
+              root: root,
+              selectionChain: const [],
+              onSelect: (_, __) {},
+              formatBytes: (b) => '${b ?? 0} B',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+  });
 }

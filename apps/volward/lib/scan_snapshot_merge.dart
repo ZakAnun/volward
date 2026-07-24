@@ -80,7 +80,7 @@ Map<String, dynamic> _replaceNodeAtPath(
     if (isOnPath) {
       newChildren.add(
         _replaceNodeAtPath(
-          Map<String, dynamic>.from(child as Map),
+          Map<String, dynamic>.from(child),
           targetPath,
           replacement,
         ),
