@@ -321,6 +321,34 @@ impl PlatformStorage for DesktopPlatform {
         }
     }
 
+    fn quick_list_dir(&self, path: &str) -> Result<Vec<RawFsEntry>, PlatformError> {
+        let dir_path = Path::new(path);
+        let read_dir = fs::read_dir(dir_path)?;
+        let mut out = Vec::new();
+        for entry in read_dir {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let entry_path = entry.path();
+            if is_protected_path(&entry_path, &self.protected_prefixes) {
+                continue;
+            }
+            let metadata = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let is_dir = metadata.is_dir();
+            out.push(RawFsEntry {
+                path: entry_path.to_string_lossy().to_string(),
+                is_dir,
+                size_bytes: if is_dir { 0 } else { metadata.len() },
+                dir_fingerprint: None,
+            });
+        }
+        Ok(out)
+    }
+
     fn volume_stats(&self, root: &ScanRoot) -> Result<VolumeStats, PlatformError> {
         let path = Path::new(&root.path);
         let mut total = 0u64;
@@ -474,6 +502,7 @@ mod tests {
                 false,
                 &cancel,
                 |_| {},
+                |_snapshot| {},
             )
             .expect("full scan should succeed");
         let second = orchestrator
@@ -483,6 +512,7 @@ mod tests {
                 true,
                 &cancel,
                 |_| {},
+                |_snapshot| {},
             )
             .expect("incremental scan should succeed");
 
@@ -508,6 +538,7 @@ mod tests {
                 true,
                 &cancel,
                 |_| {},
+                |_snapshot| {},
             )
             .expect("incremental scan after file change should succeed");
         assert!(
@@ -518,5 +549,52 @@ mod tests {
         );
 
         fs::remove_dir_all(base_path).expect("remove test directory");
+    }
+
+    #[test]
+    fn quick_list_dir_lists_only_one_level() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root_path = std::env::temp_dir().join(format!(
+            "volward-quicklist-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root_path.join("sub/nested")).expect("mkdir");
+        fs::write(root_path.join("top.txt"), b"hello").expect("write top file");
+        fs::write(root_path.join("sub/nested/deep.txt"), b"deep").expect("write nested file");
+
+        let platform = DesktopPlatform::new();
+        let entries = platform
+            .quick_list_dir(&root_path.to_string_lossy())
+            .expect("quick list should succeed");
+
+        assert_eq!(
+            entries.len(),
+            2,
+            "should only see top-level entries, not nested/deep.txt"
+        );
+        let file_entry = entries
+            .iter()
+            .find(|e| e.path.ends_with("top.txt"))
+            .expect("top.txt listed");
+        assert!(!file_entry.is_dir);
+        assert_eq!(file_entry.size_bytes, 5);
+        let dir_entry = entries
+            .iter()
+            .find(|e| e.path.ends_with("sub"))
+            .expect("sub dir listed");
+        assert!(dir_entry.is_dir);
+        assert_eq!(dir_entry.size_bytes, 0);
+
+        fs::remove_dir_all(root_path).expect("cleanup");
+    }
+
+    #[test]
+    fn quick_list_dir_returns_error_for_missing_path() {
+        let platform = DesktopPlatform::new();
+        let result = platform.quick_list_dir("/definitely/does/not/exist/volward-test");
+        assert!(result.is_err());
     }
 }
