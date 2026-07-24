@@ -88,6 +88,15 @@ impl ScanTreeBuilder {
         self.root
     }
 
+    /// Non-destructive snapshot of the tree built so far. Unlike [`finalize`],
+    /// this can be called repeatedly while the builder keeps accepting more
+    /// `insert_file`/`ensure_dir`/`graft_subtree` calls afterwards.
+    pub fn peek_snapshot(&self) -> ScanTreeNode {
+        let mut clone = self.root.clone();
+        aggregate_sizes(&mut clone);
+        clone
+    }
+
     pub fn was_aborted(&self) -> bool {
         self.aborted
     }
@@ -406,5 +415,25 @@ mod tests {
         let cached = find_subtree(&root, "/root/cached").expect("grafted directory");
         assert_eq!(cached.children.len(), 1);
         assert_eq!(cached.children[0].entry_id.as_deref(), Some("cached-id"));
+    }
+
+    #[test]
+    fn peek_snapshot_is_non_destructive() {
+        let mut b = ScanTreeBuilder::new("/root");
+        b.insert_file("/root/a.txt", Some("a"), 10);
+
+        let peek1 = b.peek_snapshot();
+        assert_eq!(peek1.size_bytes, 10);
+        assert_eq!(peek1.children.len(), 1);
+
+        // Builder must remain fully usable after a peek.
+        b.insert_file("/root/b.txt", Some("b"), 20);
+        let peek2 = b.peek_snapshot();
+        assert_eq!(peek2.size_bytes, 30);
+        assert_eq!(peek2.children.len(), 2);
+
+        let final_tree = b.finalize();
+        assert_eq!(final_tree.size_bytes, 30);
+        assert_eq!(final_tree.children.len(), 2);
     }
 }
