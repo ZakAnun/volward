@@ -259,6 +259,7 @@ fn load_snapshot_from_scan(root: &str) -> StorageSnapshot {
             false,
             &cancel,
             |_| {},
+            |_snapshot| {},
         )
         .expect("scan should complete")
 }

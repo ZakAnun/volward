@@ -34,7 +34,14 @@ fn run_smoke() {
     let classifier = Classifier::new(platform.protected_prefixes().to_vec());
     let orchestrator = ScanOrchestrator::new(&platform, classifier);
     let snapshot = orchestrator
-        .run_scan("cli-smoke".to_string(), vec![], false, &cancel, |_p| {})
+        .run_scan(
+            "cli-smoke".to_string(),
+            vec![],
+            false,
+            &cancel,
+            |_p| {},
+            |_snapshot| {},
+        )
         .expect("scan should complete");
 
     println!("snapshot_id: {}", snapshot.snapshot_id);
