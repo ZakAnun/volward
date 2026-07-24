@@ -44,6 +44,48 @@ void main() {
     });
   });
 
+  group('ScanTreeNode.scanned', () {
+    test('defaults to true when constructed directly', () {
+      final node = ScanTreeNode(name: 'a', path: '/a', isDirectory: true);
+      expect(node.scanned, isTrue);
+    });
+
+    test('fromSnapshotJson reads an explicit false value', () {
+      final node = ScanTreeNode.fromSnapshotJson({
+        'name': 'a',
+        'path': '/a',
+        'is_dir': true,
+        'scanned': false,
+        'children': [],
+      });
+      expect(node.scanned, isFalse);
+    });
+
+    test('fromSnapshotJson defaults to true when the key is absent', () {
+      final node = ScanTreeNode.fromSnapshotJson({
+        'name': 'a',
+        'path': '/a',
+        'is_dir': true,
+        'children': [],
+      });
+      expect(node.scanned, isTrue);
+    });
+
+    test('withAggregatedCounts preserves scanned on the copy', () {
+      final root = ScanTreeNode(
+        name: 'root',
+        path: '/root',
+        isDirectory: true,
+        scanned: false,
+        children: [
+          ScanTreeNode(name: 'a', path: '/root/a', isDirectory: false),
+        ],
+      );
+      final annotated = ScanTreeNode.withAggregatedCounts(root);
+      expect(annotated.scanned, isFalse);
+    });
+  });
+
   group('pruneTree', () {
     late ScanTreeNode root;
 
@@ -86,6 +128,25 @@ void main() {
         (entry) => entry['category'] == 'Media',
       );
       expect(pruned, isNull);
+    });
+
+    test('preserves scanned on the pruned copy', () {
+      final unscannedRoot = ScanTreeNode(
+        name: 'root',
+        path: '/root',
+        isDirectory: true,
+        scanned: false,
+        children: [
+          ScanTreeNode(
+            name: 'cache.txt',
+            path: '/root/cache.txt',
+            isDirectory: false,
+            entry: {'id': '1', 'category': 'Cache', 'deletable': true},
+          ),
+        ],
+      );
+      final pruned = pruneTree(unscannedRoot, (entry) => entry['category'] == 'Cache');
+      expect(pruned!.scanned, isFalse);
     });
   });
 

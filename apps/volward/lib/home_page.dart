@@ -243,6 +243,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       sizeBytes: node.sizeBytes,
       entryId: node.entryId,
       entry: node.entry,
+      scanned: node.scanned,
       children: sortedChildren,
     );
   }

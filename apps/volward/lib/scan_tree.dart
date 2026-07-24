@@ -8,6 +8,7 @@ class ScanTreeNode {
     this.entryId,
     this.entry,
     this.subtreeFileCount,
+    this.scanned = true,
     List<ScanTreeNode>? children,
   }) : children = children ?? [];
 
@@ -19,6 +20,11 @@ class ScanTreeNode {
   final Map<String, dynamic>? entry;
   /// Precomputed file count under this directory (files only, not dirs).
   final int? subtreeFileCount;
+  /// False for directories whose contents haven't been scanned yet (the
+  /// pre-scan preview, or a not-yet-covered node before a Wave-2 peek scan
+  /// completes). Always true for files and for data from a real scan
+  /// snapshot or checkpoint.
+  final bool scanned;
   final List<ScanTreeNode> children;
 
   factory ScanTreeNode.empty(String rootPath) {
@@ -59,6 +65,7 @@ class ScanTreeNode {
       sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
       entryId: entryId,
       entry: entry,
+      scanned: json['scanned'] is bool ? json['scanned'] as bool : true,
       children: children,
     );
   }
@@ -97,6 +104,7 @@ class ScanTreeNode {
       entryId: node.entryId,
       entry: node.entry,
       subtreeFileCount: count,
+      scanned: node.scanned,
       children: annotatedChildren,
     );
   }

@@ -27,6 +27,7 @@ ScanTreeNode? pruneTree(
     sizeBytes: node.sizeBytes,
     entryId: node.entryId,
     entry: node.entry,
+    scanned: node.scanned,
     children: prunedChildren,
   );
 }
