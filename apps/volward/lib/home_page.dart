@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -326,6 +327,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _onColumnSelect(int columnIndex, ScanTreeNode node) {
     _setColumnChain(_columnChain.take(columnIndex).toList()..add(node));
+    if (node.isDirectory && !node.scanned) {
+      unawaited(_s.peekScan(node.path));
+    }
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
