@@ -64,6 +64,16 @@ typedef VolwardLoadLastSnapshotFromPathNative =
 typedef VolwardLoadLastSnapshotFromPath =
     bool Function(Pointer<Void>, Pointer<Utf8>);
 
+typedef VolwardWriteLastCheckpointToPathNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastCheckpointToPath =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardQuickListDirJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardQuickListDirJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
 typedef VolwardOpenPermissionSettingsNative = Bool Function(Pointer<Void>);
 typedef VolwardOpenPermissionSettings = bool Function(Pointer<Void>);
 
@@ -129,6 +139,8 @@ final class VolwardNativeBridge {
         .asFunction();
     _writeLastSnapshotToPath = _tryLookupWriteSnapshot();
     _loadLastSnapshotFromPath = _tryLookupLoadSnapshot();
+    _writeLastCheckpointToPath = _tryLookupWriteCheckpoint();
+    _quickListDirJson = _tryLookupQuickListDirJson();
     _openPermissionSettings = _lib
         .lookup<NativeFunction<VolwardOpenPermissionSettingsNative>>(
           'volward_open_permission_settings',
@@ -177,6 +189,30 @@ final class VolwardNativeBridge {
     }
   }
 
+  VolwardWriteLastCheckpointToPath? _tryLookupWriteCheckpoint() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardWriteLastCheckpointToPathNative>>(
+            'volward_write_last_checkpoint_to_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardQuickListDirJson? _tryLookupQuickListDirJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardQuickListDirJsonNative>>(
+            'volward_quick_list_dir_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
   static VolwardNativeBridge? _instance;
 
   static VolwardNativeBridge get instance {
@@ -202,6 +238,8 @@ final class VolwardNativeBridge {
   late final VolwardSetLastSnapshotJson _setLastSnapshotJson;
   late final VolwardWriteLastSnapshotToPath? _writeLastSnapshotToPath;
   late final VolwardLoadLastSnapshotFromPath? _loadLastSnapshotFromPath;
+  late final VolwardWriteLastCheckpointToPath? _writeLastCheckpointToPath;
+  late final VolwardQuickListDirJson? _quickListDirJson;
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
 
@@ -211,6 +249,13 @@ final class VolwardNativeBridge {
 
   /// True when the bundled dylib accepts incremental scan options.
   bool get hasScanOptionsApi => _startScanAsyncWithOptions != null;
+
+  /// True when the bundled dylib supports periodic scan checkpoints.
+  bool get hasCheckpointApi => _writeLastCheckpointToPath != null;
+
+  /// True when the bundled dylib supports instant, non-recursive directory
+  /// listing (used for the pre-scan preview and click-priority peeks).
+  bool get hasQuickListApi => _quickListDirJson != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -313,6 +358,45 @@ final class VolwardNativeBridge {
     final pathPtr = path.toNativeUtf8();
     try {
       return load(engine, pathPtr);
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Writes the current in-progress scan checkpoint to [path]; returns the
+  /// checkpoint's `snapshot_id`, or `null` if no checkpoint API/checkpoint
+  /// is available yet.
+  String? writeLastCheckpointToPath(Pointer<Void> engine, String path) {
+    final write = _writeLastCheckpointToPath;
+    if (write == null) return null;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = write(engine, pathPtr);
+      return out.toDartString();
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Single-level, non-recursive listing of [path]. Returns an empty list
+  /// if the native dylib doesn't support it yet (old build) or on error.
+  List<Map<String, dynamic>> quickListDir(Pointer<Void> engine, String path) {
+    final lookup = _quickListDirJson;
+    if (lookup == null) return const [];
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = lookup(engine, pathPtr);
+      if (out == nullptr) return const [];
+      try {
+        final decoded = jsonDecode(out.toDartString());
+        if (decoded is! List) return const [];
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      } finally {
+        _freeString(out);
+      }
     } finally {
       calloc.free(pathPtr);
     }
