@@ -152,6 +152,73 @@ void volwardScanIsolate(List<dynamic> args) {
   }
 }
 
+/// Isolate entry: [SendPort resultPort, String path].
+///
+/// Runs a small, scoped full scan of exactly [path] using its own native
+/// engine — completely independent from the main background scan's engine
+/// — so it can run concurrently. Used when the user clicks a directory the
+/// main background scan hasn't reached yet: because the scoped subtree is
+/// usually much smaller than the whole scan root, this finishes quickly and
+/// gives the effect of "priority" without reordering the main walk.
+@pragma('vm:entry-point')
+void volwardPeekScanIsolate(List<dynamic> args) {
+  final resultPort = args[0] as SendPort;
+  final path = args[1] as String;
+
+  VolwardNativeBridge bridge;
+  Pointer<Void> engine;
+  try {
+    bridge = VolwardNativeBridge.open();
+    engine = bridge.createEngine();
+  } catch (e, st) {
+    resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
+    return;
+  }
+
+  try {
+    final jobId = 'peek-${DateTime.now().millisecondsSinceEpoch}';
+    final startResult = bridge.startScanAsyncWithOptions(
+      engine,
+      jobId,
+      [path],
+      incremental: false,
+    );
+    if (startResult.startsWith('error:')) {
+      resultPort.send(<String, dynamic>{'type': 'error', 'error': startResult});
+      bridge.freeEngine(engine);
+      return;
+    }
+
+    Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      if (bridge.isScanRunning(engine)) return;
+      timer.cancel();
+      try {
+        final snapshot = bridge.getLastSnapshot(engine);
+        if (snapshot == null) {
+          resultPort.send(<String, dynamic>{
+            'type': 'error',
+            'error': 'error:peek scan produced no snapshot',
+          });
+          return;
+        }
+        resultPort.send(<String, dynamic>{
+          'type': 'done',
+          'path': path,
+          'tree': snapshot['tree'],
+          'entries': snapshot['entries'],
+        });
+      } catch (e, st) {
+        resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
+      } finally {
+        bridge.freeEngine(engine);
+      }
+    });
+  } catch (e, st) {
+    resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
+    bridge.freeEngine(engine);
+  }
+}
+
 /// Writes snapshot to [path]; returns snapshot_id or `error:…`.
 String _persistSnapshot(
   VolwardNativeBridge bridge,
