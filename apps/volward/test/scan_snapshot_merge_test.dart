@@ -125,7 +125,168 @@ void main() {
       expect(identical(snapshot['tree'], originalTree), isTrue);
     });
 
-    test('merging at the root path replaces the whole tree (checkpoint case)', () {
+    test(
+      'merging at the root path updates root fields but preserves children '
+      'the checkpoint has not rediscovered yet (checkpoint case)',
+      () {
+        final merged = mergeSubtreeIntoSnapshot(
+          snapshot: baseSnapshot(),
+          targetPath: '/root',
+          subtreeTree: {
+            'name': 'root',
+            'path': '/root',
+            'is_dir': true,
+            'size_bytes': 1000,
+            'scanned': true,
+            // A background scan's checkpoint often hasn't walked every
+            // previously-known child yet — it must not wipe them out.
+            'children': <Map<String, dynamic>>[],
+          },
+          subtreeEntries: const [],
+        );
+
+        final tree = merged['tree'] as Map<String, dynamic>;
+        expect(tree['size_bytes'], 1000);
+        expect(tree['scanned'], isTrue);
+
+        final children = tree['children'] as List;
+        expect(children, hasLength(2), reason: 'Documents/Downloads preserved');
+        expect(
+          children.any((c) => c['path'] == '/root/Documents'),
+          isTrue,
+        );
+        expect(
+          children.any((c) => c['path'] == '/root/Downloads'),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'keeps an already-resolved child (e.g. a completed Wave-2 peek scan) '
+      'instead of regressing it to a less-complete checkpoint view',
+      () {
+        final snapshot = baseSnapshot();
+        (snapshot['tree'] as Map)['children'] = [
+          {
+            'name': 'Documents',
+            'path': '/root/Documents',
+            'is_dir': true,
+            'size_bytes': 5000,
+            'scanned': true,
+            'children': [
+              {
+                'name': 'a.txt',
+                'path': '/root/Documents/a.txt',
+                'is_dir': false,
+                'size_bytes': 5000,
+                'scanned': true,
+                'children': <Map<String, dynamic>>[],
+              },
+            ],
+          },
+        ];
+
+        final merged = mergeSubtreeIntoSnapshot(
+          snapshot: snapshot,
+          targetPath: '/root',
+          subtreeTree: {
+            'name': 'root',
+            'path': '/root',
+            'is_dir': true,
+            'size_bytes': 0,
+            'scanned': true,
+            'children': [
+              {
+                'name': 'Documents',
+                'path': '/root/Documents',
+                'is_dir': true,
+                // The main scan's own checkpoint only just touched this
+                // directory and hasn't recursed into it yet.
+                'size_bytes': 0,
+                'children': <Map<String, dynamic>>[],
+              },
+            ],
+          },
+          subtreeEntries: const [],
+        );
+
+        final tree = merged['tree'] as Map<String, dynamic>;
+        final documents = (tree['children'] as List)
+            .firstWhere((c) => c['path'] == '/root/Documents') as Map;
+        expect(documents['size_bytes'], 5000, reason: 'peeked data preserved');
+        expect((documents['children'] as List), hasLength(1));
+      },
+    );
+
+    test(
+      'a prior full-scan node without an explicit scanned:true does NOT '
+      'block a smaller rescan checkpoint (e.g. after files were deleted)',
+      () {
+        // Mimics a previous completed scan's tree as stored in
+        // `_lastSnapshot`: Rust never serializes `scanned`, so the field
+        // is absent. A rescan after the user deleted files must be allowed
+        // to shrink sizes via ordinary (non-authoritative) checkpoints.
+        final snapshot = baseSnapshot();
+        (snapshot['tree'] as Map)['children'] = [
+          {
+            'name': 'Documents',
+            'path': '/root/Documents',
+            'is_dir': true,
+            'size_bytes': 5000,
+            // intentionally no `scanned` field
+            'children': [
+              {
+                'name': 'a.txt',
+                'path': '/root/Documents/a.txt',
+                'is_dir': false,
+                'size_bytes': 5000,
+                'children': <Map<String, dynamic>>[],
+              },
+            ],
+          },
+        ];
+
+        final merged = mergeSubtreeIntoSnapshot(
+          snapshot: snapshot,
+          targetPath: '/root',
+          subtreeTree: {
+            'name': 'root',
+            'path': '/root',
+            'is_dir': true,
+            'size_bytes': 800,
+            'children': [
+              {
+                'name': 'Documents',
+                'path': '/root/Documents',
+                'is_dir': true,
+                'size_bytes': 800,
+                'children': [
+                  {
+                    'name': 'a.txt',
+                    'path': '/root/Documents/a.txt',
+                    'is_dir': false,
+                    'size_bytes': 800,
+                    'children': <Map<String, dynamic>>[],
+                  },
+                ],
+              },
+            ],
+          },
+          subtreeEntries: const [],
+        );
+
+        final documents = ((merged['tree'] as Map)['children'] as List)
+            .firstWhere((c) => c['path'] == '/root/Documents') as Map;
+        expect(
+          documents['size_bytes'],
+          800,
+          reason: 'rescan checkpoint must shrink past a stale prior-scan size',
+        );
+      },
+    );
+
+    test('adopts a newly-discovered child the checkpoint brings that was not known before', () {
       final merged = mergeSubtreeIntoSnapshot(
         snapshot: baseSnapshot(),
         targetPath: '/root',
@@ -133,16 +294,179 @@ void main() {
           'name': 'root',
           'path': '/root',
           'is_dir': true,
-          'size_bytes': 1000,
+          'size_bytes': 0,
           'scanned': true,
-          'children': <Map<String, dynamic>>[],
+          'children': [
+            {
+              'name': 'Movies',
+              'path': '/root/Movies',
+              'is_dir': true,
+              'size_bytes': 100,
+              'children': <Map<String, dynamic>>[],
+            },
+          ],
         },
         subtreeEntries: const [],
       );
 
-      final tree = merged['tree'] as Map<String, dynamic>;
-      expect(tree['size_bytes'], 1000);
-      expect(tree['scanned'], isTrue);
+      final children = (merged['tree'] as Map)['children'] as List;
+      expect(children, hasLength(3), reason: 'Documents + Downloads + new Movies');
+      expect(children.any((c) => c['path'] == '/root/Movies'), isTrue);
     });
+
+    test('adopts checkpoint data once it progresses past the existing state', () {
+      final merged = mergeSubtreeIntoSnapshot(
+        snapshot: baseSnapshot(),
+        targetPath: '/root',
+        subtreeTree: {
+          'name': 'root',
+          'path': '/root',
+          'is_dir': true,
+          'size_bytes': 200,
+          'scanned': true,
+          'children': [
+            {
+              'name': 'Documents',
+              'path': '/root/Documents',
+              'is_dir': true,
+              'size_bytes': 200,
+              'scanned': true,
+              'children': <Map<String, dynamic>>[],
+            },
+          ],
+        },
+        subtreeEntries: const [],
+      );
+
+      final documents = ((merged['tree'] as Map)['children'] as List)
+          .firstWhere((c) => c['path'] == '/root/Documents') as Map;
+      expect(documents['size_bytes'], 200);
+      expect(documents['scanned'], isTrue);
+    });
+
+    test(
+      'an authoritative (peek) merge trusts the new data wholesale, even '
+      'when it is smaller than the old data — e.g. a file was deleted',
+      () {
+        final snapshot = baseSnapshot();
+        (snapshot['tree'] as Map)['children'] = [
+          {
+            'name': 'Documents',
+            'path': '/root/Documents',
+            'is_dir': true,
+            'size_bytes': 5000,
+            'scanned': true,
+            'children': [
+              {
+                'name': 'a.txt',
+                'path': '/root/Documents/a.txt',
+                'is_dir': false,
+                'size_bytes': 3000,
+                'scanned': true,
+                'children': <Map<String, dynamic>>[],
+              },
+              {
+                'name': 'deleted.txt',
+                'path': '/root/Documents/deleted.txt',
+                'is_dir': false,
+                'size_bytes': 2000,
+                'scanned': true,
+                'children': <Map<String, dynamic>>[],
+              },
+            ],
+          },
+        ];
+
+        // A fresh, complete peek re-scan of /root/Documents that no longer
+        // finds deleted.txt (it was removed from disk in the meantime).
+        final merged = mergeSubtreeIntoSnapshot(
+          snapshot: snapshot,
+          targetPath: '/root/Documents',
+          subtreeTree: {
+            'name': 'Documents',
+            'path': '/root/Documents',
+            'is_dir': true,
+            'size_bytes': 3000,
+            'scanned': true,
+            'children': [
+              {
+                'name': 'a.txt',
+                'path': '/root/Documents/a.txt',
+                'is_dir': false,
+                'size_bytes': 3000,
+                'scanned': true,
+                'children': <Map<String, dynamic>>[],
+              },
+            ],
+          },
+          subtreeEntries: const [],
+          replacementIsAuthoritative: true,
+        );
+
+        final documents = ((merged['tree'] as Map)['children'] as List)
+            .firstWhere((c) => c['path'] == '/root/Documents') as Map;
+        expect(documents['size_bytes'], 3000, reason: 'trusts the fresh, smaller size');
+        final children = documents['children'] as List;
+        expect(children, hasLength(1));
+        expect(
+          children.any((c) => c['path'] == '/root/Documents/deleted.txt'),
+          isFalse,
+          reason: 'authoritative peek result drops the deleted file',
+        );
+      },
+    );
+
+    test(
+      'an authoritative merge drops stale entries whose path was under the '
+      'peeked subtree but is absent from the fresh peek result',
+      () {
+        final snapshot = baseSnapshot();
+        snapshot['entries'] = [
+          {
+            'id': 'e-deleted',
+            'path_or_uri': '/root/Documents/deleted.txt',
+            'size_bytes': 2000,
+            'category': 'Cache',
+            'deletable': true,
+          },
+          {
+            'id': 'e-other',
+            'path_or_uri': '/root/Downloads/keep.txt',
+            'size_bytes': 500,
+            'category': 'Cache',
+            'deletable': true,
+          },
+        ];
+
+        final merged = mergeSubtreeIntoSnapshot(
+          snapshot: snapshot,
+          targetPath: '/root/Documents',
+          subtreeTree: {
+            'name': 'Documents',
+            'path': '/root/Documents',
+            'is_dir': true,
+            'size_bytes': 0,
+            'scanned': true,
+            'children': <Map<String, dynamic>>[],
+          },
+          // The fresh peek re-scan no longer finds deleted.txt.
+          subtreeEntries: const [],
+          replacementIsAuthoritative: true,
+        );
+
+        final entries = merged['entries'] as List;
+        expect(
+          entries.any((e) => e['id'] == 'e-deleted'),
+          isFalse,
+          reason: 'stale entry under the peeked path must be dropped',
+        );
+        expect(
+          entries.any((e) => e['id'] == 'e-other'),
+          isTrue,
+          reason: 'entries outside the peeked subtree must be untouched',
+        );
+        expect(merged['reclaimable_estimate_bytes'], 500);
+      },
+    );
   });
 }

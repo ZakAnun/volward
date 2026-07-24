@@ -41,6 +41,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
   bool _prevScanning = false;
   bool _permissionBannerExpanded = false;
+  // Tracks the last `_lastSnapshot['snapshot_id']` we already refreshed the
+  // column-nav caches for, so plain progress ticks (which fire ~3x/sec via
+  // VolwardSession.notifyListeners but don't touch _lastSnapshot) don't
+  // trigger a full tree re-sort/re-aggregate on every tick while browsing
+  // during a background scan.
+  String? _lastRefreshedSnapshotId;
 
   ScanTreeNode? _cachedDisplayTree;
   String? _cachedDisplayTreeKey;
@@ -130,19 +136,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _columnChain.clear();
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
+        _lastRefreshedSnapshotId = _s.lastSnapshot?['snapshot_id']?.toString();
       });
     } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
       _columnChain.clear();
       _columnNavTick.value++;
       _invalidateSnapshotCaches();
+      _lastRefreshedSnapshotId = _s.lastSnapshot?['snapshot_id']?.toString();
     } else if (_columnChain.isNotEmpty) {
-      // A background checkpoint (or Wave-2 peek) merged new data while the
-      // user is browsing: keep their position but refresh node references
-      // so newly-scanned children/sizes become visible.
-      _invalidateSnapshotCaches();
-      final freshRoot = _getDisplayTree();
-      if (freshRoot != null) {
-        _setColumnChain(refreshColumnChain(freshRoot, _columnChain));
+      // A background checkpoint (or Wave-2 peek) may have merged new data
+      // into _lastSnapshot while the user is browsing. Only pay for a full
+      // cache invalidation + tree re-sort/re-aggregate when the snapshot
+      // actually changed — most VolwardSession.notifyListeners() calls
+      // during an active scan are plain progress-percentage ticks (~3/sec)
+      // that don't touch _lastSnapshot at all.
+      final snapId = _s.lastSnapshot?['snapshot_id']?.toString();
+      if (snapId != null && snapId != _lastRefreshedSnapshotId) {
+        _lastRefreshedSnapshotId = snapId;
+        _invalidateSnapshotCaches();
+        final freshRoot = _getDisplayTree();
+        if (freshRoot != null) {
+          _setColumnChain(refreshColumnChain(freshRoot, _columnChain));
+        }
       }
     }
     _prevScanning = _s.scanning;

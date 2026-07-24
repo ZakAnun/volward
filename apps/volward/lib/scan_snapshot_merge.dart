@@ -1,10 +1,27 @@
 /// Splices [subtreeTree] (already in the wire "ScanTreeNode json" shape)
 /// into [snapshot]'s `tree` at [targetPath], replacing that node's
-/// `size_bytes`/`scanned`/`children`. Also merges [subtreeEntries] into
-/// `snapshot['entries']`, overwriting any existing entry with the same
-/// `id`, and recomputes `reclaimable_estimate_bytes` locally from the
-/// merged entries (rather than trusting a possibly-stale value carried
-/// over from an earlier partial result).
+/// `size_bytes`/`scanned`, and merging its `children`. Also merges
+/// [subtreeEntries] into `snapshot['entries']`, overwriting any existing
+/// entry with the same `id`, and recomputes `reclaimable_estimate_bytes`
+/// locally from the merged entries (rather than trusting a possibly-stale
+/// value carried over from an earlier partial result).
+///
+/// [replacementIsAuthoritative] distinguishes two very different callers:
+/// - `false` (default) — [subtreeTree] is a snapshot of the *still-running*
+///   background scan (a checkpoint). It may be less complete than what's
+///   already displayed for parts of the tree it hasn't caught up to yet, so
+///   children are upserted by path via [_mergeChildrenByPath] (see there),
+///   and entries are only ever added/overwritten by id, never removed.
+/// - `true` — [subtreeTree] is the result of a completed, scoped Wave-2
+///   peek scan of exactly [targetPath]: a fresh, complete listing of that
+///   directory. It is trusted wholesale (including a child's *absence*,
+///   e.g. a file deleted since the last checkpoint), rather than compared
+///   size-for-size against old data — otherwise a real deletion could be
+///   masked indefinitely by the old, larger, now-stale size. For the same
+///   reason, any existing entry whose `path_or_uri` falls under
+///   [targetPath] but is absent from [subtreeEntries] is dropped too —
+///   otherwise a deleted file's stale entry would keep inflating
+///   `reclaimable_estimate_bytes` until the whole scan finishes.
 ///
 /// Pure function: [snapshot] is never mutated; a new map is returned.
 Map<String, dynamic> mergeSubtreeIntoSnapshot({
@@ -12,6 +29,7 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
   required String targetPath,
   required Map<String, dynamic> subtreeTree,
   required List<Map<String, dynamic>> subtreeEntries,
+  bool replacementIsAuthoritative = false,
 }) {
   final tree = snapshot['tree'];
   final mergedTree = tree is Map
@@ -19,6 +37,7 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
           Map<String, dynamic>.from(tree),
           targetPath,
           subtreeTree,
+          replacementIsAuthoritative: replacementIsAuthoritative,
         )
       : subtreeTree;
 
@@ -35,6 +54,19 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
   for (final e in subtreeEntries) {
     final id = e['id']?.toString();
     if (id != null) byId[id] = e;
+  }
+  if (replacementIsAuthoritative) {
+    final prefix = targetPath.endsWith('/') ? targetPath : '$targetPath/';
+    final freshIds = subtreeEntries
+        .map((e) => e['id']?.toString())
+        .whereType<String>()
+        .toSet();
+    byId.removeWhere((id, e) {
+      final entryPath = e['path_or_uri']?.toString();
+      if (entryPath == null) return false;
+      final underTarget = entryPath == targetPath || entryPath.startsWith(prefix);
+      return underTarget && !freshIds.contains(id);
+    });
   }
   final mergedEntries = byId.values.toList();
 
@@ -53,14 +85,17 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
 Map<String, dynamic> _replaceNodeAtPath(
   Map<String, dynamic> node,
   String targetPath,
-  Map<String, dynamic> replacement,
-) {
+  Map<String, dynamic> replacement, {
+  required bool replacementIsAuthoritative,
+}) {
   if (node['path']?.toString() == targetPath) {
     return {
       ...node,
       'size_bytes': replacement['size_bytes'],
       'scanned': replacement['scanned'] ?? true,
-      'children': replacement['children'],
+      'children': replacementIsAuthoritative
+          ? _childList(replacement)
+          : _mergeChildrenByPath(_childList(node), _childList(replacement)),
     };
   }
 
@@ -83,6 +118,7 @@ Map<String, dynamic> _replaceNodeAtPath(
           Map<String, dynamic>.from(child),
           targetPath,
           replacement,
+          replacementIsAuthoritative: replacementIsAuthoritative,
         ),
       );
       found = true;
@@ -93,4 +129,103 @@ Map<String, dynamic> _replaceNodeAtPath(
 
   if (!found) return node;
   return {...node, 'children': newChildren};
+}
+
+List<Map<String, dynamic>> _childList(Map<String, dynamic> node) {
+  final children = node['children'];
+  if (children is! List) return const [];
+  return children
+      .whereType<Map>()
+      .map((c) => Map<String, dynamic>.from(c))
+      .toList();
+}
+
+/// Upserts [newChildren] into [oldChildren] by `path` instead of blindly
+/// replacing the whole list.
+///
+/// This matters because a periodic background-scan checkpoint's view of a
+/// subtree can temporarily be *less* complete than what's already being
+/// displayed — e.g. a directory a Wave-2 peek scan already fully resolved,
+/// but the (slower) main background scan hasn't rediscovered yet in this
+/// checkpoint. Wholesale-replacing `children` with the checkpoint's list
+/// would silently drop that already-resolved data (or any not-yet
+/// rediscovered preview/peek entry) and briefly regress the UI back to an
+/// unscanned/emptier state until the main scan eventually catches back up.
+///
+/// - A child present in both is resolved via [_pickMoreComplete].
+/// - A child present only in [oldChildren] (not yet rediscovered by this
+///   merge) is kept as-is.
+/// - A child present only in [newChildren] is a new discovery and is added.
+List<Map<String, dynamic>> _mergeChildrenByPath(
+  List<Map<String, dynamic>> oldChildren,
+  List<Map<String, dynamic>> newChildren,
+) {
+  final oldByPath = <String, Map<String, dynamic>>{
+    for (final c in oldChildren)
+      if (c['path'] != null) c['path'].toString(): c,
+  };
+
+  final merged = <Map<String, dynamic>>[];
+  final seenPaths = <String>{};
+  for (final newChild in newChildren) {
+    final path = newChild['path']?.toString();
+    if (path == null) {
+      merged.add(newChild);
+      continue;
+    }
+    seenPaths.add(path);
+    final oldChild = oldByPath[path];
+    merged.add(oldChild == null ? newChild : _pickMoreComplete(oldChild, newChild));
+  }
+  for (final entry in oldByPath.entries) {
+    if (!seenPaths.contains(entry.key)) merged.add(entry.value);
+  }
+  return merged;
+}
+
+/// Keeps whichever side of a duplicate-path child looks more complete.
+///
+/// Only used for non-authoritative (checkpoint) merges — see
+/// [mergeSubtreeIntoSnapshot]. Uses aggregated `size_bytes` as a
+/// monotonic-enough proxy: a directory's size usually only grows as more of
+/// its subtree is discovered by a given scan pass, so a smaller size on the
+/// incoming side — while the existing side is *explicitly* marked
+/// `scanned: true` (e.g. a finished Wave-2 peek) — is treated as a
+/// regression (an earlier point in the main scan's own walk) rather than
+/// new information, and is ignored in favor of the existing data.
+///
+/// Important: Rust's `ScanTreeNode` never serializes a `scanned` field, so
+/// nodes coming straight from a checkpoint / prior full-scan have the
+/// field absent. Those must NOT be treated as scanned — only an explicit
+/// `scanned: true` (written by Dart after a peek) qualifies. Otherwise a
+/// larger stale size left over from a previous scan would permanently
+/// suppress a smaller, correct size from the current rescan (e.g. after
+/// the user deleted files).
+///
+/// Known limitation: if a file is genuinely deleted between two checkpoints
+/// of the *same* still-running background scan (not a peek), and the
+/// existing side was previously marked `scanned: true` by a peek, this
+/// proxy cannot distinguish "smaller because incomplete" from "smaller
+/// because something was deleted" and will keep showing the old, stale,
+/// larger value until the scan finishes and the final authoritative
+/// snapshot loads. A completed peek scan (`replacementIsAuthoritative:
+/// true`) does not have this limitation, since its result is trusted
+/// wholesale.
+Map<String, dynamic> _pickMoreComplete(
+  Map<String, dynamic> oldChild,
+  Map<String, dynamic> newChild,
+) {
+  // Only treat the old side as "more complete" when it was *explicitly*
+  // marked scanned (e.g. a finished Wave-2 peek wrote `scanned: true`).
+  // Rust's ScanTreeNode never serializes `scanned`, so a plain checkpoint
+  // / prior full-scan node has the field absent — which must NOT count as
+  // scanned here. Using `!= false` would treat every absent field as true
+  // and make a larger stale size from a previous scan permanently suppress
+  // a smaller, correct size from the current scan (e.g. after the user
+  // deleted files and a rescan is in progress).
+  final oldScanned = oldChild['scanned'] == true;
+  final oldSize = (oldChild['size_bytes'] as num?)?.toInt() ?? 0;
+  final newSize = (newChild['size_bytes'] as num?)?.toInt() ?? 0;
+  if (oldScanned && oldSize > newSize) return oldChild;
+  return newChild;
 }

@@ -156,7 +156,11 @@ impl<'a> ScanOrchestrator<'a> {
         let mut last_path: Option<String> = None;
         let mut progress_counter = 0u64;
         let mut last_checkpoint_at = std::time::Instant::now();
-        let checkpoint_interval = std::time::Duration::from_secs(2);
+        // Adaptive: starts at 2s, but widens (capped at 15s) once building a
+        // checkpoint itself starts taking non-trivial time on a large tree —
+        // see the `checkpoint_interval = ...` update below for why.
+        let mut checkpoint_interval = std::time::Duration::from_secs(2);
+        const MAX_CHECKPOINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
         let mut walk = |e: crate::model::RawFsEntry| -> WalkAction {
             if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                 return WalkAction::Stop;
@@ -203,7 +207,7 @@ impl<'a> ScanOrchestrator<'a> {
             }
 
             if progress_counter % 200 == 0 && last_checkpoint_at.elapsed() >= checkpoint_interval {
-                last_checkpoint_at = std::time::Instant::now();
+                let checkpoint_started_at = std::time::Instant::now();
                 on_checkpoint(StorageSnapshot {
                     snapshot_id: format!("{job_id}-checkpoint"),
                     scanned_at_ms: unix_ms(),
@@ -220,6 +224,17 @@ impl<'a> ScanOrchestrator<'a> {
                     stats: stats.clone(),
                     warnings: Vec::new(),
                 });
+                // `entries.clone()` + `peek_snapshot()` are both O(current
+                // tree size), so on a large scan a fixed 2s cadence would
+                // make checkpoint overhead grow unbounded over the scan's
+                // lifetime. Instead, size the *next* interval off how long
+                // *this* checkpoint actually took, so the checkpoint's own
+                // cost stays roughly bounded to ~10% of wall-clock time.
+                let checkpoint_cost = checkpoint_started_at.elapsed();
+                checkpoint_interval = checkpoint_interval
+                    .max(checkpoint_cost * 10)
+                    .min(MAX_CHECKPOINT_INTERVAL);
+                last_checkpoint_at = std::time::Instant::now();
             }
 
             WalkAction::Continue

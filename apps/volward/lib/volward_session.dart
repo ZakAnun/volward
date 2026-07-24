@@ -334,7 +334,12 @@ class VolwardSession extends ChangeNotifier {
                   .map((e) => Map<String, dynamic>.from(e))
                   .toList()
               : <Map<String, dynamic>>[];
-          _applyMerge(path, Map<String, dynamic>.from(tree), entries);
+          _applyMerge(
+            path,
+            Map<String, dynamic>.from(tree),
+            entries,
+            authoritative: true,
+          );
           _peekCompleted.add(path);
         }
       } else {
@@ -614,8 +619,9 @@ class VolwardSession extends ChangeNotifier {
   void _applyMerge(
     String targetPath,
     Map<String, dynamic> subtreeTree,
-    List<Map<String, dynamic>> subtreeEntries,
-  ) {
+    List<Map<String, dynamic>> subtreeEntries, {
+    bool authoritative = false,
+  }) {
     final current = _lastSnapshot;
     if (current == null) return;
     final merged = mergeSubtreeIntoSnapshot(
@@ -623,6 +629,7 @@ class VolwardSession extends ChangeNotifier {
       targetPath: targetPath,
       subtreeTree: subtreeTree,
       subtreeEntries: subtreeEntries,
+      replacementIsAuthoritative: authoritative,
     );
     // Force every merge to look like "new data" to snapshot_id-keyed UI
     // caches, even though checkpoints from the same scan job would
