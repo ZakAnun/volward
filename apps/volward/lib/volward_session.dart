@@ -42,6 +42,9 @@ class VolwardSession extends ChangeNotifier {
   List<String> _scanRoots = [];
   bool _incrementalScan = false;
   final Set<String> _selectedEntryIds = {};
+  final Set<String> _peekInFlight = {};
+  final Set<String> _peekCompleted = {};
+  static const int _maxConcurrentPeeks = 2;
   SendPort? _workerCancelPort;
   Timer? _scanElapsedTimer;
   DateTime? _scanStartedAt;
@@ -302,6 +305,49 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Triggers a small, scoped scan of [path] so its contents/size become
+  /// available immediately, without waiting for the background full scan
+  /// to reach it. No-op if a peek for this path is already in flight or
+  /// already completed this session, or if the concurrency limit is hit
+  /// (extra clicks are simply dropped — the background scan will cover the
+  /// path eventually regardless).
+  Future<void> peekScan(String path) async {
+    if (!_ready || _engine == null) return;
+    if (_peekInFlight.contains(path) || _peekCompleted.contains(path)) return;
+    if (_peekInFlight.length >= _maxConcurrentPeeks) return;
+
+    _peekInFlight.add(path);
+    ReceivePort? receivePort;
+    try {
+      receivePort = ReceivePort();
+      await Isolate.spawn(volwardPeekScanIsolate, [receivePort.sendPort, path]);
+      final message = await receivePort.first;
+      if (message is! Map) return;
+      final type = message['type']?.toString();
+      if (type == 'done') {
+        final tree = message['tree'];
+        final entriesRaw = message['entries'];
+        if (tree is Map) {
+          final entries = (entriesRaw is List)
+              ? entriesRaw
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList()
+              : <Map<String, dynamic>>[];
+          _applyMerge(path, Map<String, dynamic>.from(tree), entries);
+          _peekCompleted.add(path);
+        }
+      } else {
+        debugPrint('VolwardSession: peekScan($path) failed: ${message['error']}');
+      }
+    } catch (e, st) {
+      debugPrint('VolwardSession: peekScan($path) error: $e\n$st');
+    } finally {
+      receivePort?.close();
+      _peekInFlight.remove(path);
+    }
+  }
+
   void setIncrementalScan(bool incremental) {
     if (incremental && !canUseIncrementalScan) return;
     if (_incrementalScan == incremental) return;
@@ -380,6 +426,8 @@ class VolwardSession extends ChangeNotifier {
     _scanChannelsClosed = false;
     _lastScanActivityAt = null;
     _savingPhaseStartedAt = null;
+    _peekInFlight.clear();
+    _peekCompleted.clear();
     _startScanElapsedTimer();
     notifyListeners();
 
