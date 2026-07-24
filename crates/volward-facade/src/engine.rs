@@ -41,6 +41,7 @@ pub struct VolwardEngine {
     is_scanning: Arc<AtomicBool>,
     last_snapshot: Arc<Mutex<Option<StorageSnapshot>>>,
     last_progress: Arc<Mutex<Option<ScanProgress>>>,
+    last_checkpoint: Arc<Mutex<Option<StorageSnapshot>>>,
     _scan_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
@@ -58,6 +59,7 @@ impl VolwardEngine {
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: Arc::new(Mutex::new(None)),
             last_progress: Arc::new(Mutex::new(None)),
+            last_checkpoint: Arc::new(Mutex::new(None)),
             _scan_handle: Arc::new(Mutex::new(None)),
         }
     }
@@ -105,11 +107,18 @@ impl VolwardEngine {
         let last_snapshot = self.last_snapshot.clone();
         let last_progress = self.last_progress.clone();
 
-        let result = orchestrator.run_scan(job_id, roots, incremental, &cancel, |progress| {
-            if let Ok(mut g) = last_progress.lock() {
-                *g = Some(progress);
-            }
-        });
+        let result = orchestrator.run_scan(
+            job_id,
+            roots,
+            incremental,
+            &cancel,
+            |progress| {
+                if let Ok(mut g) = last_progress.lock() {
+                    *g = Some(progress);
+                }
+            },
+            |_checkpoint| {},
+        );
 
         self.is_scanning.store(false, Ordering::Relaxed);
 
@@ -144,6 +153,7 @@ impl VolwardEngine {
         let cancel = self.cancel.clone();
         let last_snapshot = self.last_snapshot.clone();
         let last_progress = self.last_progress.clone();
+        let last_checkpoint = self.last_checkpoint.clone();
         let is_scanning = self.is_scanning.clone();
         let scan_handle = self._scan_handle.clone();
 
@@ -152,14 +162,28 @@ impl VolwardEngine {
         let handle = std::thread::spawn(move || {
             let classifier = load_classifier_from_arc(&platform);
             let orchestrator = ScanOrchestrator::new(platform.as_ref(), classifier);
-            match orchestrator.run_scan(job_id_clone, roots, incremental, &cancel, |progress| {
-                if let Ok(mut g) = last_progress.lock() {
-                    *g = Some(progress);
-                }
-            }) {
+            match orchestrator.run_scan(
+                job_id_clone,
+                roots,
+                incremental,
+                &cancel,
+                |progress| {
+                    if let Ok(mut g) = last_progress.lock() {
+                        *g = Some(progress);
+                    }
+                },
+                |checkpoint| {
+                    if let Ok(mut g) = last_checkpoint.lock() {
+                        *g = Some(checkpoint);
+                    }
+                },
+            ) {
                 Ok(snapshot) => {
                     if let Ok(mut g) = last_snapshot.lock() {
                         *g = Some(snapshot);
+                    }
+                    if let Ok(mut g) = last_checkpoint.lock() {
+                        *g = None;
                     }
                 }
                 Err(_e) => {
@@ -216,6 +240,36 @@ impl VolwardEngine {
     pub fn get_last_progress_json(&self) -> Option<String> {
         self.get_last_progress()
             .and_then(|p| serde_json::to_string(&p).ok())
+    }
+
+    pub fn get_last_checkpoint(&self) -> Option<StorageSnapshot> {
+        self.last_checkpoint.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// Serializes the last checkpoint directly to `path`. Returns
+    /// `error:no checkpoint` if the current scan hasn't produced one yet.
+    pub fn write_last_checkpoint_to_path(&self, path: &str) -> Result<String, String> {
+        let snapshot = self
+            .get_last_checkpoint()
+            .ok_or_else(|| "error:no checkpoint".to_string())?;
+        let file = File::create(path).map_err(|e| format!("error:create checkpoint: {e}"))?;
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, &snapshot)
+            .map_err(|e| format!("error:serialize checkpoint: {e}"))?;
+        writer
+            .flush()
+            .map_err(|e| format!("error:flush checkpoint: {e}"))?;
+        Ok(snapshot.snapshot_id)
+    }
+
+    /// Single-level, non-recursive directory listing (see
+    /// `PlatformStorage::quick_list_dir`). Safe to call while a scan is
+    /// running — it does not touch `is_scanning`/shared scan state.
+    pub fn quick_list_dir_json(&self, path: &str) -> String {
+        match self.platform.quick_list_dir(path) {
+            Ok(entries) => serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string()),
+            Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+        }
     }
 
     pub fn set_last_snapshot_json(&self, json: &str) -> Result<(), String> {
@@ -326,5 +380,16 @@ mod tests {
         assert_eq!(loaded.snapshot_id, expected_id);
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn checkpoint_starts_empty_and_quick_list_dir_reports_unsupported_error() {
+        let engine = VolwardEngine::new();
+        assert!(engine.get_last_checkpoint().is_none());
+
+        // No real directory needed: an obviously-missing path exercises the
+        // error path end-to-end through the JSON encoding.
+        let json = engine.quick_list_dir_json("/definitely/does/not/exist/volward-test");
+        assert!(json.contains("error"));
     }
 }
