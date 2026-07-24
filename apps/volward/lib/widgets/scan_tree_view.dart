@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../scan_tree.dart';
 import '../scan_tree_flatten.dart';
 import '../theme/apple_tokens.dart';
+import '../theme/volward_tokens.dart';
 import 'apple_widgets.dart';
 
 typedef ScanTreeSelectChanged = void Function(String entryId, bool selected);
@@ -29,14 +30,20 @@ class ScanTreeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final node = row.node;
     if (node.isDirectory) {
-      return _dirTile(node, row.depth, row.isExpanded);
+      return _dirTile(context, node, row.depth, row.isExpanded);
     }
-    return _fileTile(node, row.depth);
+    return _fileTile(context, node, row.depth);
   }
 
-  Widget _dirTile(ScanTreeNode node, int nodeDepth, bool isOpen) {
+  Widget _dirTile(
+    BuildContext context,
+    ScanTreeNode node,
+    int nodeDepth,
+    bool isOpen,
+  ) {
+    final v = context.volward;
     return Material(
-      color: AppleColors.canvas,
+      color: v.canvas,
       child: InkWell(
         onTap: () => onToggleExpand(node.path),
         child: Padding(
@@ -51,26 +58,26 @@ class ScanTreeRow extends StatelessWidget {
               Icon(
                 isOpen ? Icons.expand_more : Icons.chevron_right,
                 size: 18,
-                color: AppleColors.inkMuted48,
+                color: v.inkMuted48,
               ),
               const SizedBox(width: AppleSpacing.xxs),
               Icon(
                 isOpen ? Icons.folder_open_outlined : Icons.folder_outlined,
                 size: 16,
-                color: AppleColors.primary,
+                color: v.folderIcon,
               ),
               const SizedBox(width: AppleSpacing.xs),
               Expanded(
                 child: Text(
                   node.name,
-                  style: AppleTypography.captionStrong,
+                  style: context.vwCaptionStrong,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Text(
                 '${node.fileCount} · ${formatBytes(node.totalBytes)}',
-                style: AppleTypography.finePrint,
+                style: context.vwFinePrint,
               ),
             ],
           ),
@@ -79,7 +86,8 @@ class ScanTreeRow extends StatelessWidget {
     );
   }
 
-  Widget _fileTile(ScanTreeNode node, int nodeDepth) {
+  Widget _fileTile(BuildContext context, ScanTreeNode node, int nodeDepth) {
+    final v = context.volward;
     final entry = node.entry;
     if (entry == null) return const SizedBox.shrink();
 
@@ -90,8 +98,10 @@ class ScanTreeRow extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: isSelected ? AppleColors.primary.withValues(alpha: 0.06) : AppleColors.canvas,
-        border: const Border(bottom: BorderSide(color: AppleColors.hairline, width: 0.5)),
+        color: isSelected ? v.primary.withValues(alpha: 0.06) : v.canvas,
+        border: Border(
+          bottom: BorderSide(color: v.hairline, width: 0.5),
+        ),
       ),
       child: AppleListRow(
         title: node.name,
@@ -105,11 +115,11 @@ class ScanTreeRow extends StatelessWidget {
             value: isSelected,
             onChanged: (!deletable || busy)
                 ? null
-                : (v) => onSelectChanged(id, v == true),
+                : (val) => onSelectChanged(id, val == true),
           ),
         ),
         trailing: deletable
-            ? const Icon(Icons.delete_outline, size: 16, color: AppleColors.inkMuted48)
+            ? Icon(Icons.delete_outline, size: 16, color: v.inkMuted48)
             : null,
         onTap: (!deletable || busy)
             ? null

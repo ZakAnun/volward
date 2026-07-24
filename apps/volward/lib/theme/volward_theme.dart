@@ -2,92 +2,114 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'apple_tokens.dart';
+import 'volward_tokens.dart';
 
-ThemeData buildVolwardTheme() {
-  const colorScheme = ColorScheme(
-    brightness: Brightness.light,
-    primary: AppleColors.primary,
-    onPrimary: AppleColors.onPrimary,
-    secondary: AppleColors.ink,
-    onSecondary: AppleColors.bodyOnDark,
-    error: Color(0xFFD70015),
-    onError: AppleColors.onPrimary,
-    surface: AppleColors.canvasParchment,
-    onSurface: AppleColors.ink,
-    surfaceContainerHighest: AppleColors.canvas,
+ThemeData buildVolwardTheme({
+  required Brightness brightness,
+  Color accent = VolwardTokens.defaultAccent,
+}) {
+  final tokens = VolwardTokens.forBrightness(brightness, accent);
+
+  final colorScheme = ColorScheme(
+    brightness: brightness,
+    primary: tokens.primary,
+    onPrimary: tokens.onPrimary,
+    secondary: tokens.ink,
+    onSecondary: tokens.bodyOnDark,
+    error: const Color(0xFFD70015),
+    onError: tokens.onPrimary,
+    surface: tokens.canvasParchment,
+    onSurface: tokens.ink,
+    surfaceContainerHighest: tokens.canvas,
   );
+
+  TextStyle inkStyle(TextStyle base) => base.copyWith(color: tokens.ink);
+  TextStyle mutedStyle(TextStyle base) =>
+      base.copyWith(color: tokens.inkMuted80);
 
   return ThemeData(
     useMaterial3: true,
+    brightness: brightness,
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: AppleColors.canvasParchment,
-    dividerColor: AppleColors.hairline,
+    scaffoldBackgroundColor: tokens.canvasParchment,
+    dividerColor: tokens.hairline,
     splashFactory: NoSplash.splashFactory,
     highlightColor: Colors.transparent,
-    textTheme: const TextTheme(
-      headlineLarge: AppleTypography.heroDisplay,
-      headlineMedium: AppleTypography.displayLg,
-      headlineSmall: AppleTypography.tagline,
-      titleMedium: AppleTypography.bodyStrong,
-      titleSmall: AppleTypography.captionStrong,
-      bodyLarge: AppleTypography.body,
-      bodyMedium: AppleTypography.body,
-      bodySmall: AppleTypography.caption,
-      labelLarge: AppleTypography.body,
-      labelMedium: AppleTypography.caption,
-      labelSmall: AppleTypography.finePrint,
+    extensions: [tokens],
+    textTheme: TextTheme(
+      headlineLarge: inkStyle(AppleTypography.heroDisplay),
+      headlineMedium: inkStyle(AppleTypography.displayLg),
+      headlineSmall: inkStyle(AppleTypography.tagline),
+      titleMedium: inkStyle(AppleTypography.bodyStrong),
+      titleSmall: inkStyle(AppleTypography.captionStrong),
+      bodyLarge: inkStyle(AppleTypography.body),
+      bodyMedium: inkStyle(AppleTypography.body),
+      bodySmall: mutedStyle(AppleTypography.caption),
+      labelLarge: inkStyle(AppleTypography.body),
+      labelMedium: mutedStyle(AppleTypography.caption),
+      labelSmall: mutedStyle(AppleTypography.finePrint),
     ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: AppleColors.surfaceBlack,
-      foregroundColor: AppleColors.bodyOnDark,
+    appBarTheme: AppBarTheme(
+      backgroundColor: tokens.surfaceBlack,
+      foregroundColor: tokens.bodyOnDark,
       elevation: 0,
       scrolledUnderElevation: 0,
       toolbarHeight: 44,
-      titleTextStyle: AppleTypography.navLink,
+      titleTextStyle: AppleTypography.navLink.copyWith(color: tokens.bodyOnDark),
+      iconTheme: IconThemeData(color: tokens.bodyMuted),
+      actionsIconTheme: IconThemeData(color: tokens.bodyMuted),
       systemOverlayStyle: SystemUiOverlayStyle.light,
     ),
     cardTheme: CardThemeData(
-      color: AppleColors.canvas,
+      color: tokens.canvas,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppleRadius.lg),
-        side: const BorderSide(color: AppleColors.hairline),
+        side: BorderSide(color: tokens.hairline),
       ),
     ),
-    dividerTheme: const DividerThemeData(
-      color: AppleColors.hairline,
+    dividerTheme: DividerThemeData(
+      color: tokens.hairline,
       thickness: 1,
       space: 1,
     ),
     checkboxTheme: CheckboxThemeData(
       fillColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) return AppleColors.primary;
-        return AppleColors.canvas;
+        if (states.contains(WidgetState.selected)) return tokens.primary;
+        return tokens.canvas;
       }),
-      checkColor: WidgetStateProperty.all(AppleColors.onPrimary),
-      side: const BorderSide(color: AppleColors.hairline, width: 1.5),
+      checkColor: WidgetStateProperty.all(tokens.onPrimary),
+      side: BorderSide(color: tokens.hairline, width: 1.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppleColors.ink,
-      contentTextStyle: AppleTypography.caption.copyWith(color: AppleColors.bodyOnDark),
+      backgroundColor: tokens.ink,
+      contentTextStyle: AppleTypography.caption.copyWith(color: tokens.bodyOnDark),
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppleRadius.sm)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+      ),
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: AppleColors.canvas,
+      backgroundColor: tokens.canvas,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppleRadius.lg),
-        side: const BorderSide(color: AppleColors.hairline),
+        side: BorderSide(color: tokens.hairline),
       ),
-      titleTextStyle: AppleTypography.bodyStrong,
-      contentTextStyle: AppleTypography.body,
+      titleTextStyle: inkStyle(AppleTypography.bodyStrong),
+      contentTextStyle: inkStyle(AppleTypography.body),
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(
-      color: AppleColors.primary,
-      linearTrackColor: AppleColors.dividerSoft,
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: tokens.primary,
+      linearTrackColor: tokens.dividerSoft,
+    ),
+    iconTheme: IconThemeData(color: tokens.inkMuted80),
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        iconColor: WidgetStatePropertyAll(tokens.inkMuted80),
+      ),
     ),
   );
 }

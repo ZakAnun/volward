@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
+import 'snapshot_cache.dart';
 
 /// Thrown when the user cancels an in-progress scan.
 class ScanCancelledException implements Exception {
@@ -48,6 +49,17 @@ class VolwardSession extends ChangeNotifier {
   ReceivePort? _scanReceivePort;
   ReceivePort? _scanCancelInitPort;
   bool _scanChannelsClosed = false;
+  DateTime? _lastScanActivityAt;
+  DateTime? _savingPhaseStartedAt;
+
+  /// Fail only when progress stalls during walk/classify (not total wall time).
+  static const Duration _scanStallTimeout = Duration(minutes: 20);
+
+  /// Allow long JSON serialize/deserialize after walk completes.
+  static const Duration _scanSaveLoadTimeout = Duration(hours: 2);
+
+  /// Safety net for runaway scans; normal Home scans should finish well below this.
+  static const Duration _scanAbsoluteMax = Duration(hours: 8);
 
   bool get ready => _ready;
   String? get initError => _initError;
@@ -74,6 +86,10 @@ class VolwardSession extends ChangeNotifier {
   /// Increment scan requires both snapshot file API and scan options FFI.
   bool get canUseIncrementalScan =>
       hasSnapshotFileApi && hasScanOptionsApi;
+
+  /// True while loading a previously saved scan from disk cache.
+  bool get restoringSnapshot => _restoringSnapshot;
+  bool _restoringSnapshot = false;
 
   String get scanTargetLabel =>
       _scanRoots.isEmpty ? 'Home (default)' : _scanRoots.join(', ');
@@ -113,6 +129,7 @@ class VolwardSession extends ChangeNotifier {
   }
 
   void _setScanProgressPhase(String phase, {int? pathsSeen}) {
+    _touchScanActivity(phase: phase);
     _scanProgress = {
       'phase': phase,
       if (pathsSeen != null) 'paths_seen': pathsSeen,
@@ -120,6 +137,53 @@ class VolwardSession extends ChangeNotifier {
         'paths_seen': _scanProgress!['paths_seen'],
     };
     notifyListeners();
+  }
+
+  void _touchScanActivity({String? phase}) {
+    _lastScanActivityAt = DateTime.now();
+    if (phase == 'SavingResults' || phase == 'LoadingResults') {
+      _savingPhaseStartedAt ??= _lastScanActivityAt;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _awaitScanWithStallGuard(
+    Future<Map<String, dynamic>?> future,
+  ) async {
+    final started = DateTime.now();
+    _touchScanActivity();
+
+    while (true) {
+      try {
+        return await future.timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        final now = DateTime.now();
+        if (now.difference(started) > _scanAbsoluteMax) {
+          throw TimeoutException(
+            'Scan exceeded ${_scanAbsoluteMax.inHours}-hour limit',
+            _scanAbsoluteMax,
+          );
+        }
+
+        if (_savingPhaseStartedAt != null) {
+          if (now.difference(_savingPhaseStartedAt!) > _scanSaveLoadTimeout) {
+            throw TimeoutException(
+              'Saving or loading results exceeded '
+              '${_scanSaveLoadTimeout.inHours}-hour limit',
+              _scanSaveLoadTimeout,
+            );
+          }
+          continue;
+        }
+
+        final last = _lastScanActivityAt ?? started;
+        if (now.difference(last) > _scanStallTimeout) {
+          throw TimeoutException(
+            'Scan stalled (no progress for ${_scanStallTimeout.inMinutes} minutes)',
+            _scanStallTimeout,
+          );
+        }
+      }
+    }
   }
 
   void _closeScanChannels() {
@@ -147,11 +211,54 @@ class VolwardSession extends ChangeNotifier {
         );
       }
       _ready = true;
+      await restoreCachedSnapshotIfNeeded();
     } catch (e, st) {
       _initError = '$e';
       debugPrint('VolwardSession init failed: $e\n$st');
     }
     notifyListeners();
+  }
+
+  String _defaultScanRoot() {
+    return Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '/';
+  }
+
+  /// Reload the last on-disk snapshot into memory (after hot reload / restart).
+  Future<void> restoreCachedSnapshotIfNeeded() async {
+    if (!_ready || _engine == null || _lastSnapshot != null || _scanning) {
+      return;
+    }
+    await _restoreCachedSnapshot();
+  }
+
+  Future<void> _restoreCachedSnapshot() async {
+    if (!_ready || _engine == null || _scanning) return;
+
+    final preferredRoot =
+        _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+    final path =
+        await SnapshotCache.latestSnapshotPath(preferredRoot: preferredRoot);
+    if (path == null) return;
+
+    _restoringSnapshot = true;
+    notifyListeners();
+    try {
+      final snap = await Isolate.run(() => _decodeSnapshotJsonFile(path));
+      if (snap == null) return;
+      if (!VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
+        debugPrint('VolwardSession: failed to hydrate engine from cached snapshot');
+        return;
+      }
+      _lastSnapshot = snap;
+      debugPrint('VolwardSession: restored cached snapshot from $path');
+    } catch (e, st) {
+      debugPrint('VolwardSession: restore cached snapshot failed: $e\n$st');
+    } finally {
+      _restoringSnapshot = false;
+      notifyListeners();
+    }
   }
 
   void setScanRoots(List<String> roots) {
@@ -240,6 +347,8 @@ class VolwardSession extends ChangeNotifier {
     _scanProgress = null;
     _workerCancelPort = null;
     _scanChannelsClosed = false;
+    _lastScanActivityAt = null;
+    _savingPhaseStartedAt = null;
     _startScanElapsedTimer();
     notifyListeners();
 
@@ -254,9 +363,12 @@ class VolwardSession extends ChangeNotifier {
       final m = Map<String, dynamic>.from(msg);
       final type = m['type']?.toString();
       if (type == 'progress') {
+        final phase = m['phase']?.toString();
+        _touchScanActivity(phase: phase);
         _scanProgress = Map<String, dynamic>.from(m)..remove('type');
         notifyListeners();
       } else if (type == 'done') {
+        _touchScanActivity(phase: 'LoadingResults');
         _closeScanChannels();
         final path = m['snapshot_path']?.toString();
         if (path != null && path.isNotEmpty) {
@@ -300,9 +412,7 @@ class VolwardSession extends ChangeNotifier {
         _scanCancelInitPort!.sendPort,
         _incrementalScan,
       ]);
-      _lastSnapshot = await completer.future.timeout(
-        const Duration(minutes: 30),
-      );
+      _lastSnapshot = await _awaitScanWithStallGuard(completer.future);
       notifyListeners();
       return _lastSnapshot?['snapshot_id']?.toString() ?? 'done';
     } on ScanCancelledException catch (e) {
@@ -319,6 +429,8 @@ class VolwardSession extends ChangeNotifier {
       _activeScanCompleter = null;
       _workerCancelPort = null;
       _scanning = false;
+      _lastScanActivityAt = null;
+      _savingPhaseStartedAt = null;
       _stopScanElapsedTimer();
       notifyListeners();
     }

@@ -1,8 +1,7 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../theme/apple_tokens.dart';
+import '../theme/volward_tokens.dart';
 
 enum AppleButtonVariant { primary, secondary, pearl, darkUtility }
 
@@ -30,46 +29,47 @@ class _AppleButtonState extends State<AppleButton> {
   bool _pressed = false;
 
   (Color bg, Color fg, BorderSide? border, EdgeInsets padding, TextStyle textStyle)
-      _style() {
+      _style(BuildContext context) {
+    final v = context.volward;
     switch (widget.variant) {
       case AppleButtonVariant.primary:
         return (
-          AppleColors.primary,
-          AppleColors.onPrimary,
+          v.primary,
+          v.onPrimary,
           null,
           const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          AppleTypography.captionStrong.copyWith(color: AppleColors.onPrimary, height: 1.2),
+          AppleTypography.captionStrong.copyWith(color: v.onPrimary, height: 1.2),
         );
       case AppleButtonVariant.secondary:
         return (
-          AppleColors.canvas,
-          AppleColors.primary,
-          const BorderSide(color: AppleColors.primary),
+          v.canvas,
+          v.primary,
+          BorderSide(color: v.primary),
           const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          AppleTypography.captionStrong.copyWith(color: AppleColors.primary, height: 1.2),
+          AppleTypography.captionStrong.copyWith(color: v.primary, height: 1.2),
         );
       case AppleButtonVariant.pearl:
         return (
-          AppleColors.surfacePearl,
-          AppleColors.inkMuted80,
-          const BorderSide(color: AppleColors.dividerSoft, width: 2),
+          v.surfacePearl,
+          v.inkMuted80,
+          BorderSide(color: v.dividerSoft, width: 2),
           const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          AppleTypography.caption,
+          AppleTypography.caption.copyWith(color: v.inkMuted80),
         );
       case AppleButtonVariant.darkUtility:
         return (
-          AppleColors.ink,
-          AppleColors.bodyOnDark,
+          v.ink,
+          v.bodyOnDark,
           null,
           const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          AppleTypography.caption.copyWith(color: AppleColors.bodyOnDark),
+          AppleTypography.caption.copyWith(color: v.bodyOnDark),
         );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg, border, padding, textStyle) = _style();
+    final (bg, fg, border, padding, textStyle) = _style(context);
     final enabled = widget.onPressed != null;
     final radius = widget.variant == AppleButtonVariant.pearl ||
             widget.variant == AppleButtonVariant.darkUtility
@@ -135,11 +135,12 @@ class AppleUtilityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final v = context.volward;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: AppleColors.canvas,
+        color: v.canvas,
         borderRadius: BorderRadius.circular(AppleRadius.lg),
-        border: Border.all(color: AppleColors.hairline),
+        border: Border.all(color: v.hairline),
       ),
       child: Padding(padding: padding, child: child),
     );
@@ -164,10 +165,10 @@ class AppleSectionHeader extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: AppleTypography.bodyStrong),
+          Text(title, style: context.vwBodyStrong),
           if (subtitle != null) ...[
             const SizedBox(height: AppleSpacing.xxs),
-            Text(subtitle!, style: AppleTypography.caption),
+            Text(subtitle!, style: context.vwCaption),
           ],
         ],
       );
@@ -175,10 +176,13 @@ class AppleSectionHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: AppleTypography.displayLg),
+        Text(title, style: context.vwDisplayLg),
         if (subtitle != null) ...[
           const SizedBox(height: AppleSpacing.xs),
-          Text(subtitle!, style: AppleTypography.lead.copyWith(fontSize: 21, height: 1.4)),
+          Text(
+            subtitle!,
+            style: context.vwLead.copyWith(fontSize: 21, height: 1.4),
+          ),
         ],
       ],
     );
@@ -199,11 +203,12 @@ class AppleOptionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final v = context.volward;
     return Material(
-      color: AppleColors.canvas,
+      color: v.canvas,
       shape: StadiumBorder(
         side: BorderSide(
-          color: selected ? AppleColors.primaryFocus : AppleColors.hairline,
+          color: selected ? v.primaryFocus : v.hairline,
           width: selected ? 2 : 1,
         ),
       ),
@@ -217,7 +222,7 @@ class AppleOptionChip extends StatelessWidget {
           child: Text(
             label,
             style: AppleTypography.finePrint.copyWith(
-              color: selected ? AppleColors.ink : AppleColors.inkMuted80,
+              color: selected ? v.ink : v.inkMuted80,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
@@ -247,12 +252,13 @@ class AppleListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final v = context.volward;
     return Material(
-      color: selected ? AppleColors.canvasParchment : AppleColors.canvas,
+      color: selected ? v.canvasParchment : v.canvas,
       child: InkWell(
         onTap: onTap,
         splashColor: Colors.transparent,
-        highlightColor: AppleColors.canvasParchment,
+        highlightColor: v.canvasParchment,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppleSpacing.md,
@@ -270,13 +276,13 @@ class AppleListRow extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: AppleTypography.captionStrong,
+                      style: context.vwCaptionStrong,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 1),
-                      Text(subtitle!, style: AppleTypography.finePrint),
+                      Text(subtitle!, style: context.vwFinePrint),
                     ],
                   ],
                 ),
@@ -310,8 +316,9 @@ class ApplePageShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final v = context.volward;
     return ColoredBox(
-      color: AppleColors.canvasParchment,
+      color: v.canvasParchment,
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
@@ -337,21 +344,22 @@ class AppleStickyBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.lg, vertical: AppleSpacing.sm),
-          decoration: BoxDecoration(
-            color: AppleColors.canvasParchment.withValues(alpha: 0.8),
-            border: const Border(top: BorderSide(color: AppleColors.hairline)),
-          ),
-          child: Row(
-            children: [
-              Expanded(child: leading),
-              action,
-            ],
-          ),
+    final v = context.volward;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: v.canvas,
+        border: Border(top: BorderSide(color: v.hairline)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppleSpacing.lg,
+          vertical: AppleSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            Expanded(child: leading),
+            action,
+          ],
         ),
       ),
     );

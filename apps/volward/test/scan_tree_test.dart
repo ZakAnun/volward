@@ -113,6 +113,46 @@ void main() {
     });
   });
 
+  group('ScanTreeNode.withAggregatedCounts', () {
+    test('fills subtreeFileCount for every directory', () {
+      final root = ScanTreeNode(
+        name: 'root',
+        path: '/root',
+        isDirectory: true,
+        children: [
+          ScanTreeNode(
+            name: 'dir',
+            path: '/root/dir',
+            isDirectory: true,
+            children: [
+              ScanTreeNode(
+                name: 'a.txt',
+                path: '/root/dir/a.txt',
+                isDirectory: false,
+              ),
+              ScanTreeNode(
+                name: 'b.txt',
+                path: '/root/dir/b.txt',
+                isDirectory: false,
+              ),
+            ],
+          ),
+          ScanTreeNode(
+            name: 'c.txt',
+            path: '/root/c.txt',
+            isDirectory: false,
+          ),
+        ],
+      );
+
+      final annotated = ScanTreeNode.withAggregatedCounts(root);
+      expect(annotated.subtreeFileCount, 3);
+      expect(annotated.children.first.subtreeFileCount, 2);
+      expect(annotated.fileCount, 3);
+      expect(annotated.children.first.fileCount, 2);
+    });
+  });
+
   group('flattenVisible', () {
     test('only includes expanded branches', () {
       final root = ScanTreeNode(

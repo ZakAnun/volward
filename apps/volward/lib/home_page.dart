@@ -7,15 +7,22 @@ import 'macos_settings.dart';
 import 'scan_tree.dart';
 import 'scan_tree_filter.dart';
 import 'theme/apple_tokens.dart';
+import 'settings_page.dart';
+import 'theme/volward_theme_settings.dart';
+import 'theme/volward_tokens.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
 import 'widgets/scan_column_view.dart';
-
-enum _SortMode { sizeDesc, sizeAsc, nameAsc }
+import 'widgets/scan_filter_bar.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.session});
+  const HomePage({
+    super.key,
+    required this.session,
+    required this.themeSettings,
+  });
   final VolwardSession session;
+  final VolwardThemeSettings themeSettings;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -25,36 +32,52 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? _scanStatus;
   String? _categoryFilter;
   bool _deletableOnly = false;
-  _SortMode _sort = _SortMode.sizeDesc;
+  // Ordinal backing: survives hot reload when enum type/name changes.
+  int _sortIndex = ScanSortMode.sizeDesc.index;
   final Set<String> _selected = {};
   final List<ScanTreeNode> _columnChain = [];
+  final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
   bool _prevScanning = false;
+  bool _permissionBannerExpanded = false;
 
   ScanTreeNode? _cachedDisplayTree;
   String? _cachedDisplayTreeKey;
+  ScanTreeNode? _cachedResolvedTree;
+  String? _cachedResolvedTreeKey;
+  List<Map<String, dynamic>>? _cachedFilteredEntries;
+  String? _cachedFilteredEntriesKey;
+  Map<String, Map<String, dynamic>>? _cachedEntriesById;
+  List<Map<String, dynamic>>? _cachedAllEntries;
+  String? _cachedEntriesKey;
 
   VolwardSession get _s => widget.session;
 
-  static const _categoryChips = [
-    null,
-    'Cache',
-    'Temp',
-    'Media',
-    'Unknown',
-    'System',
-  ];
+  ScanSortMode get _sort =>
+      ScanSortMode.values[_sortIndex.clamp(0, ScanSortMode.values.length - 1)];
+
+  set _sort(ScanSortMode mode) => _sortIndex = mode.index;
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _sortIndex = _sortIndex.clamp(0, ScanSortMode.values.length - 1);
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_onSessionChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.session.restoreCachedSnapshotIfNeeded();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_onSessionChanged);
+    _columnNavTick.dispose();
     super.dispose();
   }
 
@@ -99,11 +122,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _selected.clear();
         _scanStatus = null;
         _columnChain.clear();
-        _invalidateTreeCaches();
+        _columnNavTick.value++;
+        _invalidateSnapshotCaches();
       });
     }
     if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
       _columnChain.clear();
+      _columnNavTick.value++;
+      _invalidateSnapshotCaches();
     }
     _prevScanning = _s.scanning;
     setState(() {});
@@ -117,8 +143,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Map<String, Map<String, dynamic>> _entriesById() {
+    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
+    if (_cachedEntriesById != null && _cachedEntriesKey == snapId) {
+      return _cachedEntriesById!;
+    }
     final snap = _s.lastSnapshot;
-    if (snap == null || snap['entries'] is! List) return {};
+    if (snap == null || snap['entries'] is! List) {
+      _cachedEntriesById = {};
+      _cachedEntriesKey = snapId;
+      return _cachedEntriesById!;
+    }
     final out = <String, Map<String, dynamic>>{};
     for (final raw in snap['entries'] as List) {
       if (raw is! Map) continue;
@@ -126,19 +160,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final id = entry['id']?.toString();
       if (id != null) out[id] = entry;
     }
+    _cachedEntriesById = out;
+    _cachedEntriesKey = snapId;
     return out;
   }
 
   List<Map<String, dynamic>> _allSnapshotEntries() {
+    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
+    if (_cachedAllEntries != null && _cachedEntriesKey == snapId) {
+      return _cachedAllEntries!;
+    }
     final snap = _s.lastSnapshot;
-    if (snap == null || snap['entries'] is! List) return [];
-    return (snap['entries'] as List)
+    if (snap == null || snap['entries'] is! List) {
+      _cachedAllEntries = [];
+      _cachedEntriesKey = snapId;
+      return _cachedAllEntries!;
+    }
+    final list = (snap['entries'] as List)
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+    _cachedAllEntries = list;
+    _cachedEntriesKey = snapId;
+    return list;
   }
 
   ScanTreeNode? _resolveResultTree() {
+    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
+    if (_cachedResolvedTree != null && _cachedResolvedTreeKey == snapId) {
+      return _cachedResolvedTree;
+    }
+
     final snap = _s.lastSnapshot;
     if (snap == null) return null;
 
@@ -161,6 +213,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       tree = ScanTreeBuilder.build(entries: entries, rootPath: rootPath);
     }
 
+    _cachedResolvedTree = tree;
+    _cachedResolvedTreeKey = snapId;
     return tree;
   }
 
@@ -173,11 +227,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return a.isDirectory ? -1 : 1;
       }
       switch (_sort) {
-        case _SortMode.sizeDesc:
-          return b.totalBytes.compareTo(a.totalBytes);
-        case _SortMode.sizeAsc:
-          return a.totalBytes.compareTo(b.totalBytes);
-        case _SortMode.nameAsc:
+        case ScanSortMode.sizeDesc:
+          return b.displayBytes.compareTo(a.displayBytes);
+        case ScanSortMode.sizeAsc:
+          return a.displayBytes.compareTo(b.displayBytes);
+        case ScanSortMode.nameAsc:
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       }
     });
@@ -193,13 +247,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  void _invalidateTreeCaches() {
+  void _invalidateDisplayTreeCaches() {
     _cachedDisplayTree = null;
     _cachedDisplayTreeKey = null;
+    _cachedFilteredEntries = null;
+    _cachedFilteredEntriesKey = null;
+  }
+
+  void _invalidateSnapshotCaches() {
+    _invalidateDisplayTreeCaches();
+    _cachedResolvedTree = null;
+    _cachedResolvedTreeKey = null;
+    _cachedEntriesById = null;
+    _cachedAllEntries = null;
+    _cachedEntriesKey = null;
   }
 
   void _resetColumnNav() {
     _columnChain.clear();
+    _columnNavTick.value++;
+  }
+
+  void _setColumnChain(List<ScanTreeNode> next) {
+    _columnChain
+      ..clear()
+      ..addAll(next);
+    _columnNavTick.value++;
   }
 
   ScanTreeNode? _computeDisplayTree() {
@@ -219,7 +292,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? root
         : pruneTree(root, keep);
     if (filtered == null) return null;
-    return _sortTree(filtered);
+    return ScanTreeNode.withAggregatedCounts(_sortTree(filtered));
   }
 
   String _displayTreeCacheKey() {
@@ -238,12 +311,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _onColumnSelect(int columnIndex, ScanTreeNode node) {
-    setState(() {
-      final next = _columnChain.take(columnIndex).toList()..add(node);
-      _columnChain
-        ..clear()
-        ..addAll(next);
-    });
+    _setColumnChain(_columnChain.take(columnIndex).toList()..add(node));
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
@@ -308,6 +376,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   List<Map<String, dynamic>> _filteredSortedEntries() {
+    final key = _displayTreeCacheKey();
+    if (_cachedFilteredEntries != null && _cachedFilteredEntriesKey == key) {
+      return _cachedFilteredEntries!;
+    }
+
     Iterable<Map<String, dynamic>> out = _allSnapshotEntries();
     if (_categoryFilter != null) {
       out = out.where((e) => e['category']?.toString() == _categoryFilter);
@@ -315,25 +388,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_deletableOnly) out = out.where((e) => e['deletable'] == true);
     final list = out.toList();
     switch (_sort) {
-      case _SortMode.sizeDesc:
+      case ScanSortMode.sizeDesc:
         list.sort(
           (a, b) => ((b['size_bytes'] as num?) ?? 0).compareTo(
             (a['size_bytes'] as num?) ?? 0,
           ),
         );
-      case _SortMode.sizeAsc:
+      case ScanSortMode.sizeAsc:
         list.sort(
           (a, b) => ((a['size_bytes'] as num?) ?? 0).compareTo(
             (b['size_bytes'] as num?) ?? 0,
           ),
         );
-      case _SortMode.nameAsc:
+      case ScanSortMode.nameAsc:
         list.sort(
           (a, b) => (a['display_name']?.toString() ?? '').compareTo(
             b['display_name']?.toString() ?? '',
           ),
         );
     }
+    _cachedFilteredEntries = list;
+    _cachedFilteredEntriesKey = key;
     return list;
   }
 
@@ -463,47 +538,167 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildResultsHeaderScroll({
+  Widget _buildCompactResultsChrome(
+    BuildContext context, {
     required List<Map<String, dynamic>> entries,
     required ScanTreeNode? displayTree,
-    required double maxHeight,
   }) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildScanSection(),
-            if (displayTree != null)
-              _buildResultsHeader(entries, displayTree)
-            else
-              _buildResultsHeaderEmpty(entries),
+    final showPermission =
+        _s.ready && (!_s.hasSnapshotFileApi || !_s.deepScanReady);
+
+    return _pad(
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showPermission) ...[
+            _buildPermissionBanner(context),
+            const SizedBox(height: AppleSpacing.xxs),
           ],
-        ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  _compactResultsSummary(displayTree, entries),
+                  style: context.vwFinePrintInk,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: AppleSpacing.xs),
+              Tooltip(
+                message: _s.scanTargetLabel,
+                child: Text(
+                  _s.scanRoots.isEmpty ? 'Home' : 'Custom',
+                  style: context.vwFinePrint,
+                ),
+              ),
+              const SizedBox(width: AppleSpacing.xs),
+              AppleButton(
+                label: 'Folder…',
+                icon: Icons.folder_open_outlined,
+                variant: AppleButtonVariant.pearl,
+                onPressed: _s.scanning ? null : _pickFolder,
+              ),
+              if (_s.scanRoots.isNotEmpty) ...[
+                const SizedBox(width: AppleSpacing.xxs),
+                AppleButton(
+                  label: 'Home',
+                  icon: Icons.home_outlined,
+                  variant: AppleButtonVariant.pearl,
+                  onPressed: _s.scanning
+                      ? null
+                      : () {
+                          _s.clearScanRoots();
+                          setState(() => _scanStatus = null);
+                        },
+                ),
+              ],
+              if (_s.scanning) ...[
+                const SizedBox(width: AppleSpacing.xxs),
+                AppleButton(
+                  label: 'Cancel',
+                  icon: Icons.stop_outlined,
+                  variant: AppleButtonVariant.darkUtility,
+                  onPressed: _s.cancelScan,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppleSpacing.xxs),
+          ScanFilterBar(
+            categoryFilter: _categoryFilter,
+            onCategoryChanged: (cat) => setState(() {
+              _categoryFilter = cat;
+              _resetColumnNav();
+              _invalidateDisplayTreeCaches();
+            }),
+            sortMode: _sort,
+            onSortChanged: (mode) => setState(() {
+              _sort = mode;
+              _invalidateDisplayTreeCaches();
+            }),
+            deletableOnly: _deletableOnly,
+            onDeletableOnlyChanged: (v) => setState(() {
+              _deletableOnly = v;
+              _resetColumnNav();
+              _invalidateDisplayTreeCaches();
+            }),
+            incrementalScan: _s.incrementalScan,
+            onIncrementalScanChanged: _s.setIncrementalScan,
+            incrementalEnabled: _s.canUseIncrementalScan,
+            scanning: _s.scanning,
+          ),
+          if (_s.scanning) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            const ClipRRect(
+              borderRadius: BorderRadius.all(Radius.circular(AppleRadius.pill)),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              _scanProgressSummary(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.vwFinePrint,
+            ),
+          ] else if (_scanStatus != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              _scanStatus!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.vwFinePrint,
+            ),
+          ],
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        AppleSpacing.lg,
+        AppleSpacing.xxs,
+        AppleSpacing.lg,
+        AppleSpacing.xxs,
       ),
     );
   }
 
-  Widget _buildResultsBrowser(
+  String _compactResultsSummary(
     ScanTreeNode? displayTree,
     List<Map<String, dynamic>> entries,
   ) {
+    final snap = _s.lastSnapshot;
+    final reclaimable = snap?['reclaimable_estimate_bytes'];
+    final parts = <String>[];
+    if (displayTree != null) {
+      parts.add(_formatTreeSummary(displayTree));
+    }
+    parts.add('${entries.length} classified');
+    if (reclaimable != null) {
+      parts.add('${_fmt(reclaimable)} reclaimable');
+    }
+    return parts.join(' · ');
+  }
+
+  Widget _buildResultsBrowser(
+    BuildContext context,
+    ScanTreeNode? displayTree,
+    List<Map<String, dynamic>> entries,
+  ) {
+    final v = context.volward;
     if (displayTree == null) {
       return DecoratedBox(
         decoration: BoxDecoration(
-          color: AppleColors.canvas,
+          color: v.canvas,
           borderRadius: BorderRadius.circular(AppleRadius.sm),
-          border: Border.all(color: AppleColors.hairline),
+          border: Border.all(color: v.hairline),
         ),
         child: Center(
           child: Text(
             entries.isEmpty
                 ? 'No items match the current filters.'
                 : 'No items match the current filters (${entries.length} in list).',
-            style: AppleTypography.finePrint.copyWith(
-              color: AppleColors.inkMuted48,
-            ),
+            style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
         ),
@@ -513,16 +708,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (displayTree.children.isEmpty) {
       return DecoratedBox(
         decoration: BoxDecoration(
-          color: AppleColors.canvas,
+          color: v.canvas,
           borderRadius: BorderRadius.circular(AppleRadius.sm),
-          border: Border.all(color: AppleColors.hairline),
+          border: Border.all(color: v.hairline),
         ),
         child: Center(
           child: Text(
             'Scan returned no files under ${displayTree.path}.',
-            style: AppleTypography.finePrint.copyWith(
-              color: AppleColors.inkMuted48,
-            ),
+            style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
         ),
@@ -543,58 +736,80 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final entries = _filteredSortedEntries();
     final hasResults = _s.lastSnapshot != null;
+    final restoring = _s.restoringSnapshot;
     final displayTree = hasResults ? _getDisplayTree() : null;
-    final focus = scanColumnFocusNode(_columnChain);
-    final viewportH = MediaQuery.sizeOf(context).height;
-    final headerMaxH = (viewportH * 0.38).clamp(200.0, 340.0);
 
     return Scaffold(
-      backgroundColor: AppleColors.canvasParchment,
+      backgroundColor: context.volward.canvasParchment,
       body: Column(
         children: [
-          _buildTopNav(),
+          _buildTopNav(context),
           Expanded(
             child: hasResults
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildResultsHeaderScroll(
+                      _buildCompactResultsChrome(
+                        context,
                         entries: entries,
                         displayTree: displayTree,
-                        maxHeight: headerMaxH,
                       ),
                       Expanded(
-                        child: _padExpanded(
-                          _buildResultsBrowser(displayTree, entries),
-                          padding: const EdgeInsets.fromLTRB(
-                            AppleSpacing.lg,
-                            AppleSpacing.xs,
-                            AppleSpacing.lg,
-                            AppleSpacing.xs,
-                          ),
+                        child: ListenableBuilder(
+                          listenable: _columnNavTick,
+                          builder: (context, _) {
+                            final focus = scanColumnFocusNode(_columnChain);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: _padExpanded(
+                                    _buildResultsBrowser(
+                                      context,
+                                      displayTree,
+                                      entries,
+                                    ),
+                                    padding: const EdgeInsets.fromLTRB(
+                                      AppleSpacing.lg,
+                                      0,
+                                      AppleSpacing.lg,
+                                      AppleSpacing.xxs,
+                                    ),
+                                  ),
+                                ),
+                                _buildItemPreview(context, focus),
+                              ],
+                            );
+                          },
                         ),
                       ),
-                      _buildItemPreview(focus),
-                      const SizedBox(height: AppleSpacing.sm),
                     ],
+                  )
+                : restoring
+                ? Center(
+                    child: Text(
+                      'Restoring previous scan…',
+                      style: context.vwFinePrint,
+                    ),
                   )
                 : CustomScrollView(
                     slivers: [
-                      SliverToBoxAdapter(child: _buildScanSection()),
+                      SliverToBoxAdapter(child: _buildScanSection(context)),
                       const SliverToBoxAdapter(child: SizedBox(height: 72)),
                     ],
                   ),
           ),
-          _buildStickyBar(entries),
+          _buildStickyBar(context, entries),
         ],
       ),
     );
   }
 
-  Widget _buildTopNav() {
+  Widget _buildTopNav(BuildContext context) {
+    final v = context.volward;
     return Container(
       height: 36,
-      color: AppleColors.surfaceBlack,
+      color: v.surfaceBlack,
       padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.md),
       child: Row(
         children: [
@@ -604,41 +819,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               fontSize: 13,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.12,
+              color: v.bodyOnDark,
             ),
           ),
           const SizedBox(width: AppleSpacing.sm),
           Text(
             '·',
-            style: AppleTypography.navLink.copyWith(
-              color: AppleColors.bodyMuted,
-            ),
+            style: context.vwNavLinkMuted,
           ),
           const SizedBox(width: AppleSpacing.sm),
           Text(
             'Storage steward',
-            style: AppleTypography.navLink.copyWith(
-              color: AppleColors.bodyMuted,
-            ),
+            style: context.vwNavLinkMuted,
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Settings',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(Icons.settings_outlined, size: 18, color: v.bodyMuted),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsPage(
+                    themeSettings: widget.themeSettings,
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPermissionBanner() {
+  Widget _buildPermissionBanner(BuildContext context) {
+    final v = context.volward;
     if (!_s.ready) {
       return Row(
         children: [
-          const Icon(
-            Icons.hourglass_empty,
-            size: 14,
-            color: AppleColors.inkMuted48,
-          ),
+          Icon(Icons.hourglass_empty, size: 14, color: v.inkMuted48),
           const SizedBox(width: AppleSpacing.xxs),
           Expanded(
             child: Text(
               _s.initError ?? 'Loading engine…',
-              style: AppleTypography.finePrint,
+              style: context.vwFinePrint,
             ),
           ),
         ],
@@ -650,24 +875,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         width: double.infinity,
         padding: const EdgeInsets.all(AppleSpacing.sm),
         decoration: BoxDecoration(
-          color: const Color(0xFFFF3B30).withValues(alpha: 0.08),
+          color: v.danger.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(AppleRadius.sm),
           border: Border.all(
-            color: const Color(0xFFFF3B30).withValues(alpha: 0.25),
+            color: v.danger.withValues(alpha: 0.25),
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Native library outdated',
-              style: AppleTypography.captionStrong,
+              style: context.vwCaptionStrong,
             ),
             const SizedBox(height: AppleSpacing.xxs),
-            const Text(
-              'Scan is disabled until libvolward_facade.dylib is rebuilt. '
-              'In terminal: cd apps/volward/macos && bash build_rust.sh — then press R in flutter run to fully restart.',
-              style: AppleTypography.finePrint,
+            Text(
+              'Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).',
+              style: context.vwFinePrint,
             ),
           ],
         ),
@@ -676,15 +900,43 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     if (_s.deepScanReady) {
       return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.check_circle, size: 14, color: AppleColors.primary),
+          Icon(Icons.check_circle, size: 14, color: v.primary),
           const SizedBox(width: AppleSpacing.xxs),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Full Disk Access enabled — deep scan on. Volward can read ~/Library caches and app data to find more reclaimable storage.',
-              style: AppleTypography.finePrint,
+              'Full Disk Access enabled — deep scan on.',
+              style: context.vwFinePrint,
             ),
+          ),
+        ],
+      );
+    }
+
+    if (!_permissionBannerExpanded) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(Icons.info_outline, size: 14, color: v.warning),
+          const SizedBox(width: AppleSpacing.xxs),
+          Expanded(
+            child: Text(
+              'Full Disk Access recommended for ~/Library cache scan.',
+              style: context.vwFinePrint,
+            ),
+          ),
+          AppleButton(
+            label: 'Open Settings',
+            icon: Icons.open_in_new,
+            variant: AppleButtonVariant.secondary,
+            onPressed: _openFullDiskAccessSettings,
+          ),
+          IconButton(
+            icon: Icon(Icons.expand_more, size: 18, color: v.inkMuted80),
+            tooltip: 'Show details',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed: () => setState(() => _permissionBannerExpanded = true),
           ),
         ],
       );
@@ -694,45 +946,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       width: double.infinity,
       padding: const EdgeInsets.all(AppleSpacing.sm),
       decoration: BoxDecoration(
-        color: const Color(0xFFFF9500).withValues(alpha: 0.08),
+        color: v.warning.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppleRadius.sm),
         border: Border.all(
-          color: const Color(0xFFFF9500).withValues(alpha: 0.25),
+          color: v.warning.withValues(alpha: 0.25),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Full Disk Access recommended',
-            style: AppleTypography.captionStrong,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Full Disk Access recommended',
+                  style: context.vwCaptionStrong,
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.expand_less, size: 18, color: v.inkMuted80),
+                tooltip: 'Hide details',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                onPressed: () =>
+                    setState(() => _permissionBannerExpanded = false),
+              ),
+            ],
           ),
           const SizedBox(height: AppleSpacing.xxs),
-          const Text(
-            'This is not an Info.plist declaration — macOS grants FDA manually in System Settings.',
-            style: AppleTypography.finePrint,
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
-          const Text(
-            'Steps: Privacy & Security → Full Disk Access → + → Cmd+Shift+G → select volward.app → enable Volward.',
-            style: AppleTypography.finePrint,
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
-          const Text(
-            'Debug builds (flutter run) use ad-hoc signing and a debugger, so the app often never auto-appears in the list. Copy path and add manually.',
-            style: AppleTypography.finePrint,
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
-          const Text(
-            'After grant: deep scan of ~/Library caches and app data. Without it: Home and picked folders still work.',
-            style: AppleTypography.finePrint,
+          Text(
+            'System Settings → Privacy & Security → Full Disk Access → enable Volward. '
+            'Debug builds: tap +, Cmd+Shift+G, select volward.app.',
+            style: context.vwFinePrint,
           ),
           if (MacosSettings.appBundlePath() case final path?) ...[
             const SizedBox(height: AppleSpacing.xxs),
             Text(
               'App path: $path',
-              style: AppleTypography.finePrint,
-              maxLines: 2,
+              style: context.vwFinePrint,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -766,15 +1018,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildScanSection() {
+  Widget _buildScanSection(BuildContext context) {
+    final v = context.volward;
     return _pad(
       AppleUtilityCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildPermissionBanner(),
+            _buildPermissionBanner(context),
             const SizedBox(height: AppleSpacing.sm),
-            const Divider(height: 1, color: AppleColors.hairline),
+            Divider(height: 1, color: v.hairline),
             const SizedBox(height: AppleSpacing.sm),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -783,14 +1036,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Target',
-                        style: AppleTypography.captionStrong,
+                        style: context.vwCaptionStrong,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         _s.scanTargetLabel,
-                        style: AppleTypography.caption,
+                        style: context.vwCaption,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -837,31 +1090,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               message: _s.canUseIncrementalScan
                   ? '复用未变化的文件夹，加快后续扫描（需先完成一次全量扫描）'
                   : '需要 rebuild Rust 后才可使用增量扫描',
-              child: Row(
-                children: [
-                  IgnorePointer(
-                    ignoring: _s.scanning || !_s.canUseIncrementalScan,
-                    child: Opacity(
-                      opacity: (_s.scanning || !_s.canUseIncrementalScan) ? 0.5 : 1,
-                      child: AppleOptionChip(
-                        label: '增量扫描',
-                        selected: _s.incrementalScan,
-                        onSelected: _s.setIncrementalScan,
-                      ),
-                    ),
+              child: IgnorePointer(
+                ignoring: _s.scanning || !_s.canUseIncrementalScan,
+                child: Opacity(
+                  opacity:
+                      (_s.scanning || !_s.canUseIncrementalScan) ? 0.5 : 1,
+                  child: AppleOptionChip(
+                    label: '增量扫描',
+                    selected: _s.incrementalScan,
+                    onSelected: _s.setIncrementalScan,
                   ),
-                  const SizedBox(width: AppleSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      _s.canUseIncrementalScan
-                          ? '复用未变化的文件夹，加快后续扫描'
-                          : '增量扫描不可用 — 请 rebuild Rust 后重启',
-                      style: AppleTypography.finePrint.copyWith(
-                        color: AppleColors.inkMuted48,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             if (_s.scanning) ...[
@@ -877,20 +1116,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 _scanProgressSummary(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppleTypography.finePrint,
+                style: context.vwFinePrint,
               ),
               if (_s.scanRoots.isEmpty) ...[
                 const SizedBox(height: AppleSpacing.xxs),
                 Text(
                   'Full Home scan can take many minutes on large accounts — watch the item count above.',
-                  style: AppleTypography.finePrint.copyWith(
-                    color: AppleColors.inkMuted48,
-                  ),
+                  style: context.vwFinePrint,
                 ),
               ],
             ] else if (_scanStatus != null) ...[
               const SizedBox(height: AppleSpacing.xxs),
-              Text(_scanStatus!, style: AppleTypography.finePrint),
+              Text(_scanStatus!, style: context.vwFinePrint),
             ],
           ],
         ),
@@ -898,150 +1135,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildResultsHeader(
-    List<Map<String, dynamic>> entries,
-    ScanTreeNode tree,
-  ) {
-    final snap = _s.lastSnapshot;
-    final reclaimable = snap?['reclaimable_estimate_bytes'];
-    final stats = snap?['stats'];
-    final summary = stats is Map
-        ? _formatFullScanSummary(stats)
-        : 'Full scan summary unavailable.';
-    return _buildResultsHeaderBody(
-      entries: entries,
-      treeSummary: '${entries.length} shown · ${_formatTreeSummary(tree)}',
-      summaryLine:
-          '$summary Cache = path matches /Caches/, /cache/, or .cache/ (tap Cache filter). '
-          'Reclaimable: ${_fmt(reclaimable)}.',
-    );
-  }
-
-  Widget _buildResultsHeaderEmpty(List<Map<String, dynamic>> entries) {
-    final snap = _s.lastSnapshot;
-    final stats = snap?['stats'];
-    final summary = stats is Map
-        ? _formatFullScanSummary(stats)
-        : 'Full scan summary unavailable.';
-    return _buildResultsHeaderBody(
-      entries: entries,
-      treeSummary: '${entries.length} shown · no matches',
-      summaryLine: '$summary No entries match the current filters.',
-    );
-  }
-
-  Widget _buildResultsHeaderBody({
-    required List<Map<String, dynamic>> entries,
-    required String treeSummary,
-    required String summaryLine,
-  }) {
-    return _pad(
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: AppleSpacing.sm),
-          Row(
-            children: [
-              const Text('Results', style: AppleTypography.bodyStrong),
-              const Spacer(),
-              Text(treeSummary, style: AppleTypography.finePrint),
-            ],
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
-          Text(summaryLine, style: AppleTypography.finePrint),
-          const SizedBox(height: AppleSpacing.xs),
-          Wrap(
-            spacing: AppleSpacing.xxs,
-            runSpacing: AppleSpacing.xxs,
-            children: [
-              for (final cat in _categoryChips)
-                AppleOptionChip(
-                  label: cat ?? 'All',
-                  selected: _categoryFilter == cat,
-                  onSelected: (_) => setState(() {
-                    _categoryFilter = cat;
-                    _resetColumnNav();
-                    _invalidateTreeCaches();
-                  }),
-                ),
-              AppleOptionChip(
-                label: 'Deletable',
-                selected: _deletableOnly,
-                onSelected: (v) => setState(() {
-                  _deletableOnly = v;
-                  _resetColumnNav();
-                  _invalidateTreeCaches();
-                }),
-              ),
-              AppleOptionChip(
-                label: 'Size ↓',
-                selected: _sort == _SortMode.sizeDesc,
-                onSelected: (_) => setState(() {
-                  _sort = _SortMode.sizeDesc;
-                  _invalidateTreeCaches();
-                }),
-              ),
-              AppleOptionChip(
-                label: 'Size ↑',
-                selected: _sort == _SortMode.sizeAsc,
-                onSelected: (_) => setState(() {
-                  _sort = _SortMode.sizeAsc;
-                  _invalidateTreeCaches();
-                }),
-              ),
-              AppleOptionChip(
-                label: 'Name',
-                selected: _sort == _SortMode.nameAsc,
-                onSelected: (_) => setState(() {
-                  _sort = _SortMode.nameAsc;
-                  _invalidateTreeCaches();
-                }),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   String _formatTreeSummary(ScanTreeNode tree) {
-    return '${tree.fileCount} in tree · ${_fmt(tree.totalBytes)}';
+    final stats = _s.lastSnapshot?['stats'];
+    final filesSeen = stats is Map ? (stats['files_seen'] as num?)?.toInt() : null;
+    final count = filesSeen ?? tree.subtreeFileCount ?? tree.fileCount;
+    return '$count in tree · ${_fmt(tree.displayBytes)}';
   }
 
-  String _formatFullScanSummary(Map<dynamic, dynamic> stats) {
-    final dirs = stats['dirs_seen'];
-    final files = stats['files_in_snapshot'];
-    final skipped = stats['paths_skipped'];
-    final buf = StringBuffer('Full scan: $dirs dirs · $files files.');
-    if (skipped is num && skipped > 0) {
-      buf.write(' $skipped path(s) skipped (permission/I/O).');
-    }
-    if (stats['truncated'] == true) {
-      final reason = stats['incomplete_reason']?.toString();
-      buf.write(' Incomplete');
-      if (reason != null && reason.isNotEmpty) {
-        buf.write(': $reason');
-      }
-      buf.write('.');
-    }
-    return buf.toString();
-  }
-
-  Widget _buildItemPreview(ScanTreeNode? focus) {
+  Widget _buildItemPreview(BuildContext context, ScanTreeNode? focus) {
+    final v = context.volward;
     if (focus == null) {
       return _pad(
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppleColors.canvas,
+        Material(
+          color: v.canvas,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppleRadius.sm),
-            border: Border.all(color: AppleColors.hairline),
+            side: BorderSide(color: v.hairline),
           ),
-          child: const SizedBox(
-            height: 72,
+          child: SizedBox(
+            height: 36,
             child: Center(
               child: Text(
-                'Select a folder or file to preview details.',
-                style: AppleTypography.finePrint,
+                'Select a folder or file',
+                style: context.vwFinePrint,
               ),
             ),
           ),
@@ -1050,7 +1166,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           AppleSpacing.lg,
           0,
           AppleSpacing.lg,
-          AppleSpacing.sm,
+          AppleSpacing.xxs,
         ),
       );
     }
@@ -1058,8 +1174,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final entry = focus.entry;
     final isDir = focus.isDirectory;
     final size = isDir
-        ? focus.totalBytes
+        ? focus.displayBytes
         : (entry?['size_bytes'] as num? ?? focus.sizeBytes);
+    final subtreeItems = isDir ? focus.fileCount : 0;
     final category = entry?['category']?.toString() ?? (isDir ? 'Folder' : '—');
     final deletable = entry?['deletable'] == true;
     final entryId = entry?['id']?.toString() ?? focus.entryId;
@@ -1067,69 +1184,61 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final busy = _s.deleting || _s.scanning;
 
     return _pad(
-      DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppleColors.canvas,
+      Material(
+        color: v.canvas,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppleRadius.sm),
-          border: Border.all(color: AppleColors.hairline),
+          side: BorderSide(color: v.hairline),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppleSpacing.md,
-            vertical: AppleSpacing.sm,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                isDir ? Icons.folder : Icons.insert_drive_file_outlined,
-                size: 36,
-                color: isDir ? const Color(0xFF5AC8FA) : AppleColors.inkMuted48,
-              ),
-              const SizedBox(width: AppleSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      focus.name,
-                      style: AppleTypography.bodyStrong,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppleSpacing.xxs),
-                    Text(
-                      focus.path,
-                      style: AppleTypography.finePrint.copyWith(
-                        color: AppleColors.inkMuted48,
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 72),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppleSpacing.sm,
+              vertical: AppleSpacing.xxs,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isDir ? Icons.folder : Icons.insert_drive_file_outlined,
+                  size: 22,
+                  color: isDir ? v.folderIcon : v.inkMuted48,
+                ),
+                const SizedBox(width: AppleSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        focus.name,
+                        style: context.vwCaptionStrong,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppleSpacing.xxs),
-                    Text(
-                      '${_fmt(size)} · $category'
-                      '${isDir ? ' · ${focus.fileCount} item(s)' : ''}',
-                      style: AppleTypography.finePrint,
-                    ),
-                  ],
-                ),
-              ),
-              if (!isDir && deletable && entryId != null)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(
-                    'Move to Trash',
-                    style: AppleTypography.caption,
+                      Text(
+                        '${_fmt(size)} · $category'
+                        '${isDir ? ' · $subtreeItems items' : ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwFinePrint,
+                      ),
+                    ],
                   ),
-                  value: marked,
-                  onChanged: busy
-                      ? null
-                      : (_) => _toggleFocusedFileSelection(focus),
                 ),
-            ],
+                if (!isDir && deletable && entryId != null)
+                  Checkbox(
+                    value: marked,
+                    onChanged: busy
+                        ? null
+                        : (_) => _toggleFocusedFileSelection(focus),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1137,12 +1246,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         AppleSpacing.lg,
         0,
         AppleSpacing.lg,
-        AppleSpacing.sm,
+        AppleSpacing.xxs,
       ),
     );
   }
 
-  Widget _buildStickyBar(List<Map<String, dynamic>> entries) {
+  Widget _buildStickyBar(BuildContext context, List<Map<String, dynamic>> entries) {
     final busy = _s.deleting || _s.scanning;
     final String label;
     final String actionLabel;
@@ -1161,8 +1270,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       actionIcon = busy ? null : Icons.delete_outline;
       actionPressed = busy ? null : _confirmDelete;
     } else {
-      label = _s.ready ? 'Ready to scan' : 'Loading engine…';
-      actionLabel = 'Start scan';
+      final hasResults = _s.lastSnapshot != null;
+      label = hasResults
+          ? 'Browse results · tap folders below'
+          : (_s.ready ? 'Ready to scan' : 'Loading engine…');
+      actionLabel = hasResults ? 'Rescan' : 'Start scan';
       actionIcon = Icons.search;
       actionPressed = (_s.ready && !busy && _s.hasSnapshotFileApi)
           ? _startScan
@@ -1170,7 +1282,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
 
     return AppleStickyBar(
-      leading: Text(label, style: AppleTypography.caption),
+      leading: Text(label, style: context.vwCaption),
       action: AppleButton(
         label: actionLabel,
         icon: actionIcon,

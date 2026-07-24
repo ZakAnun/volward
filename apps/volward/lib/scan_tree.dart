@@ -7,6 +7,7 @@ class ScanTreeNode {
     this.sizeBytes = 0,
     this.entryId,
     this.entry,
+    this.subtreeFileCount,
     List<ScanTreeNode>? children,
   }) : children = children ?? [];
 
@@ -16,6 +17,8 @@ class ScanTreeNode {
   final int sizeBytes;
   final String? entryId;
   final Map<String, dynamic>? entry;
+  /// Precomputed file count under this directory (files only, not dirs).
+  final int? subtreeFileCount;
   final List<ScanTreeNode> children;
 
   factory ScanTreeNode.empty(String rootPath) {
@@ -71,8 +74,34 @@ class ScanTreeNode {
 
   int get fileCount {
     if (!isDirectory) return 1;
+    if (subtreeFileCount != null) return subtreeFileCount!;
     return children.fold<int>(0, (sum, c) => sum + c.fileCount);
   }
+
+  /// Returns a copy of [node] with [subtreeFileCount] filled for every directory.
+  static ScanTreeNode withAggregatedCounts(ScanTreeNode node) {
+    if (!node.isDirectory) return node;
+
+    var count = 0;
+    final annotatedChildren = node.children.map((child) {
+      final annotated = withAggregatedCounts(child);
+      count += annotated.fileCount;
+      return annotated;
+    }).toList();
+
+    return ScanTreeNode(
+      name: node.name,
+      path: node.path,
+      isDirectory: true,
+      sizeBytes: node.sizeBytes,
+      entryId: node.entryId,
+      entry: node.entry,
+      subtreeFileCount: count,
+      children: annotatedChildren,
+    );
+  }
+
+  int get displayBytes => sizeBytes > 0 ? sizeBytes : totalBytes;
 }
 
 /// Builds a Finder-like directory tree from flat scan entries (file paths only).

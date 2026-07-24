@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../scan_tree.dart';
 import '../theme/apple_tokens.dart';
+import '../theme/volward_tokens.dart';
 
 typedef ScanColumnSelectCallback = void Function(int columnIndex, ScanTreeNode node);
 
@@ -68,6 +69,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
 
   @override
   Widget build(BuildContext context) {
+    final v = context.volward;
     return LayoutBuilder(
       builder: (context, constraints) {
         final height = constraints.maxHeight;
@@ -79,14 +81,14 @@ class _ScanColumnViewState extends State<ScanColumnView> {
         if (widget.root.children.isEmpty) {
           return DecoratedBox(
             decoration: BoxDecoration(
-              color: AppleColors.canvas,
+              color: v.canvas,
               borderRadius: BorderRadius.circular(AppleRadius.sm),
-              border: Border.all(color: AppleColors.hairline),
+              border: Border.all(color: v.hairline),
             ),
             child: Center(
               child: Text(
                 'No items match the current filters.',
-                style: AppleTypography.finePrint.copyWith(color: AppleColors.inkMuted48),
+                style: context.vwFinePrint.copyWith(color: v.inkMuted48),
               ),
             ),
           );
@@ -96,9 +98,9 @@ class _ScanColumnViewState extends State<ScanColumnView> {
           height: height,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: AppleColors.canvas,
+              color: v.canvas,
               borderRadius: BorderRadius.circular(AppleRadius.sm),
-              border: Border.all(color: AppleColors.hairline),
+              border: Border.all(color: v.hairline),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppleRadius.sm),
@@ -111,10 +113,10 @@ class _ScanColumnViewState extends State<ScanColumnView> {
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.zero,
                   itemCount: columns.length,
-                  separatorBuilder: (_, __) => const VerticalDivider(
+                  separatorBuilder: (_, __) => VerticalDivider(
                     width: 1,
                     thickness: 1,
-                    color: AppleColors.hairline,
+                    color: v.hairline,
                   ),
                   itemBuilder: (context, columnIndex) {
                     return _FinderColumn(
@@ -186,7 +188,7 @@ class _FinderColumn extends StatelessWidget {
   }
 }
 
-class _FinderRow extends StatelessWidget {
+class _FinderRow extends StatefulWidget {
   const _FinderRow({
     required this.node,
     required this.isSelected,
@@ -202,26 +204,47 @@ class _FinderRow extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_FinderRow> createState() => _FinderRowState();
+}
+
+class _FinderRowState extends State<_FinderRow> {
+  bool _hovered = false;
+
+  Color _background(VolwardTokens v) {
+    if (widget.isSelected) return v.primaryFocus;
+    if (widget.markedForDelete) return v.primary.withValues(alpha: 0.08);
+    if (_hovered) return v.dividerSoft;
+    return Colors.transparent;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isDir = node.isDirectory;
-    final fg = isSelected ? AppleColors.onPrimary : AppleColors.body;
-    final muted = isSelected ? AppleColors.onPrimary.withValues(alpha: 0.85) : AppleColors.inkMuted48;
-    final bg = isSelected
-        ? AppleColors.primaryFocus
-        : markedForDelete
-            ? AppleColors.primary.withValues(alpha: 0.08)
-            : Colors.transparent;
+    final v = context.volward;
+    final isDir = widget.node.isDirectory;
+    final isSelected = widget.isSelected;
+    final fg = isSelected ? v.onPrimary : v.body;
+    final muted = isSelected ? v.onPrimary.withValues(alpha: 0.85) : v.inkMuted48;
+    final bg = _background(v);
 
     final subtitle = isDir
-        ? formatBytes(node.totalBytes)
-        : formatBytes(node.entry?['size_bytes'] as num? ?? node.sizeBytes);
+        ? widget.formatBytes(widget.node.displayBytes)
+        : widget.formatBytes(
+            widget.node.entry?['size_bytes'] as num? ?? widget.node.sizeBytes,
+          );
 
-    return Material(
-      color: bg,
-      child: InkWell(
-        onTap: onTap,
-        hoverColor: isSelected ? null : AppleColors.canvasParchment,
-        child: Padding(
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 80),
+          color: bg,
           padding: const EdgeInsets.symmetric(
             horizontal: AppleSpacing.xs,
             vertical: 5,
@@ -232,16 +255,16 @@ class _FinderRow extends StatelessWidget {
                 isDir ? Icons.folder : Icons.insert_drive_file_outlined,
                 size: 16,
                 color: isDir
-                    ? (isSelected ? const Color(0xFF7CB3FF) : const Color(0xFF5AC8FA))
+                    ? (isSelected ? v.folderIconOnPrimary : v.folderIcon)
                     : muted,
               ),
               const SizedBox(width: AppleSpacing.xxs),
               Expanded(
                 child: Text(
-                  node.name,
+                  widget.node.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppleTypography.caption.copyWith(
+                  style: context.vwCaption.copyWith(
                     color: fg,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   ),
@@ -252,7 +275,7 @@ class _FinderRow extends StatelessWidget {
               else
                 Text(
                   subtitle,
-                  style: AppleTypography.finePrint.copyWith(
+                  style: context.vwFinePrint.copyWith(
                     color: muted,
                     fontSize: 11,
                   ),
