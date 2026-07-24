@@ -78,7 +78,9 @@ void volwardScanIsolate(List<dynamic> args) {
       return;
     }
 
+    var tickCount = 0;
     Timer.periodic(const Duration(milliseconds: 300), (timer) {
+      tickCount++;
       if (!bridge.isScanRunning(engine)) {
         timer.cancel();
         try {
@@ -126,6 +128,21 @@ void volwardScanIsolate(List<dynamic> args) {
       final progress = bridge.getLastProgress(engine);
       if (progress != null) {
         progressPort.send(<String, dynamic>{'type': 'progress', ...progress});
+      }
+
+      // Roughly every 2s (300ms * 7), stream a partial snapshot so the UI
+      // can render progress without waiting for the whole scan to finish.
+      if (bridge.hasCheckpointApi && tickCount % 7 == 0) {
+        final checkpointPath =
+            '${Directory.systemTemp.path}/volward-$jobId-checkpoint.json';
+        final checkpointId =
+            bridge.writeLastCheckpointToPath(engine, checkpointPath);
+        if (checkpointId != null && !checkpointId.startsWith('error:')) {
+          progressPort.send(<String, dynamic>{
+            'type': 'checkpoint',
+            'snapshot_path': checkpointPath,
+          });
+        }
       }
     });
   } catch (e, st) {
