@@ -49,6 +49,15 @@ pub trait PlatformStorage: Send + Sync {
     fn open_permission_settings(&self) -> Result<(), PlatformError> {
         Err(PlatformError::Unsupported("open_permission_settings"))
     }
+
+    /// Single-level, non-recursive directory listing for instant UI preview.
+    /// Directories in the result have `size_bytes = 0` (unknown — callers
+    /// must not treat this as a real empty folder) and `dir_fingerprint =
+    /// None`. Default implementation is "unsupported" so existing test
+    /// platforms don't need changes; `DesktopPlatform` overrides it.
+    fn quick_list_dir(&self, _path: &str) -> Result<Vec<RawFsEntry>, PlatformError> {
+        Err(PlatformError::Unsupported("quick_list_dir"))
+    }
 }
 
 pub fn is_cancelled(cancel: &AtomicBool) -> bool {

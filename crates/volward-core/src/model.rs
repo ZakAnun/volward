@@ -119,7 +119,7 @@ pub struct ScanRoot {
     pub label: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RawFsEntry {
     pub path: String,
     pub is_dir: bool,
