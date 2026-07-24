@@ -1,22 +1,25 @@
 # Volward
 
-macOS 桌面存储管家：**Flutter UI + Rust 扫描核心 + 平台层**。扫描磁盘占用、按规则分类、Finder 式浏览，并将可删文件移入系统废纸篓。
+macOS 桌面存储管家：**Flutter UI + Rust 扫描核心 + 平台层**。渐进式扫描磁盘占用（即时预览 → 后台全量 → 点击优先 Peek）、按规则分类、Finder 式浏览，并将可删文件移入系统废纸篓。
 
 > 当前主要开发与验证平台为 **macOS**。Rust 核心与 `platform-desktop` 亦面向 Windows / Linux，Flutter 壳已生成多平台工程，但 UI 与 FFI 联调以 macOS 为准。
 
 ## 功能
 
-### 扫描
+### 扫描（渐进式）
 
-- **默认扫描用户 Home**，或通过「Folder…」选择自定义目录
-- **全量 / 增量扫描**（增量需 rebuild Rust 且 native 库支持 `scan_options` FFI）
-- **后台 Isolate 扫描**，UI 显示阶段与进度（Walking / Classifying / Saving…）
+- **默认目标为用户 Home**，或通过「Folder…」选择自定义目录；切回 Home 会先刷新该目录的即时预览
+- **即时预览**：选定目标后先 `quick_list_dir` 展示一层目录，无需等待全量扫描结束即可浏览
+- **后台全量 / 增量扫描**（增量需 rebuild Rust 且 native 库支持 `scan_options` FFI）；扫描在 Isolate 中进行，UI 显示阶段与进度（Walking / Classifying / Saving…）
+- **Checkpoint 流式更新**：扫描过程中周期性写出中间快照并合并进 UI；大树场景下间隔会按克隆开销自适应拉长（约 2s 起、上限约 15s）
+- **点击优先 Peek**：点进尚未扫完的文件夹时，会触发对该路径的小范围优先扫描，结果权威覆盖该子树（含删除与可释放空间估算校正）
 - **停滞检测**：20 分钟无进度超时；Save/Load 阶段放宽至 2 小时；绝对上限 8 小时
-- 扫描结果写入 `~/Library/Application Support/Volward/`，**重启或 hot reload 后自动恢复**上次 snapshot
+- 扫描结果写入 `~/Library/Application Support/Volward/`，**重启或 hot reload 后自动恢复**上次 snapshot（优先匹配当前目标根；无匹配时可能看到最近一次自定义目录的结果）
 
 ### 结果浏览
 
-- **Finder 式多列目录浏览**（列宽固定，横向滚动）
+- **Finder 式多列目录浏览**（列宽固定，横向滚动）；后台 checkpoint / peek 合并时**保持当前列导航位置**
+- 未扫完的目录显示加载态与尺寸占位「—」，扫完后填入真实大小与子项
 - **筛选栏**：分类（All / Cache / Temp / Media / Unknown / System）、Deletable、排序（Size ↓/↑、Name）
 - 底部 **预览条** 显示当前选中项；可勾选可删文件
 - **Move to Trash**：先 dry-run 预览，确认后删除并可选自动重扫
@@ -40,7 +43,7 @@ volward/
 ├── crates/volward-facade    # C API（供 Flutter FFI）
 ├── crates/volward-cli       # 命令行冒烟 / scan-bench
 ├── apps/volward             # Flutter 单页应用（Home + Settings）
-│   ├── lib/                 # UI、VolwardSession、Snapshot 恢复
+│   ├── lib/                 # UI、VolwardSession、渐进式预览/合并、Snapshot 恢复
 │   └── macos/build_rust.sh  # 编译并拷贝 libvolward_facade.dylib
 └── rules/desktop.yaml       # 桌面端分类规则（Cache/Temp/Media 等）
 ```
@@ -107,4 +110,4 @@ fvm flutter run -d macos
 
 ## 文档
 
-设计与计划文档见 `docs/superpowers/`（如 scan-tree Finder UI、全量扫描性能等）。
+设计与计划文档见 `docs/superpowers/`（如渐进式扫描、scan-tree Finder UI、全量扫描性能等）。
