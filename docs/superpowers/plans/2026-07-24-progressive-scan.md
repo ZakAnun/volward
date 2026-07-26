@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-24-progressive-scan-design.md`
 
+## Implementation Status
+
+| 字段 | 内容 |
+|------|------|
+| 状态 | ✅ Wave 1 + Wave 2 已实现（含加固） |
+| 落地日期 | 2026-07-24；文档回写 2026-07-26 |
+| Task 覆盖 | Task 1–19（Rust/FFI/Dart 预览·checkpoint·peek·UI）均已合入 `main` |
+| 加固 | 权威 peek 合并 + stale entries 清理；`_pickMoreComplete` 仅认显式 `scanned: true`；UI `snapshot_id` 去抖；checkpoint 自适应间隔 |
+| 文档 | README 已同步（`3e01c72`） |
+| 已知残留 | 无匹配目标根时，启动可能恢复全局最新自定义目录 snapshot（非 Home） |
+| 勾选说明 | 下文 Step checkbox 为写作时模板，**不以勾选为准**；以本表与 spec 状态为准 |
+
 ---
 
 ## File Structure

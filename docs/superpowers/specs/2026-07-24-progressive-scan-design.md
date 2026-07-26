@@ -3,9 +3,11 @@
 | 字段 | 内容 |
 |------|------|
 | 日期 | 2026-07-24 |
-| 状态 | 待评审 |
+| 状态 | ✅ 已实现（Wave 1 + Wave 2，含加固） |
 | 基线 | `main`（含 2026-07-23 的 Finder 式列浏览、全盘扫描性能优化、增量扫描 E1/E2） |
 | 范围 | Wave 1（预览 + 后台全量 checkpoint 流式渲染）+ Wave 2（点击优先分片扫描） |
+| 落地说明 | 代码已合入 `main`（至 `4a16188` / `3e01c72`）；含权威 peek 合并、entries 清理、`scanned == true` 判定、UI snapshot 去抖、checkpoint 自适应间隔 |
+| 已知残留 | 启动恢复 snapshot 在无匹配 Home 根时可能回退到全局最新自定义目录快照（体验问题，未修） |
 
 ---
 
@@ -163,12 +165,12 @@
 
 ## 7. 交付波次
 
-| 波次 | 内容 | 依赖 |
-|------|------|------|
-| **Wave 1** | `quick_list_dir`（预览）+ checkpoint 流式渲染 + UI 从阻塞页改为始终可浏览 | 无 |
-| **Wave 2** | 点击优先分片扫描（独立 Isolate + engine，合并结果，并发限流） | Wave 1（依赖 `quick_list_dir`、`ScanTreeNode.scanned`、`_mergeSubtree`） |
+| 波次 | 内容 | 依赖 | 状态 |
+|------|------|------|------|
+| **Wave 1** | `quick_list_dir`（预览）+ checkpoint 流式渲染 + UI 从阻塞页改为始终可浏览 | 无 | ✅ 已实现 |
+| **Wave 2** | 点击优先分片扫描（独立 Isolate + engine，合并结果，并发限流） | Wave 1（依赖 `quick_list_dir`、`ScanTreeNode.scanned`、`_mergeSubtree`） | ✅ 已实现 |
 
-本次 `writing-plans` 按用户要求**一次性覆盖 Wave 1 + Wave 2**。
+本次 `writing-plans` 按用户要求**一次性覆盖 Wave 1 + Wave 2**；均已落地。
 
 ---
 
@@ -181,3 +183,12 @@
 - [x] 错误处理覆盖 dylib 过旧降级、取消、并发限流、重复扫描去重
 - [x] 测试策略覆盖 Rust unit / Dart unit / widget / 手动回归
 - [x] Wave 1 / Wave 2 可独立交付，依赖关系明确
+
+---
+
+## 9. 修订记录
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| 0.1 | 2026-07-24 | 初稿：预览 + checkpoint + 点击优先 |
+| 0.2 | 2026-07-26 | 标记 Wave 1/2 已实现；记录加固与已知残留 |

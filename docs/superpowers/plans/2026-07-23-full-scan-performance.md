@@ -10,6 +10,16 @@
 
 **Spec:** [2026-07-23-full-scan-performance-design.md](../specs/2026-07-23-full-scan-performance-design.md)
 
+## Implementation Status
+
+| 字段 | 内容 |
+|------|------|
+| 状态 | ✅ P1 + P2.1–P2.3 + F0 bench 已实现 |
+| 落地日期 | 2026-07-23；文档回写 2026-07-26 |
+| 对照 | Classify 快路径、BufWriter snapshot、剪枝、`dir_child_index`、manifest 增量 E1/E2、`scan-bench` |
+| 排除仍有效 | P0 Release 构建未做 |
+| 勾选说明 | 下文 Step checkbox 为写作时模板，**不以勾选为准** |
+
 ---
 
 ## File map

@@ -3,10 +3,11 @@
 | 字段 | 内容 |
 |------|------|
 | 日期 | 2026-07-23 |
-| 状态 | 待评审 |
+| 状态 | ✅ 已实现（P1 + P2.1–P2.3 + F0 bench；P0 Release 仍排除） |
 | 基线 | `main` + 未提交 P0 前优化（walk 剪枝、无 sort、entries 仅分类项、UI 侧排序缓存） |
 | 范围 | **P1**（近期可落地）+ **P2**（架构增强，分波交付） |
 | 排除 | **P0 Release 构建** — 用户明确 Debug 版继续使用，本 spec 不涉及 |
+| 落地说明 | Classify 快路径、BufWriter 写 snapshot、walk 剪枝扩展、`dir_child_index`、manifest + 增量 E1/E2、CLI `scan-bench` 已在 `main`；后续渐进式扫描另见 `2026-07-24-progressive-scan-design.md` |
 
 ---
 
@@ -214,17 +215,17 @@ struct ScanTreeBuilder {
 
 ## 4. 交付波次
 
-| 波次 | 内容 | 依赖 |
-|------|------|------|
-| **P1.1** | Classify 快路径 | 无 |
-| **P1.2** | 流式 JSON write | 无 |
-| **P1.3** | walk 剪枝扩展（.Trash 等） | 无 |
-| **P2.1** | ScanTreeBuilder 子节点索引 | 无 |
-| **P2.2** | ScanManifest 存储 + E1 全量 fallback | P2.1 可选 |
-| **P2.3** | 增量 walk + tree 合并 E2 | P2.2 |
-| **P2.4** | 二进制快照 F0 benchmark | 无 |
+| 波次 | 内容 | 依赖 | 状态 |
+|------|------|------|------|
+| **P1.1** | Classify 快路径 | 无 | ✅ |
+| **P1.2** | 流式 JSON write | 无 | ✅ |
+| **P1.3** | walk 剪枝扩展（.Trash 等） | 无 | ✅ |
+| **P2.1** | ScanTreeBuilder 子节点索引 | 无 | ✅ |
+| **P2.2** | ScanManifest 存储 + E1 全量 fallback | P2.1 可选 | ✅ |
+| **P2.3** | 增量 walk + tree 合并 E2 | P2.2 | ✅ |
+| **P2.4** | 二进制快照 F0 benchmark | 无 | ✅（`volward-cli scan-bench`；UI 仍走 JSON） |
 
-**建议实施顺序：** P1.1 → P1.2 → P2.1 → P1.3 → P2.2 → P2.3 → P2.4
+**建议实施顺序：** P1.1 → P1.2 → P2.1 → P1.3 → P2.2 → P2.3 → P2.4（均已落地）
 
 ---
 
@@ -232,25 +233,33 @@ struct ScanTreeBuilder {
 
 - Debug/Release 构建切换（用户明确 P0 暂不处理）
 - 多 root 并行 walk（jwalk 已并行，不额外拆）
-- UI 改为 Isolate 外解析 binary tree（留 P2.4 研究）
+- UI 改为 Isolate 外解析 binary tree（留 P2.4 研究；F0 bench 已有，默认路径仍 JSON）
 - 改变 Cache/删除产品语义
 
 ---
 
 ## 6. 待确认项
 
-1. **P2 增量扫描** 是否必须在 v1 对用户可见（开关），还是仅内部 manifest 为后续预留？  
-   → 本 spec 默认：**E1 即暴露「增量扫描」Toggle**，默认关闭。
-
-2. **剪枝 `.Trash`** 是否接受（用户可能想清理废纸篓）？  
-   → 本 spec 默认：**不剪 `.Trash`**，仅剪 `.Spotlight-V100` 等索引目录；`.Trash` 若加则写入 warnings。
+1. **P2 增量扫描** 是否必须在 v1 对用户可见（开关），还是仅内部 manifest 为后续预留？
+   → 已落地：**E1 暴露「增量扫描」Toggle**，默认关闭。
+2. **剪枝 `.Trash`** 是否接受（用户可能想清理废纸篓）？
+   → 已按默认：**不剪 `.Trash`**，仅剪 `.Spotlight-V100` 等索引目录。
 
 ---
 
 ## 7. Spec Self-Review
 
-- [x] 无 TBD 占位  
-- [x] P1/P2 边界清晰，P0 已排除  
-- [x] 与现有 `entries` 精简、`tree` 全量语义一致  
-- [x] 增量扫描分 E1/E2/E3，可独立交付  
-- [x] 成功标准可测量  
+- [x] 无 TBD 占位
+- [x] P1/P2 边界清晰，P0 已排除
+- [x] 与现有 `entries` 精简、`tree` 全量语义一致
+- [x] 增量扫描分 E1/E2/E3，可独立交付
+- [x] 成功标准可测量
+
+---
+
+## 8. 修订记录
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| 0.1 | 2026-07-23 | 初稿：P1/P2 性能与增量 |
+| 0.2 | 2026-07-26 | 标记 P1 + P2.1–P2.4(F0) 已实现；关闭待确认项 |

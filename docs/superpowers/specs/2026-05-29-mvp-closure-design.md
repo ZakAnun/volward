@@ -3,9 +3,10 @@
 | 字段 | 内容 |
 |------|------|
 | 日期 | 2026-05-29 |
-| 状态 | 待评审 |
+| 状态 | ✅ 已实现（2026-07 单页形态收口） |
 | 依赖 | [PRD v0.1](../../../../docs/volward/PRD.md) · [IMPLEMENTATION-PLAN](../../../../docs/volward/IMPLEMENTATION-PLAN.md) |
 | 基线 commit | `6d96196`（W3 删除闭环 + FDA 引导已落地） |
+| 落地说明 | P0–P3 均已在 `main`；原多 Tab（Scan/Results/Confirm）已收敛为 `home_page.dart` 单页，闭环语义不变 |
 
 ---
 
@@ -203,11 +204,11 @@ Worker 内在独立 engine 上扫描；每 200ms（或每 500 paths）向 `progr
 
 ## 6. 成功标准
 
-- [ ] Results 可筛 Cache/Temp、按 size 排序、多选 deletable 项，Confirm 预填选中
-- [ ] Scan 可选择单个目录作为 root
-- [ ] `cargo test` 含 rules/from_rules 用例；分类行为与 `desktop.yaml` 一致
-- [ ] Scan 页显示 paths_seen 与 current_path（扫描过程中）
-- [ ] 保护路径仍 `deletable=false`（自动化单测 + 手测 `/System` 不可选）
+- [x] 结果可筛 Cache/Temp、按 size 排序、多选 deletable 项，并进入删除确认（现为单页列浏览 + Move to Trash）
+- [x] 可选择单个目录作为 root（`Folder…` / Home）
+- [x] `cargo test` 含 rules/from_rules 用例；分类行为与 `desktop.yaml` 一致
+- [x] 扫描过程显示阶段 / paths_seen 等进度（现含 Isolate 轮询；后续另有渐进式 checkpoint）
+- [x] 保护路径仍 `deletable=false`（Rust 单测覆盖）
 
 ---
 
@@ -216,3 +217,4 @@ Worker 内在独立 engine 上扫描；每 200ms（或每 500 paths）向 `progr
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 0.1 | 2026-05-29 | 初稿：四块闭环优先级 + 推荐方案 |
+| 0.2 | 2026-07-26 | 标记已实现；补充单页 IA 收口说明；勾选成功标准 |

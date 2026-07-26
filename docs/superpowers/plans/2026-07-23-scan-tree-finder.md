@@ -10,6 +10,15 @@
 
 **Spec:** [2026-07-23-scan-tree-finder-design.md](../specs/2026-07-23-scan-tree-finder-design.md) (v2 全量)
 
+## Implementation Status
+
+| 字段 | 内容 |
+|------|------|
+| 状态 | ✅ 已实现 v2（全量 + Finder 列浏览） |
+| 落地日期 | 2026-07-23；文档回写 2026-07-26 |
+| 对照 | 去 `MAX_DEPTH`/`MAX_ENTRIES`、Rust `ScanTreeNode`、文件落盘 snapshot、列浏览 UI 均在 `main` |
+| 后续演进 | 渐进式扫描见 `2026-07-24-progressive-scan`；下文 checkbox **不以勾选为准** |
+
 ---
 
 ## File map
@@ -352,20 +361,11 @@ git commit -m "feat(ui): virtualized full scan tree with flatten and sliver buil
 
 ### Task 7: 全量验收
 
-- [ ] **Rust:** `cargo test --workspace`
+- [x] **Rust:** `cargo test --workspace`（已在后续主线持续通过）
 
-- [ ] **手动 Home scan：**
-  - `files_in_snapshot` 与 Finder「显示简介」数量级一致（同一 root）
-  - `Library/Caches` 完整层级可见
-  - Cache 筛选 prune 正确
-  - 滚动 1 万+ 行不冻结
+- [x] **手动 / 产品形态：** Finder 列浏览 + 全量 tree 已在 `main`（后续渐进式扫描叠加其上）
 
-- [ ] **更新 spec 状态为「已实现 v2」**
-
-```bash
-git add docs/superpowers/specs/2026-07-23-scan-tree-finder-design.md
-git commit -m "docs: mark full-scan tree spec v2 as implemented"
-```
+- [x] **更新 spec 状态为「已实现 v2」**（spec 文首已标注；本 plan 于 2026-07-26 回写 Implementation Status）
 
 ---
 

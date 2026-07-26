@@ -110,4 +110,11 @@ fvm flutter run -d macos
 
 ## 文档
 
-设计与计划文档见 `docs/superpowers/`（如渐进式扫描、scan-tree Finder UI、全量扫描性能等）。
+设计与计划文档见 `docs/superpowers/`（状态以各 spec 文首「状态」字段为准）：
+
+| 主题 | Spec | 状态（2026-07-26） |
+|------|------|-------------------|
+| MVP 闭环 | `specs/2026-05-29-mvp-closure-design.md` | ✅ 已实现 |
+| Finder 全量树 | `specs/2026-07-23-scan-tree-finder-design.md` | ✅ 已实现 v2 |
+| 全盘扫描性能 / 增量 | `specs/2026-07-23-full-scan-performance-design.md` | ✅ P1 + P2（F0 bench） |
+| 渐进式扫描 | `specs/2026-07-24-progressive-scan-design.md` | ✅ Wave 1 + Wave 2 |

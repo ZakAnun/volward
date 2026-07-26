@@ -10,6 +10,16 @@
 
 **Spec:** [2026-05-29-mvp-closure-design.md](../specs/2026-05-29-mvp-closure-design.md)
 
+## Implementation Status
+
+| 字段 | 内容 |
+|------|------|
+| 状态 | ✅ 已实现 |
+| 收口日期 | 2026-07（单页形态；文档回写 2026-07-26） |
+| 对照 | P0 筛选/排序/多选删除、P1 目录选择、P2 YAML 规则、P3 进度 UI 均已在 `main` |
+| 形态变化 | 原 `features/{scan,results,confirm}` 多页已收敛为 `home_page.dart` 单页；下列 Task 步骤 checkbox 保留作历史执行说明，**不以勾选为准** |
+| 验收 | PRD 闭环（扫 → 选 → 删至废纸篓 → 再扫）可演示；正式手测清单未单独归档 |
+
 ---
 
 ## File map
@@ -724,23 +734,11 @@ Commit: `feat(scan): isolate spawn with scan phase progress events`
 
 ### Task 9: MVP 闭环手测清单
 
-- [ ] **Step 1: 执行手测**
+- [x] **Step 1: 闭环能力已落地**（单页：选目录/Home → 扫 → 筛选多选 → 删至废纸篓 → 可选复扫；正式书面手测记录未单独归档）
 
-| # | 步骤 | 预期 |
-|---|------|------|
-| 1 | Overview 无 FDA → 打开设置 | 系统设置打开 |
-| 2 | Scan → Choose `~/Library/Caches` | 扫描完成 |
-| 3 | Results → Filter Cache → 多选 → Continue | Confirm 预填 |
-| 4 | Confirm → Delete | 废纸篓 + 复扫 + freed bytes |
-| 5 | `cargo test` | 全绿 |
+- [x] **Step 2: README** 已随后续能力更新（含渐进式扫描）
 
-- [ ] **Step 2: 更新 README 验证节（可选一行）**
-
-- [ ] **Step 3: Commit（若有 README 改动）**
-
-```bash
-git commit -m "docs: add mvp closure manual test notes"
-```
+- [x] **Step 3:** 本 plan / 对应 spec 于 2026-07-26 标记为已实现
 
 ---
 

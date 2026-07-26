@@ -196,3 +196,12 @@ Cache / Deletable：对 tree **prune**（保留匹配文件及祖先目录），
 - [x] truncated 仅 Cancel/错误  
 - [x] UI 虚拟滚动  
 - [x] 大 snapshot 走临时文件  
+
+---
+
+## 9. 修订记录
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| v2 | 2026-07-23 | 全量扫描 + Finder 列浏览已实现 |
+| v2.1 | 2026-07-26 | plan 回写 Implementation Status；能力叠加快进式扫描 |
