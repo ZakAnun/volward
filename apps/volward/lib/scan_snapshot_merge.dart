@@ -31,15 +31,24 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
   required List<Map<String, dynamic>> subtreeEntries,
   bool replacementIsAuthoritative = false,
 }) {
+  // Background checkpoints never carry a `scanned` field (Rust doesn't
+  // serialize one). Stamp directories the walk has already rediscovered as
+  // `scanned: true` so preview spinners clear per-directory as soon as
+  // that path appears in a checkpoint — instead of lingering until the
+  // final Done snapshot replaces the whole tree.
+  final incomingTree = replacementIsAuthoritative
+      ? subtreeTree
+      : _markDiscoveredDirsScanned(subtreeTree);
+
   final tree = snapshot['tree'];
   final mergedTree = tree is Map
       ? _replaceNodeAtPath(
           Map<String, dynamic>.from(tree),
           targetPath,
-          subtreeTree,
+          incomingTree,
           replacementIsAuthoritative: replacementIsAuthoritative,
         )
-      : subtreeTree;
+      : incomingTree;
 
   final existingEntries = (snapshot['entries'] is List)
       ? (snapshot['entries'] as List)
@@ -93,6 +102,9 @@ Map<String, dynamic> _replaceNodeAtPath(
       ...node,
       'size_bytes': replacement['size_bytes'],
       'scanned': replacement['scanned'] ?? true,
+      // Mark authoritative (peek) results so _pickMoreComplete can distinguish
+      // them from checkpoint-stamped dirs (which only carry scanned:true).
+      if (replacementIsAuthoritative) 'peekScanned': true,
       'children': replacementIsAuthoritative
           ? _childList(replacement)
           : _mergeChildrenByPath(_childList(node), _childList(replacement)),
@@ -183,49 +195,76 @@ List<Map<String, dynamic>> _mergeChildrenByPath(
   return merged;
 }
 
+/// Marks every directory in a checkpoint fragment as `scanned: true`.
+///
+/// Preview nodes start as `scanned: false` (spinner). Once the background
+/// walk rediscovers a path in a checkpoint, that directory's contents are
+/// at least partially known and the spinner should clear immediately for
+/// that row — not wait for the full scan to finish.
+Map<String, dynamic> _markDiscoveredDirsScanned(Map<String, dynamic> node) {
+  if (node['is_dir'] != true) return node;
+  return {
+    ...node,
+    'scanned': true,
+    'children': [
+      for (final child in _childList(node)) _markDiscoveredDirsScanned(child),
+    ],
+  };
+}
+
 /// Keeps whichever side of a duplicate-path child looks more complete.
 ///
 /// Only used for non-authoritative (checkpoint) merges — see
 /// [mergeSubtreeIntoSnapshot]. Uses aggregated `size_bytes` as a
 /// monotonic-enough proxy: a directory's size usually only grows as more of
 /// its subtree is discovered by a given scan pass, so a smaller size on the
-/// incoming side — while the existing side is *explicitly* marked
-/// `scanned: true` (e.g. a finished Wave-2 peek) — is treated as a
-/// regression (an earlier point in the main scan's own walk) rather than
-/// new information, and is ignored in favor of the existing data.
+/// incoming side — while the existing side came from a completed Wave-2
+/// peek (`peekScanned: true`) — is treated as a regression rather than
+/// new information, and is ignored in favor of the peek data.
 ///
-/// Important: Rust's `ScanTreeNode` never serializes a `scanned` field, so
-/// nodes coming straight from a checkpoint / prior full-scan have the
-/// field absent. Those must NOT be treated as scanned — only an explicit
-/// `scanned: true` (written by Dart after a peek) qualifies. Otherwise a
-/// larger stale size left over from a previous scan would permanently
-/// suppress a smaller, correct size from the current rescan (e.g. after
-/// the user deleted files).
+/// **Peek vs. checkpoint distinction**: [_replaceNodeAtPath] writes
+/// `peekScanned: true` on the *target* node of every authoritative merge.
+/// Checkpoint-stamped dirs only carry `scanned: true` (from
+/// [_markDiscoveredDirsScanned]), never `peekScanned`. Using a separate
+/// sentinel keeps the deep-merge logic scoped to actual peek results and
+/// avoids O(overlap × children) deep-merges on every checkpoint after the
+/// first one (checkpoint-stamped dirs no longer falsely appear
+/// "peek-authoritative" to this function).
 ///
 /// Known limitation: if a file is genuinely deleted between two checkpoints
 /// of the *same* still-running background scan (not a peek), and the
-/// existing side was previously marked `scanned: true` by a peek, this
-/// proxy cannot distinguish "smaller because incomplete" from "smaller
-/// because something was deleted" and will keep showing the old, stale,
-/// larger value until the scan finishes and the final authoritative
-/// snapshot loads. A completed peek scan (`replacementIsAuthoritative:
-/// true`) does not have this limitation, since its result is trusted
-/// wholesale.
+/// existing side was previously from a peek, this proxy cannot distinguish
+/// "smaller because incomplete" from "smaller because something was deleted"
+/// and will keep the stale larger size until the scan finishes. A completed
+/// peek scan (`replacementIsAuthoritative: true`) does not have this
+/// limitation, since its result is trusted wholesale.
 Map<String, dynamic> _pickMoreComplete(
   Map<String, dynamic> oldChild,
   Map<String, dynamic> newChild,
 ) {
-  // Only treat the old side as "more complete" when it was *explicitly*
-  // marked scanned (e.g. a finished Wave-2 peek wrote `scanned: true`).
-  // Rust's ScanTreeNode never serializes `scanned`, so a plain checkpoint
-  // / prior full-scan node has the field absent — which must NOT count as
-  // scanned here. Using `!= false` would treat every absent field as true
-  // and make a larger stale size from a previous scan permanently suppress
-  // a smaller, correct size from the current scan (e.g. after the user
-  // deleted files and a rescan is in progress).
-  final oldScanned = oldChild['scanned'] == true;
+  // Only a completed peek can veto a smaller incoming checkpoint.
+  // Checkpoint-stamped dirs (scanned:true but NOT peekScanned) must still
+  // accept newer checkpoint data even when the incoming size is temporarily
+  // smaller — the checkpoint may not have finished counting yet.
+  final oldPeeked = oldChild['peekScanned'] == true;
   final oldSize = (oldChild['size_bytes'] as num?)?.toInt() ?? 0;
   final newSize = (newChild['size_bytes'] as num?)?.toInt() ?? 0;
-  if (oldScanned && oldSize > newSize) return oldChild;
+  if (oldPeeked && oldSize > newSize) return oldChild;
+
+  // Directory: stamp scanned so preview spinners clear.
+  // Deep-merge children whenever the old side has *any* known content
+  // (whether from a peek or a prior checkpoint) so that children the new
+  // checkpoint hasn't re-listed yet are not silently dropped. Only take new
+  // children wholesale for dirs that were still unscanned (preview-only).
+  if (newChild['is_dir'] == true) {
+    final oldScanned = oldPeeked || oldChild['scanned'] == true;
+    return {
+      ...newChild,
+      'scanned': true,
+      'children': oldScanned
+          ? _mergeChildrenByPath(_childList(oldChild), _childList(newChild))
+          : _childList(newChild),
+    };
+  }
   return newChild;
 }
