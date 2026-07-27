@@ -20,7 +20,11 @@ Map<String, dynamic> buildPreviewSnapshot({
   }).toList();
 
   return <String, dynamic>{
-    'snapshot_id': 'preview',
+    // Use a unique snapshot_id per preview target so that switching between
+    // folders (Custom → Home, or vice versa) invalidates UI caches properly.
+    // Without this, both previews would share 'preview' as ID, causing
+    // _onSessionChanged to skip cache invalidation when the ID hasn't changed.
+    'snapshot_id': 'preview-${normalizedRoot.hashCode}-${DateTime.now().microsecondsSinceEpoch}',
     'scanned_at_ms': DateTime.now().millisecondsSinceEpoch,
     'reclaimable_estimate_bytes': 0,
     'entries': const <Map<String, dynamic>>[],
