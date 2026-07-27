@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
+import 'proto/snapshot_pb_decoder.dart';
 import 'scan_preview.dart';
 import 'scan_snapshot_merge.dart';
 import 'snapshot_cache.dart';
@@ -725,7 +726,7 @@ class VolwardSession extends ChangeNotifier {
       throw StateError('Native engine not ready');
     }
 
-    final snap = await Isolate.run(() => _decodeSnapshotJsonFile(path));
+    final snap = await Isolate.run(() => _decodeSnapshotFile(path));
     try {
       await File(path).delete();
     } catch (_) {}
@@ -742,7 +743,7 @@ class VolwardSession extends ChangeNotifier {
 
   Future<void> _applyCheckpointFromFile(String path) async {
     try {
-      final checkpoint = await Isolate.run(() => _decodeSnapshotJsonFile(path));
+      final checkpoint = await Isolate.run(() => _decodeSnapshotFile(path));
       try {
         await File(path).delete();
       } catch (_) {}
@@ -881,4 +882,18 @@ Map<String, dynamic>? _decodeSnapshotJsonFile(String path) {
   final raw = File(path).readAsStringSync();
   final decoded = jsonDecode(raw);
   return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+}
+
+/// Decodes a snapshot or checkpoint file, dispatching on the file extension.
+///
+/// `.pb`   → protobuf wire format (written by Rust via `write_snapshot_pb_atomic`)
+/// anything else → JSON (legacy format)
+///
+/// Called from Isolate.run, so it must be a top-level function.
+Map<String, dynamic>? _decodeSnapshotFile(String path) {
+  if (path.endsWith('.pb')) {
+    final bytes = File(path).readAsBytesSync();
+    return decodeSnapshotPb(bytes);
+  }
+  return _decodeSnapshotJsonFile(path);
 }

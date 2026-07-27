@@ -93,7 +93,8 @@ void volwardScanIsolate(List<dynamic> args) {
             'paths_seen': pathsSeen?.toInt() ?? 0,
           });
 
-          final tmpPath = '${Directory.systemTemp.path}/volward-$jobId.json';
+          final tmpExt = bridge.hasSnapshotFilePbApi ? 'pb' : 'json';
+          final tmpPath = '${Directory.systemTemp.path}/volward-$jobId.$tmpExt';
           final snapshotId = _persistSnapshot(bridge, engine, tmpPath);
           if (snapshotId.startsWith('error:')) {
             progressPort.send(<String, dynamic>{
@@ -133,21 +134,23 @@ void volwardScanIsolate(List<dynamic> args) {
       // Roughly every 2s (300ms * 7), stream a partial snapshot so the UI
       // can render progress without waiting for the whole scan to finish.
       if (bridge.hasCheckpointApi && tickCount % 7 == 0) {
+        // Prefer the protobuf variant (atomic temp+rename, smaller payload)
+        // when the dylib supports it; fall back to JSON for older builds.
+        final usePb = bridge.hasSnapshotFilePbApi;
+        final ext = usePb ? 'pb' : 'json';
         final checkpointPath =
-            '${Directory.systemTemp.path}/volward-$jobId-checkpoint.json';
-        final checkpointId =
-            bridge.writeLastCheckpointToPath(engine, checkpointPath);
+            '${Directory.systemTemp.path}/volward-$jobId-checkpoint.$ext';
+        final checkpointId = usePb
+            ? bridge.writeLastCheckpointToPathPb(engine, checkpointPath)
+            : bridge.writeLastCheckpointToPath(engine, checkpointPath);
         if (checkpointId != null && !checkpointId.startsWith('error:')) {
-          // writeLastCheckpointToPath is a synchronous FFI call: the file is
-          // fully written and flushed by the time it returns. The next
-          // checkpoint reuses this same fixed path and truncates it (File::create
-          // on the Rust side), which would race the main isolate's read and
-          // yield a FormatException on a half-written file. Rename the finished
-          // file to a unique per-checkpoint path (atomic on the same tmpfs) so
-          // the reader always sees a complete snapshot; the fixed path is then
-          // free for the next write.
+          // The pb path uses temp+rename internally (atomic), so the file at
+          // checkpointPath is always complete when the call returns.  The JSON
+          // path reuses the same fixed path (File::create truncates), which
+          // races a concurrent read — rename to a unique path so the reader
+          // always sees a fully-written file regardless of format.
           final uniquePath =
-              '${Directory.systemTemp.path}/volward-$jobId-checkpoint-$tickCount.json';
+              '${Directory.systemTemp.path}/volward-$jobId-checkpoint-$tickCount.$ext';
           try {
             File(checkpointPath).renameSync(uniquePath);
           } catch (_) {
@@ -242,6 +245,12 @@ String _persistSnapshot(
   Pointer<Void> engine,
   String path,
 ) {
+  // Prefer protobuf (atomic temp+rename, smaller wire size) when the dylib
+  // supports it.  Fall back through the JSON file API and finally to the
+  // legacy in-memory round-trip for old builds.
+  if (bridge.hasSnapshotFilePbApi) {
+    return bridge.writeLastSnapshotToPathPb(engine, path);
+  }
   if (bridge.hasSnapshotFileApi) {
     return bridge.writeLastSnapshotToPath(engine, path);
   }

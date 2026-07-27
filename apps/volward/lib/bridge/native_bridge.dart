@@ -69,6 +69,16 @@ typedef VolwardWriteLastCheckpointToPathNative =
 typedef VolwardWriteLastCheckpointToPath =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 
+typedef VolwardWriteLastSnapshotToPathPbNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastSnapshotToPathPb =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardWriteLastCheckpointToPathPbNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastCheckpointToPathPb =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
 typedef VolwardQuickListDirJsonNative =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 typedef VolwardQuickListDirJson =
@@ -140,6 +150,8 @@ final class VolwardNativeBridge {
     _writeLastSnapshotToPath = _tryLookupWriteSnapshot();
     _loadLastSnapshotFromPath = _tryLookupLoadSnapshot();
     _writeLastCheckpointToPath = _tryLookupWriteCheckpoint();
+    _writeLastSnapshotToPathPb = _tryLookupWriteSnapshotPb();
+    _writeLastCheckpointToPathPb = _tryLookupWriteCheckpointPb();
     _quickListDirJson = _tryLookupQuickListDirJson();
     _openPermissionSettings = _lib
         .lookup<NativeFunction<VolwardOpenPermissionSettingsNative>>(
@@ -213,6 +225,30 @@ final class VolwardNativeBridge {
     }
   }
 
+  VolwardWriteLastSnapshotToPathPb? _tryLookupWriteSnapshotPb() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardWriteLastSnapshotToPathPbNative>>(
+            'volward_write_last_snapshot_to_path_pb',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardWriteLastCheckpointToPathPb? _tryLookupWriteCheckpointPb() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardWriteLastCheckpointToPathPbNative>>(
+            'volward_write_last_checkpoint_to_path_pb',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
   static VolwardNativeBridge? _instance;
 
   static VolwardNativeBridge get instance {
@@ -239,6 +275,8 @@ final class VolwardNativeBridge {
   late final VolwardWriteLastSnapshotToPath? _writeLastSnapshotToPath;
   late final VolwardLoadLastSnapshotFromPath? _loadLastSnapshotFromPath;
   late final VolwardWriteLastCheckpointToPath? _writeLastCheckpointToPath;
+  late final VolwardWriteLastSnapshotToPathPb? _writeLastSnapshotToPathPb;
+  late final VolwardWriteLastCheckpointToPathPb? _writeLastCheckpointToPathPb;
   late final VolwardQuickListDirJson? _quickListDirJson;
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
@@ -246,6 +284,12 @@ final class VolwardNativeBridge {
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
   bool get hasSnapshotFileApi =>
       _writeLastSnapshotToPath != null && _loadLastSnapshotFromPath != null;
+
+  /// True when the bundled dylib supports protobuf file-based snapshot I/O.
+  /// Requires `volward_write_last_snapshot_to_path_pb` and
+  /// `volward_write_last_checkpoint_to_path_pb` (both added 2026-07-27).
+  bool get hasSnapshotFilePbApi =>
+      _writeLastSnapshotToPathPb != null && _writeLastCheckpointToPathPb != null;
 
   /// True when the bundled dylib accepts incremental scan options.
   bool get hasScanOptionsApi => _startScanAsyncWithOptions != null;
@@ -368,6 +412,36 @@ final class VolwardNativeBridge {
   /// is available yet.
   String? writeLastCheckpointToPath(Pointer<Void> engine, String path) {
     final write = _writeLastCheckpointToPath;
+    if (write == null) return null;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = write(engine, pathPtr);
+      return out.toDartString();
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Protobuf variant — encodes the snapshot as proto3 bytes and writes it
+  /// atomically to [path] (temp+rename). Returns snapshot_id or `error:…`.
+  String writeLastSnapshotToPathPb(Pointer<Void> engine, String path) {
+    final write = _writeLastSnapshotToPathPb;
+    if (write == null) {
+      return 'error:native dylib missing volward_write_last_snapshot_to_path_pb — rebuild Rust';
+    }
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = write(engine, pathPtr);
+      return out.toDartString();
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Protobuf variant — encodes the last checkpoint as proto3 bytes and writes
+  /// it atomically to [path] (temp+rename). Returns snapshot_id or `null`.
+  String? writeLastCheckpointToPathPb(Pointer<Void> engine, String path) {
+    final write = _writeLastCheckpointToPathPb;
     if (write == null) return null;
     final pathPtr = path.toNativeUtf8();
     try {
