@@ -138,9 +138,26 @@ void volwardScanIsolate(List<dynamic> args) {
         final checkpointId =
             bridge.writeLastCheckpointToPath(engine, checkpointPath);
         if (checkpointId != null && !checkpointId.startsWith('error:')) {
+          // writeLastCheckpointToPath is a synchronous FFI call: the file is
+          // fully written and flushed by the time it returns. The next
+          // checkpoint reuses this same fixed path and truncates it (File::create
+          // on the Rust side), which would race the main isolate's read and
+          // yield a FormatException on a half-written file. Rename the finished
+          // file to a unique per-checkpoint path (atomic on the same tmpfs) so
+          // the reader always sees a complete snapshot; the fixed path is then
+          // free for the next write.
+          final uniquePath =
+              '${Directory.systemTemp.path}/volward-$jobId-checkpoint-$tickCount.json';
+          try {
+            File(checkpointPath).renameSync(uniquePath);
+          } catch (_) {
+            // Rename failed (unexpected); skip this checkpoint rather than risk
+            // sending a path that may be overwritten mid-read.
+            return;
+          }
           progressPort.send(<String, dynamic>{
             'type': 'checkpoint',
-            'snapshot_path': checkpointPath,
+            'snapshot_path': uniquePath,
           });
         }
       }
