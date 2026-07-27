@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package volward;
+
+// Wire schema for Rust <-> Flutter snapshot transfer.
+//
+// Kept field-for-field aligned with `volward_core::model` so the Rust facade
+// can encode `StorageSnapshot` directly (via prost) and the Flutter client can
+// decode into typed messages — replacing the JSON + Map<String,dynamic>
+// pipeline that dominates memory during large scans.
+//
+// Only the snapshot/checkpoint payload lives here (the heavy, high-frequency
+// transfer). Small, low-frequency payloads (ScanProgress, PlatformCapabilities,
+// DeleteReport, quick_list_dir) can stay on JSON — moving them buys nothing.
+
+enum CapabilityLevel {
+  CAPABILITY_LEVEL_UNSPECIFIED = 0;
+  CAPABILITY_LEVEL_FULL_PATH = 1;
+  CAPABILITY_LEVEL_APP_STATS_ONLY = 2;
+  CAPABILITY_LEVEL_GUIDED_ONLY = 3;
+}
+
+enum EntryCategory {
+  ENTRY_CATEGORY_UNSPECIFIED = 0;
+  ENTRY_CATEGORY_CACHE = 1;
+  ENTRY_CATEGORY_TEMP = 2;
+  ENTRY_CATEGORY_MEDIA = 3;
+  ENTRY_CATEGORY_APP_DATA = 4;
+  ENTRY_CATEGORY_ORPHAN = 5;
+  ENTRY_CATEGORY_DUPLICATE = 6;
+  ENTRY_CATEGORY_SYSTEM = 7;
+  ENTRY_CATEGORY_UNKNOWN = 8;
+}
+
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_LOW = 1;
+  RISK_LEVEL_MEDIUM = 2;
+  RISK_LEVEL_HIGH = 3;
+}
+
+enum SourceType {
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_DIRECTORY = 1;
+  SOURCE_TYPE_FILE = 2;
+  SOURCE_TYPE_VOLUME = 3;
+  SOURCE_TYPE_APPLICATION = 4;
+}
+
+message StorageEntry {
+  string id = 1;
+  string display_name = 2;
+  string path_or_uri = 3;
+  uint64 size_bytes = 4;
+  EntryCategory category = 5;
+  RiskLevel risk_level = 6;
+  SourceType source_type = 7;
+  bool deletable = 8;
+  string reason = 9;
+}
+
+message ScanTreeNode {
+  string name = 1;
+  string path = 2;
+  bool is_dir = 3;
+  uint64 size_bytes = 4;
+  optional string entry_id = 5;
+  repeated ScanTreeNode children = 6;
+
+  // Client-only progressive-scan markers. The Rust producer never sets these
+  // (they default to false). The Flutter merge stamps `scanned` as directories
+  // are rediscovered by a background checkpoint, and `peek_scanned` when an
+  // authoritative Wave-2 peek scan resolves a directory. They live in the
+  // message so the merge can run on typed nodes instead of Map<String,dynamic>.
+  bool scanned = 7;
+  bool peek_scanned = 8;
+}
+
+message ScanStats {
+  uint64 paths_seen = 1;
+  uint64 dirs_seen = 2;
+  uint64 files_seen = 3;
+  uint64 files_in_snapshot = 4;
+  uint64 paths_skipped = 5;
+  bool truncated = 6;
+  optional string incomplete_reason = 7;
+}
+
+message StorageSnapshot {
+  string snapshot_id = 1;
+  int64 scanned_at_ms = 2;
+  CapabilityLevel capability = 3;
+  uint64 volume_total_bytes = 4;
+  uint64 volume_used_bytes = 5;
+  uint64 reclaimable_estimate_bytes = 6;
+  repeated StorageEntry entries = 7;
+  ScanTreeNode tree = 8;
+  ScanStats stats = 9;
+  repeated string warnings = 10;
+}

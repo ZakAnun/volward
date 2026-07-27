@@ -189,6 +189,44 @@ pub unsafe extern "C" fn volward_write_last_checkpoint_to_path(
     }
 }
 
+/// Protobuf variant of `volward_write_last_snapshot_to_path`. Writes the
+/// snapshot to `path` as protobuf bytes via an atomic temp+rename.
+#[no_mangle]
+pub unsafe extern "C" fn volward_write_last_snapshot_to_path_pb(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return to_c_string("error:null engine".to_string());
+    };
+    let Some(path) = cstr_to_string(path) else {
+        return to_c_string("error:null path".to_string());
+    };
+    match e.write_last_snapshot_to_path_pb(&path) {
+        Ok(id) => to_c_string(id),
+        Err(msg) => to_c_string(msg),
+    }
+}
+
+/// Protobuf variant of `volward_write_last_checkpoint_to_path`. Writes the
+/// last checkpoint to `path` as protobuf bytes via an atomic temp+rename.
+#[no_mangle]
+pub unsafe extern "C" fn volward_write_last_checkpoint_to_path_pb(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return to_c_string("error:null engine".to_string());
+    };
+    let Some(path) = cstr_to_string(path) else {
+        return to_c_string("error:null path".to_string());
+    };
+    match e.write_last_checkpoint_to_path_pb(&path) {
+        Ok(id) => to_c_string(id),
+        Err(msg) => to_c_string(msg),
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn volward_quick_list_dir_json(
     engine: *mut VolwardEngine,

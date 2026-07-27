@@ -12,6 +12,8 @@ use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
 
+use crate::proto;
+
 fn load_classifier(platform: &DesktopPlatform) -> Classifier {
     let path = std::env::var("VOLWARD_RULES_PATH")
         .ok()
@@ -262,6 +264,18 @@ impl VolwardEngine {
         Ok(snapshot.snapshot_id)
     }
 
+    /// Encodes the last checkpoint as protobuf and writes it atomically to
+    /// `path` (temp file + rename), so a concurrent reader never observes a
+    /// truncated file. Returns `error:no checkpoint` if none exists yet.
+    pub fn write_last_checkpoint_to_path_pb(&self, path: &str) -> Result<String, String> {
+        let snapshot = self
+            .get_last_checkpoint()
+            .ok_or_else(|| "error:no checkpoint".to_string())?;
+        let id = snapshot.snapshot_id.clone();
+        write_snapshot_pb_atomic(&snapshot, path)?;
+        Ok(id)
+    }
+
     /// Single-level, non-recursive directory listing (see
     /// `PlatformStorage::quick_list_dir`). Safe to call while a scan is
     /// running — it does not touch `is_scanning`/shared scan state.
@@ -295,6 +309,17 @@ impl VolwardEngine {
         Ok(snapshot.snapshot_id)
     }
 
+    /// Encodes the last snapshot as protobuf and writes it atomically to
+    /// `path` (temp file + rename). Returns the snapshot_id on success.
+    pub fn write_last_snapshot_to_path_pb(&self, path: &str) -> Result<String, String> {
+        let snapshot = self
+            .get_last_snapshot()
+            .ok_or_else(|| "error:no snapshot".to_string())?;
+        let id = snapshot.snapshot_id.clone();
+        write_snapshot_pb_atomic(&snapshot, path)?;
+        Ok(id)
+    }
+
     /// Loads snapshot from [path] into this engine (single parse, for delete operations).
     pub fn load_last_snapshot_from_path(&self, path: &str) -> Result<(), String> {
         let json = std::fs::read_to_string(path).map_err(|e| format!("read snapshot: {e}"))?;
@@ -312,6 +337,37 @@ impl VolwardEngine {
             Err(e) => serde_json::json!({ "error": e }).to_string(),
         }
     }
+}
+
+/// Encodes `snapshot` as protobuf and writes it atomically to `path`.
+///
+/// Writes to a sibling temp file (`<path>.tmp.<id>`) then renames onto `path`.
+/// `rename` is atomic on the same filesystem, so a concurrent reader sees
+/// either the previous file or the fully-written new one — never a truncated
+/// stream. This removes the read-while-writing race the JSON path has.
+fn write_snapshot_pb_atomic(snapshot: &StorageSnapshot, path: &str) -> Result<String, String> {
+    use prost::Message;
+
+    let msg = proto::StorageSnapshot::from(snapshot);
+    let bytes = msg.encode_to_vec();
+
+    let tmp = format!("{path}.tmp.{}", snapshot.snapshot_id);
+    {
+        let file = File::create(&tmp).map_err(|e| format!("error:create pb tmp: {e}"))?;
+        let mut writer = BufWriter::new(file);
+        writer
+            .write_all(&bytes)
+            .map_err(|e| format!("error:write pb: {e}"))?;
+        writer
+            .flush()
+            .map_err(|e| format!("error:flush pb: {e}"))?;
+    }
+    std::fs::rename(&tmp, path).map_err(|e| {
+        // Best-effort cleanup so a failed rename doesn't leak temp files.
+        let _ = std::fs::remove_file(&tmp);
+        format!("error:rename pb: {e}")
+    })?;
+    Ok(snapshot.snapshot_id.clone())
 }
 
 #[cfg(test)]
