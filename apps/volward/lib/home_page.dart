@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'macos_settings.dart';
@@ -48,6 +49,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // during a background scan.
   String? _lastRefreshedSnapshotId;
 
+  // ---------- sync caches (internal helpers only) ----------
   ScanTreeNode? _cachedDisplayTree;
   String? _cachedDisplayTreeKey;
   ScanTreeNode? _cachedResolvedTree;
@@ -57,6 +59,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Map<String, Map<String, dynamic>>? _cachedEntriesById;
   List<Map<String, dynamic>>? _cachedAllEntries;
   String? _cachedEntriesKey;
+
+  // ---------- async-computed display data (used by build()) ----------
+  // Pre-computed off the main thread via compute(). build() reads from these
+  // fields (O(1)) rather than recomputing inline. Until the first compute
+  // finishes, falls back to a synchronous call so the initial render is instant.
+  ScanTreeNode? _liveTree;
+  List<Map<String, dynamic>> _liveEntries = const [];
+  String? _liveKey; // _displayTreeCacheKey() value when this data was built
+  bool _computeInFlight = false;
+  // Throttle for progressive (checkpoint-driven) recomputes. Each compute()
+  // spawns an isolate and deep-copies the entire (growing) snapshot in and the
+  // resulting tree back out; running them back-to-back on every checkpoint is
+  // what ballooned memory during large scans. Progressive computes are capped
+  // to one per [_kLiveComputeMinGap]; user-initiated changes bypass it.
+  Timer? _liveComputeTimer;
+  DateTime? _lastLiveComputeAt;
+  bool _pendingImmediate = false;
+  static const Duration _kLiveComputeMinGap = Duration(seconds: 3);
 
   VolwardSession get _s => widget.session;
 
@@ -82,6 +102,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (widget.session.lastSnapshot == null) {
         await widget.session.previewTarget();
       }
+      // Seed the isolate-computed display data so the first real render reads
+      // _liveTree/_liveEntries instead of computing synchronously.
+      if (mounted) unawaited(_scheduleDisplayCompute(immediate: true));
     });
   }
 
@@ -89,6 +112,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_onSessionChanged);
+    _liveComputeTimer?.cancel();
     _columnNavTick.dispose();
     super.dispose();
   }
@@ -138,26 +162,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _invalidateSnapshotCaches();
         _lastRefreshedSnapshotId = _s.lastSnapshot?['snapshot_id']?.toString();
       });
+      unawaited(_scheduleDisplayCompute(immediate: true));
     } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
+      // Scan completed (possibly auto-started by switchScanRoot) — show stats.
+      final stats = _s.lastSnapshot?['stats'];
+      final count = stats is Map
+          ? (stats['files_in_snapshot'] as num?)?.toInt()
+          : (_s.lastSnapshot?['entries'] is List
+              ? (_s.lastSnapshot!['entries'] as List).length
+              : 0);
+      final label = _s.incrementalScan ? 'Incremental' : 'Full';
+      _scanStatus = '$label scan: $count files';
       _columnChain.clear();
       _columnNavTick.value++;
       _invalidateSnapshotCaches();
       _lastRefreshedSnapshotId = _s.lastSnapshot?['snapshot_id']?.toString();
-    } else if (_columnChain.isNotEmpty) {
-      // A background checkpoint (or Wave-2 peek) may have merged new data
-      // into _lastSnapshot while the user is browsing. Only pay for a full
-      // cache invalidation + tree re-sort/re-aggregate when the snapshot
-      // actually changed — most VolwardSession.notifyListeners() calls
-      // during an active scan are plain progress-percentage ticks (~3/sec)
-      // that don't touch _lastSnapshot at all.
+      unawaited(_scheduleDisplayCompute(immediate: true));
+    } else {
+      // Checkpoint / peek merged new data. Refresh display caches whenever
+      // snapshot_id changed — including when the user is still on the root
+      // column (_columnChain empty), so preview spinners clear as soon as
+      // the background walk rediscovers each directory.
       final snapId = _s.lastSnapshot?['snapshot_id']?.toString();
       if (snapId != null && snapId != _lastRefreshedSnapshotId) {
         _lastRefreshedSnapshotId = snapId;
         _invalidateSnapshotCaches();
-        final freshRoot = _getDisplayTree();
-        if (freshRoot != null) {
-          _setColumnChain(refreshColumnChain(freshRoot, _columnChain));
+        if (_columnChain.isNotEmpty && _liveTree != null) {
+          // Refresh column chain against the last known-good tree (stale by at
+          // most one _kDisplayNotifyGap); the upcoming async compute will
+          // follow with the fully up-to-date tree.
+          _setColumnChain(refreshColumnChain(_liveTree!, _columnChain));
         }
+        unawaited(_scheduleDisplayCompute());
       }
     }
     _prevScanning = _s.scanning;
@@ -327,7 +363,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String _displayTreeCacheKey() {
     final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
-    return '$snapId|$_categoryFilter|$_deletableOnly|$_sort';
+    return '$snapId|$_categoryFilter|$_deletableOnly';
   }
 
   ScanTreeNode? _getDisplayTree() {
@@ -338,6 +374,87 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _cachedDisplayTree = _computeDisplayTree();
     _cachedDisplayTreeKey = key;
     return _cachedDisplayTree;
+  }
+
+  /// Recomputes the display tree + filtered entries in a background isolate and
+  /// stores the result in [_liveTree]/[_liveEntries], keyed by
+  /// [_displayTreeCacheKey]. build() reads these (O(1)); the heavy O(N log N)
+  /// work never runs on the UI thread.
+  ///
+  /// [immediate] requests (user toggles sort/filter, navigates, or a scan
+  /// starts/completes) bypass the throttle so the UI stays responsive.
+  /// Progressive requests (background checkpoint merges, the build() kick, and
+  /// the in-flight follow-up) are capped to one per [_kLiveComputeMinGap] —
+  /// otherwise the isolate deep-copies the whole snapshot back-to-back on every
+  /// checkpoint and memory balloons on large scans.
+  Future<void> _scheduleDisplayCompute({bool immediate = false}) async {
+    final snap = _s.lastSnapshot;
+    if (snap == null) {
+      _liveComputeTimer?.cancel();
+      if (_liveTree != null || _liveEntries.isNotEmpty || _liveKey != null) {
+        setState(() {
+          _liveTree = null;
+          _liveEntries = const [];
+          _liveKey = null;
+        });
+      }
+      return;
+    }
+    final key = _displayTreeCacheKey();
+    if (key == _liveKey) return; // already current
+    if (_computeInFlight) {
+      // Serialize computes (a second concurrent isolate would double the copy
+      // cost). Remember an immediate request so the follow-up round honors it.
+      if (immediate) _pendingImmediate = true;
+      return;
+    }
+
+    if (!immediate && _lastLiveComputeAt != null) {
+      final since = DateTime.now().difference(_lastLiveComputeAt!);
+      if (since < _kLiveComputeMinGap) {
+        // Too soon for another progressive recompute. Coalesce into a single
+        // deferred attempt after the gap instead of spinning the isolate.
+        _liveComputeTimer?.cancel();
+        _liveComputeTimer = Timer(_kLiveComputeMinGap - since, () {
+          if (mounted) unawaited(_scheduleDisplayCompute());
+        });
+        return;
+      }
+    }
+    _liveComputeTimer?.cancel();
+
+    _computeInFlight = true;
+    try {
+      final r = await compute(
+        _computeDisplayIsolate,
+        _DisplayComputeInput(
+          snapshot: snap,
+          categoryFilter: _categoryFilter,
+          deletableOnly: _deletableOnly,
+          sortIndex: _sortIndex,
+          rootPath: _scanRootPath(),
+        ),
+      );
+      if (!mounted) return;
+      _lastLiveComputeAt = DateTime.now();
+      setState(() {
+        _liveTree = r.tree;
+        _liveEntries = r.entries;
+        _liveKey = key;
+      });
+    } catch (e, st) {
+      debugPrint('HomePage: async display compute failed: $e\n$st');
+    } finally {
+      _computeInFlight = false;
+      // The key can move while we were computing (new snapshot merged, or the
+      // user toggled sort/filter). Re-run so the displayed data catches up,
+      // preserving an immediate request that arrived mid-flight.
+      final wantImmediate = _pendingImmediate;
+      _pendingImmediate = false;
+      if (mounted && _displayTreeCacheKey() != _liveKey) {
+        unawaited(_scheduleDisplayCompute(immediate: wantImmediate));
+      }
+    }
   }
 
   void _onColumnSelect(int columnIndex, ScanTreeNode node) {
@@ -384,17 +501,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String _scanProgressSummary() {
     final p = _s.scanProgress;
-    if (p == null) return 'Starting…';
+    if (p == null) return 'Scanning…';
     final phase = _phaseLabel(p['phase']?.toString() ?? '');
     final paths = p['paths_seen'];
     final elapsed = _s.scanElapsedLabel;
-    final buf = StringBuffer(phase);
+    final frac = _s.scannedFraction;
+    // Cap displayed % at 99 — rounding 0.998 to 100 looks wrong while still
+    // scanning, and scannedFraction already returns null once truly complete.
+    final pct = frac != null ? frac * 100 : null;
+    final pctStr = pct != null ? '${pct.round().clamp(0, 99)}% · ' : '';
+    final buf = StringBuffer('$pctStr$phase');
     if (paths != null && paths != 0) buf.write(' · $paths items');
     if (elapsed != null) buf.write(' · $elapsed');
-    final current = p['current_path']?.toString();
-    if (current != null && current.isNotEmpty) {
-      buf.write(' · $current');
-    }
+    // Deliberately omit current_path — too verbose for a single-line bar.
     return buf.toString();
   }
 
@@ -413,43 +532,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_cachedFilteredEntries != null && _cachedFilteredEntriesKey == key) {
       return _cachedFilteredEntries!;
     }
-
+    // Sort is intentionally absent — ScanColumnView applies sort at render time
+    // via sortMode. This list is used for counts/ID lookups only, not display
+    // order.
     Iterable<Map<String, dynamic>> out = _allSnapshotEntries();
     if (_categoryFilter != null) {
       out = out.where((e) => e['category']?.toString() == _categoryFilter);
     }
     if (_deletableOnly) out = out.where((e) => e['deletable'] == true);
-    final list = out.toList();
-    switch (_sort) {
-      case ScanSortMode.sizeDesc:
-        list.sort(
-          (a, b) => ((b['size_bytes'] as num?) ?? 0).compareTo(
-            (a['size_bytes'] as num?) ?? 0,
-          ),
-        );
-      case ScanSortMode.sizeAsc:
-        list.sort(
-          (a, b) => ((a['size_bytes'] as num?) ?? 0).compareTo(
-            (b['size_bytes'] as num?) ?? 0,
-          ),
-        );
-      case ScanSortMode.nameAsc:
-        list.sort(
-          (a, b) => (a['display_name']?.toString() ?? '').compareTo(
-            b['display_name']?.toString() ?? '',
-          ),
-        );
-    }
-    _cachedFilteredEntries = list;
+    _cachedFilteredEntries = out.toList();
     _cachedFilteredEntriesKey = key;
-    return list;
+    return _cachedFilteredEntries!;
   }
 
   Future<void> _pickFolder() async {
     final path = await getDirectoryPath(confirmButtonText: 'Select');
     if (path == null) return;
-    _s.setScanRoots([path]);
-    await _s.previewTarget();
+    await _s.switchScanRoot(path);
   }
 
   Future<void> _startScan() async {
@@ -604,9 +703,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               const SizedBox(width: AppleSpacing.xs),
               Tooltip(
                 message: _s.scanTargetLabel,
-                child: Text(
-                  _s.scanRoots.isEmpty ? 'Home' : 'Custom',
-                  style: context.vwFinePrint,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _s.scanRoots.isEmpty ? 'Home' : 'Custom',
+                      style: context.vwFinePrint,
+                    ),
+                    if (_s.scanning) ...[
+                      const SizedBox(width: 4),
+                      Builder(
+                        builder: (ctx) {
+                          final frac = _s.scannedFraction;
+                          return Text(
+                            frac != null
+                                ? '${(frac * 100).round()}%'
+                                : '…',
+                            style: ctx.vwFinePrint.copyWith(
+                              color: ctx.volward.primary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(width: AppleSpacing.xs),
@@ -614,7 +737,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 label: 'Folder…',
                 icon: Icons.folder_open_outlined,
                 variant: AppleButtonVariant.pearl,
-                onPressed: _s.scanning ? null : _pickFolder,
+                onPressed: _pickFolder,
               ),
               if (_s.scanRoots.isNotEmpty) ...[
                 const SizedBox(width: AppleSpacing.xxs),
@@ -622,22 +745,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   label: 'Home',
                   icon: Icons.home_outlined,
                   variant: AppleButtonVariant.pearl,
-                  onPressed: _s.scanning
-                      ? null
-                      : () async {
-                          _s.clearScanRoots();
-                          setState(() => _scanStatus = null);
-                          await _s.previewTarget();
-                        },
-                ),
-              ],
-              if (_s.scanning) ...[
-                const SizedBox(width: AppleSpacing.xxs),
-                AppleButton(
-                  label: 'Cancel',
-                  icon: Icons.stop_outlined,
-                  variant: AppleButtonVariant.darkUtility,
-                  onPressed: _s.cancelScan,
+                  onPressed: () async {
+                    setState(() => _scanStatus = null);
+                    await _s.switchScanRoot(null);
+                  },
                 ),
               ],
             ],
@@ -645,49 +756,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           const SizedBox(height: AppleSpacing.xxs),
           ScanFilterBar(
             categoryFilter: _categoryFilter,
-            onCategoryChanged: (cat) => setState(() {
-              _categoryFilter = cat;
-              _resetColumnNav();
-              _invalidateDisplayTreeCaches();
-            }),
+            onCategoryChanged: (cat) {
+              setState(() {
+                _categoryFilter = cat;
+                _resetColumnNav();
+                _invalidateDisplayTreeCaches();
+              });
+              unawaited(_scheduleDisplayCompute(immediate: true));
+            },
             sortMode: _sort,
-            onSortChanged: (mode) => setState(() {
-              _sort = mode;
-              _invalidateDisplayTreeCaches();
-            }),
+            onSortChanged: (mode) {
+              // Sort is applied at render time by ScanColumnView — no isolate,
+              // no tree copy, zero latency.
+              setState(() => _sort = mode);
+            },
             deletableOnly: _deletableOnly,
-            onDeletableOnlyChanged: (v) => setState(() {
-              _deletableOnly = v;
-              _resetColumnNav();
-              _invalidateDisplayTreeCaches();
-            }),
+            onDeletableOnlyChanged: (v) {
+              setState(() {
+                _deletableOnly = v;
+                _resetColumnNav();
+                _invalidateDisplayTreeCaches();
+              });
+              unawaited(_scheduleDisplayCompute(immediate: true));
+            },
             incrementalScan: _s.incrementalScan,
             onIncrementalScanChanged: _s.setIncrementalScan,
             incrementalEnabled: _s.canUseIncrementalScan,
             scanning: _s.scanning,
           ),
-          if (_s.scanning) ...[
-            const SizedBox(height: AppleSpacing.xxs),
-            const ClipRRect(
-              borderRadius: BorderRadius.all(Radius.circular(AppleRadius.pill)),
-              child: LinearProgressIndicator(minHeight: 2),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              _scanProgressSummary(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.vwFinePrint,
-            ),
-          ] else if (_scanStatus != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              _scanStatus!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.vwFinePrint,
-            ),
-          ],
         ],
       ),
       padding: const EdgeInsets.fromLTRB(
@@ -764,16 +860,42 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onSelect: _onColumnSelect,
       formatBytes: _fmt,
       selectedEntryIds: _selected,
+      peekInFlight: _s.peekInFlight,
       busy: _s.deleting || _s.scanning,
+      sortMode: _sort,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final entries = _filteredSortedEntries();
+    final key = _displayTreeCacheKey();
     final hasResults = _s.lastSnapshot != null;
     final restoring = _s.restoringSnapshot;
-    final displayTree = hasResults ? _getDisplayTree() : null;
+    // Prefer isolate-computed data.
+    //
+    // If the key matches, both reads are O(1) — nothing to do.
+    //
+    // If the key doesn't match (sort/filter just toggled, or a new checkpoint
+    // arrived), we have two paths:
+    //   • _liveTree is non-null → show the *stale* live result from the last
+    //     compute while the new one is in flight.  The user sees the previous
+    //     sort order for ~100–300ms then it snaps to the new one.  No main-
+    //     thread work at all, so no jank.
+    //   • _liveTree is null (true cold start, before the first compute ever
+    //     finishes) → fall back to a synchronous compute so the first frame
+    //     isn't empty.  This only fires once per session.
+    final liveHit = _liveKey == key;
+    final hasStale = _liveTree != null;
+    final entries =
+        liveHit ? _liveEntries : (hasStale ? _liveEntries : _filteredSortedEntries());
+    final displayTree = hasResults
+        ? (liveHit ? _liveTree : (hasStale ? _liveTree : _getDisplayTree()))
+        : null;
+    if (hasResults && !liveHit && !_computeInFlight) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_scheduleDisplayCompute());
+      });
+    }
 
     return Scaffold(
       backgroundColor: context.volward.canvasParchment,
@@ -1096,20 +1218,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       label: 'Folder…',
                       icon: Icons.folder_open_outlined,
                       variant: AppleButtonVariant.secondary,
-                      onPressed: _s.scanning ? null : _pickFolder,
+                      onPressed: _pickFolder,
                     ),
                     if (_s.scanRoots.isNotEmpty)
                       AppleButton(
                         label: 'Home',
                         icon: Icons.home_outlined,
                         variant: AppleButtonVariant.pearl,
-                        onPressed: _s.scanning
-                            ? null
-                            : () async {
-                                _s.clearScanRoots();
-                                setState(() => _scanStatus = null);
-                                await _s.previewTarget();
-                              },
+                        onPressed: () async {
+                          setState(() => _scanStatus = null);
+                          await _s.switchScanRoot(null);
+                        },
                       ),
                     if (_s.scanning)
                       AppleButton(
@@ -1142,11 +1261,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             if (_s.scanning) ...[
               const SizedBox(height: AppleSpacing.sm),
-              const ClipRRect(
-                borderRadius: BorderRadius.all(
+              ClipRRect(
+                borderRadius: const BorderRadius.all(
                   Radius.circular(AppleRadius.pill),
                 ),
-                child: LinearProgressIndicator(minHeight: 3),
+                child: LinearProgressIndicator(
+                  value: _s.scannedFraction,
+                  minHeight: 3,
+                ),
               ),
               const SizedBox(height: AppleSpacing.xxs),
               Text(
@@ -1296,7 +1418,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final IconData? actionIcon;
 
     if (_s.scanning) {
-      label = _scanProgressSummary();
+      // Elapsed ticks via scanElapsedNotifier below; the label is built there.
+      label = '';
       actionLabel = 'Cancel';
       actionIcon = Icons.stop_outlined;
       actionPressed = _s.cancelScan;
@@ -1308,8 +1431,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       actionPressed = busy ? null : _confirmDelete;
     } else {
       final hasResults = _s.lastSnapshot != null;
+      final peekCount = _s.peekInFlight.length;
       label = hasResults
-          ? 'Browse results · tap folders below'
+          ? peekCount > 0
+              ? '$peekCount director${peekCount == 1 ? 'y' : 'ies'} loading…'
+              : 'Browse results · tap folders below'
           : (_s.ready ? 'Ready to scan' : 'Loading engine…');
       actionLabel = hasResults ? 'Rescan' : 'Start scan';
       actionIcon = Icons.search;
@@ -1318,8 +1444,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : null;
     }
 
+    // During a scan, the elapsed time now arrives via scanElapsedNotifier (a
+    // 1 Hz ValueNotifier) rather than notifyListeners(), so wrap just the label
+    // in a ValueListenableBuilder — this keeps the elapsed segment ticking every
+    // second without rebuilding the whole page.
+    final Widget leading = _s.scanning
+        ? ValueListenableBuilder<String?>(
+            valueListenable: _s.scanElapsedNotifier,
+            builder: (context, _, __) =>
+                Text(_scanProgressSummary(), style: context.vwCaption),
+          )
+        : Text(label, style: context.vwCaption);
+
     return AppleStickyBar(
-      leading: Text(label, style: context.vwCaption),
+      leading: leading,
       action: AppleButton(
         label: actionLabel,
         icon: actionIcon,
@@ -1327,4 +1465,154 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Background-isolate display computation
+// ---------------------------------------------------------------------------
+// The display tree (resolve + prune + recursive sort + aggregate) and the
+// filtered/sorted flat entries list are O(N log N) in the number of scan
+// entries. Running them inline in build() froze the UI thread on every
+// checkpoint during large scans. These run instead in a background isolate via
+// compute(); the result is stored in _HomePageState._liveTree/_liveEntries.
+//
+// ScanTreeNode is plain data (String/int/bool/Map/List fields only), so it is
+// isolate-sendable by copy. Enums are passed as .index (safest across isolates).
+
+class _DisplayComputeInput {
+  const _DisplayComputeInput({
+    required this.snapshot,
+    required this.categoryFilter,
+    required this.deletableOnly,
+    required this.sortIndex,
+    required this.rootPath,
+  });
+  final Map<String, dynamic> snapshot;
+  final String? categoryFilter;
+  final bool deletableOnly;
+  final int sortIndex;
+  final String rootPath;
+}
+
+class _DisplayComputeResult {
+  const _DisplayComputeResult(this.tree, this.entries);
+  final ScanTreeNode? tree;
+  final List<Map<String, dynamic>> entries;
+}
+
+/// Pure replica of `_computeDisplayTree()` + `_filteredSortedEntries()`,
+/// runnable in a background isolate. Must not touch any `_HomePageState` state.
+_DisplayComputeResult _computeDisplayIsolate(_DisplayComputeInput i) {
+  final sort =
+      ScanSortMode.values[i.sortIndex.clamp(0, ScanSortMode.values.length - 1)];
+  final snap = i.snapshot;
+
+  // --- flat entries (mirror of _allSnapshotEntries) ---
+  final allEntries = (snap['entries'] is List)
+      ? (snap['entries'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList()
+      : <Map<String, dynamic>>[];
+
+  final entriesById = <String, Map<String, dynamic>>{};
+  for (final e in allEntries) {
+    final id = e['id']?.toString();
+    if (id != null) entriesById[id] = e;
+  }
+
+  // --- resolve tree (mirror of _resolveResultTree) ---
+  ScanTreeNode? tree;
+  if (snap['tree'] is Map) {
+    tree = ScanTreeNode.fromSnapshotJson(
+      Map<String, dynamic>.from(snap['tree'] as Map),
+      entriesById: entriesById,
+    );
+  }
+  final rootPath = (tree != null && tree.path.isNotEmpty)
+      ? ScanTreeBuilder.normalizeRoot(tree.path)
+      : ScanTreeBuilder.normalizeRoot(i.rootPath);
+  if (allEntries.isNotEmpty && (tree == null || tree.children.isEmpty)) {
+    tree = ScanTreeBuilder.build(entries: allEntries, rootPath: rootPath);
+  }
+
+  // --- display tree (mirror of _computeDisplayTree) ---
+  ScanTreeNode? displayTree;
+  if (tree != null) {
+    bool keep(Map<String, dynamic> entry) {
+      if (i.categoryFilter != null &&
+          entry['category']?.toString() != i.categoryFilter) {
+        return false;
+      }
+      if (i.deletableOnly && entry['deletable'] != true) return false;
+      return true;
+    }
+
+    final filtered = (i.categoryFilter == null && !i.deletableOnly)
+        ? tree
+        : pruneTree(tree, keep);
+    if (filtered != null) {
+      displayTree =
+          ScanTreeNode.withAggregatedCounts(_sortTreeIsolate(filtered, sort));
+    }
+  }
+
+  // --- filtered + sorted flat entries (mirror of _filteredSortedEntries) ---
+  Iterable<Map<String, dynamic>> out = allEntries;
+  if (i.categoryFilter != null) {
+    out = out.where((e) => e['category']?.toString() == i.categoryFilter);
+  }
+  if (i.deletableOnly) out = out.where((e) => e['deletable'] == true);
+  final entries = out.toList();
+  switch (sort) {
+    case ScanSortMode.sizeDesc:
+      entries.sort(
+        (a, b) => ((b['size_bytes'] as num?) ?? 0)
+            .compareTo((a['size_bytes'] as num?) ?? 0),
+      );
+    case ScanSortMode.sizeAsc:
+      entries.sort(
+        (a, b) => ((a['size_bytes'] as num?) ?? 0)
+            .compareTo((b['size_bytes'] as num?) ?? 0),
+      );
+    case ScanSortMode.nameAsc:
+      entries.sort(
+        (a, b) => (a['display_name']?.toString() ?? '')
+            .compareTo(b['display_name']?.toString() ?? ''),
+      );
+  }
+
+  return _DisplayComputeResult(displayTree, entries);
+}
+
+/// Pure replica of `_HomePageState._sortTree` with an explicit sort mode.
+ScanTreeNode _sortTreeIsolate(ScanTreeNode node, ScanSortMode sort) {
+  if (!node.isDirectory) return node;
+
+  final sortedChildren =
+      node.children.map((c) => _sortTreeIsolate(c, sort)).toList();
+  sortedChildren.sort((a, b) {
+    if (a.isDirectory != b.isDirectory) {
+      return a.isDirectory ? -1 : 1;
+    }
+    switch (sort) {
+      case ScanSortMode.sizeDesc:
+        return b.displayBytes.compareTo(a.displayBytes);
+      case ScanSortMode.sizeAsc:
+        return a.displayBytes.compareTo(b.displayBytes);
+      case ScanSortMode.nameAsc:
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    }
+  });
+
+  return ScanTreeNode(
+    name: node.name,
+    path: node.path,
+    isDirectory: true,
+    sizeBytes: node.sizeBytes,
+    entryId: node.entryId,
+    entry: node.entry,
+    scanned: node.scanned,
+    children: sortedChildren,
+  );
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../scan_tree.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
+import 'scan_filter_bar.dart';
 
 typedef ScanColumnSelectCallback = void Function(int columnIndex, ScanTreeNode node);
 
@@ -15,8 +16,10 @@ class ScanColumnView extends StatefulWidget {
     required this.onSelect,
     required this.formatBytes,
     this.selectedEntryIds = const {},
+    this.peekInFlight = const {},
     this.busy = false,
     this.columnWidth = 220,
+    this.sortMode = ScanSortMode.sizeDesc,
   });
 
   final ScanTreeNode root;
@@ -24,8 +27,13 @@ class ScanColumnView extends StatefulWidget {
   final ScanColumnSelectCallback onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
+  /// Paths for which a peek scan is actively running (from VolwardSession).
+  final Set<String> peekInFlight;
   final bool busy;
   final double columnWidth;
+  /// Sort applied to each column's children at render time (zero latency —
+  /// no isolate, no tree copy).
+  final ScanSortMode sortMode;
 
   @override
   State<ScanColumnView> createState() => _ScanColumnViewState();
@@ -58,13 +66,35 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   }
 
   List<List<ScanTreeNode>> _columns() {
-    final cols = <List<ScanTreeNode>>[widget.root.children];
+    final cols = <List<ScanTreeNode>>[_sorted(widget.root.children)];
     for (final node in widget.selectionChain) {
       if (node.isDirectory) {
-        cols.add(node.children);
+        cols.add(_sorted(node.children));
       }
     }
     return cols;
+  }
+
+  /// Sorts [items] by [widget.sortMode] at render time — O(k log k) where k is
+  /// the column length (~50-200 items), not the whole tree.  Dirs always sort
+  /// before files so the Finder-style layout is preserved.
+  List<ScanTreeNode> _sorted(List<ScanTreeNode> items) {
+    if (items.length <= 1) return items;
+    final list = items.toList();
+    list.sort((a, b) {
+      if (a.isDirectory != b.isDirectory) {
+        return a.isDirectory ? -1 : 1;
+      }
+      switch (widget.sortMode) {
+        case ScanSortMode.sizeDesc:
+          return b.displayBytes.compareTo(a.displayBytes);
+        case ScanSortMode.sizeAsc:
+          return a.displayBytes.compareTo(b.displayBytes);
+        case ScanSortMode.nameAsc:
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      }
+    });
+    return list;
   }
 
   @override
@@ -128,6 +158,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
                           : null,
                       formatBytes: widget.formatBytes,
                       selectedEntryIds: widget.selectedEntryIds,
+                      peekInFlight: widget.peekInFlight,
                       onSelect: (node) => widget.onSelect(columnIndex, node),
                     );
                   },
@@ -150,6 +181,7 @@ class _FinderColumn extends StatelessWidget {
     required this.onSelect,
     required this.formatBytes,
     required this.selectedEntryIds,
+    required this.peekInFlight,
   });
 
   final double width;
@@ -159,6 +191,7 @@ class _FinderColumn extends StatelessWidget {
   final ValueChanged<ScanTreeNode> onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
+  final Set<String> peekInFlight;
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +213,7 @@ class _FinderColumn extends StatelessWidget {
             isSelected: isSelected,
             markedForDelete: marked,
             formatBytes: formatBytes,
+            peekInFlight: peekInFlight.contains(node.path),
             onTap: () => onSelect(node),
           );
         },
@@ -195,6 +229,7 @@ class _FinderRow extends StatefulWidget {
     required this.markedForDelete,
     required this.formatBytes,
     required this.onTap,
+    this.peekInFlight = false,
   });
 
   final ScanTreeNode node;
@@ -202,6 +237,8 @@ class _FinderRow extends StatefulWidget {
   final bool markedForDelete;
   final String Function(num? bytes) formatBytes;
   final VoidCallback onTap;
+  /// True when a peek scan is actively running for this node's path.
+  final bool peekInFlight;
 
   @override
   State<_FinderRow> createState() => _FinderRowState();
@@ -277,7 +314,11 @@ class _FinderRowState extends State<_FinderRow> {
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 1.5,
-                          color: muted,
+                          // Accent colour when a peek scan is actively running;
+                          // muted when it's just an unvisited preview node.
+                          color: widget.peekInFlight
+                              ? (isSelected ? v.onPrimary : v.primary)
+                              : muted,
                         ),
                       )
                     : Icon(Icons.chevron_right, size: 14, color: muted)
