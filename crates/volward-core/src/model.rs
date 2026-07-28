@@ -11,13 +11,21 @@ pub enum CapabilityLevel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EntryCategory {
+    /// ~/Library/Caches, .cache/ etc. — deletable, low risk.
     Cache,
+    /// /tmp, /temp, .tmp files — deletable, low risk.
     Temp,
+    /// Image / video / PDF / DMG files matched by extension — not deletable by default.
     Media,
+    /// Application data directories (not yet emitted by Classifier).
     AppData,
+    /// Files whose owning application is no longer installed (not yet emitted).
     Orphan,
+    /// Duplicate files detected by content hash (not yet emitted).
     Duplicate,
+    /// Paths under protected prefixes (/System, /usr …) — never deletable.
     System,
+    /// Catch-all for classified entries that don't fit other categories (not yet emitted).
     Unknown,
 }
 
