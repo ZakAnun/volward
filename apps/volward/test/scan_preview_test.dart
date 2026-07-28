@@ -13,7 +13,8 @@ void main() {
         ],
       );
 
-      expect(snapshot['snapshot_id'], 'preview');
+      // Unique per preview target so UI caches invalidate on root switches.
+      expect(snapshot['snapshot_id'], startsWith('preview-'));
       final tree = snapshot['tree'] as Map<String, dynamic>;
       expect(tree['scanned'], isFalse);
       expect(tree['path'], '/Users/test');
