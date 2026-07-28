@@ -5,7 +5,30 @@ import '../theme/volward_tokens.dart';
 
 enum ScanSortMode { sizeDesc, sizeAsc, nameAsc }
 
+extension ScanSortModeLabel on ScanSortMode {
+  String get label {
+    switch (this) {
+      case ScanSortMode.sizeDesc:
+        return 'Size ↓';
+      case ScanSortMode.sizeAsc:
+        return 'Size ↑';
+      case ScanSortMode.nameAsc:
+        return 'Name';
+    }
+  }
+}
+
 /// Category + sort + toggle filters for scan results.
+///
+/// Single-row layout:
+///   [All] [Cache] [Temp] [Media] [System]  ···  [Size ↓ ▾] [✓ Deletable]
+///
+/// - Type chips: single-select, only the 4 categories that the classifier
+///   actually emits (Cache / Temp / Media / System) plus "All".
+/// - Sort: popup-menu button — compact, easily extensible.
+/// - Deletable / Incremental: checkbox toggles on the right.
+/// - The whole row scrolls horizontally when the available width is too
+///   narrow for chips + trailing controls (avoids RenderFlex overflow).
 class ScanFilterBar extends StatelessWidget {
   const ScanFilterBar({
     super.key,
@@ -21,17 +44,16 @@ class ScanFilterBar extends StatelessWidget {
     required this.scanning,
   });
 
+  /// Only the categories that classify.rs actually emits, plus null == All.
   static const categoryOptions = <String?>[
     null,
     'Cache',
     'Temp',
     'Media',
-    'Unknown',
     'System',
   ];
 
-  static const _segmentHeight = 28.0;
-  static const _labelWidth = 44.0;
+  static const _barHeight = 32.0;
 
   final String? categoryFilter;
   final ValueChanged<String?> onCategoryChanged;
@@ -56,54 +78,31 @@ class ScanFilterBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppleSpacing.sm,
-          vertical: AppleSpacing.xs,
+          vertical: AppleSpacing.xxs,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _labeledRow(
-              context: context,
-              label: 'Type',
-              child: SizedBox(
-                height: _segmentHeight,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: categoryOptions.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(width: AppleSpacing.xxs),
-                  itemBuilder: (context, index) {
-                    final value = categoryOptions[index];
-                    final label = value ?? 'All';
-                    return _FilterPill(
-                      label: label,
+        child: SizedBox(
+          height: _barHeight,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final chips = <Widget>[
+                for (final value in categoryOptions)
+                  Padding(
+                    padding: const EdgeInsets.only(right: AppleSpacing.xxs),
+                    child: _FilterChip(
+                      label: value ?? 'All',
                       selected: categoryFilter == value,
                       onTap: scanning ? null : () => onCategoryChanged(value),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: AppleSpacing.xxs),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: _labelWidth,
-                  child: Text(
-                    'Sort',
-                    style: AppleTypography.finePrint.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: v.inkMuted80,
                     ),
                   ),
-                ),
-                _SortSegmentedControl(
-                  height: _segmentHeight,
+              ];
+
+              final trailing = <Widget>[
+                _SortMenuButton(
                   sortMode: sortMode,
                   enabled: !scanning,
                   onChanged: onSortChanged,
                 ),
-                const Spacer(),
+                const SizedBox(width: AppleSpacing.xs),
                 _FilterToggle(
                   label: 'Deletable',
                   selected: deletableOnly,
@@ -122,41 +121,35 @@ class ScanFilterBar extends StatelessWidget {
                     ),
                   ),
                 ],
-              ],
-            ),
-          ],
+              ];
+
+              // Horizontally scrollable so chips + trailing never overflow.
+              // minWidth keeps trailing right-aligned when everything fits.
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: chips),
+                      Row(mainAxisSize: MainAxisSize.min, children: trailing),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
   }
-
-  Widget _labeledRow({
-    required BuildContext context,
-    required String label,
-    required Widget child,
-  }) {
-    final v = context.volward;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: _labelWidth,
-          child: Text(
-            label,
-            style: AppleTypography.finePrint.copyWith(
-              fontWeight: FontWeight.w600,
-              color: v.inkMuted80,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    );
-  }
 }
 
-class _FilterPill extends StatelessWidget {
-  const _FilterPill({
+// ── Filter chip ──────────────────────────────────────────────────────────────
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -170,34 +163,28 @@ class _FilterPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final v = context.volward;
     final fg = selected ? v.onPrimary : v.inkMuted80;
-    final bg = selected ? v.primaryFocus : v.canvas;
+    final bg = selected ? v.primaryFocus : Colors.transparent;
     final border = selected ? v.primaryFocus : v.hairline;
 
-    return Material(
-      color: bg,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppleRadius.sm),
-        side: BorderSide(color: border, width: selected ? 1.5 : 1),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        splashColor: Colors.transparent,
-        highlightColor: selected
-            ? v.primary.withValues(alpha: 0.12)
-            : v.canvasParchment,
-        child: Container(
-          height: ScanFilterBar._segmentHeight,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            label,
-            style: AppleTypography.finePrint.copyWith(
-              color: fg,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              height: 1.2,
-            ),
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(AppleRadius.pill),
+          border: Border.all(color: border, width: selected ? 1.5 : 1),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: AppleTypography.finePrint.copyWith(
+            color: fg,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            height: 1,
           ),
         ),
       ),
@@ -205,15 +192,15 @@ class _FilterPill extends StatelessWidget {
   }
 }
 
-class _SortSegmentedControl extends StatelessWidget {
-  const _SortSegmentedControl({
-    required this.height,
+// ── Sort popup-menu button ───────────────────────────────────────────────────
+
+class _SortMenuButton extends StatelessWidget {
+  const _SortMenuButton({
     required this.sortMode,
     required this.enabled,
     required this.onChanged,
   });
 
-  final double height;
   final ScanSortMode sortMode;
   final bool enabled;
   final ValueChanged<ScanSortMode> onChanged;
@@ -221,83 +208,93 @@ class _SortSegmentedControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
-    return SizedBox(
-      height: height,
-      child: DecoratedBox(
+    final fg = enabled ? v.inkMuted80 : v.inkMuted48;
+
+    return PopupMenuButton<ScanSortMode>(
+      enabled: enabled,
+      initialValue: sortMode,
+      onSelected: onChanged,
+      tooltip: '',
+      offset: const Offset(0, 30),
+      color: v.canvas,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        side: BorderSide(color: v.hairline),
+      ),
+      itemBuilder: (context) => ScanSortMode.values
+          .map(
+            (mode) => PopupMenuItem<ScanSortMode>(
+              value: mode,
+              height: 32,
+              child: _SortMenuItem(
+                label: mode.label,
+                selected: sortMode == mode,
+              ),
+            ),
+          )
+          .toList(),
+      child: Container(
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: v.canvas,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(AppleRadius.sm),
           border: Border.all(color: v.hairline),
         ),
+        alignment: Alignment.center,
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _segment(
-              context,
-              'Size ↓',
-              ScanSortMode.sizeDesc,
-              showDivider: true,
+            Text(
+              sortMode.label,
+              style: AppleTypography.finePrint.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w500,
+                height: 1,
+              ),
             ),
-            _segment(
-              context,
-              'Size ↑',
-              ScanSortMode.sizeAsc,
-              showDivider: true,
-            ),
-            _segment(context, 'Name', ScanSortMode.nameAsc, showDivider: false),
+            const SizedBox(width: 3),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 13, color: fg),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _segment(
-    BuildContext context,
-    String label,
-    ScanSortMode mode, {
-    required bool showDivider,
-  }) {
+class _SortMenuItem extends StatelessWidget {
+  const _SortMenuItem({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
     final v = context.volward;
-    final selected = sortMode == mode;
-    final fg = selected ? v.onPrimary : v.inkMuted80;
-    final bg = selected ? v.primaryFocus : v.canvas;
-
-    Widget cell = Material(
-      color: bg,
-      child: InkWell(
-        onTap: enabled ? () => onChanged(mode) : null,
-        splashColor: Colors.transparent,
-        highlightColor: v.canvasParchment,
-        child: Container(
-          height: height,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            label,
-            style: AppleTypography.finePrint.copyWith(
-              color: enabled ? fg : fg.withValues(alpha: 0.45),
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              height: 1.2,
-            ),
+    return Row(
+      children: [
+        SizedBox(
+          width: 16,
+          child: selected
+              ? Icon(Icons.check_rounded, size: 13, color: v.primary)
+              : null,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: AppleTypography.finePrint.copyWith(
+            color: selected ? v.primary : v.inkMuted80,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            height: 1,
           ),
         ),
-      ),
+      ],
     );
-
-    if (showDivider) {
-      cell = Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          cell,
-          VerticalDivider(width: 1, thickness: 1, color: v.hairline),
-        ],
-      );
-    }
-    return cell;
   }
 }
+
+// ── Deletable / Incremental toggle ───────────────────────────────────────────
 
 class _FilterToggle extends StatelessWidget {
   const _FilterToggle({
@@ -315,47 +312,35 @@ class _FilterToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: enabled ? () => onChanged(!selected) : null,
-        borderRadius: BorderRadius.circular(AppleRadius.sm),
-        splashColor: Colors.transparent,
-        highlightColor: v.canvasParchment,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppleSpacing.xxs,
-            vertical: 2,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: Checkbox(
-                  value: selected,
-                  onChanged: enabled ? (v) => onChanged(v ?? false) : null,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
+    return GestureDetector(
+      onTap: enabled ? () => onChanged(!selected) : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: Checkbox(
+              value: selected,
+              onChanged: enabled ? (val) => onChanged(val ?? false) : null,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(3),
               ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: AppleTypography.finePrint.copyWith(
-                  color: enabled ? v.inkMuted80 : v.inkMuted48,
-                  fontWeight: FontWeight.w500,
-                  height: 1.2,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: AppleTypography.finePrint.copyWith(
+              color: enabled ? v.inkMuted80 : v.inkMuted48,
+              fontWeight: FontWeight.w500,
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
