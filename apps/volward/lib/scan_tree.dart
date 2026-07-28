@@ -113,7 +113,13 @@ class ScanTreeNode {
     );
   }
 
-  int get displayBytes => sizeBytes > 0 ? sizeBytes : totalBytes;
+  /// Lazily computed and memoized display size.
+  ///
+  /// Avoids repeated O(subtree) [totalBytes] recursion when [sizeBytes] is 0
+  /// (e.g. directories not yet sized by the background scan).  Uses [late final]
+  /// so the value is computed at most once per node instance, regardless of how
+  /// many times [displayBytes] is accessed during sorting or rendering.
+  late final int displayBytes = sizeBytes > 0 ? sizeBytes : totalBytes;
 }
 
 /// Builds a Finder-like directory tree from flat scan entries (file paths only).

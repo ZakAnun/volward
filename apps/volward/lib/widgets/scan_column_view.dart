@@ -45,9 +45,20 @@ class ScanColumnView extends StatefulWidget {
 class _ScanColumnViewState extends State<ScanColumnView> {
   final ScrollController _hScroll = ScrollController();
 
+  // Sorted-results cache: identity hash of the source list → (sortMode, result).
+  // Avoids re-sorting all visible columns on every navigation tick when the
+  // underlying data hasn't changed.  Cleared whenever root identity changes
+  // (i.e. a new snapshot was merged) to prevent stale entries from accumulating.
+  final Map<int, (ScanSortMode, List<ScanTreeNode>)> _sortCache = {};
+
   @override
   void didUpdateWidget(covariant ScanColumnView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // New snapshot → new ScanTreeNode objects → old cache keys will never be
+    // hit again.  Clear to avoid unbounded growth.
+    if (!identical(oldWidget.root, widget.root)) {
+      _sortCache.clear();
+    }
     if (widget.selectionChain.length > oldWidget.selectionChain.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
     }
@@ -81,8 +92,17 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   /// Sorts [items] by [widget.sortMode] at render time — O(k log k) where k is
   /// the column length (~50-200 items), not the whole tree.  Dirs always sort
   /// before files so the Finder-style layout is preserved.
+  ///
+  /// Results are cached by list identity so that repeated calls during the same
+  /// render (e.g. column-nav ticks with unchanged data) return the pre-sorted
+  /// list with zero additional work.
   List<ScanTreeNode> _sorted(List<ScanTreeNode> items) {
     if (items.length <= 1) return items;
+    final key = identityHashCode(items);
+    final cached = _sortCache[key];
+    if (cached != null && cached.$1 == widget.sortMode) {
+      return cached.$2;
+    }
     final list = items.toList();
     list.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
@@ -97,6 +117,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       }
     });
+    _sortCache[key] = (widget.sortMode, list);
     return list;
   }
 

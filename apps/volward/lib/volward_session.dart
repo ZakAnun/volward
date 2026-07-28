@@ -73,6 +73,10 @@ class VolwardSession extends ChangeNotifier {
   // Exposes the scan elapsed label as a ValueNotifier so the sticky bar can
   // react to the 1-Hz tick independently without triggering a full page rebuild.
   final ValueNotifier<String?> scanElapsedNotifier = ValueNotifier(null);
+  // Directory-scan progress (0–1, or null when hidden). Updated after the
+  // deferred tree walk in [_recomputeProgressCounters] so progress widgets can
+  // rebuild locally without a full [notifyListeners] / page rebuild.
+  final ValueNotifier<double?> scannedFractionNotifier = ValueNotifier(null);
   SendPort? _workerCancelPort;
   Timer? _scanElapsedTimer;
   DateTime? _scanStartedAt;
@@ -117,10 +121,22 @@ class VolwardSession extends ChangeNotifier {
   /// (0.0–1.0). Returns null when a scan is not running, when the tree is
   /// empty, or when every directory is already scanned (so the progress
   /// indicator is hidden rather than stuck at 100%).
+  ///
+  /// Prefer listening to [scannedFractionNotifier] for UI that should update
+  /// when counters finish their deferred recompute (without a full page notify).
   double? get scannedFraction {
     if (!_scanning || _totalDirCount == 0) return null;
     final f = _scannedDirCount / _totalDirCount;
     return f >= 1.0 ? null : f;
+  }
+
+  /// Pushes [scannedFraction] into [scannedFractionNotifier] only when the
+  /// value actually changes — keeps progress-bar rebuilds cheap.
+  void _publishScannedFraction() {
+    final next = scannedFraction;
+    if (scannedFractionNotifier.value != next) {
+      scannedFractionNotifier.value = next;
+    }
   }
 
   /// Whether the bundled native library supports file-based snapshot I/O.
@@ -586,10 +602,13 @@ class VolwardSession extends ChangeNotifier {
     _savingPhaseStartedAt = null;
     _peekInFlight.clear();
     _peekCompleted.clear();
-    // Seed progress counters from whatever tree is already in _lastSnapshot
-    // (usually the preview snapshot). Without this, scannedFraction returns
-    // null until the first checkpoint arrives, so the UI shows "…" rather
-    // than "0%" at scan startup.
+    // Clear stale fraction from a previous scan, then seed counters from
+    // whatever tree is already in _lastSnapshot (usually the preview).
+    // Without the seed, scannedFraction stays null until the first checkpoint
+    // and the UI shows "…" rather than a real % at startup.
+    _scannedDirCount = 0;
+    _totalDirCount = 0;
+    _publishScannedFraction();
     _recomputeProgressCounters(force: true);
     _startScanElapsedTimer();
     notifyListeners();
@@ -679,6 +698,7 @@ class VolwardSession extends ChangeNotifier {
       _lastScanActivityAt = null;
       _savingPhaseStartedAt = null;
       _stopScanElapsedTimer();
+      _publishScannedFraction(); // hide progress once scanning ends
       notifyListeners();
     }
   }
@@ -798,29 +818,42 @@ class VolwardSession extends ChangeNotifier {
     }
     _lastProgressRecompute = now;
 
-    final rawTree = _lastSnapshot?['tree'];
-    if (rawTree is! Map) {
-      _scannedDirCount = 0;
-      _totalDirCount = 0;
-      return;
-    }
-    var total = 0;
-    var done = 0;
-    void visit(Map<dynamic, dynamic> node) {
-      if (node['is_dir'] != true) return;
-      total++;
-      if (node['scanned'] == true) done++;
-      final children = node['children'];
-      if (children is List) {
-        for (final c in children) {
-          if (c is Map) visit(c);
+    // Defer the O(tree) traversal to the next event-loop iteration so it does
+    // not block the current frame's build/layout/paint pipeline.  Progress UI
+    // listens to [scannedFractionNotifier] and tolerates being one tick late.
+    final snapshot = _lastSnapshot; // capture before async gap
+    unawaited(
+      Future<void>(() {
+        if (snapshot == null || !identical(snapshot, _lastSnapshot)) return;
+        final rawTree = snapshot['tree'];
+        if (rawTree is! Map) {
+          _scannedDirCount = 0;
+          _totalDirCount = 0;
+          _publishScannedFraction();
+          return;
         }
-      }
-    }
+        var total = 0;
+        var done = 0;
+        void visit(Map<dynamic, dynamic> node) {
+          if (node['is_dir'] != true) return;
+          total++;
+          if (node['scanned'] == true) done++;
+          final children = node['children'];
+          if (children is List) {
+            for (final c in children) {
+              if (c is Map) visit(c);
+            }
+          }
+        }
 
-    visit(rawTree);
-    _scannedDirCount = done;
-    _totalDirCount = total;
+        visit(rawTree);
+        _scannedDirCount = done;
+        _totalDirCount = total;
+        // Local notifier only — do NOT call notifyListeners() here (that would
+        // rebuild the whole page on every deferred walk).
+        _publishScannedFraction();
+      }),
+    );
   }
 
   void _applyMerge(
@@ -879,6 +912,7 @@ class VolwardSession extends ChangeNotifier {
   void dispose() {
     _stopScanElapsedTimer();
     scanElapsedNotifier.dispose();
+    scannedFractionNotifier.dispose();
     _closeScanChannels();
     final engine = _engine;
     if (engine != null) {
