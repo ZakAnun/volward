@@ -41,10 +41,7 @@ class SettingsPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Theme',
-                      style: context.vwCaptionStrong,
-                    ),
+                    Text('Theme', style: context.vwCaptionStrong),
                     const SizedBox(height: AppleSpacing.xs),
                     _ThemeModePicker(
                       value: themeSettings.preference,
@@ -59,10 +56,7 @@ class SettingsPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Accent color',
-                      style: context.vwCaptionStrong,
-                    ),
+                    Text('Accent color', style: context.vwCaptionStrong),
                     const SizedBox(height: AppleSpacing.xs),
                     Text(
                       'Applies to buttons, selections, and progress indicators.',
@@ -77,9 +71,11 @@ class SettingsPage extends StatelessWidget {
                           _AccentSwatch(
                             label: preset.$1,
                             color: preset.$2,
-                            selected: themeSettings.accentColor.toARGB32() ==
+                            selected:
+                                themeSettings.accentColor.toARGB32() ==
                                 preset.$2.toARGB32(),
-                            onTap: () => themeSettings.setAccentColor(preset.$2),
+                            onTap: () =>
+                                themeSettings.setAccentColor(preset.$2),
                           ),
                       ],
                     ),
@@ -107,15 +103,9 @@ class SettingsPage extends StatelessWidget {
                             ),
                             const SizedBox(width: AppleSpacing.xs),
                             Expanded(
-                              child: Text(
-                                'Preview',
-                                style: context.vwCaption,
-                              ),
+                              child: Text('Preview', style: context.vwCaption),
                             ),
-                            Text(
-                              'Primary',
-                              style: context.vwFinePrint,
-                            ),
+                            Text('Primary', style: context.vwFinePrint),
                           ],
                         ),
                       ),

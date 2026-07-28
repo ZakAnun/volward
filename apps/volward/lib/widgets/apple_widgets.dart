@@ -28,8 +28,14 @@ class AppleButton extends StatefulWidget {
 class _AppleButtonState extends State<AppleButton> {
   bool _pressed = false;
 
-  (Color bg, Color fg, BorderSide? border, EdgeInsets padding, TextStyle textStyle)
-      _style(BuildContext context) {
+  (
+    Color bg,
+    Color fg,
+    BorderSide? border,
+    EdgeInsets padding,
+    TextStyle textStyle,
+  )
+  _style(BuildContext context) {
     final v = context.volward;
     switch (widget.variant) {
       case AppleButtonVariant.primary:
@@ -38,7 +44,10 @@ class _AppleButtonState extends State<AppleButton> {
           v.onPrimary,
           null,
           const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          AppleTypography.captionStrong.copyWith(color: v.onPrimary, height: 1.2),
+          AppleTypography.captionStrong.copyWith(
+            color: v.onPrimary,
+            height: 1.2,
+          ),
         );
       case AppleButtonVariant.secondary:
         return (
@@ -71,7 +80,8 @@ class _AppleButtonState extends State<AppleButton> {
   Widget build(BuildContext context) {
     final (bg, fg, border, padding, textStyle) = _style(context);
     final enabled = widget.onPressed != null;
-    final radius = widget.variant == AppleButtonVariant.pearl ||
+    final radius =
+        widget.variant == AppleButtonVariant.pearl ||
             widget.variant == AppleButtonVariant.darkUtility
         ? AppleRadius.sm
         : AppleRadius.pill;
@@ -96,11 +106,17 @@ class _AppleButtonState extends State<AppleButton> {
           child: Padding(
             padding: padding,
             child: Row(
-              mainAxisSize: widget.expanded ? MainAxisSize.max : MainAxisSize.min,
+              mainAxisSize: widget.expanded
+                  ? MainAxisSize.max
+                  : MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (widget.icon != null) ...[
-                  Icon(widget.icon, size: 16, color: enabled ? fg : fg.withValues(alpha: 0.5)),
+                  Icon(
+                    widget.icon,
+                    size: 16,
+                    color: enabled ? fg : fg.withValues(alpha: 0.5),
+                  ),
                   const SizedBox(width: AppleSpacing.xs),
                 ],
                 Text(
@@ -322,10 +338,7 @@ class ApplePageShell extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
-          child: SingleChildScrollView(
-            padding: padding,
-            child: child,
-          ),
+          child: SingleChildScrollView(padding: padding, child: child),
         ),
       ),
     );

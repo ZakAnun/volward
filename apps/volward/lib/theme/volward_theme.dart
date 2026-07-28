@@ -55,7 +55,9 @@ ThemeData buildVolwardTheme({
       elevation: 0,
       scrolledUnderElevation: 0,
       toolbarHeight: 44,
-      titleTextStyle: AppleTypography.navLink.copyWith(color: tokens.bodyOnDark),
+      titleTextStyle: AppleTypography.navLink.copyWith(
+        color: tokens.bodyOnDark,
+      ),
       iconTheme: IconThemeData(color: tokens.bodyMuted),
       actionsIconTheme: IconThemeData(color: tokens.bodyMuted),
       systemOverlayStyle: SystemUiOverlayStyle.light,
@@ -85,7 +87,9 @@ ThemeData buildVolwardTheme({
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: tokens.ink,
-      contentTextStyle: AppleTypography.caption.copyWith(color: tokens.bodyOnDark),
+      contentTextStyle: AppleTypography.caption.copyWith(
+        color: tokens.bodyOnDark,
+      ),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppleRadius.sm),
@@ -107,9 +111,7 @@ ThemeData buildVolwardTheme({
     ),
     iconTheme: IconThemeData(color: tokens.inkMuted80),
     iconButtonTheme: IconButtonThemeData(
-      style: ButtonStyle(
-        iconColor: WidgetStatePropertyAll(tokens.inkMuted80),
-      ),
+      style: ButtonStyle(iconColor: WidgetStatePropertyAll(tokens.inkMuted80)),
     ),
   );
 }

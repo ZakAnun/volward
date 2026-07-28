@@ -58,10 +58,7 @@ class VolwardTokens extends ThemeExtension<VolwardTokens> {
     ('Teal', Color(0xFF32ADE6)),
   ];
 
-  factory VolwardTokens.forBrightness(
-    Brightness brightness,
-    Color accent,
-  ) {
+  factory VolwardTokens.forBrightness(Brightness brightness, Color accent) {
     return brightness == Brightness.dark
         ? VolwardTokens.dark(accent)
         : VolwardTokens.light(accent);
@@ -76,7 +73,11 @@ class VolwardTokens extends ThemeExtension<VolwardTokens> {
   }
 
   static Color folderIconOnPrimaryFor(Color accent) {
-    return Color.lerp(folderIconFor(accent, Brightness.dark), Colors.white, 0.32) ??
+    return Color.lerp(
+          folderIconFor(accent, Brightness.dark),
+          Colors.white,
+          0.32,
+        ) ??
         const Color(0xFF7CB3FF);
   }
 
@@ -196,7 +197,10 @@ class VolwardTokens extends ThemeExtension<VolwardTokens> {
       surfacePearl: lerpColor(surfacePearl, other.surfacePearl),
       surfaceBlack: lerpColor(surfaceBlack, other.surfaceBlack),
       folderIcon: lerpColor(folderIcon, other.folderIcon),
-      folderIconOnPrimary: lerpColor(folderIconOnPrimary, other.folderIconOnPrimary),
+      folderIconOnPrimary: lerpColor(
+        folderIconOnPrimary,
+        other.folderIconOnPrimary,
+      ),
       warning: lerpColor(warning, other.warning),
       danger: lerpColor(danger, other.danger),
     );

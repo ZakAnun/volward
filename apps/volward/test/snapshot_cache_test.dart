@@ -29,7 +29,9 @@ void main() {
       }),
     );
 
-    final path = await SnapshotCache.latestSnapshotPath(preferredRoot: '/Users/test');
+    final path = await SnapshotCache.latestSnapshotPath(
+      preferredRoot: '/Users/test',
+    );
     expect(path, snapshotFile.path);
   });
 
@@ -44,9 +46,9 @@ void main() {
     final manifests = Directory('${temp.path}/manifests')..createSync();
     final snapshots = Directory('${temp.path}/snapshots')..createSync();
 
-    File('${snapshots.path}/deadbeef.json').writeAsStringSync(
-      jsonEncode({'snapshot_id': 'snap-2', 'entries': []}),
-    );
+    File(
+      '${snapshots.path}/deadbeef.json',
+    ).writeAsStringSync(jsonEncode({'snapshot_id': 'snap-2', 'entries': []}));
 
     File('${manifests.path}/deadbeef.json').writeAsStringSync(
       jsonEncode({

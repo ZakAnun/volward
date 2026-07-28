@@ -21,7 +21,14 @@ class ScanFilterBar extends StatelessWidget {
     required this.scanning,
   });
 
-  static const categoryOptions = <String?>[null, 'Cache', 'Temp', 'Media', 'Unknown', 'System'];
+  static const categoryOptions = <String?>[
+    null,
+    'Cache',
+    'Temp',
+    'Media',
+    'Unknown',
+    'System',
+  ];
 
   static const _segmentHeight = 28.0;
   static const _labelWidth = 44.0;
@@ -70,9 +77,7 @@ class ScanFilterBar extends StatelessWidget {
                     return _FilterPill(
                       label: label,
                       selected: categoryFilter == value,
-                      onTap: scanning
-                          ? null
-                          : () => onCategoryChanged(value),
+                      onTap: scanning ? null : () => onCategoryChanged(value),
                     );
                   },
                 ),
@@ -228,8 +233,18 @@ class _SortSegmentedControl extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _segment(context, 'Size ↓', ScanSortMode.sizeDesc, showDivider: true),
-            _segment(context, 'Size ↑', ScanSortMode.sizeAsc, showDivider: true),
+            _segment(
+              context,
+              'Size ↓',
+              ScanSortMode.sizeDesc,
+              showDivider: true,
+            ),
+            _segment(
+              context,
+              'Size ↑',
+              ScanSortMode.sizeAsc,
+              showDivider: true,
+            ),
             _segment(context, 'Name', ScanSortMode.nameAsc, showDivider: false),
           ],
         ),

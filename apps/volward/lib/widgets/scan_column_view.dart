@@ -5,7 +5,8 @@ import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'scan_filter_bar.dart';
 
-typedef ScanColumnSelectCallback = void Function(int columnIndex, ScanTreeNode node);
+typedef ScanColumnSelectCallback =
+    void Function(int columnIndex, ScanTreeNode node);
 
 /// macOS Finder-style column browser for [root] scan tree.
 class ScanColumnView extends StatefulWidget {
@@ -27,10 +28,12 @@ class ScanColumnView extends StatefulWidget {
   final ScanColumnSelectCallback onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
+
   /// Paths for which a peek scan is actively running (from VolwardSession).
   final Set<String> peekInFlight;
   final bool busy;
   final double columnWidth;
+
   /// Sort applied to each column's children at render time (zero latency —
   /// no isolate, no tree copy).
   final ScanSortMode sortMode;
@@ -237,6 +240,7 @@ class _FinderRow extends StatefulWidget {
   final bool markedForDelete;
   final String Function(num? bytes) formatBytes;
   final VoidCallback onTap;
+
   /// True when a peek scan is actively running for this node's path.
   final bool peekInFlight;
 
@@ -260,11 +264,15 @@ class _FinderRowState extends State<_FinderRow> {
     final isDir = widget.node.isDirectory;
     final isSelected = widget.isSelected;
     final fg = isSelected ? v.onPrimary : v.body;
-    final muted = isSelected ? v.onPrimary.withValues(alpha: 0.85) : v.inkMuted48;
+    final muted = isSelected
+        ? v.onPrimary.withValues(alpha: 0.85)
+        : v.inkMuted48;
     final bg = _background(v);
 
     final subtitle = isDir
-        ? (widget.node.scanned ? widget.formatBytes(widget.node.displayBytes) : '—')
+        ? (widget.node.scanned
+              ? widget.formatBytes(widget.node.displayBytes)
+              : '—')
         : widget.formatBytes(
             widget.node.entry?['size_bytes'] as num? ?? widget.node.sizeBytes,
           );

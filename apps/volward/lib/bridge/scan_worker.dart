@@ -197,12 +197,9 @@ void volwardPeekScanIsolate(List<dynamic> args) {
 
   try {
     final jobId = 'peek-${DateTime.now().millisecondsSinceEpoch}';
-    final startResult = bridge.startScanAsyncWithOptions(
-      engine,
-      jobId,
-      [path],
-      incremental: false,
-    );
+    final startResult = bridge.startScanAsyncWithOptions(engine, jobId, [
+      path,
+    ], incremental: false);
     if (startResult.startsWith('error:')) {
       resultPort.send(<String, dynamic>{'type': 'error', 'error': startResult});
       bridge.freeEngine(engine);

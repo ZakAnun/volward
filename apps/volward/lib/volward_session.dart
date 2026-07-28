@@ -131,8 +131,7 @@ class VolwardSession extends ChangeNotifier {
   bool get hasScanOptionsApi => VolwardNativeBridge.instance.hasScanOptionsApi;
 
   /// Increment scan requires both snapshot file API and scan options FFI.
-  bool get canUseIncrementalScan =>
-      hasSnapshotFileApi && hasScanOptionsApi;
+  bool get canUseIncrementalScan => hasSnapshotFileApi && hasScanOptionsApi;
 
   /// True while loading a previously saved scan from disk cache.
   bool get restoringSnapshot => _restoringSnapshot;
@@ -286,10 +285,12 @@ class VolwardSession extends ChangeNotifier {
   Future<void> _restoreCachedSnapshot() async {
     if (!_ready || _engine == null || _scanning) return;
 
-    final preferredRoot =
-        _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
-    final path =
-        await SnapshotCache.latestSnapshotPath(preferredRoot: preferredRoot);
+    final preferredRoot = _scanRoots.isNotEmpty
+        ? _scanRoots.first
+        : _defaultScanRoot();
+    final path = await SnapshotCache.latestSnapshotPath(
+      preferredRoot: preferredRoot,
+    );
     if (path == null) return;
 
     _restoringSnapshot = true;
@@ -303,7 +304,8 @@ class VolwardSession extends ChangeNotifier {
       // FFI call just before the next runScan(), which is the only place Rust
       // needs an up-to-date snapshot anyway.
       _lastSnapshot = snap;
-      _restoredSnapshotForHydration = snap; // keep a clean copy for FFI hydration
+      _restoredSnapshotForHydration =
+          snap; // keep a clean copy for FFI hydration
       _engineHydrated = false;
       debugPrint('VolwardSession: restored cached snapshot from $path');
     } catch (e, st) {
@@ -362,8 +364,9 @@ class VolwardSession extends ChangeNotifier {
     try {
       final newRoots = path != null ? [path] : <String>[];
       final newRoot = path ?? _defaultScanRoot();
-      final currentRoot =
-          _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+      final currentRoot = _scanRoots.isNotEmpty
+          ? _scanRoots.first
+          : _defaultScanRoot();
 
       if (_scanning) {
         final isSubtree =
@@ -433,7 +436,10 @@ class VolwardSession extends ChangeNotifier {
       return;
     }
 
-    _lastSnapshot = buildPreviewSnapshot(rootPath: root, quickListEntries: entries);
+    _lastSnapshot = buildPreviewSnapshot(
+      rootPath: root,
+      quickListEntries: entries,
+    );
     notifyListeners();
   }
 
@@ -472,9 +478,9 @@ class VolwardSession extends ChangeNotifier {
         if (tree is Map) {
           final entries = (entriesRaw is List)
               ? entriesRaw
-                  .whereType<Map>()
-                  .map((e) => Map<String, dynamic>.from(e))
-                  .toList()
+                    .whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList()
               : <Map<String, dynamic>>[];
           _applyMerge(
             path,
@@ -485,7 +491,9 @@ class VolwardSession extends ChangeNotifier {
           _peekCompleted.add(path);
         }
       } else {
-        debugPrint('VolwardSession: peekScan($path) failed: ${message['error']}');
+        debugPrint(
+          'VolwardSession: peekScan($path) failed: ${message['error']}',
+        );
       }
     } catch (e, st) {
       debugPrint('VolwardSession: peekScan($path) error: $e\n$st');
@@ -737,7 +745,7 @@ class VolwardSession extends ChangeNotifier {
     if (!VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
       throw StateError('Failed to load scan snapshot into engine');
     }
-    _engineHydrated = true;  // Engine now matches the snapshot we just loaded.
+    _engineHydrated = true; // Engine now matches the snapshot we just loaded.
     return snap;
   }
 
@@ -756,9 +764,9 @@ class VolwardSession extends ChangeNotifier {
 
       final entries = (checkpoint['entries'] is List)
           ? (checkpoint['entries'] as List)
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
           : <Map<String, dynamic>>[];
 
       _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
@@ -809,6 +817,7 @@ class VolwardSession extends ChangeNotifier {
         }
       }
     }
+
     visit(rawTree);
     _scannedDirCount = done;
     _totalDirCount = total;
@@ -841,7 +850,8 @@ class VolwardSession extends ChangeNotifier {
     // with O(N log N) display-tree recomputations.  Authoritative merges (peek
     // results) always notify immediately so the user sees results without delay.
     final now = DateTime.now();
-    final shouldNotify = authoritative ||
+    final shouldNotify =
+        authoritative ||
         !_scanning ||
         _lastApplyMergeNotify == null ||
         now.difference(_lastApplyMergeNotify!) >= _kDisplayNotifyGap;

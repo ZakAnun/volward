@@ -26,10 +26,10 @@ class VolwardThemeSettings extends ChangeNotifier {
   Color get accentColor => Color(_accentValue);
 
   ThemeMode get themeMode => switch (preference) {
-        VolwardThemePreference.system => ThemeMode.system,
-        VolwardThemePreference.light => ThemeMode.light,
-        VolwardThemePreference.dark => ThemeMode.dark,
-      };
+    VolwardThemePreference.system => ThemeMode.system,
+    VolwardThemePreference.light => ThemeMode.light,
+    VolwardThemePreference.dark => ThemeMode.dark,
+  };
 
   Future<void> load() async {
     final file = settingsFileForTest ?? _settingsFile();
@@ -76,7 +76,9 @@ class VolwardThemeSettings extends ChangeNotifier {
     } catch (e, st) {
       _accentValue = previousValue;
       notifyListeners();
-      debugPrint('VolwardThemeSettings: setAccentColor persist failed: $e\n$st');
+      debugPrint(
+        'VolwardThemeSettings: setAccentColor persist failed: $e\n$st',
+      );
     }
   }
 

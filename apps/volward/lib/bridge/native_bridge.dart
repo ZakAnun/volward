@@ -289,7 +289,8 @@ final class VolwardNativeBridge {
   /// Requires `volward_write_last_snapshot_to_path_pb` and
   /// `volward_write_last_checkpoint_to_path_pb` (both added 2026-07-27).
   bool get hasSnapshotFilePbApi =>
-      _writeLastSnapshotToPathPb != null && _writeLastCheckpointToPathPb != null;
+      _writeLastSnapshotToPathPb != null &&
+      _writeLastCheckpointToPathPb != null;
 
   /// True when the bundled dylib accepts incremental scan options.
   bool get hasScanOptionsApi => _startScanAsyncWithOptions != null;

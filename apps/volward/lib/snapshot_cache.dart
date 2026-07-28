@@ -53,9 +53,7 @@ abstract final class SnapshotCache {
       }
 
       if (preferred != null &&
-          ScanTreeBuilder.normalizeRoot(
-                manifest['root']?.toString() ?? '',
-              ) ==
+          ScanTreeBuilder.normalizeRoot(manifest['root']?.toString() ?? '') ==
               preferred &&
           scannedAt > preferredTime) {
         preferredTime = scannedAt;
@@ -80,7 +78,9 @@ abstract final class SnapshotCache {
     Map<String, dynamic> manifest,
   ) {
     final explicit = manifest['snapshot_path']?.toString();
-    if (explicit != null && explicit.isNotEmpty && File(explicit).existsSync()) {
+    if (explicit != null &&
+        explicit.isNotEmpty &&
+        File(explicit).existsSync()) {
       return explicit;
     }
 

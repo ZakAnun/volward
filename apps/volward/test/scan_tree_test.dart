@@ -15,26 +15,23 @@ void main() {
         },
       };
 
-      final root = ScanTreeNode.fromSnapshotJson(
-        {
-          'name': 'root',
-          'path': '/root',
-          'is_dir': true,
-          'size_bytes': 100,
-          'entry_id': null,
-          'children': [
-            {
-              'name': 'a.txt',
-              'path': '/root/a.txt',
-              'is_dir': false,
-              'size_bytes': 100,
-              'entry_id': 'e1',
-              'children': [],
-            },
-          ],
-        },
-        entriesById: entriesById,
-      );
+      final root = ScanTreeNode.fromSnapshotJson({
+        'name': 'root',
+        'path': '/root',
+        'is_dir': true,
+        'size_bytes': 100,
+        'entry_id': null,
+        'children': [
+          {
+            'name': 'a.txt',
+            'path': '/root/a.txt',
+            'is_dir': false,
+            'size_bytes': 100,
+            'entry_id': 'e1',
+            'children': [],
+          },
+        ],
+      }, entriesById: entriesById);
 
       expect(root.name, 'root');
       expect(root.isDirectory, isTrue);
@@ -112,10 +109,7 @@ void main() {
     });
 
     test('keeps only matching files and prunes empty branches', () {
-      final pruned = pruneTree(
-        root,
-        (entry) => entry['category'] == 'Cache',
-      );
+      final pruned = pruneTree(root, (entry) => entry['category'] == 'Cache');
 
       expect(pruned, isNotNull);
       expect(pruned!.children, hasLength(1));
@@ -123,10 +117,7 @@ void main() {
     });
 
     test('returns null when nothing matches', () {
-      final pruned = pruneTree(
-        root,
-        (entry) => entry['category'] == 'Media',
-      );
+      final pruned = pruneTree(root, (entry) => entry['category'] == 'Media');
       expect(pruned, isNull);
     });
 
@@ -145,33 +136,42 @@ void main() {
           ),
         ],
       );
-      final pruned = pruneTree(unscannedRoot, (entry) => entry['category'] == 'Cache');
+      final pruned = pruneTree(
+        unscannedRoot,
+        (entry) => entry['category'] == 'Cache',
+      );
       expect(pruned!.scanned, isFalse);
     });
   });
 
   group('ScanTreeBuilder.build fallback', () {
-    test('builds tree from flat entries when snapshot tree has no children', () {
-      final entries = [
-        {
-          'id': 'e1',
-          'path_or_uri': '/home/user/docs/a.txt',
-          'size_bytes': 10,
-          'category': 'Unknown',
-          'deletable': false,
-        },
-        {
-          'id': 'e2',
-          'path_or_uri': '/home/user/docs/sub/b.txt',
-          'size_bytes': 20,
-          'category': 'Cache',
-          'deletable': true,
-        },
-      ];
-      final tree = ScanTreeBuilder.build(entries: entries, rootPath: '/home/user');
-      expect(tree.children, isNotEmpty);
-      expect(tree.fileCount, 2);
-    });
+    test(
+      'builds tree from flat entries when snapshot tree has no children',
+      () {
+        final entries = [
+          {
+            'id': 'e1',
+            'path_or_uri': '/home/user/docs/a.txt',
+            'size_bytes': 10,
+            'category': 'Unknown',
+            'deletable': false,
+          },
+          {
+            'id': 'e2',
+            'path_or_uri': '/home/user/docs/sub/b.txt',
+            'size_bytes': 20,
+            'category': 'Cache',
+            'deletable': true,
+          },
+        ];
+        final tree = ScanTreeBuilder.build(
+          entries: entries,
+          rootPath: '/home/user',
+        );
+        expect(tree.children, isNotEmpty);
+        expect(tree.fileCount, 2);
+      },
+    );
   });
 
   group('ScanTreeNode.withAggregatedCounts', () {
@@ -198,11 +198,7 @@ void main() {
               ),
             ],
           ),
-          ScanTreeNode(
-            name: 'c.txt',
-            path: '/root/c.txt',
-            isDirectory: false,
-          ),
+          ScanTreeNode(name: 'c.txt', path: '/root/c.txt', isDirectory: false),
         ],
       );
 

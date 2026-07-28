@@ -52,9 +52,9 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
 
   final existingEntries = (snapshot['entries'] is List)
       ? (snapshot['entries'] as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList()
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
       : <Map<String, dynamic>>[];
   final byId = <String, Map<String, dynamic>>{
     for (final e in existingEntries)
@@ -73,7 +73,8 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
     byId.removeWhere((id, e) {
       final entryPath = e['path_or_uri']?.toString();
       if (entryPath == null) return false;
-      final underTarget = entryPath == targetPath || entryPath.startsWith(prefix);
+      final underTarget =
+          entryPath == targetPath || entryPath.startsWith(prefix);
       return underTarget && !freshIds.contains(id);
     });
   }
@@ -81,7 +82,10 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
 
   final reclaimable = mergedEntries
       .where((e) => e['deletable'] == true)
-      .fold<int>(0, (sum, e) => sum + ((e['size_bytes'] as num?)?.toInt() ?? 0));
+      .fold<int>(
+        0,
+        (sum, e) => sum + ((e['size_bytes'] as num?)?.toInt() ?? 0),
+      );
 
   return {
     ...snapshot,
@@ -118,7 +122,8 @@ Map<String, dynamic> _replaceNodeAtPath(
   var found = false;
   for (final child in children) {
     final childPath = (child is Map) ? child['path']?.toString() ?? '' : '';
-    final isOnPath = child is Map &&
+    final isOnPath =
+        child is Map &&
         childPath.isNotEmpty &&
         (targetPath == childPath ||
             targetPath.startsWith(
@@ -187,7 +192,9 @@ List<Map<String, dynamic>> _mergeChildrenByPath(
     }
     seenPaths.add(path);
     final oldChild = oldByPath[path];
-    merged.add(oldChild == null ? newChild : _pickMoreComplete(oldChild, newChild));
+    merged.add(
+      oldChild == null ? newChild : _pickMoreComplete(oldChild, newChild),
+    );
   }
   for (final entry in oldByPath.entries) {
     if (!seenPaths.contains(entry.key)) merged.add(entry.value);

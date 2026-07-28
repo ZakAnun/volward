@@ -169,8 +169,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final count = stats is Map
           ? (stats['files_in_snapshot'] as num?)?.toInt()
           : (_s.lastSnapshot?['entries'] is List
-              ? (_s.lastSnapshot!['entries'] as List).length
-              : 0);
+                ? (_s.lastSnapshot!['entries'] as List).length
+                : 0);
       final label = _s.incrementalScan ? 'Incremental' : 'Full';
       _scanStatus = '$label scan: $count files';
       _columnChain.clear();
@@ -716,9 +716,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         builder: (ctx) {
                           final frac = _s.scannedFraction;
                           return Text(
-                            frac != null
-                                ? '${(frac * 100).round()}%'
-                                : '…',
+                            frac != null ? '${(frac * 100).round()}%' : '…',
                             style: ctx.vwFinePrint.copyWith(
                               color: ctx.volward.primary,
                               fontFeatures: const [
@@ -886,8 +884,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     //     isn't empty.  This only fires once per session.
     final liveHit = _liveKey == key;
     final hasStale = _liveTree != null;
-    final entries =
-        liveHit ? _liveEntries : (hasStale ? _liveEntries : _filteredSortedEntries());
+    final entries = liveHit
+        ? _liveEntries
+        : (hasStale ? _liveEntries : _filteredSortedEntries());
     final displayTree = hasResults
         ? (liveHit ? _liveTree : (hasStale ? _liveTree : _getDisplayTree()))
         : null;
@@ -981,15 +980,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ),
           const SizedBox(width: AppleSpacing.sm),
-          Text(
-            '·',
-            style: context.vwNavLinkMuted,
-          ),
+          Text('·', style: context.vwNavLinkMuted),
           const SizedBox(width: AppleSpacing.sm),
-          Text(
-            'Storage steward',
-            style: context.vwNavLinkMuted,
-          ),
+          Text('Storage steward', style: context.vwNavLinkMuted),
           const Spacer(),
           IconButton(
             tooltip: 'Settings',
@@ -999,9 +992,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => SettingsPage(
-                    themeSettings: widget.themeSettings,
-                  ),
+                  builder: (_) =>
+                      SettingsPage(themeSettings: widget.themeSettings),
                 ),
               );
             },
@@ -1035,17 +1027,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         decoration: BoxDecoration(
           color: v.danger.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(AppleRadius.sm),
-          border: Border.all(
-            color: v.danger.withValues(alpha: 0.25),
-          ),
+          border: Border.all(color: v.danger.withValues(alpha: 0.25)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Native library outdated',
-              style: context.vwCaptionStrong,
-            ),
+            Text('Native library outdated', style: context.vwCaptionStrong),
             const SizedBox(height: AppleSpacing.xxs),
             Text(
               'Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).',
@@ -1106,9 +1093,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: v.warning.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppleRadius.sm),
-        border: Border.all(
-          color: v.warning.withValues(alpha: 0.25),
-        ),
+        border: Border.all(color: v.warning.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1194,10 +1179,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Target',
-                        style: context.vwCaptionStrong,
-                      ),
+                      Text('Target', style: context.vwCaptionStrong),
                       const SizedBox(height: 2),
                       Text(
                         _s.scanTargetLabel,
@@ -1249,8 +1231,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: IgnorePointer(
                 ignoring: _s.scanning || !_s.canUseIncrementalScan,
                 child: Opacity(
-                  opacity:
-                      (_s.scanning || !_s.canUseIncrementalScan) ? 0.5 : 1,
+                  opacity: (_s.scanning || !_s.canUseIncrementalScan) ? 0.5 : 1,
                   child: AppleOptionChip(
                     label: '增量扫描',
                     selected: _s.incrementalScan,
@@ -1296,7 +1277,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String _formatTreeSummary(ScanTreeNode tree) {
     final stats = _s.lastSnapshot?['stats'];
-    final filesSeen = stats is Map ? (stats['files_seen'] as num?)?.toInt() : null;
+    final filesSeen = stats is Map
+        ? (stats['files_seen'] as num?)?.toInt()
+        : null;
     final count = filesSeen ?? tree.subtreeFileCount ?? tree.fileCount;
     return '$count in tree · ${_fmt(tree.displayBytes)}';
   }
@@ -1410,7 +1393,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildStickyBar(BuildContext context, List<Map<String, dynamic>> entries) {
+  Widget _buildStickyBar(
+    BuildContext context,
+    List<Map<String, dynamic>> entries,
+  ) {
     final busy = _s.deleting || _s.scanning;
     final String label;
     final String actionLabel;
@@ -1434,8 +1420,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final peekCount = _s.peekInFlight.length;
       label = hasResults
           ? peekCount > 0
-              ? '$peekCount director${peekCount == 1 ? 'y' : 'ies'} loading…'
-              : 'Browse results · tap folders below'
+                ? '$peekCount director${peekCount == 1 ? 'y' : 'ies'} loading…'
+                : 'Browse results · tap folders below'
           : (_s.ready ? 'Ready to scan' : 'Loading engine…');
       actionLabel = hasResults ? 'Rescan' : 'Start scan';
       actionIcon = Icons.search;
@@ -1510,9 +1496,9 @@ _DisplayComputeResult _computeDisplayIsolate(_DisplayComputeInput i) {
   // --- flat entries (mirror of _allSnapshotEntries) ---
   final allEntries = (snap['entries'] is List)
       ? (snap['entries'] as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList()
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
       : <Map<String, dynamic>>[];
 
   final entriesById = <String, Map<String, dynamic>>{};
@@ -1552,8 +1538,9 @@ _DisplayComputeResult _computeDisplayIsolate(_DisplayComputeInput i) {
         ? tree
         : pruneTree(tree, keep);
     if (filtered != null) {
-      displayTree =
-          ScanTreeNode.withAggregatedCounts(_sortTreeIsolate(filtered, sort));
+      displayTree = ScanTreeNode.withAggregatedCounts(
+        _sortTreeIsolate(filtered, sort),
+      );
     }
   }
 
@@ -1567,18 +1554,21 @@ _DisplayComputeResult _computeDisplayIsolate(_DisplayComputeInput i) {
   switch (sort) {
     case ScanSortMode.sizeDesc:
       entries.sort(
-        (a, b) => ((b['size_bytes'] as num?) ?? 0)
-            .compareTo((a['size_bytes'] as num?) ?? 0),
+        (a, b) => ((b['size_bytes'] as num?) ?? 0).compareTo(
+          (a['size_bytes'] as num?) ?? 0,
+        ),
       );
     case ScanSortMode.sizeAsc:
       entries.sort(
-        (a, b) => ((a['size_bytes'] as num?) ?? 0)
-            .compareTo((b['size_bytes'] as num?) ?? 0),
+        (a, b) => ((a['size_bytes'] as num?) ?? 0).compareTo(
+          (b['size_bytes'] as num?) ?? 0,
+        ),
       );
     case ScanSortMode.nameAsc:
       entries.sort(
-        (a, b) => (a['display_name']?.toString() ?? '')
-            .compareTo(b['display_name']?.toString() ?? ''),
+        (a, b) => (a['display_name']?.toString() ?? '').compareTo(
+          b['display_name']?.toString() ?? '',
+        ),
       );
   }
 
@@ -1589,8 +1579,9 @@ _DisplayComputeResult _computeDisplayIsolate(_DisplayComputeInput i) {
 ScanTreeNode _sortTreeIsolate(ScanTreeNode node, ScanSortMode sort) {
   if (!node.isDirectory) return node;
 
-  final sortedChildren =
-      node.children.map((c) => _sortTreeIsolate(c, sort)).toList();
+  final sortedChildren = node.children
+      .map((c) => _sortTreeIsolate(c, sort))
+      .toList();
   sortedChildren.sort((a, b) {
     if (a.isDirectory != b.isDirectory) {
       return a.isDirectory ? -1 : 1;

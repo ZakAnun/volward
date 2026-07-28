@@ -164,7 +164,9 @@ Map<String, dynamic> _decodeTreeNode(_ProtoReader r) {
       case 5:
         entryId = r.readString(); // optional string entry_id
       case 6:
-        children.add(_decodeTreeNode(r.readLenSlice())); // repeated ScanTreeNode
+        children.add(
+          _decodeTreeNode(r.readLenSlice()),
+        ); // repeated ScanTreeNode
       case 7:
         scanned = r.readVarint() != 0; // bool scanned (client-only)
       case 8:
@@ -239,11 +241,7 @@ Map<String, dynamic> _decodeStats(_ProtoReader r) {
 // ---------------------------------------------------------------------------
 
 String _capability(int v) {
-  return const {
-        1: 'FullPath',
-        2: 'AppStatsOnly',
-        3: 'GuidedOnly',
-      }[v] ??
+  return const {1: 'FullPath', 2: 'AppStatsOnly', 3: 'GuidedOnly'}[v] ??
       'FullPath';
 }
 
@@ -262,21 +260,11 @@ String _entryCategory(int v) {
 }
 
 String _riskLevel(int v) {
-  return const {
-        1: 'Low',
-        2: 'Medium',
-        3: 'High',
-      }[v] ??
-      'Low';
+  return const {1: 'Low', 2: 'Medium', 3: 'High'}[v] ?? 'Low';
 }
 
 String _sourceType(int v) {
-  return const {
-        1: 'Directory',
-        2: 'File',
-        3: 'Volume',
-        4: 'Application',
-      }[v] ??
+  return const {1: 'Directory', 2: 'File', 3: 'Volume', 4: 'Application'}[v] ??
       'Directory';
 }
 
@@ -313,11 +301,7 @@ class _ProtoReader {
   /// Reads a length-prefixed UTF-8 string.
   String readString() {
     final len = readVarint();
-    final view = Uint8List.view(
-      _data.buffer,
-      _data.offsetInBytes + _pos,
-      len,
-    );
+    final view = Uint8List.view(_data.buffer, _data.offsetInBytes + _pos, len);
     _pos += len;
     return utf8.decode(view);
   }

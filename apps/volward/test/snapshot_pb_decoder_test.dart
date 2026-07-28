@@ -61,11 +61,14 @@ void main() {
       expect(decodeSnapshotPb(Uint8List(0)), isNull);
     });
 
-    test('truncated bytes — length prefix claims more bytes than exist — returns null', () {
-      // Tag 0x0A = field 1 LEN; then varint 0x14 = 20 bytes, but nothing follows.
-      final truncated = Uint8List.fromList([0x0A, 0x14]);
-      expect(decodeSnapshotPb(truncated), isNull);
-    });
+    test(
+      'truncated bytes — length prefix claims more bytes than exist — returns null',
+      () {
+        // Tag 0x0A = field 1 LEN; then varint 0x14 = 20 bytes, but nothing follows.
+        final truncated = Uint8List.fromList([0x0A, 0x14]);
+        expect(decodeSnapshotPb(truncated), isNull);
+      },
+    );
 
     test('garbage bytes return null without throwing', () {
       final garbage = Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF]);
@@ -132,7 +135,9 @@ void main() {
         ..string(2, '/root/dir')
         ..varint(3, 1);
 
-      final b = snap()..string(1, 's')..embedded(8, tree);
+      final b = snap()
+        ..string(1, 's')
+        ..embedded(8, tree);
       final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
 
       expect(t.containsKey('entry_id'), isFalse);
@@ -146,7 +151,9 @@ void main() {
         ..varint(4, 2_048)
         ..string(5, 'entry-abc'); // entry_id
 
-      final b = snap()..string(1, 's')..embedded(8, tree);
+      final b = snap()
+        ..string(1, 's')
+        ..embedded(8, tree);
       final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
 
       expect(t['entry_id'], 'entry-abc');
@@ -166,7 +173,9 @@ void main() {
         ..varint(4, 100)
         ..embedded(6, child); // field 6 = repeated children
 
-      final b = snap()..string(1, 'snap-nested')..embedded(8, parent);
+      final b = snap()
+        ..string(1, 'snap-nested')
+        ..embedded(8, parent);
       final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
 
       final children = t['children'] as List;
@@ -208,8 +217,12 @@ void main() {
     });
 
     test('multiple StorageEntry fields accumulated in entries list', () {
-      final e1 = entryBuilder()..string(1, 'a')..varint(5, 1); // Cache
-      final e2 = entryBuilder()..string(1, 'b')..varint(5, 2); // Temp
+      final e1 = entryBuilder()
+        ..string(1, 'a')
+        ..varint(5, 1); // Cache
+      final e2 = entryBuilder()
+        ..string(1, 'b')
+        ..varint(5, 2); // Temp
 
       final b = snap()
         ..string(1, 'snap-multi')
@@ -227,21 +240,31 @@ void main() {
     // -----------------------------------------------------------------------
 
     test('unknown category enum value falls back to "Unknown"', () {
-      final e = entryBuilder()..string(1, 'x')..varint(5, 99);
-      final b = snap()..string(1, 's')..embedded(7, e);
+      final e = entryBuilder()
+        ..string(1, 'x')
+        ..varint(5, 99);
+      final b = snap()
+        ..string(1, 's')
+        ..embedded(7, e);
       final entry = (decodeSnapshotPb(b.build())!['entries'] as List).first;
       expect(entry['category'], 'Unknown');
     });
 
     test('unknown risk_level enum value falls back to "Low"', () {
-      final e = entryBuilder()..string(1, 'x')..varint(6, 99);
-      final b = snap()..string(1, 's')..embedded(7, e);
+      final e = entryBuilder()
+        ..string(1, 'x')
+        ..varint(6, 99);
+      final b = snap()
+        ..string(1, 's')
+        ..embedded(7, e);
       final entry = (decodeSnapshotPb(b.build())!['entries'] as List).first;
       expect(entry['risk_level'], 'Low');
     });
 
     test('unknown capability enum value falls back to "FullPath"', () {
-      final b = snap()..string(1, 's')..varint(3, 99); // capability = unknown
+      final b = snap()
+        ..string(1, 's')
+        ..varint(3, 99); // capability = unknown
       expect(decodeSnapshotPb(b.build())!['capability'], 'FullPath');
     });
 
@@ -252,36 +275,49 @@ void main() {
     // present when true).
     // -----------------------------------------------------------------------
 
-    test('peek_scanned field 8 false — peekScanned absent from decoded Map', () {
-      // Rust writes peek_scanned=false by default; decoded Map must not
-      // contain 'peekScanned' so merge logic treats the node as non-peeked.
-      final tree = treeNode()
-        ..string(1, 'dir')
-        ..string(2, '/d')
-        ..varint(3, 1)
-        ..varint(8, 0); // peek_scanned = false
+    test(
+      'peek_scanned field 8 false — peekScanned absent from decoded Map',
+      () {
+        // Rust writes peek_scanned=false by default; decoded Map must not
+        // contain 'peekScanned' so merge logic treats the node as non-peeked.
+        final tree = treeNode()
+          ..string(1, 'dir')
+          ..string(2, '/d')
+          ..varint(3, 1)
+          ..varint(8, 0); // peek_scanned = false
 
-      final b = snap()..string(1, 's')..embedded(8, tree);
-      final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
+        final b = snap()
+          ..string(1, 's')
+          ..embedded(8, tree);
+        final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
 
-      expect(t.containsKey('peekScanned'), isFalse);
-      expect(t.containsKey('peek_scanned'), isFalse);
-    });
+        expect(t.containsKey('peekScanned'), isFalse);
+        expect(t.containsKey('peek_scanned'), isFalse);
+      },
+    );
 
-    test('peek_scanned field 8 true — peekScanned:true present in decoded Map', () {
-      // If Rust ever starts persisting peek_scanned, the decoded Map must use
-      // camelCase 'peekScanned' so _pickMoreComplete recognises it correctly.
-      final tree = treeNode()
-        ..string(1, 'dir')
-        ..string(2, '/d')
-        ..varint(3, 1)
-        ..varint(8, 1); // peek_scanned = true
+    test(
+      'peek_scanned field 8 true — peekScanned:true present in decoded Map',
+      () {
+        // If Rust ever starts persisting peek_scanned, the decoded Map must use
+        // camelCase 'peekScanned' so _pickMoreComplete recognises it correctly.
+        final tree = treeNode()
+          ..string(1, 'dir')
+          ..string(2, '/d')
+          ..varint(3, 1)
+          ..varint(8, 1); // peek_scanned = true
 
-      final b = snap()..string(1, 's')..embedded(8, tree);
-      final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
+        final b = snap()
+          ..string(1, 's')
+          ..embedded(8, tree);
+        final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
 
-      expect(t['peekScanned'], isTrue);
-      expect(t.containsKey('peek_scanned'), isFalse); // no stale snake_case key
-    });
+        expect(t['peekScanned'], isTrue);
+        expect(
+          t.containsKey('peek_scanned'),
+          isFalse,
+        ); // no stale snake_case key
+      },
+    );
   });
 }

@@ -19,8 +19,7 @@ void main() {
         }),
       );
 
-    final settings = VolwardThemeSettings()
-      ..settingsFileForTest = settingsFile;
+    final settings = VolwardThemeSettings()..settingsFileForTest = settingsFile;
     await settings.load();
 
     expect(settings.preference, VolwardThemePreference.dark);
@@ -35,12 +34,12 @@ void main() {
     addTearDown(() => temp.delete(recursive: true));
 
     final settingsFile = File('${temp.path}/settings.json');
-    final settings = VolwardThemeSettings()
-      ..settingsFileForTest = settingsFile;
+    final settings = VolwardThemeSettings()..settingsFileForTest = settingsFile;
 
     await settings.setPreference(VolwardThemePreference.light);
 
-    final saved = jsonDecode(settingsFile.readAsStringSync()) as Map<String, dynamic>;
+    final saved =
+        jsonDecode(settingsFile.readAsStringSync()) as Map<String, dynamic>;
     expect(saved['theme_preference'], VolwardThemePreference.light.index);
 
     // Parent path is an existing file, so create/write should fail.

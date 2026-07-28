@@ -18,8 +18,10 @@ class ScanTreeNode {
   final int sizeBytes;
   final String? entryId;
   final Map<String, dynamic>? entry;
+
   /// Precomputed file count under this directory (files only, not dirs).
   final int? subtreeFileCount;
+
   /// False for directories whose contents haven't been scanned yet (the
   /// pre-scan preview, or a not-yet-covered node before a Wave-2 peek scan
   /// completes). Always true for files and for data from a real scan
@@ -50,10 +52,12 @@ class ScanTreeNode {
     if (childrenJson is List) {
       for (final child in childrenJson) {
         if (child is Map) {
-          children.add(ScanTreeNode.fromSnapshotJson(
-            Map<String, dynamic>.from(child),
-            entriesById: entriesById,
-          ));
+          children.add(
+            ScanTreeNode.fromSnapshotJson(
+              Map<String, dynamic>.from(child),
+              entriesById: entriesById,
+            ),
+          );
         }
       }
     }
@@ -193,7 +197,8 @@ abstract final class ScanTreeBuilder {
       if (a.isDirectory != b.isDirectory) {
         return a.isDirectory ? -1 : 1;
       }
-      if (a.isDirectory) return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      if (a.isDirectory)
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       final sa = a.totalBytes;
       final sb = b.totalBytes;
       return sb.compareTo(sa);

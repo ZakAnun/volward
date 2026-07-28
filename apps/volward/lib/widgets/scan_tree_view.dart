@@ -99,9 +99,7 @@ class ScanTreeRow extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: isSelected ? v.primary.withValues(alpha: 0.06) : v.canvas,
-        border: Border(
-          bottom: BorderSide(color: v.hairline, width: 0.5),
-        ),
+        border: Border(bottom: BorderSide(color: v.hairline, width: 0.5)),
       ),
       child: AppleListRow(
         title: node.name,

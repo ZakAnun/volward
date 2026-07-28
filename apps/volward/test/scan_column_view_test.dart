@@ -13,11 +13,7 @@ void main() {
       path: '/root',
       isDirectory: true,
       children: [
-        ScanTreeNode(
-          name: 'Library',
-          path: '/root/Library',
-          isDirectory: true,
-        ),
+        ScanTreeNode(name: 'Library', path: '/root/Library', isDirectory: true),
       ],
     );
 
@@ -45,17 +41,15 @@ void main() {
     expect(selected?.path, '/root/Library');
   });
 
-  testWidgets('ScanColumnView keeps selected folder highlighted', (tester) async {
+  testWidgets('ScanColumnView keeps selected folder highlighted', (
+    tester,
+  ) async {
     final root = ScanTreeNode(
       name: 'root',
       path: '/root',
       isDirectory: true,
       children: [
-        ScanTreeNode(
-          name: 'Library',
-          path: '/root/Library',
-          isDirectory: true,
-        ),
+        ScanTreeNode(name: 'Library', path: '/root/Library', isDirectory: true),
       ],
     );
 
@@ -94,7 +88,9 @@ void main() {
     expect(decoration.color, isNot(Colors.white));
   });
 
-  testWidgets('ScanColumnView shows a placeholder for unscanned folders', (tester) async {
+  testWidgets('ScanColumnView shows a placeholder for unscanned folders', (
+    tester,
+  ) async {
     final root = ScanTreeNode(
       name: 'root',
       path: '/root',

@@ -64,10 +64,7 @@ class _VolwardAppState extends State<VolwardApp> {
                 accent: accent,
               ),
               themeMode: _themeSettings.themeMode,
-              home: HomePage(
-                session: _session,
-                themeSettings: _themeSettings,
-              ),
+              home: HomePage(session: _session, themeSettings: _themeSettings),
             );
           },
         );
