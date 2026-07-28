@@ -46,3 +46,7 @@ apps/volward/android/local.properties
 # Misc
 coverage/
 *.log
+
+# Local docs (AI reviews, design specs — local reference only)
+.doc/
+docs/
