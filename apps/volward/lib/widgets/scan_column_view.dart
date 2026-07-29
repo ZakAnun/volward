@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../scan_tree.dart';
 import '../theme/apple_tokens.dart';
@@ -25,6 +26,7 @@ class ScanColumnView extends StatefulWidget {
     this.sortMode = ScanSortMode.sizeDesc,
     this.categoryFilter,
     this.deletableOnly = false,
+    this.childrenPreSorted = false,
   });
 
   final ScanTreeNode root;
@@ -45,6 +47,7 @@ class ScanColumnView extends StatefulWidget {
   final ScanSortMode sortMode;
   final String? categoryFilter;
   final bool deletableOnly;
+  final bool childrenPreSorted;
 
   @override
   State<ScanColumnView> createState() => _ScanColumnViewState();
@@ -135,6 +138,9 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   /// render (e.g. column-nav ticks with unchanged data) return the pre-sorted
   /// list with zero additional work.
   List<ScanTreeNode> _sorted(List<ScanTreeNode> items) {
+    if (widget.childrenPreSorted) {
+      return items;
+    }
     final key = identityHashCode(items);
     final viewKey = _ColumnViewKey(
       sortMode: widget.sortMode,
@@ -277,6 +283,8 @@ class _FinderColumn extends StatelessWidget {
       height: height,
       child: ListView.builder(
         primary: false,
+        itemExtent: 28,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(560),
         padding: const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
         itemCount: items.length,
         itemBuilder: (context, index) {
@@ -286,6 +294,7 @@ class _FinderColumn extends StatelessWidget {
           final marked = entryId != null && selectedEntryIds.contains(entryId);
 
           return _FinderRow(
+            key: ValueKey(node.path),
             node: node,
             isSelected: isSelected,
             markedForDelete: marked,
@@ -299,8 +308,9 @@ class _FinderColumn extends StatelessWidget {
   }
 }
 
-class _FinderRow extends StatefulWidget {
+class _FinderRow extends StatelessWidget {
   const _FinderRow({
+    super.key,
     required this.node,
     required this.isSelected,
     required this.markedForDelete,
@@ -318,25 +328,16 @@ class _FinderRow extends StatefulWidget {
   /// True when a peek scan is actively running for this node's path.
   final bool peekInFlight;
 
-  @override
-  State<_FinderRow> createState() => _FinderRowState();
-}
-
-class _FinderRowState extends State<_FinderRow> {
-  bool _hovered = false;
-
   Color _background(VolwardTokens v) {
-    if (widget.isSelected) return v.primaryFocus;
-    if (widget.markedForDelete) return v.primary.withValues(alpha: 0.08);
-    if (_hovered) return v.dividerSoft;
+    if (isSelected) return v.primaryFocus;
+    if (markedForDelete) return v.primary.withValues(alpha: 0.08);
     return Colors.transparent;
   }
 
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
-    final isDir = widget.node.isDirectory;
-    final isSelected = widget.isSelected;
+    final isDir = node.isDirectory;
     final fg = isSelected ? v.onPrimary : v.body;
     final muted = isSelected
         ? v.onPrimary.withValues(alpha: 0.85)
@@ -344,73 +345,66 @@ class _FinderRowState extends State<_FinderRow> {
     final bg = _background(v);
 
     final subtitle = isDir
-        ? (widget.node.scanned
-              ? widget.formatBytes(widget.node.displayBytes)
-              : '—')
-        : widget.formatBytes(widget.node.sizeBytes);
+        ? (node.scanned ? formatBytes(node.displayBytes) : '—')
+        : formatBytes(node.sizeBytes);
 
-    return MouseRegion(
-      onEnter: (_) {
-        if (!_hovered) setState(() => _hovered = true);
-      },
-      onExit: (_) {
-        if (_hovered) setState(() => _hovered = false);
-      },
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 80),
-          color: bg,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppleSpacing.xs,
-            vertical: 5,
-          ),
-          child: Row(
-            children: [
-              Icon(
-                isDir ? Icons.folder : Icons.insert_drive_file_outlined,
-                size: 16,
-                color: isDir
-                    ? (isSelected ? v.folderIconOnPrimary : v.folderIcon)
-                    : muted,
-              ),
-              const SizedBox(width: AppleSpacing.xxs),
-              Expanded(
-                child: Text(
-                  widget.node.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.vwCaption.copyWith(
-                    color: fg,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+    return Material(
+      color: bg,
+      child: InkWell(
+        hoverColor: isSelected ? Colors.transparent : v.dividerSoft,
+        splashColor: Colors.transparent,
+        highlightColor: isSelected ? Colors.transparent : v.dividerSoft,
+        onTap: onTap,
+        child: SizedBox(
+          height: 28,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.xs),
+            child: Row(
+              children: [
+                Icon(
+                  isDir ? Icons.folder : Icons.insert_drive_file_outlined,
+                  size: 16,
+                  color: isDir
+                      ? (isSelected ? v.folderIconOnPrimary : v.folderIcon)
+                      : muted,
+                ),
+                const SizedBox(width: AppleSpacing.xxs),
+                Expanded(
+                  child: Text(
+                    node.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.vwCaption.copyWith(
+                      color: fg,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
                   ),
                 ),
-              ),
-              if (isDir)
-                (!widget.node.scanned)
-                    ? SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          // Accent colour when a peek scan is actively running;
-                          // muted when it's just an unvisited preview node.
-                          color: widget.peekInFlight
-                              ? (isSelected ? v.onPrimary : v.primary)
-                              : muted,
-                        ),
-                      )
-                    : Icon(Icons.chevron_right, size: 14, color: muted)
-              else
-                Text(
-                  subtitle,
-                  style: context.vwFinePrint.copyWith(
-                    color: muted,
-                    fontSize: 11,
+                if (isDir)
+                  (!node.scanned && peekInFlight)
+                      ? SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: isSelected ? v.onPrimary : v.primary,
+                          ),
+                        )
+                      : (!node.scanned)
+                      ? Icon(Icons.more_horiz, size: 14, color: muted)
+                      : Icon(Icons.chevron_right, size: 14, color: muted)
+                else
+                  Text(
+                    subtitle,
+                    style: context.vwFinePrint.copyWith(
+                      color: muted,
+                      fontSize: 11,
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

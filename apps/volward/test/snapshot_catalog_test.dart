@@ -9,6 +9,19 @@ import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
   test('queries direct children and invalidates cached path prefixes', () {
+    final notesNode = ScanTreeNode(
+      name: 'notes.txt',
+      path: '/root/notes.txt',
+      isDirectory: false,
+      entry: const ScanEntryRecord(
+        id: 'notes',
+        displayName: 'notes.txt',
+        pathOrUri: '/root/notes.txt',
+        sizeBytes: 4,
+        category: 'Media',
+        deletable: false,
+      ),
+    );
     final snapshot = ScanSnapshotState(
       snapshotId: 'snap-1',
       scannedAtMs: 1,
@@ -39,19 +52,7 @@ void main() {
               ),
             ],
           ),
-          ScanTreeNode(
-            name: 'notes.txt',
-            path: '/root/notes.txt',
-            isDirectory: false,
-            entry: const ScanEntryRecord(
-              id: 'notes',
-              displayName: 'notes.txt',
-              pathOrUri: '/root/notes.txt',
-              sizeBytes: 4,
-              category: 'Media',
-              deletable: false,
-            ),
-          ),
+          notesNode,
         ],
       ),
       entryCount: 2,
@@ -72,6 +73,7 @@ void main() {
     final result = catalog.query(key);
 
     expect(result.directChildren.map((node) => node.name), ['Library']);
+    expect(result.directNodes.map((node) => node.name), ['Library']);
     expect(result.directEntries, isEmpty);
     expect(result.totalBytes, 0);
     expect(result.reclaimableBytes, 0);
@@ -83,5 +85,51 @@ void main() {
     cache.invalidatePath('/root/Library');
     expect(cache[key], same(result));
     expect(cache[rootKey], isNull);
+  });
+
+  test('directNodes reuses existing file node references', () {
+    final fileNode = ScanTreeNode(
+      name: 'notes.txt',
+      path: '/root/notes.txt',
+      isDirectory: false,
+      entry: const ScanEntryRecord(
+        id: 'notes',
+        displayName: 'notes.txt',
+        pathOrUri: '/root/notes.txt',
+        sizeBytes: 4,
+        category: 'Media',
+        deletable: false,
+      ),
+    );
+    final snapshot = ScanSnapshotState(
+      snapshotId: 'snap-2',
+      scannedAtMs: 1,
+      stats: const {},
+      reclaimableEstimateBytes: 0,
+      tree: ScanTreeNode(
+        name: 'root',
+        path: '/root',
+        isDirectory: true,
+        children: [fileNode],
+      ),
+      entryCount: 1,
+      categoryCounts: const {},
+      deletableCategoryCounts: const {},
+      deletableCount: 0,
+      extraFields: const {},
+    );
+    const key = SnapshotQueryKey(
+      snapshotId: 'snap-2',
+      version: 1,
+      path: '/root',
+      categoryFilter: null,
+      deletableOnly: false,
+      sortMode: ScanSortMode.nameAsc,
+    );
+
+    final result = SnapshotCatalog(snapshot).query(key);
+
+    expect(result.directNodes.single, same(fileNode));
+    expect(result.directEntries.single.id, 'notes');
   });
 }

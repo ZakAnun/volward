@@ -234,6 +234,42 @@ void main() {
       expect(annotated.fileCount, 3);
       expect(annotated.children.first.fileCount, 2);
     });
+
+    test(
+      'precomputes directory display bytes for UI sorting and scrolling',
+      () {
+        final root = ScanTreeNode(
+          name: 'root',
+          path: '/root',
+          isDirectory: true,
+          children: [
+            ScanTreeNode(
+              name: 'dir',
+              path: '/root/dir',
+              isDirectory: true,
+              children: [
+                ScanTreeNode(
+                  name: 'a.txt',
+                  path: '/root/dir/a.txt',
+                  isDirectory: false,
+                  sizeBytes: 10,
+                ),
+                ScanTreeNode(
+                  name: 'b.txt',
+                  path: '/root/dir/b.txt',
+                  isDirectory: false,
+                  sizeBytes: 20,
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final annotated = ScanTreeNode.withAggregatedCounts(root);
+        expect(annotated.displayBytes, 30);
+        expect(annotated.children.single.displayBytes, 30);
+      },
+    );
   });
 
   group('flattenVisible', () {

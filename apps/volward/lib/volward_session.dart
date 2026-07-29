@@ -120,7 +120,6 @@ class VolwardSession extends ChangeNotifier {
   bool get incrementalScan => _incrementalScan;
   Set<String> get selectedEntryIds => Set.unmodifiable(_selectedEntryIds);
 
-  @visibleForTesting
   int get snapshotVersion => _snapshotVersion;
 
   @visibleForTesting

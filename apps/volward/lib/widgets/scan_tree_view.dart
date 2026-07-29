@@ -76,7 +76,7 @@ class ScanTreeRow extends StatelessWidget {
                 ),
               ),
               Text(
-                '${node.fileCount} · ${formatBytes(node.totalBytes)}',
+                '${node.fileCount} · ${formatBytes(node.displayBytes)}',
                 style: context.vwFinePrint,
               ),
             ],

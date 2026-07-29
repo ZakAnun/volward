@@ -51,12 +51,14 @@ class SnapshotQueryKey {
 
 class SnapshotQueryResult {
   const SnapshotQueryResult({
+    required this.directNodes,
     required this.directChildren,
     required this.directEntries,
     required this.totalBytes,
     required this.reclaimableBytes,
   });
 
+  final List<ScanTreeNode> directNodes;
   final List<ScanTreeNode> directChildren;
   final List<ScanEntryRecord> directEntries;
   final int totalBytes;

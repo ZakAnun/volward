@@ -15,6 +15,8 @@ import 'widgets/apple_widgets.dart';
 import 'widgets/scan_column_view.dart';
 import 'widgets/scan_filter_bar.dart';
 import 'scan_tree_navigation.dart';
+import 'snapshot_query.dart';
+import 'snapshot_view_cache.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -55,6 +57,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // snapshot changes, not on every build() call.
   int _cachedSelectedBytes = 0;
   String? _cachedSelectedBytesKey; // snapshot ID + selection IDs.
+  final SnapshotViewCache<List<ScanTreeNode>> _visibleChildrenCache =
+      SnapshotViewCache(capacity: 128);
 
   VolwardSession get _s => widget.session;
 
@@ -214,6 +218,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _cachedResolvedTree = null;
     _cachedResolvedTreeKey = null;
     _cachedSelectedBytesKey = null;
+    _visibleChildrenCache.clear();
   }
 
   void _resetColumnNav() {
@@ -233,6 +238,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (node.isDirectory && !node.scanned) {
       unawaited(_s.peekScan(node.path));
     }
+  }
+
+  List<ScanTreeNode> _visibleChildrenFor(ScanTreeNode node) {
+    final snap = _s.lastSnapshot;
+    if (snap == null || !node.isDirectory) {
+      return node.children;
+    }
+    final key = SnapshotQueryKey(
+      snapshotId: snap.snapshotId,
+      version: _s.snapshotVersion,
+      path: node.path,
+      categoryFilter: _categoryFilter,
+      deletableOnly: _deletableOnly,
+      sortMode: _sort,
+    );
+    final cached = _visibleChildrenCache[key];
+    if (cached != null) {
+      return cached;
+    }
+    final queried = snap.catalog.query(key).directNodes;
+    final result = queried.isEmpty && node.children.isNotEmpty
+        ? const <ScanTreeNode>[]
+        : queried;
+    _visibleChildrenCache[key] = result;
+    return result;
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
@@ -611,10 +641,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     return ScanColumnView(
       root: displayTree,
-      visibleChildren: displayTree.children,
+      visibleChildren: _visibleChildrenFor(displayTree),
       visibleChildrenByPath: {
-        for (final node in _columnChain) node.path: node.children,
+        for (final node in _columnChain) node.path: _visibleChildrenFor(node),
       },
+      childrenPreSorted: true,
       selectionChain: List.unmodifiable(_columnChain),
       onSelect: _onColumnSelect,
       formatBytes: _fmt,

@@ -11,6 +11,7 @@ class ScanTreeNode {
     ScanEntryRecord? entry,
     String? category,
     bool? deletable,
+    int? subtreeBytes,
     int? subtreeFileCount,
     int? categoryMask,
     int? deletableCategoryMask,
@@ -22,6 +23,14 @@ class ScanTreeNode {
        category =
            category ?? entry?.category ?? (isDirectory ? 'Folder' : 'Unknown'),
        deletable = deletable ?? entry?.deletable ?? false,
+       subtreeBytes =
+           subtreeBytes ??
+           _deriveSubtreeBytes(
+             isDirectory,
+             sizeBytes,
+             entry?.sizeBytes,
+             children,
+           ),
        subtreeFileCount =
            subtreeFileCount ?? _deriveFileCount(isDirectory, children),
        categoryMask =
@@ -55,6 +64,10 @@ class ScanTreeNode {
   final String category;
   final bool deletable;
 
+  /// Precomputed bytes for this node's display. For directories, this is the
+  /// known subtree total when Rust did not provide a non-zero size.
+  final int subtreeBytes;
+
   /// Precomputed file count under this directory (files only, not dirs).
   final int? subtreeFileCount;
   final int categoryMask;
@@ -71,6 +84,21 @@ class ScanTreeNode {
 
   /// Backwards-compatible read-only view of the node's leaf payload.
   ScanEntryRecord? get entry => toEntryRecord();
+
+  static int _deriveSubtreeBytes(
+    bool isDirectory,
+    int sizeBytes,
+    int? entrySizeBytes,
+    List<ScanTreeNode>? children,
+  ) {
+    if (!isDirectory) return sizeBytes > 0 ? sizeBytes : (entrySizeBytes ?? 0);
+    if (sizeBytes > 0) return sizeBytes;
+    var total = 0;
+    for (final child in children ?? const <ScanTreeNode>[]) {
+      total += child.displayBytes;
+    }
+    return total;
+  }
 
   static int _deriveFileCount(bool isDirectory, List<ScanTreeNode>? children) {
     if (!isDirectory) return 1;
@@ -223,11 +251,7 @@ class ScanTreeNode {
   }
 
   int get totalBytes {
-    if (!isDirectory) {
-      return sizeBytes;
-    }
-    if (sizeBytes > 0) return sizeBytes;
-    return children.fold<int>(0, (sum, c) => sum + c.totalBytes);
+    return displayBytes;
   }
 
   int get fileCount {
@@ -236,14 +260,16 @@ class ScanTreeNode {
     return children.fold<int>(0, (sum, c) => sum + c.fileCount);
   }
 
-  /// Returns a copy of [node] with [subtreeFileCount] filled for every directory.
+  /// Returns a copy of [node] with subtree totals filled for every directory.
   static ScanTreeNode withAggregatedCounts(ScanTreeNode node) {
     if (!node.isDirectory) return node;
 
     var count = 0;
+    var bytes = 0;
     final annotatedChildren = node.children.map((child) {
       final annotated = withAggregatedCounts(child);
       count += annotated.fileCount;
+      bytes += annotated.displayBytes;
       return annotated;
     }).toList();
 
@@ -255,6 +281,7 @@ class ScanTreeNode {
       entryId: node.entryId,
       category: node.category,
       deletable: node.deletable,
+      subtreeBytes: node.sizeBytes > 0 ? node.sizeBytes : bytes,
       subtreeFileCount: count,
       scanned: node.scanned,
       peekScanned: node.peekScanned,
@@ -262,13 +289,7 @@ class ScanTreeNode {
     );
   }
 
-  /// Lazily computed and memoized display size.
-  ///
-  /// Avoids repeated O(subtree) [totalBytes] recursion when [sizeBytes] is 0
-  /// (e.g. directories not yet sized by the background scan).  Uses [late final]
-  /// so the value is computed at most once per node instance, regardless of how
-  /// many times [displayBytes] is accessed during sorting or rendering.
-  late final int displayBytes = sizeBytes > 0 ? sizeBytes : totalBytes;
+  int get displayBytes => subtreeBytes;
 
   Map<String, dynamic> toWire() {
     return {
