@@ -1,13 +1,14 @@
+import 'scan_entry_record.dart';
 import 'scan_tree.dart';
 
 /// Returns a pruned copy of [node], keeping files that satisfy [keep] and
 /// ancestor directories that contain at least one kept file.
 ScanTreeNode? pruneTree(
   ScanTreeNode node,
-  bool Function(Map<String, dynamic> entry) keep,
+  bool Function(ScanEntryRecord entry) keep,
 ) {
   if (!node.isDirectory) {
-    final entry = node.entry;
+    final entry = node.toEntryRecord();
     if (entry == null) return null;
     return keep(entry) ? node : null;
   }
@@ -26,8 +27,10 @@ ScanTreeNode? pruneTree(
     isDirectory: true,
     sizeBytes: node.sizeBytes,
     entryId: node.entryId,
-    entry: node.entry,
+    category: node.category,
+    deletable: node.deletable,
     scanned: node.scanned,
+    peekScanned: node.peekScanned,
     children: prunedChildren,
   );
 }

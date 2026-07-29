@@ -6,6 +6,10 @@ import 'dart:isolate';
 
 import 'native_bridge.dart';
 
+typedef VolwardScanBridge = VolwardNativeBridge;
+
+VolwardScanBridge _openScanBridge() => VolwardNativeBridge.open();
+
 /// Isolate entry:
 /// [SendPort progressPort, List<String> roots, SendPort cancelInitPort, bool incremental].
 ///
@@ -23,7 +27,7 @@ void volwardScanIsolate(List<dynamic> args) {
   RawReceivePort cancelRecv;
 
   try {
-    bridge = VolwardNativeBridge.open();
+    bridge = _openScanBridge();
     engine = bridge.createEngine();
     cancelRecv = RawReceivePort((_) {
       bridge.cancelScan(engine);
@@ -188,7 +192,7 @@ void volwardPeekScanIsolate(List<dynamic> args) {
   VolwardNativeBridge bridge;
   Pointer<Void> engine;
   try {
-    bridge = VolwardNativeBridge.open();
+    bridge = _openScanBridge();
     engine = bridge.createEngine();
   } catch (e, st) {
     resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});

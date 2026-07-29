@@ -16,14 +16,20 @@ class ScanColumnView extends StatefulWidget {
     required this.selectionChain,
     required this.onSelect,
     required this.formatBytes,
+    this.visibleChildren,
+    this.visibleChildrenByPath = const {},
     this.selectedEntryIds = const {},
     this.peekInFlight = const {},
     this.busy = false,
     this.columnWidth = 220,
     this.sortMode = ScanSortMode.sizeDesc,
+    this.categoryFilter,
+    this.deletableOnly = false,
   });
 
   final ScanTreeNode root;
+  final List<ScanTreeNode>? visibleChildren;
+  final Map<String, List<ScanTreeNode>> visibleChildrenByPath;
   final List<ScanTreeNode> selectionChain;
   final ScanColumnSelectCallback onSelect;
   final String Function(num? bytes) formatBytes;
@@ -37,19 +43,44 @@ class ScanColumnView extends StatefulWidget {
   /// Sort applied to each column's children at render time (zero latency —
   /// no isolate, no tree copy).
   final ScanSortMode sortMode;
+  final String? categoryFilter;
+  final bool deletableOnly;
 
   @override
   State<ScanColumnView> createState() => _ScanColumnViewState();
 }
 
+class _ColumnViewKey {
+  const _ColumnViewKey({
+    required this.sortMode,
+    required this.categoryFilter,
+    required this.deletableOnly,
+  });
+
+  final ScanSortMode sortMode;
+  final String? categoryFilter;
+  final bool deletableOnly;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ColumnViewKey &&
+        other.sortMode == sortMode &&
+        other.categoryFilter == categoryFilter &&
+        other.deletableOnly == deletableOnly;
+  }
+
+  @override
+  int get hashCode => Object.hash(sortMode, categoryFilter, deletableOnly);
+}
+
 class _ScanColumnViewState extends State<ScanColumnView> {
   final ScrollController _hScroll = ScrollController();
 
-  // Sorted-results cache: identity hash of the source list → (sortMode, result).
+  // View-results cache: source-list identity → (filter/sort key, result).
   // Avoids re-sorting all visible columns on every navigation tick when the
   // underlying data hasn't changed.  Cleared whenever root identity changes
   // (i.e. a new snapshot was merged) to prevent stale entries from accumulating.
-  final Map<int, (ScanSortMode, List<ScanTreeNode>)> _sortCache = {};
+  final Map<int, (_ColumnViewKey, List<ScanTreeNode>)> _sortCache = {};
 
   @override
   void didUpdateWidget(covariant ScanColumnView oldWidget) {
@@ -80,30 +111,52 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   }
 
   List<List<ScanTreeNode>> _columns() {
-    final cols = <List<ScanTreeNode>>[_sorted(widget.root.children)];
+    List<ScanTreeNode> childrenFor(ScanTreeNode node) {
+      return widget.visibleChildrenByPath[node.path] ??
+          (node.path == widget.root.path && widget.visibleChildren != null
+              ? widget.visibleChildren!
+              : node.children);
+    }
+
+    final cols = <List<ScanTreeNode>>[_sorted(childrenFor(widget.root))];
     for (final node in widget.selectionChain) {
       if (node.isDirectory) {
-        cols.add(_sorted(node.children));
+        cols.add(_sorted(childrenFor(node)));
       }
     }
     return cols;
   }
 
-  /// Sorts [items] by [widget.sortMode] at render time — O(k log k) where k is
-  /// the column length (~50-200 items), not the whole tree.  Dirs always sort
-  /// before files so the Finder-style layout is preserved.
+  /// Filters and sorts [items] at render time — O(k log k) where k is the
+  /// visible column length, not the whole tree. Dirs always sort before files
+  /// so the Finder-style layout is preserved.
   ///
   /// Results are cached by list identity so that repeated calls during the same
   /// render (e.g. column-nav ticks with unchanged data) return the pre-sorted
   /// list with zero additional work.
   List<ScanTreeNode> _sorted(List<ScanTreeNode> items) {
-    if (items.length <= 1) return items;
     final key = identityHashCode(items);
+    final viewKey = _ColumnViewKey(
+      sortMode: widget.sortMode,
+      categoryFilter: widget.categoryFilter,
+      deletableOnly: widget.deletableOnly,
+    );
     final cached = _sortCache[key];
-    if (cached != null && cached.$1 == widget.sortMode) {
+    if (cached != null && cached.$1 == viewKey) {
       return cached.$2;
     }
-    final list = items.toList();
+    final list = items
+        .where(
+          (node) => node.matchesView(
+            categoryFilter: widget.categoryFilter,
+            deletableOnly: widget.deletableOnly,
+          ),
+        )
+        .toList(growable: false);
+    if (list.length <= 1) {
+      _sortCache[key] = (viewKey, list);
+      return list;
+    }
     list.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
         return a.isDirectory ? -1 : 1;
@@ -117,7 +170,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       }
     });
-    _sortCache[key] = (widget.sortMode, list);
+    _sortCache[key] = (viewKey, list);
     return list;
   }
 
@@ -132,7 +185,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
         }
 
         final columns = _columns();
-        if (widget.root.children.isEmpty) {
+        if (columns.first.isEmpty) {
           return DecoratedBox(
             decoration: BoxDecoration(
               color: v.canvas,
@@ -229,7 +282,7 @@ class _FinderColumn extends StatelessWidget {
         itemBuilder: (context, index) {
           final node = items[index];
           final isSelected = selected?.path == node.path;
-          final entryId = node.entryId ?? node.entry?['id']?.toString();
+          final entryId = node.entryId;
           final marked = entryId != null && selectedEntryIds.contains(entryId);
 
           return _FinderRow(
@@ -294,9 +347,7 @@ class _FinderRowState extends State<_FinderRow> {
         ? (widget.node.scanned
               ? widget.formatBytes(widget.node.displayBytes)
               : '—')
-        : widget.formatBytes(
-            widget.node.entry?['size_bytes'] as num? ?? widget.node.sizeBytes,
-          );
+        : widget.formatBytes(widget.node.sizeBytes);
 
     return MouseRegion(
       onEnter: (_) {

@@ -10,7 +10,9 @@ import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
 import 'proto/snapshot_pb_decoder.dart';
 import 'scan_preview.dart';
+import 'scan_tree.dart';
 import 'scan_snapshot_merge.dart';
+import 'scan_snapshot_state.dart';
 import 'snapshot_cache.dart';
 
 /// Thrown when the user cancels an in-progress scan.
@@ -28,6 +30,9 @@ class VolwardSession extends ChangeNotifier {
     _initialize();
   }
 
+  @visibleForTesting
+  VolwardSession.test() : _ready = true;
+
   Pointer<Void>? _engine;
   bool _ready = false;
   String? _initError;
@@ -37,7 +42,7 @@ class VolwardSession extends ChangeNotifier {
   bool _scanning = false;
   bool _deleting = false;
   String? _lastJobId;
-  Map<String, dynamic>? _lastSnapshot;
+  ScanSnapshotState? _lastSnapshot;
   Map<String, dynamic>? _lastDeleteReport;
   Map<String, dynamic>? _scanProgress;
   List<String> _scanRoots = [];
@@ -51,6 +56,8 @@ class VolwardSession extends ChangeNotifier {
   // update inside _recomputeProgressCounters(), then read O(1) by the UI.
   int _scannedDirCount = 0;
   int _totalDirCount = 0;
+  int _snapshotVersion = 0;
+  final Set<String> _invalidatedPrefixes = {};
   DateTime? _lastProgressRecompute;
   // Track whether the native engine's last_snapshot matches _lastSnapshot.
   // False after restoring a snapshot from disk (defers expensive FFI hydration
@@ -63,7 +70,7 @@ class VolwardSession extends ChangeNotifier {
   // which may be overwritten by a lightweight preview snapshot before runScan()
   // is called.  _hydrateEngineIfNeeded() prefers this so Rust always receives
   // a structurally complete snapshot rather than a preview stub.
-  Map<String, dynamic>? _restoredSnapshotForHydration;
+  ScanSnapshotState? _restoredSnapshotForHydration;
   // Throttle display-update notifications from _applyMerge. Checkpoints can
   // arrive 5-10×/sec; rebuilding the full widget tree that often is the primary
   // source of UI jank. We still update _lastSnapshot on every checkpoint for
@@ -81,7 +88,7 @@ class VolwardSession extends ChangeNotifier {
   Timer? _scanElapsedTimer;
   DateTime? _scanStartedAt;
 
-  Completer<Map<String, dynamic>?>? _activeScanCompleter;
+  Completer<ScanSnapshotState?>? _activeScanCompleter;
   StreamSubscription<dynamic>? _scanProgressSub;
   ReceivePort? _scanReceivePort;
   ReceivePort? _scanCancelInitPort;
@@ -106,12 +113,46 @@ class VolwardSession extends ChangeNotifier {
   bool get scanning => _scanning;
   bool get deleting => _deleting;
   String? get lastJobId => _lastJobId;
-  Map<String, dynamic>? get lastSnapshot => _lastSnapshot;
+  ScanSnapshotState? get lastSnapshot => _lastSnapshot;
   Map<String, dynamic>? get lastDeleteReport => _lastDeleteReport;
   Map<String, dynamic>? get scanProgress => _scanProgress;
   List<String> get scanRoots => List.unmodifiable(_scanRoots);
   bool get incrementalScan => _incrementalScan;
   Set<String> get selectedEntryIds => Set.unmodifiable(_selectedEntryIds);
+
+  @visibleForTesting
+  int get snapshotVersion => _snapshotVersion;
+
+  @visibleForTesting
+  Set<String> get invalidatedPrefixes => Set.unmodifiable(_invalidatedPrefixes);
+
+  @visibleForTesting
+  void setSnapshotForTest(ScanSnapshotState snapshot) {
+    _lastSnapshot = snapshot;
+    _snapshotVersion++;
+    _invalidatedPrefixes.clear();
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void updateSnapshotForTest(
+    ScanSnapshotState snapshot, {
+    required String affectedPrefix,
+  }) {
+    _lastSnapshot = snapshot;
+    _snapshotVersion++;
+    _invalidatedPrefixes
+      ..removeWhere(
+        (prefix) => SnapshotCache.invalidatesPrefix(
+          cachedPath: prefix,
+          cachedVersion: _snapshotVersion,
+          affectedPrefix: affectedPrefix,
+          updateVersion: _snapshotVersion,
+        ),
+      )
+      ..add(affectedPrefix);
+    notifyListeners();
+  }
 
   /// Paths for which a peek scan is currently in flight.
   /// Empty when no peek is running (or when a full scan hasn't started yet).
@@ -211,9 +252,7 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>?> _awaitScanWithStallGuard(
-    Future<Map<String, dynamic>?> future,
-  ) async {
+  Future<T?> _awaitScanWithStallGuard<T>(Future<T?> future) async {
     final started = DateTime.now();
     _touchScanActivity();
 
@@ -319,9 +358,8 @@ class VolwardSession extends ChangeNotifier {
       // the engine as needing hydration; _hydrateEngineIfNeeded() will do the
       // FFI call just before the next runScan(), which is the only place Rust
       // needs an up-to-date snapshot anyway.
-      _lastSnapshot = snap;
-      _restoredSnapshotForHydration =
-          snap; // keep a clean copy for FFI hydration
+      _lastSnapshot = ScanSnapshotState.fromWire(snap);
+      _restoredSnapshotForHydration = _lastSnapshot;
       _engineHydrated = false;
       debugPrint('VolwardSession: restored cached snapshot from $path');
     } catch (e, st) {
@@ -353,7 +391,7 @@ class VolwardSession extends ChangeNotifier {
     // cannot meaningfully parse as an incremental base.
     final snap = _restoredSnapshotForHydration ?? _lastSnapshot;
     if (snap == null || _engine == null) return;
-    if (VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
+    if (VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap.toWire())) {
       _engineHydrated = true;
       _restoredSnapshotForHydration = null; // consumed — free the memory
     } else {
@@ -452,9 +490,8 @@ class VolwardSession extends ChangeNotifier {
       return;
     }
 
-    _lastSnapshot = buildPreviewSnapshot(
-      rootPath: root,
-      quickListEntries: entries,
+    _lastSnapshot = ScanSnapshotState.fromWire(
+      buildPreviewSnapshot(rootPath: root, quickListEntries: entries),
     );
     notifyListeners();
   }
@@ -498,7 +535,7 @@ class VolwardSession extends ChangeNotifier {
                     .map((e) => Map<String, dynamic>.from(e))
                     .toList()
               : <Map<String, dynamic>>[];
-          _applyMerge(
+          await _applyMerge(
             path,
             Map<String, dynamic>.from(tree),
             entries,
@@ -615,7 +652,7 @@ class VolwardSession extends ChangeNotifier {
 
     _scanReceivePort = ReceivePort();
     _scanCancelInitPort = ReceivePort();
-    final completer = Completer<Map<String, dynamic>?>();
+    final completer = Completer<ScanSnapshotState?>();
     _activeScanCompleter = completer;
 
     _scanProgressSub = _scanReceivePort!.listen((msg) {
@@ -652,7 +689,9 @@ class VolwardSession extends ChangeNotifier {
         } else {
           final snap = m['snapshot'];
           completer.complete(
-            snap is Map ? Map<String, dynamic>.from(snap) : null,
+            snap is Map
+                ? ScanSnapshotState.fromWire(Map<String, dynamic>.from(snap))
+                : null,
           );
         }
       } else if (type == 'error') {
@@ -680,7 +719,7 @@ class VolwardSession extends ChangeNotifier {
       ]);
       _lastSnapshot = await _awaitScanWithStallGuard(completer.future);
       notifyListeners();
-      return _lastSnapshot?['snapshot_id']?.toString() ?? 'done';
+      return _lastSnapshot?.snapshotId ?? 'done';
     } on ScanCancelledException catch (e) {
       _lastError = e.message;
       rethrow;
@@ -711,7 +750,7 @@ class VolwardSession extends ChangeNotifier {
     if (!_ready || _engine == null) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
-    final snapshotId = _lastSnapshot?['snapshot_id']?.toString();
+    final snapshotId = _lastSnapshot?.snapshotId;
     if (snapshotId == null || snapshotId.isEmpty) {
       throw StateError('No scan snapshot — run a scan first');
     }
@@ -746,7 +785,7 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>?> _loadSnapshotFromFile(String path) async {
+  Future<ScanSnapshotState?> _loadSnapshotFromFile(String path) async {
     final pathsSeen = (_scanProgress?['paths_seen'] as num?)?.toInt();
     _setScanProgressPhase('LoadingResults', pathsSeen: pathsSeen);
 
@@ -766,7 +805,7 @@ class VolwardSession extends ChangeNotifier {
       throw StateError('Failed to load scan snapshot into engine');
     }
     _engineHydrated = true; // Engine now matches the snapshot we just loaded.
-    return snap;
+    return ScanSnapshotState.fromWire(snap);
   }
 
   Future<void> _applyCheckpointFromFile(String path) async {
@@ -789,7 +828,7 @@ class VolwardSession extends ChangeNotifier {
                 .toList()
           : <Map<String, dynamic>>[];
 
-      _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
+      await _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
     } catch (e, st) {
       // Two expected, benign errors are swallowed silently:
       // - PathNotFoundException: the checkpoint file was already consumed
@@ -825,28 +864,21 @@ class VolwardSession extends ChangeNotifier {
     unawaited(
       Future<void>(() {
         if (snapshot == null || !identical(snapshot, _lastSnapshot)) return;
-        final rawTree = snapshot['tree'];
-        if (rawTree is! Map) {
-          _scannedDirCount = 0;
-          _totalDirCount = 0;
-          _publishScannedFraction();
-          return;
-        }
         var total = 0;
         var done = 0;
-        void visit(Map<dynamic, dynamic> node) {
-          if (node['is_dir'] != true) return;
+        void visit(ScanTreeNode node) {
+          if (!node.isDirectory) return;
           total++;
-          if (node['scanned'] == true) done++;
-          final children = node['children'];
-          if (children is List) {
-            for (final c in children) {
-              if (c is Map) visit(c);
-            }
+          if (node.scanned) done++;
+          for (final c in node.children) {
+            visit(c);
           }
         }
 
-        visit(rawTree);
+        final root = snapshot.tree;
+        if (root != null) {
+          visit(root);
+        }
         _scannedDirCount = done;
         _totalDirCount = total;
         // Local notifier only — do NOT call notifyListeners() here (that would
@@ -856,15 +888,15 @@ class VolwardSession extends ChangeNotifier {
     );
   }
 
-  void _applyMerge(
+  Future<void> _applyMerge(
     String targetPath,
     Map<String, dynamic> subtreeTree,
     List<Map<String, dynamic>> subtreeEntries, {
     bool authoritative = false,
-  }) {
+  }) async {
     final current = _lastSnapshot;
     if (current == null) return;
-    final merged = mergeSubtreeIntoSnapshot(
+    final merged = mergeSubtreeIntoSnapshotState(
       snapshot: current,
       targetPath: targetPath,
       subtreeTree: subtreeTree,
@@ -874,8 +906,20 @@ class VolwardSession extends ChangeNotifier {
     // Force every merge to look like "new data" to snapshot_id-keyed UI
     // caches, even though checkpoints from the same scan job would
     // otherwise all share the same Rust-side snapshot_id.
-    merged['snapshot_id'] = 'live-${DateTime.now().microsecondsSinceEpoch}';
-    _lastSnapshot = merged;
+    _lastSnapshot = ScanSnapshotState(
+      snapshotId: 'live-${DateTime.now().microsecondsSinceEpoch}',
+      scannedAtMs: merged.scannedAtMs,
+      stats: merged.stats,
+      reclaimableEstimateBytes: merged.reclaimableEstimateBytes,
+      tree: merged.tree,
+      entryCount: merged.entryCount,
+      categoryCounts: merged.categoryCounts,
+      deletableCategoryCounts: merged.deletableCategoryCounts,
+      deletableCount: merged.deletableCount,
+      extraFields: merged.extraFields,
+    );
+    _snapshotVersion++;
+    _invalidatedPrefixes.add(targetPath);
     _recomputeProgressCounters();
     // Throttle UI notifications: checkpoints can arrive 5-10×/sec.  We always
     // update _lastSnapshot above for correctness; we just batch widget rebuilds

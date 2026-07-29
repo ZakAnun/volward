@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/scan_entry_record.dart';
 import 'package:volward/scan_tree.dart';
 import 'package:volward/scan_tree_filter.dart';
 import 'package:volward/scan_tree_flatten.dart';
@@ -7,12 +8,14 @@ void main() {
   group('ScanTreeNode.fromSnapshotJson', () {
     test('parses tree and attaches entries by entry_id', () {
       final entriesById = {
-        'e1': {
-          'id': 'e1',
-          'category': 'Cache',
-          'deletable': true,
-          'size_bytes': 100,
-        },
+        'e1': const ScanEntryRecord(
+          id: 'e1',
+          displayName: 'a.txt',
+          pathOrUri: '/root/a.txt',
+          sizeBytes: 100,
+          category: 'Cache',
+          deletable: true,
+        ),
       };
 
       final root = ScanTreeNode.fromSnapshotJson({
@@ -36,7 +39,7 @@ void main() {
       expect(root.name, 'root');
       expect(root.isDirectory, isTrue);
       expect(root.children, hasLength(1));
-      expect(root.children.single.entry?['category'], 'Cache');
+      expect(root.children.single.entry?.category, 'Cache');
       expect(root.children.single.entryId, 'e1');
     });
   });
@@ -96,20 +99,34 @@ void main() {
             name: 'cache.txt',
             path: '/root/cache.txt',
             isDirectory: false,
-            entry: {'id': '1', 'category': 'Cache', 'deletable': true},
+            entry: const ScanEntryRecord(
+              id: '1',
+              displayName: 'cache.txt',
+              pathOrUri: '/root/cache.txt',
+              sizeBytes: 0,
+              category: 'Cache',
+              deletable: true,
+            ),
           ),
           ScanTreeNode(
             name: 'other.txt',
             path: '/root/other.txt',
             isDirectory: false,
-            entry: {'id': '2', 'category': 'Unknown', 'deletable': false},
+            entry: const ScanEntryRecord(
+              id: '2',
+              displayName: 'other.txt',
+              pathOrUri: '/root/other.txt',
+              sizeBytes: 0,
+              category: 'Unknown',
+              deletable: false,
+            ),
           ),
         ],
       );
     });
 
     test('keeps only matching files and prunes empty branches', () {
-      final pruned = pruneTree(root, (entry) => entry['category'] == 'Cache');
+      final pruned = pruneTree(root, (entry) => entry.category == 'Cache');
 
       expect(pruned, isNotNull);
       expect(pruned!.children, hasLength(1));
@@ -117,7 +134,7 @@ void main() {
     });
 
     test('returns null when nothing matches', () {
-      final pruned = pruneTree(root, (entry) => entry['category'] == 'Media');
+      final pruned = pruneTree(root, (entry) => entry.category == 'Media');
       expect(pruned, isNull);
     });
 
@@ -132,13 +149,20 @@ void main() {
             name: 'cache.txt',
             path: '/root/cache.txt',
             isDirectory: false,
-            entry: {'id': '1', 'category': 'Cache', 'deletable': true},
+            entry: const ScanEntryRecord(
+              id: '1',
+              displayName: 'cache.txt',
+              pathOrUri: '/root/cache.txt',
+              sizeBytes: 0,
+              category: 'Cache',
+              deletable: true,
+            ),
           ),
         ],
       );
       final pruned = pruneTree(
         unscannedRoot,
-        (entry) => entry['category'] == 'Cache',
+        (entry) => entry.category == 'Cache',
       );
       expect(pruned!.scanned, isFalse);
     });
@@ -149,20 +173,22 @@ void main() {
       'builds tree from flat entries when snapshot tree has no children',
       () {
         final entries = [
-          {
-            'id': 'e1',
-            'path_or_uri': '/home/user/docs/a.txt',
-            'size_bytes': 10,
-            'category': 'Unknown',
-            'deletable': false,
-          },
-          {
-            'id': 'e2',
-            'path_or_uri': '/home/user/docs/sub/b.txt',
-            'size_bytes': 20,
-            'category': 'Cache',
-            'deletable': true,
-          },
+          const ScanEntryRecord(
+            id: 'e1',
+            displayName: 'a.txt',
+            pathOrUri: '/home/user/docs/a.txt',
+            sizeBytes: 10,
+            category: 'Unknown',
+            deletable: false,
+          ),
+          const ScanEntryRecord(
+            id: 'e2',
+            displayName: 'b.txt',
+            pathOrUri: '/home/user/docs/sub/b.txt',
+            sizeBytes: 20,
+            category: 'Cache',
+            deletable: true,
+          ),
         ];
         final tree = ScanTreeBuilder.build(
           entries: entries,
@@ -226,7 +252,14 @@ void main() {
                 name: 'a1.txt',
                 path: '/root/a/a1.txt',
                 isDirectory: false,
-                entry: {'id': '1'},
+                entry: const ScanEntryRecord(
+                  id: '1',
+                  displayName: 'a1.txt',
+                  pathOrUri: '/root/a/a1.txt',
+                  sizeBytes: 0,
+                  category: 'Unknown',
+                  deletable: false,
+                ),
               ),
             ],
           ),

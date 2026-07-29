@@ -8,6 +8,7 @@ use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot};
+use volward_core::SnapshotCatalog;
 use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
@@ -239,6 +240,11 @@ impl VolwardEngine {
             .and_then(|s| serde_json::to_string(&s).ok())
     }
 
+    pub fn get_last_snapshot_catalog_json(&self) -> Option<String> {
+        self.get_last_snapshot()
+            .and_then(|s| serde_json::to_string(&SnapshotCatalog::from(&s)).ok())
+    }
+
     pub fn get_last_progress_json(&self) -> Option<String> {
         self.get_last_progress()
             .and_then(|p| serde_json::to_string(&p).ok())
@@ -307,6 +313,26 @@ impl VolwardEngine {
             .flush()
             .map_err(|e| format!("error:flush snapshot: {e}"))?;
         Ok(snapshot.snapshot_id)
+    }
+
+    pub fn write_last_snapshot_catalog_to_path(&self, path: &str) -> Result<String, String> {
+        let snapshot = self
+            .get_last_snapshot()
+            .ok_or_else(|| "error:no snapshot".to_string())?;
+        let catalog = SnapshotCatalog::from(&snapshot);
+        let file = File::create(path).map_err(|e| format!("error:create catalog: {e}"))?;
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, &catalog)
+            .map_err(|e| format!("error:serialize catalog: {e}"))?;
+        writer.flush().map_err(|e| format!("error:flush catalog: {e}"))?;
+        Ok(catalog.snapshot_id)
+    }
+
+    pub fn load_snapshot_catalog_from_path(&self, path: &str) -> Result<String, String> {
+        let json = std::fs::read_to_string(path).map_err(|e| format!("read catalog: {e}"))?;
+        let catalog: SnapshotCatalog =
+            serde_json::from_str(&json).map_err(|e| format!("invalid catalog json: {e}"))?;
+        serde_json::to_string(&catalog).map_err(|e| format!("serialize catalog: {e}"))
     }
 
     /// Encodes the last snapshot as protobuf and writes it atomically to

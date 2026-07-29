@@ -2,12 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'macos_settings.dart';
 import 'scan_tree.dart';
-import 'scan_tree_filter.dart';
 import 'theme/apple_tokens.dart';
 import 'settings_page.dart';
 import 'theme/volward_theme_settings.dart';
@@ -42,49 +40,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
   bool _prevScanning = false;
   bool _permissionBannerExpanded = false;
-  // Tracks the last `_lastSnapshot['snapshot_id']` we already refreshed the
+  // Tracks the last `_lastSnapshot.snapshotId` we already refreshed the
   // column-nav caches for, so plain progress ticks (which fire ~3x/sec via
   // VolwardSession.notifyListeners but don't touch _lastSnapshot) don't
   // trigger a full tree re-sort/re-aggregate on every tick while browsing
   // during a background scan.
   String? _lastRefreshedSnapshotId;
 
-  // ---------- sync caches (internal helpers only) ----------
-  ScanTreeNode? _cachedDisplayTree;
-  String? _cachedDisplayTreeKey;
+  // ---------- canonical snapshot cache ----------
   ScanTreeNode? _cachedResolvedTree;
   String? _cachedResolvedTreeKey;
-  List<Map<String, dynamic>>? _cachedFilteredEntries;
-  String? _cachedFilteredEntriesKey;
-  Map<String, Map<String, dynamic>>? _cachedEntriesById;
-  List<Map<String, dynamic>>? _cachedAllEntries;
-  String? _cachedEntriesKey;
 
-  // ---------- async-computed display data (used by build()) ----------
-  // Pre-computed off the main thread via compute(). build() reads from these
-  // fields (O(1)) rather than recomputing inline. Until the first compute
-  // finishes, falls back to a synchronous call so the initial render is instant.
-  ScanTreeNode? _liveTree;
-  List<Map<String, dynamic>> _liveEntries = const [];
-  String? _liveKey; // _displayTreeCacheKey() value when this data was built
-  bool _computeInFlight = false;
-  // Throttle for progressive (checkpoint-driven) recomputes. Each compute()
-  // spawns an isolate and deep-copies the entire (growing) snapshot in and the
-  // resulting tree back out; running them back-to-back on every checkpoint is
-  // what ballooned memory during large scans. Progressive computes are capped
-  // to one per [_kLiveComputeMinGap]; user-initiated changes bypass it.
-  Timer? _liveComputeTimer;
-  DateTime? _lastLiveComputeAt;
-  bool _pendingImmediate = false;
-  static const Duration _kLiveComputeMinGap = Duration(seconds: 3);
-  // Cache for _selectedBytes — recomputed only when _selected or the filtered
-  // entries list changes, not on every build() call.
+  // Cache for _selectedBytes — recomputed only when the selected IDs or
+  // snapshot changes, not on every build() call.
   int _cachedSelectedBytes = 0;
-  String?
-  _cachedSelectedBytesKey; // entries-cache key + selected-count composite
-  // Guard for build()-initiated addPostFrameCallback: prevents accumulating
-  // multiple identical callbacks during back-to-back rebuilds.
-  bool _postFrameComputePending = false;
+  String? _cachedSelectedBytesKey; // snapshot ID + selection IDs.
 
   VolwardSession get _s => widget.session;
 
@@ -110,9 +80,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (widget.session.lastSnapshot == null) {
         await widget.session.previewTarget();
       }
-      // Seed the isolate-computed display data so the first real render reads
-      // _liveTree/_liveEntries instead of computing synchronously.
-      if (mounted) unawaited(_scheduleDisplayCompute(immediate: true));
     });
   }
 
@@ -120,7 +87,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_onSessionChanged);
-    _liveComputeTimer?.cancel();
     _columnNavTick.dispose();
     super.dispose();
   }
@@ -138,7 +104,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
+        content: const Text(
           'If Volward is not listed: tap +, press Cmd+Shift+G, paste the copied .app path, enable the switch, then Check again.',
         ),
         action: SnackBarAction(
@@ -168,44 +134,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _columnChain.clear();
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
-        _lastRefreshedSnapshotId = _s.lastSnapshot?['snapshot_id']?.toString();
+        _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
       });
-      unawaited(_scheduleDisplayCompute(immediate: true));
     } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
       // Scan completed (possibly auto-started by switchScanRoot) — show stats.
-      final stats = _s.lastSnapshot?['stats'];
-      final count = stats is Map
-          ? (stats['files_in_snapshot'] as num?)?.toInt()
-          : (_s.lastSnapshot?['entries'] is List
-                ? (_s.lastSnapshot!['entries'] as List).length
-                : 0);
+      final count = _s.lastSnapshot?.filesInSnapshot ?? 0;
       final label = _s.incrementalScan ? 'Incremental' : 'Full';
       setState(() {
         _scanStatus = '$label scan: $count files';
         _columnChain.clear();
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
-        _lastRefreshedSnapshotId = _s.lastSnapshot?['snapshot_id']?.toString();
+        _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
       });
-      unawaited(_scheduleDisplayCompute(immediate: true));
     } else {
       // Checkpoint / peek merged new data. Refresh display caches whenever
       // snapshot_id changed — including when the user is still on the root
       // column (_columnChain empty), so preview spinners clear as soon as
       // the background walk rediscovers each directory.
-      final snapId = _s.lastSnapshot?['snapshot_id']?.toString();
+      final snapId = _s.lastSnapshot?.snapshotId;
       if (snapId != null && snapId != _lastRefreshedSnapshotId) {
         _lastRefreshedSnapshotId = snapId;
         _invalidateSnapshotCaches();
-        if (_columnChain.isNotEmpty && _liveTree != null) {
-          // Refresh column chain against the last known-good tree (stale by at
-          // most one _kDisplayNotifyGap); the upcoming async compute will
-          // follow with the fully up-to-date tree.
+        final tree = _resolveResultTree();
+        if (_columnChain.isNotEmpty && tree != null) {
           // Only fire _columnNavTick++ (and thus a ListenableBuilder rebuild)
           // when the resolved paths actually changed — avoids a gratuitous
           // column-browser rebuild on every peek/checkpoint whose result
           // doesn't structurally change the currently-visible path.
-          final refreshed = refreshColumnChain(_liveTree!, _columnChain);
+          final refreshed = refreshColumnChain(tree, _columnChain);
           final chainChanged =
               refreshed.length != _columnChain.length ||
               !Iterable.generate(
@@ -213,10 +170,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ).every((i) => refreshed[i].path == _columnChain[i].path);
           if (chainChanged) _setColumnChain(refreshed);
         }
-        unawaited(_scheduleDisplayCompute());
-        // Checkpoint/peek only affects scan progress UI (peekInFlight count,
-        // progress bar). Trigger a minimal rebuild here — the expensive
-        // display-tree rebuild is handled by _scheduleDisplayCompute above.
         setState(() {});
       }
       // Else: no snapshot change, no state to update — skip setState entirely.
@@ -233,57 +186,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return ScanTreeBuilder.normalizeRoot(Platform.environment['HOME'] ?? '/');
   }
 
-  Map<String, Map<String, dynamic>> _entriesById() {
-    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
-    if (_cachedEntriesById != null && _cachedEntriesKey == snapId) {
-      return _cachedEntriesById!;
-    }
-    final snap = _s.lastSnapshot;
-    if (snap == null || snap['entries'] is! List) {
-      _cachedEntriesById = {};
-      _cachedEntriesKey = snapId;
-      return _cachedEntriesById!;
-    }
-    // Build by re-using _allSnapshotEntries so both caches share the same
-    // entry objects — avoids a second O(N) Map.from() pass.
-    final all = _allSnapshotEntries();
-    final out = <String, Map<String, dynamic>>{};
-    for (final entry in all) {
-      final id = entry['id']?.toString();
-      if (id != null) out[id] = entry;
-    }
-    _cachedEntriesById = out;
-    // snapId already set by _allSnapshotEntries call above.
-    return out;
-  }
-
-  List<Map<String, dynamic>> _allSnapshotEntries() {
-    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
-    if (_cachedAllEntries != null && _cachedEntriesKey == snapId) {
-      return _cachedAllEntries!;
-    }
-    final snap = _s.lastSnapshot;
-    if (snap == null || snap['entries'] is! List) {
-      _cachedAllEntries = [];
-      _cachedEntriesKey = snapId;
-      return _cachedAllEntries!;
-    }
-    // Cast without deep-copy: entry maps come from the Dart-side merge logic
-    // and are never mutated after being stored in _lastSnapshot. A shallow
-    // cast is safe and avoids O(N) Map.from() on every cache miss.
-    final list = (snap['entries'] as List)
-        .whereType<Map>()
-        .map(
-          (e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
-        )
-        .toList();
-    _cachedAllEntries = list;
-    _cachedEntriesKey = snapId;
-    return list;
-  }
-
   ScanTreeNode? _resolveResultTree() {
-    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
+    final snapId = _s.lastSnapshot?.snapshotId ?? '';
     if (_cachedResolvedTree != null && _cachedResolvedTreeKey == snapId) {
       return _cachedResolvedTree;
     }
@@ -291,22 +195,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final snap = _s.lastSnapshot;
     if (snap == null) return null;
 
-    final entriesById = _entriesById();
-    final entries = _allSnapshotEntries();
-    ScanTreeNode? tree;
-
-    if (snap['tree'] is Map) {
-      tree = ScanTreeNode.fromSnapshotJson(
-        Map<String, dynamic>.from(snap['tree'] as Map),
-        entriesById: entriesById,
-      );
-    }
-
+    ScanTreeNode? tree = snap.tree;
     final rootPath = (tree != null && tree.path.isNotEmpty)
         ? ScanTreeBuilder.normalizeRoot(tree.path)
         : _scanRootPath();
 
-    if (entries.isNotEmpty && (tree == null || tree.children.isEmpty)) {
+    if ((tree == null || tree.children.isEmpty) && snap.hasFlatEntries) {
+      final entries = snap.materializeEntries();
       tree = ScanTreeBuilder.build(entries: entries, rootPath: rootPath);
     }
 
@@ -315,104 +210,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return tree;
   }
 
-  void _invalidateDisplayTreeCaches() {
-    _cachedDisplayTree = null;
-    _cachedDisplayTreeKey = null;
-    _cachedFilteredEntries = null;
-    _cachedFilteredEntriesKey = null;
-  }
-
-  /// Applies the current [_categoryFilter] / [_deletableOnly] synchronously on
-  /// the main thread when the resolved tree is already cached (i.e. only the
-  /// filter changed, not the underlying snapshot).  Writes the result directly
-  /// into [_liveTree] / [_liveKey] so [_scheduleDisplayCompute] finds the key
-  /// already current and skips the isolate entirely — zero serialisation cost.
-  ///
-  /// Returns true if the fast path succeeded; callers should still fire
-  /// [_scheduleDisplayCompute] as a fallback for the case where the resolved
-  /// tree isn't cached yet (cold start, different snapshot), or when the tree
-  /// is too large for a jank-free main-thread prune.
-  ///
-  /// Sync budget: trees larger than [_kFilterSyncMaxNodes] skip this path so
-  /// filter toggles never stall the UI on a full Home scan.
-  static const int _kFilterSyncMaxNodes = 2500;
-
-  bool _applyFilterSync() {
-    final root = _cachedResolvedTree; // null if snapshot not yet resolved
-    if (root == null) return false;
-
-    final key = _displayTreeCacheKey();
-    if (_liveKey == key) return true; // already current, nothing to do
-
-    // Cheap early-exit walk: stop once we know the tree exceeds the sync budget.
-    if (_treeExceedsNodeBudget(root, _kFilterSyncMaxNodes)) return false;
-
-    // Compute display tree inline — same logic as _computeDisplayTree() but
-    // without the _resolveResultTree() call (we already have the root).
-    bool keep(Map<String, dynamic> entry) {
-      if (_categoryFilter != null &&
-          entry['category']?.toString() != _categoryFilter) {
-        return false;
-      }
-      if (_deletableOnly && entry['deletable'] != true) return false;
-      return true;
-    }
-
-    final filtered = (_categoryFilter == null && !_deletableOnly)
-        ? root
-        : pruneTree(root, keep);
-    // _sortTree is intentionally skipped: ScanColumnView re-sorts each column
-    // at render time, so pre-sorting the whole tree is O(N log N) wasted work
-    // on the main thread.
-    final newTree = filtered == null
-        ? null
-        : ScanTreeNode.withAggregatedCounts(filtered);
-
-    // Filtered entries — mirror of _filteredSortedEntries() without the sort
-    // (ScanColumnView applies sort at render time).
-    Iterable<Map<String, dynamic>> out = _allSnapshotEntries();
-    if (_categoryFilter != null) {
-      out = out.where((e) => e['category']?.toString() == _categoryFilter);
-    }
-    if (_deletableOnly) out = out.where((e) => e['deletable'] == true);
-    final newEntries = out.toList();
-
-    // Update live caches and trigger a single cheap setState.
-    _liveTree = newTree;
-    _liveEntries = newEntries;
-    _liveKey = key;
-    // Also keep the sync caches consistent so _getDisplayTree() hits on next
-    // synchronous call (e.g. from a fallback build() path).
-    _cachedDisplayTree = newTree;
-    _cachedDisplayTreeKey = key;
-    _cachedFilteredEntries = newEntries;
-    _cachedFilteredEntriesKey = key;
-    return true;
-  }
-
-  /// Returns true once [root] has more than [limit] nodes (dirs + files).
-  /// Stops walking as soon as the budget is exceeded — O(limit), not O(tree).
-  static bool _treeExceedsNodeBudget(ScanTreeNode root, int limit) {
-    var n = 0;
-    bool walk(ScanTreeNode node) {
-      n++;
-      if (n > limit) return true;
-      for (final child in node.children) {
-        if (walk(child)) return true;
-      }
-      return false;
-    }
-
-    return walk(root);
-  }
-
   void _invalidateSnapshotCaches() {
-    _invalidateDisplayTreeCaches();
     _cachedResolvedTree = null;
     _cachedResolvedTreeKey = null;
-    _cachedEntriesById = null;
-    _cachedAllEntries = null;
-    _cachedEntriesKey = null;
+    _cachedSelectedBytesKey = null;
   }
 
   void _resetColumnNav() {
@@ -427,125 +228,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _columnNavTick.value++;
   }
 
-  ScanTreeNode? _computeDisplayTree() {
-    final root = _resolveResultTree();
-    if (root == null) return null;
-
-    bool keep(Map<String, dynamic> entry) {
-      if (_categoryFilter != null &&
-          entry['category']?.toString() != _categoryFilter) {
-        return false;
-      }
-      if (_deletableOnly && entry['deletable'] != true) return false;
-      return true;
-    }
-
-    final filtered = (_categoryFilter == null && !_deletableOnly)
-        ? root
-        : pruneTree(root, keep);
-    if (filtered == null) return null;
-    // _sortTree is intentionally omitted: ScanColumnView re-sorts each column
-    // at render time (O(k log k) per visible column), so sorting the whole tree
-    // here is O(N log N) wasted work on the main thread / in the isolate.
-    return ScanTreeNode.withAggregatedCounts(filtered);
-  }
-
-  String _displayTreeCacheKey() {
-    final snapId = _s.lastSnapshot?['snapshot_id']?.toString() ?? '';
-    return '$snapId|$_categoryFilter|$_deletableOnly';
-  }
-
-  ScanTreeNode? _getDisplayTree() {
-    final key = _displayTreeCacheKey();
-    if (_cachedDisplayTree != null && _cachedDisplayTreeKey == key) {
-      return _cachedDisplayTree;
-    }
-    _cachedDisplayTree = _computeDisplayTree();
-    _cachedDisplayTreeKey = key;
-    return _cachedDisplayTree;
-  }
-
-  /// Recomputes the display tree + filtered entries in a background isolate and
-  /// stores the result in [_liveTree]/[_liveEntries], keyed by
-  /// [_displayTreeCacheKey]. build() reads these (O(1)); the heavy O(N log N)
-  /// work never runs on the UI thread.
-  ///
-  /// [immediate] requests (user toggles sort/filter, navigates, or a scan
-  /// starts/completes) bypass the throttle so the UI stays responsive.
-  /// Progressive requests (background checkpoint merges, the build() kick, and
-  /// the in-flight follow-up) are capped to one per [_kLiveComputeMinGap] —
-  /// otherwise the isolate deep-copies the whole snapshot back-to-back on every
-  /// checkpoint and memory balloons on large scans.
-  Future<void> _scheduleDisplayCompute({bool immediate = false}) async {
-    final snap = _s.lastSnapshot;
-    if (snap == null) {
-      _liveComputeTimer?.cancel();
-      if (_liveTree != null || _liveEntries.isNotEmpty || _liveKey != null) {
-        setState(() {
-          _liveTree = null;
-          _liveEntries = const [];
-          _liveKey = null;
-        });
-      }
-      return;
-    }
-    final key = _displayTreeCacheKey();
-    if (key == _liveKey) return; // already current
-    if (_computeInFlight) {
-      // Serialize computes (a second concurrent isolate would double the copy
-      // cost). Remember an immediate request so the follow-up round honors it.
-      if (immediate) _pendingImmediate = true;
-      return;
-    }
-
-    if (!immediate && _lastLiveComputeAt != null) {
-      final since = DateTime.now().difference(_lastLiveComputeAt!);
-      if (since < _kLiveComputeMinGap) {
-        // Too soon for another progressive recompute. Coalesce into a single
-        // deferred attempt after the gap instead of spinning the isolate.
-        _liveComputeTimer?.cancel();
-        _liveComputeTimer = Timer(_kLiveComputeMinGap - since, () {
-          if (mounted) unawaited(_scheduleDisplayCompute());
-        });
-        return;
-      }
-    }
-    _liveComputeTimer?.cancel();
-
-    _computeInFlight = true;
-    try {
-      final r = await compute(
-        _computeDisplayIsolate,
-        _DisplayComputeInput(
-          snapshot: snap,
-          categoryFilter: _categoryFilter,
-          deletableOnly: _deletableOnly,
-          sortIndex: _sortIndex,
-          rootPath: _scanRootPath(),
-        ),
-      );
-      if (!mounted) return;
-      _lastLiveComputeAt = DateTime.now();
-      setState(() {
-        _liveTree = r.tree;
-        _liveEntries = r.entries;
-        _liveKey = key;
-      });
-    } catch (e, st) {
-      debugPrint('HomePage: async display compute failed: $e\n$st');
-    } finally {
-      _computeInFlight = false;
-      // The key can move while we were computing (new snapshot merged, or the
-      // user toggled sort/filter). Re-run so the displayed data catches up,
-      // preserving an immediate request that arrived mid-flight.
-      final wantImmediate = _pendingImmediate;
-      _pendingImmediate = false;
-      if (mounted && _displayTreeCacheKey() != _liveKey) {
-        unawaited(_scheduleDisplayCompute(immediate: wantImmediate));
-      }
-    }
-  }
-
   void _onColumnSelect(int columnIndex, ScanTreeNode node) {
     _setColumnChain(_columnChain.take(columnIndex).toList()..add(node));
     if (node.isDirectory && !node.scanned) {
@@ -554,9 +236,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
-    final entry = node.entry;
-    if (entry == null || entry['deletable'] != true) return;
-    final id = entry['id']?.toString() ?? node.entryId;
+    if (!node.deletable) return;
+    final id = node.entryId;
     if (id == null || id.isEmpty) return;
     setState(() {
       if (_selected.contains(id)) {
@@ -606,41 +287,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return buf.toString();
   }
 
-  /// Returns the total size of the currently-selected entries.
-  /// Cached by a composite key of (entries-cache key + selected count) so
-  /// the O(N) iteration only re-runs when either the entry list or the
-  /// selection actually changes — not on every build() call.
-  int _selectedBytes(List<Map<String, dynamic>> entries) {
-    final compositeKey =
-        '${_cachedFilteredEntriesKey ?? ""}-${_selected.length}';
-    if (compositeKey == _cachedSelectedBytesKey) return _cachedSelectedBytes;
-    var t = 0;
-    for (final e in entries) {
-      if (_selected.contains(e["id"]?.toString())) {
-        t += (e["size_bytes"] as num?)?.toInt() ?? 0;
-      }
-    }
-    _cachedSelectedBytes = t;
-    _cachedSelectedBytesKey = compositeKey;
-    return t;
+  int _matchingEntryCount() {
+    return _s.lastSnapshot?.matchingEntryCount(
+          _categoryFilter,
+          deletableOnly: _deletableOnly,
+        ) ??
+        0;
   }
 
-  List<Map<String, dynamic>> _filteredSortedEntries() {
-    final key = _displayTreeCacheKey();
-    if (_cachedFilteredEntries != null && _cachedFilteredEntriesKey == key) {
-      return _cachedFilteredEntries!;
-    }
-    // Sort is intentionally absent — ScanColumnView applies sort at render time
-    // via sortMode. This list is used for counts/ID lookups only, not display
-    // order.
-    Iterable<Map<String, dynamic>> out = _allSnapshotEntries();
-    if (_categoryFilter != null) {
-      out = out.where((e) => e['category']?.toString() == _categoryFilter);
-    }
-    if (_deletableOnly) out = out.where((e) => e['deletable'] == true);
-    _cachedFilteredEntries = out.toList();
-    _cachedFilteredEntriesKey = key;
-    return _cachedFilteredEntries!;
+  /// Returns the total size of the currently-selected entries.
+  /// Cached by snapshot ID plus selected IDs so the O(N) iteration only re-runs
+  /// after selection or snapshot changes.
+  int _selectedBytes() {
+    final snap = _s.lastSnapshot;
+    if (snap == null || _selected.isEmpty) return 0;
+    final selectedKey = _selected.isEmpty
+        ? ''
+        : (_selected.toList()..sort()).join(',');
+    final compositeKey = '${snap.snapshotId}|$selectedKey';
+    if (compositeKey == _cachedSelectedBytesKey) return _cachedSelectedBytes;
+    _cachedSelectedBytes = snap.selectedBytes(_selected);
+    _cachedSelectedBytesKey = compositeKey;
+    return _cachedSelectedBytes;
   }
 
   Future<void> _pickFolder() async {
@@ -655,12 +323,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       final id = await _s.runScan();
       if (!mounted) return;
-      final stats = _s.lastSnapshot?['stats'];
-      final count = stats is Map
-          ? (stats['files_in_snapshot'] as num?)?.toInt()
-          : (_s.lastSnapshot?['entries'] is List
-                ? (_s.lastSnapshot!['entries'] as List).length
-                : 0);
+      final snapshot = _s.lastSnapshot;
+      final count = snapshot?.filesInSnapshot ?? 0;
       setState(() {
         _scanStatus =
             '${incremental ? 'Incremental' : 'Full'} scan: $count files · $id';
@@ -772,7 +436,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildCompactResultsChrome(
     BuildContext context, {
-    required List<Map<String, dynamic>> entries,
+    required int matchingCount,
     required ScanTreeNode? displayTree,
   }) {
     final showPermission =
@@ -792,7 +456,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             children: [
               Expanded(
                 child: Text(
-                  _compactResultsSummary(displayTree, entries),
+                  _compactResultsSummary(displayTree, matchingCount),
                   style: context.vwFinePrintInk,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -856,16 +520,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               setState(() {
                 _categoryFilter = cat;
                 _resetColumnNav();
-                _invalidateDisplayTreeCaches();
-                // Fast path: apply filter synchronously using the already-cached
-                // resolved tree — no isolate, no snapshot serialisation.
-                _applyFilterSync();
               });
-              // Fallback: if the resolved tree wasn't cached yet (cold start),
-              // fall back to the isolate path so we never show stale data.
-              if (_liveKey != _displayTreeCacheKey()) {
-                unawaited(_scheduleDisplayCompute(immediate: true));
-              }
             },
             sortMode: _sort,
             onSortChanged: (mode) {
@@ -878,12 +533,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               setState(() {
                 _deletableOnly = v;
                 _resetColumnNav();
-                _invalidateDisplayTreeCaches();
-                _applyFilterSync();
               });
-              if (_liveKey != _displayTreeCacheKey()) {
-                unawaited(_scheduleDisplayCompute(immediate: true));
-              }
             },
             incrementalScan: _s.incrementalScan,
             onIncrementalScanChanged: _s.setIncrementalScan,
@@ -901,17 +551,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  String _compactResultsSummary(
-    ScanTreeNode? displayTree,
-    List<Map<String, dynamic>> entries,
-  ) {
+  String _compactResultsSummary(ScanTreeNode? displayTree, int matchingCount) {
     final snap = _s.lastSnapshot;
-    final reclaimable = snap?['reclaimable_estimate_bytes'];
+    final reclaimable = snap?.reclaimableEstimateBytes;
     final parts = <String>[];
     if (displayTree != null) {
       parts.add(_formatTreeSummary(displayTree));
     }
-    parts.add('${entries.length} classified');
+    parts.add('$matchingCount classified');
     if (reclaimable != null) {
       parts.add('${_fmt(reclaimable)} reclaimable');
     }
@@ -921,7 +568,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _buildResultsBrowser(
     BuildContext context,
     ScanTreeNode? displayTree,
-    List<Map<String, dynamic>> entries,
+    int matchingCount,
   ) {
     final v = context.volward;
     if (displayTree == null) {
@@ -933,9 +580,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
         child: Center(
           child: Text(
-            entries.isEmpty
+            _s.scanning
+                ? 'Updating results…'
+                : matchingCount == 0
                 ? 'No items match the current filters.'
-                : 'No items match the current filters (${entries.length} in list).',
+                : 'No items match the current filters ($matchingCount in list).',
             style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
@@ -962,6 +611,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     return ScanColumnView(
       root: displayTree,
+      visibleChildren: displayTree.children,
+      visibleChildrenByPath: {
+        for (final node in _columnChain) node.path: node.children,
+      },
       selectionChain: List.unmodifiable(_columnChain),
       onSelect: _onColumnSelect,
       formatBytes: _fmt,
@@ -969,48 +622,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       peekInFlight: _s.peekInFlight,
       busy: _s.deleting || _s.scanning,
       sortMode: _sort,
+      categoryFilter: _categoryFilter,
+      deletableOnly: _deletableOnly,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final key = _displayTreeCacheKey();
     final hasResults = _s.lastSnapshot != null;
     final restoring = _s.restoringSnapshot;
-    // Prefer isolate-computed data.
-    //
-    // If the key matches, both reads are O(1) — nothing to do.
-    //
-    // If the key doesn't match (sort/filter just toggled, or a new checkpoint
-    // arrived), we have two paths:
-    //   • _liveTree is non-null → show the *stale* live result from the last
-    //     compute while the new one is in flight.  The user sees the previous
-    //     sort order for ~100–300ms then it snaps to the new one.  No main-
-    //     thread work at all, so no jank.
-    //   • _liveTree is null (true cold start, before the first compute ever
-    //     finishes) → fall back to a synchronous compute so the first frame
-    //     isn't empty.  This only fires once per session.
-    final liveHit = _liveKey == key;
-    final hasStale = _liveTree != null;
-    final entries = liveHit
-        ? _liveEntries
-        : (hasStale ? _liveEntries : _filteredSortedEntries());
-    final displayTree = hasResults
-        ? (liveHit ? _liveTree : (hasStale ? _liveTree : _getDisplayTree()))
-        : null;
-    if (hasResults &&
-        !liveHit &&
-        !_computeInFlight &&
-        !_postFrameComputePending) {
-      // Guard with _postFrameComputePending so that back-to-back build() calls
-      // (e.g. from rapid checkpoint notifications) don't queue multiple identical
-      // callbacks — one scheduled frame is enough to kick off the compute.
-      _postFrameComputePending = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _postFrameComputePending = false;
-        if (mounted) unawaited(_scheduleDisplayCompute());
-      });
-    }
+    final displayTree = hasResults ? _resolveResultTree() : null;
+    final matchingCount = _matchingEntryCount();
 
     return Scaffold(
       backgroundColor: context.volward.canvasParchment,
@@ -1024,7 +646,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     children: [
                       _buildCompactResultsChrome(
                         context,
-                        entries: entries,
+                        matchingCount: matchingCount,
                         displayTree: displayTree,
                       ),
                       Expanded(
@@ -1040,7 +662,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     _buildResultsBrowser(
                                       context,
                                       displayTree,
-                                      entries,
+                                      matchingCount,
                                     ),
                                     padding: const EdgeInsets.fromLTRB(
                                       AppleSpacing.lg,
@@ -1072,7 +694,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ],
                   ),
           ),
-          _buildStickyBar(context, entries),
+          _buildStickyBar(context),
         ],
       ),
     );
@@ -1407,11 +1029,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   String _formatTreeSummary(ScanTreeNode tree) {
-    final stats = _s.lastSnapshot?['stats'];
-    final filesSeen = stats is Map
-        ? (stats['files_seen'] as num?)?.toInt()
-        : null;
-    final count = filesSeen ?? tree.subtreeFileCount ?? tree.fileCount;
+    final filesSeen = _s.lastSnapshot?.stats['files_seen'] as num?;
+    final count = filesSeen?.toInt() ?? tree.subtreeFileCount ?? tree.fileCount;
     return '$count in tree · ${_fmt(tree.displayBytes)}';
   }
 
@@ -1444,15 +1063,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
-    final entry = focus.entry;
     final isDir = focus.isDirectory;
-    final size = isDir
-        ? focus.displayBytes
-        : (entry?['size_bytes'] as num? ?? focus.sizeBytes);
+    final size = isDir ? focus.displayBytes : focus.sizeBytes;
     final subtreeItems = isDir ? focus.fileCount : 0;
-    final category = entry?['category']?.toString() ?? (isDir ? 'Folder' : '—');
-    final deletable = entry?['deletable'] == true;
-    final entryId = entry?['id']?.toString() ?? focus.entryId;
+    final category = isDir ? 'Folder' : focus.category;
+    final deletable = focus.deletable;
+    final entryId = focus.entryId;
     final marked = entryId != null && _selected.contains(entryId);
     final busy = _s.deleting || _s.scanning;
 
@@ -1524,10 +1140,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildStickyBar(
-    BuildContext context,
-    List<Map<String, dynamic>> entries,
-  ) {
+  Widget _buildStickyBar(BuildContext context) {
     final busy = _s.deleting || _s.scanning;
     final String label;
     final String actionLabel;
@@ -1541,8 +1154,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       actionIcon = Icons.stop_outlined;
       actionPressed = _s.cancelScan;
     } else if (_selected.isNotEmpty) {
-      label =
-          'Selected: ${_selected.length} · ${_fmt(_selectedBytes(entries))}';
+      label = 'Selected: ${_selected.length} · ${_fmt(_selectedBytes())}';
       actionLabel = busy ? 'Working…' : 'Move to Trash';
       actionIcon = busy ? null : Icons.delete_outline;
       actionPressed = busy ? null : _confirmDelete;
@@ -1586,127 +1198,4 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// Background-isolate display computation
-// ---------------------------------------------------------------------------
-// The display tree (resolve + prune + recursive sort + aggregate) and the
-// filtered/sorted flat entries list are O(N log N) in the number of scan
-// entries. Running them inline in build() froze the UI thread on every
-// checkpoint during large scans. These run instead in a background isolate via
-// compute(); the result is stored in _HomePageState._liveTree/_liveEntries.
-//
-// ScanTreeNode is plain data (String/int/bool/Map/List fields only), so it is
-// isolate-sendable by copy. Enums are passed as .index (safest across isolates).
-
-class _DisplayComputeInput {
-  const _DisplayComputeInput({
-    required this.snapshot,
-    required this.categoryFilter,
-    required this.deletableOnly,
-    required this.sortIndex,
-    required this.rootPath,
-  });
-  final Map<String, dynamic> snapshot;
-  final String? categoryFilter;
-  final bool deletableOnly;
-  final int sortIndex;
-  final String rootPath;
-}
-
-class _DisplayComputeResult {
-  const _DisplayComputeResult(this.tree, this.entries);
-  final ScanTreeNode? tree;
-  final List<Map<String, dynamic>> entries;
-}
-
-/// Pure replica of `_computeDisplayTree()` + `_filteredSortedEntries()`,
-/// runnable in a background isolate. Must not touch any `_HomePageState` state.
-_DisplayComputeResult _computeDisplayIsolate(_DisplayComputeInput i) {
-  final sort =
-      ScanSortMode.values[i.sortIndex.clamp(0, ScanSortMode.values.length - 1)];
-  final snap = i.snapshot;
-
-  // --- flat entries (mirror of _allSnapshotEntries) ---
-  final allEntries = (snap['entries'] is List)
-      ? (snap['entries'] as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList()
-      : <Map<String, dynamic>>[];
-
-  final entriesById = <String, Map<String, dynamic>>{};
-  for (final e in allEntries) {
-    final id = e['id']?.toString();
-    if (id != null) entriesById[id] = e;
-  }
-
-  // --- resolve tree (mirror of _resolveResultTree) ---
-  ScanTreeNode? tree;
-  if (snap['tree'] is Map) {
-    tree = ScanTreeNode.fromSnapshotJson(
-      Map<String, dynamic>.from(snap['tree'] as Map),
-      entriesById: entriesById,
-    );
-  }
-  final rootPath = (tree != null && tree.path.isNotEmpty)
-      ? ScanTreeBuilder.normalizeRoot(tree.path)
-      : ScanTreeBuilder.normalizeRoot(i.rootPath);
-  if (allEntries.isNotEmpty && (tree == null || tree.children.isEmpty)) {
-    tree = ScanTreeBuilder.build(entries: allEntries, rootPath: rootPath);
-  }
-
-  // --- display tree (mirror of _computeDisplayTree) ---
-  ScanTreeNode? displayTree;
-  if (tree != null) {
-    bool keep(Map<String, dynamic> entry) {
-      if (i.categoryFilter != null &&
-          entry['category']?.toString() != i.categoryFilter) {
-        return false;
-      }
-      if (i.deletableOnly && entry['deletable'] != true) return false;
-      return true;
-    }
-
-    final filtered = (i.categoryFilter == null && !i.deletableOnly)
-        ? tree
-        : pruneTree(tree, keep);
-    if (filtered != null) {
-      // _sortTreeIsolate is intentionally omitted: ScanColumnView re-sorts
-      // each column at render time (O(k log k) per visible column, ~50-200 items),
-      // so sorting the whole tree here is O(N log N) wasted work in the isolate.
-      displayTree = ScanTreeNode.withAggregatedCounts(filtered);
-    }
-  }
-
-  // --- filtered + sorted flat entries (mirror of _filteredSortedEntries) ---
-  Iterable<Map<String, dynamic>> out = allEntries;
-  if (i.categoryFilter != null) {
-    out = out.where((e) => e['category']?.toString() == i.categoryFilter);
-  }
-  if (i.deletableOnly) out = out.where((e) => e['deletable'] == true);
-  final entries = out.toList();
-  switch (sort) {
-    case ScanSortMode.sizeDesc:
-      entries.sort(
-        (a, b) => ((b['size_bytes'] as num?) ?? 0).compareTo(
-          (a['size_bytes'] as num?) ?? 0,
-        ),
-      );
-    case ScanSortMode.sizeAsc:
-      entries.sort(
-        (a, b) => ((a['size_bytes'] as num?) ?? 0).compareTo(
-          (b['size_bytes'] as num?) ?? 0,
-        ),
-      );
-    case ScanSortMode.nameAsc:
-      entries.sort(
-        (a, b) => (a['display_name']?.toString() ?? '').compareTo(
-          b['display_name']?.toString() ?? '',
-        ),
-      );
-  }
-
-  return _DisplayComputeResult(displayTree, entries);
 }

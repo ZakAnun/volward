@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/scan_snapshot_merge.dart';
+import 'package:volward/scan_snapshot_state.dart';
+import 'package:volward/snapshot_query.dart';
+import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
   group('mergeSubtreeIntoSnapshot', () {
@@ -87,6 +90,85 @@ void main() {
     });
 
     test(
+      'authoritative replacement removes stale descendants and updates counters',
+      () {
+        final snapshot = baseSnapshot();
+        snapshot['tree'] = {
+          'name': 'root',
+          'path': '/root',
+          'is_dir': true,
+          'scanned': true,
+          'children': [
+            {
+              'name': 'Documents',
+              'path': '/root/Documents',
+              'is_dir': true,
+              'scanned': true,
+              'children': [
+                {
+                  'name': 'stale.tmp',
+                  'path': '/root/Documents/stale.tmp',
+                  'is_dir': false,
+                  'entry_id': 'stale',
+                  'size_bytes': 90,
+                  'category': 'Temp',
+                  'deletable': true,
+                },
+              ],
+            },
+          ],
+        };
+        snapshot['entries'] = [
+          {
+            'id': 'stale',
+            'path_or_uri': '/root/Documents/stale.tmp',
+            'size_bytes': 90,
+            'category': 'Temp',
+            'deletable': true,
+          },
+        ];
+
+        final merged = mergeSubtreeIntoSnapshotState(
+          snapshot: ScanSnapshotState.fromWire(snapshot),
+          targetPath: '/root/Documents',
+          subtreeTree: {
+            'name': 'Documents',
+            'path': '/root/Documents',
+            'is_dir': true,
+            'scanned': true,
+            'children': [
+              {
+                'name': 'fresh.cache',
+                'path': '/root/Documents/fresh.cache',
+                'is_dir': false,
+                'entry_id': 'fresh',
+                'size_bytes': 25,
+                'category': 'Cache',
+                'deletable': true,
+              },
+            ],
+          },
+          subtreeEntries: [
+            {
+              'id': 'fresh',
+              'path_or_uri': '/root/Documents/fresh.cache',
+              'size_bytes': 25,
+              'category': 'Cache',
+              'deletable': true,
+            },
+          ],
+          replacementIsAuthoritative: true,
+        );
+
+        expect(merged.materializeEntries().map((entry) => entry.id), ['fresh']);
+        expect(merged.entryCount, 1);
+        expect(merged.categoryCounts, {'Cache': 1});
+        expect(merged.deletableCount, 1);
+        expect(merged.reclaimableEstimateBytes, 25);
+      },
+    );
+
+    test(
       'overwrites an existing entry with the same id instead of duplicating',
       () {
         final snapshot = baseSnapshot();
@@ -130,6 +212,32 @@ void main() {
       );
 
       expect(identical(snapshot['tree'], originalTree), isTrue);
+    });
+
+    test('snapshot queries remain isolated by snapshot version', () {
+      final snapshot = ScanSnapshotState.fromWire(baseSnapshot());
+      const firstVersion = SnapshotQueryKey(
+        snapshotId: 'preview',
+        version: 1,
+        path: '/root',
+        categoryFilter: null,
+        deletableOnly: false,
+        sortMode: ScanSortMode.nameAsc,
+      );
+      final secondVersion = SnapshotQueryKey(
+        snapshotId: snapshot.snapshotId,
+        version: 2,
+        path: '/root',
+        categoryFilter: null,
+        deletableOnly: false,
+        sortMode: ScanSortMode.nameAsc,
+      );
+
+      expect(snapshot.catalog.query(firstVersion).directChildren, hasLength(2));
+      expect(
+        snapshot.catalog.query(secondVersion).directChildren,
+        hasLength(2),
+      );
     });
 
     test('merging at the root path updates root fields but preserves children '

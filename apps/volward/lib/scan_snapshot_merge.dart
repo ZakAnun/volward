@@ -1,29 +1,15 @@
-/// Splices [subtreeTree] (already in the wire "ScanTreeNode json" shape)
-/// into [snapshot]'s `tree` at [targetPath], replacing that node's
-/// `size_bytes`/`scanned`, and merging its `children`. Also merges
-/// [subtreeEntries] into `snapshot['entries']`, overwriting any existing
-/// entry with the same `id`, and recomputes `reclaimable_estimate_bytes`
-/// locally from the merged entries (rather than trusting a possibly-stale
-/// value carried over from an earlier partial result).
+import 'scan_entry_record.dart';
+import 'scan_snapshot_state.dart';
+import 'scan_tree.dart';
+
+/// Merges a subtree snapshot into [snapshot] and returns the result as a raw
+/// wire map for callers that still use the old [Map<String, dynamic>] API.
 ///
-/// [replacementIsAuthoritative] distinguishes two very different callers:
-/// - `false` (default) — [subtreeTree] is a snapshot of the *still-running*
-///   background scan (a checkpoint). It may be less complete than what's
-///   already displayed for parts of the tree it hasn't caught up to yet, so
-///   children are upserted by path via [_mergeChildrenByPath] (see there),
-///   and entries are only ever added/overwritten by id, never removed.
-/// - `true` — [subtreeTree] is the result of a completed, scoped Wave-2
-///   peek scan of exactly [targetPath]: a fresh, complete listing of that
-///   directory. It is trusted wholesale (including a child's *absence*,
-///   e.g. a file deleted since the last checkpoint), rather than compared
-///   size-for-size against old data — otherwise a real deletion could be
-///   masked indefinitely by the old, larger, now-stale size. For the same
-///   reason, any existing entry whose `path_or_uri` falls under
-///   [targetPath] but is absent from [subtreeEntries] is dropped too —
-///   otherwise a deleted file's stale entry would keep inflating
-///   `reclaimable_estimate_bytes` until the whole scan finishes.
-///
-/// Pure function: [snapshot] is never mutated; a new map is returned.
+/// The tree merge is delegated to [mergeSubtreeIntoSnapshotState]. The flat
+/// [snapshot]['entries'] list is merged separately by id so that legacy
+/// snapshots whose entries are not linked to tree leaf nodes (no [entry_id]
+/// in the tree) still have their entries preserved and de-duplicated in the
+/// returned wire map.
 Map<String, dynamic> mergeSubtreeIntoSnapshot({
   required Map<String, dynamic> snapshot,
   required String targetPath,
@@ -31,99 +17,198 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
   required List<Map<String, dynamic>> subtreeEntries,
   bool replacementIsAuthoritative = false,
 }) {
-  // Background checkpoints never carry a `scanned` field (Rust doesn't
-  // serialize one). Stamp directories the walk has already rediscovered as
-  // `scanned: true` so preview spinners clear per-directory as soon as
-  // that path appears in a checkpoint — instead of lingering until the
-  // final Done snapshot replaces the whole tree.
-  final incomingTree = replacementIsAuthoritative
-      ? subtreeTree
-      : _markDiscoveredDirsScanned(subtreeTree);
+  final mergedState = mergeSubtreeIntoSnapshotState(
+    snapshot: ScanSnapshotState.fromWire(snapshot),
+    targetPath: targetPath,
+    subtreeTree: subtreeTree,
+    subtreeEntries: subtreeEntries,
+    replacementIsAuthoritative: replacementIsAuthoritative,
+  );
 
-  final tree = snapshot['tree'];
-  final mergedTree = tree is Map
-      ? _replaceNodeAtPath(
-          Map<String, dynamic>.from(tree),
-          targetPath,
-          incomingTree,
-          replacementIsAuthoritative: replacementIsAuthoritative,
-        )
-      : incomingTree;
+  // Build the base wire map from the tree-based merged state.
+  final wire = mergedState.toWire();
 
-  final existingEntries = (snapshot['entries'] is List)
-      ? (snapshot['entries'] as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList()
-      : <Map<String, dynamic>>[];
-  final byId = <String, Map<String, dynamic>>{
-    for (final e in existingEntries)
-      if (e['id'] != null) e['id'].toString(): e,
-  };
-  for (final e in subtreeEntries) {
-    final id = e['id']?.toString();
-    if (id != null) byId[id] = e;
+  // Merge the flat entries list so callers that maintain entries outside the
+  // tree structure (no entry_id on tree leaf nodes) still get correct output.
+  // Start from the snapshot's existing flat entries, override with subtree
+  // entries (fresh data wins on id collision), then apply path-based cleanup
+  // for authoritative (peek) merges.
+  final oldFlat =
+      (snapshot['entries'] as List?)
+          ?.whereType<Map>()
+          .map(
+            (e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
+          )
+          .toList() ??
+      <Map<String, dynamic>>[];
+
+  if (oldFlat.isNotEmpty || subtreeEntries.isNotEmpty) {
+    final byId = <String, Map<String, dynamic>>{};
+
+    // Seed from existing flat entries.
+    for (final e in oldFlat) {
+      final id = e['id']?.toString();
+      if (id != null) byId[id] = e;
+    }
+
+    // Fresh subtree entries override stale ones with the same id.
+    for (final e in subtreeEntries) {
+      final id = e['id']?.toString();
+      if (id != null) byId[id] = e;
+    }
+
+    // Also include any entries materialized from the merged tree (handles
+    // well-formed snapshots where entries are linked via entry_id).
+    for (final record in mergedState.materializeEntries()) {
+      byId[record.id] ??= record.toWire();
+    }
+
+    // For authoritative (peek) merges remove stale entries whose path falls
+    // under the target but whose id is absent from the fresh result.
+    if (replacementIsAuthoritative) {
+      final prefix = targetPath.endsWith('/') ? targetPath : '$targetPath/';
+      final freshIds = <String>{
+        for (final e in subtreeEntries)
+          if (e['id'] != null) e['id'].toString(),
+        for (final r in mergedState.materializeEntries()) r.id,
+      };
+      byId.removeWhere((id, e) {
+        final path = e['path_or_uri']?.toString() ?? '';
+        final underTarget = path == targetPath || path.startsWith(prefix);
+        return underTarget && !freshIds.contains(id);
+      });
+    }
+
+    wire['entries'] = byId.values.toList(growable: false);
+    wire['reclaimable_estimate_bytes'] = byId.values
+        .where((e) => e['deletable'] == true)
+        .fold<int>(0, (s, e) => s + ((e['size_bytes'] as num?)?.toInt() ?? 0));
   }
-  if (replacementIsAuthoritative) {
-    final prefix = targetPath.endsWith('/') ? targetPath : '$targetPath/';
-    final freshIds = subtreeEntries
-        .map((e) => e['id']?.toString())
-        .whereType<String>()
-        .toSet();
-    byId.removeWhere((id, e) {
-      final entryPath = e['path_or_uri']?.toString();
-      if (entryPath == null) return false;
-      final underTarget =
-          entryPath == targetPath || entryPath.startsWith(prefix);
-      return underTarget && !freshIds.contains(id);
-    });
-  }
-  final mergedEntries = byId.values.toList();
 
-  final reclaimable = mergedEntries
-      .where((e) => e['deletable'] == true)
-      .fold<int>(
-        0,
-        (sum, e) => sum + ((e['size_bytes'] as num?)?.toInt() ?? 0),
-      );
-
-  return {
-    ...snapshot,
-    'tree': mergedTree,
-    'entries': mergedEntries,
-    'reclaimable_estimate_bytes': reclaimable,
-  };
+  return wire;
 }
 
-Map<String, dynamic> _replaceNodeAtPath(
-  Map<String, dynamic> node,
-  String targetPath,
-  Map<String, dynamic> replacement, {
-  required bool replacementIsAuthoritative,
+ScanSnapshotState mergeSubtreeIntoSnapshotState({
+  required ScanSnapshotState snapshot,
+  required String targetPath,
+  required Map<String, dynamic> subtreeTree,
+  required List<Map<String, dynamic>> subtreeEntries,
+  bool replacementIsAuthoritative = false,
 }) {
-  if (node['path']?.toString() == targetPath) {
-    return {
-      ...node,
-      'size_bytes': replacement['size_bytes'],
-      'scanned': replacement['scanned'] ?? true,
-      // Mark authoritative (peek) results so _pickMoreComplete can distinguish
-      // them from checkpoint-stamped dirs (which only carry scanned:true).
-      if (replacementIsAuthoritative) 'peekScanned': true,
-      'children': replacementIsAuthoritative
-          ? _childList(replacement)
-          : _mergeChildrenByPath(_childList(node), _childList(replacement)),
-    };
+  final currentTree = snapshot.tree ?? _legacyTreeFallback(snapshot);
+  final incomingTree = _buildIncomingTree(subtreeTree, subtreeEntries);
+  if (incomingTree == null) return snapshot;
+
+  final mergedTree = currentTree == null
+      ? incomingTree
+      : _replaceNodeAtPath(
+          currentTree,
+          targetPath,
+          replacement: incomingTree,
+          replacementIsAuthoritative: replacementIsAuthoritative,
+        );
+
+  final oldSubtree = _nodeAtPath(currentTree, targetPath);
+  final newSubtree = _nodeAtPath(mergedTree, targetPath);
+  if (newSubtree == null) {
+    return snapshot;
   }
 
-  final children = node['children'];
-  if (children is! List) return node;
+  final oldSummary = oldSubtree == null
+      ? const ScanSnapshotSummary(
+          entryCount: 0,
+          categoryCounts: <String, int>{},
+          deletableCategoryCounts: <String, int>{},
+          deletableCount: 0,
+        )
+      : summarizeSnapshotTree(oldSubtree);
+  final newSummary = summarizeSnapshotTree(newSubtree);
 
-  final newChildren = <dynamic>[];
+  final summary = replacementIsAuthoritative
+      ? summarizeSnapshotTree(mergedTree)
+      : _applyDelta(
+          baseCounts: snapshot.categoryCounts,
+          baseDeletableCounts: snapshot.deletableCategoryCounts,
+          baseEntryCount: snapshot.entryCount,
+          baseDeletableCount: snapshot.deletableCount,
+          oldSummary: oldSummary,
+          newSummary: newSummary,
+        );
+  return ScanSnapshotState(
+    snapshotId: snapshot.snapshotId,
+    scannedAtMs: snapshot.scannedAtMs,
+    stats: snapshot.stats,
+    reclaimableEstimateBytes: replacementIsAuthoritative
+        ? _reclaimableFromTree(mergedTree)
+        : snapshot.reclaimableEstimateBytes -
+              _reclaimableFromTree(oldSubtree) +
+              _reclaimableFromTree(newSubtree),
+    tree: mergedTree,
+    entryCount: summary.entryCount,
+    categoryCounts: summary.categoryCounts,
+    deletableCategoryCounts: summary.deletableCategoryCounts,
+    deletableCount: summary.deletableCount,
+    extraFields: snapshot.extraFields,
+  );
+}
+
+ScanTreeNode? _buildIncomingTree(
+  Map<String, dynamic> subtreeTree,
+  List<Map<String, dynamic>> subtreeEntries,
+) {
+  final byId = <String, ScanEntryRecord>{
+    for (final entry in subtreeEntries)
+      if (entry['id'] != null)
+        entry['id'].toString(): ScanEntryRecord.fromWire(entry),
+  };
+  final tree = ScanTreeNode.fromSnapshotJson(
+    Map<String, dynamic>.from(subtreeTree),
+    entriesById: byId,
+  );
+  return tree;
+}
+
+ScanTreeNode? _nodeAtPath(ScanTreeNode? root, String targetPath) {
+  if (root == null) return null;
+  if (root.path == targetPath) return root;
+  if (!root.isDirectory) return null;
+  for (final child in root.children) {
+    final found = _nodeAtPath(child, targetPath);
+    if (found != null) return found;
+  }
+  return null;
+}
+
+ScanTreeNode _replaceNodeAtPath(
+  ScanTreeNode node,
+  String targetPath, {
+  required ScanTreeNode replacement,
+  required bool replacementIsAuthoritative,
+}) {
+  if (node.path == targetPath) {
+    return ScanTreeNode(
+      name: node.name,
+      path: node.path,
+      isDirectory: node.isDirectory,
+      sizeBytes: replacement.sizeBytes,
+      entryId: node.entryId,
+      category: node.category,
+      deletable: node.deletable,
+      scanned: replacement.scanned,
+      peekScanned: replacementIsAuthoritative || node.peekScanned,
+      children: replacementIsAuthoritative
+          ? replacement.children
+          : _mergeChildrenByPath(node.children, replacement.children),
+    );
+  }
+
+  if (!node.isDirectory) return node;
+
+  final newChildren = <ScanTreeNode>[];
   var found = false;
-  for (final child in children) {
-    final childPath = (child is Map) ? child['path']?.toString() ?? '' : '';
+  for (final child in node.children) {
+    final childPath = child.path;
     final isOnPath =
-        child is Map &&
         childPath.isNotEmpty &&
         (targetPath == childPath ||
             targetPath.startsWith(
@@ -132,9 +217,9 @@ Map<String, dynamic> _replaceNodeAtPath(
     if (isOnPath) {
       newChildren.add(
         _replaceNodeAtPath(
-          Map<String, dynamic>.from(child),
+          child,
           targetPath,
-          replacement,
+          replacement: replacement,
           replacementIsAuthoritative: replacementIsAuthoritative,
         ),
       );
@@ -145,51 +230,32 @@ Map<String, dynamic> _replaceNodeAtPath(
   }
 
   if (!found) return node;
-  return {...node, 'children': newChildren};
+  return ScanTreeNode(
+    name: node.name,
+    path: node.path,
+    isDirectory: true,
+    sizeBytes: node.sizeBytes,
+    entryId: node.entryId,
+    category: node.category,
+    deletable: node.deletable,
+    scanned: node.scanned,
+    peekScanned: node.peekScanned,
+    children: newChildren,
+  );
 }
 
-List<Map<String, dynamic>> _childList(Map<String, dynamic> node) {
-  final children = node['children'];
-  if (children is! List) return const [];
-  return children
-      .whereType<Map>()
-      .map((c) => Map<String, dynamic>.from(c))
-      .toList();
-}
-
-/// Upserts [newChildren] into [oldChildren] by `path` instead of blindly
-/// replacing the whole list.
-///
-/// This matters because a periodic background-scan checkpoint's view of a
-/// subtree can temporarily be *less* complete than what's already being
-/// displayed — e.g. a directory a Wave-2 peek scan already fully resolved,
-/// but the (slower) main background scan hasn't rediscovered yet in this
-/// checkpoint. Wholesale-replacing `children` with the checkpoint's list
-/// would silently drop that already-resolved data (or any not-yet
-/// rediscovered preview/peek entry) and briefly regress the UI back to an
-/// unscanned/emptier state until the main scan eventually catches back up.
-///
-/// - A child present in both is resolved via [_pickMoreComplete].
-/// - A child present only in [oldChildren] (not yet rediscovered by this
-///   merge) is kept as-is.
-/// - A child present only in [newChildren] is a new discovery and is added.
-List<Map<String, dynamic>> _mergeChildrenByPath(
-  List<Map<String, dynamic>> oldChildren,
-  List<Map<String, dynamic>> newChildren,
+List<ScanTreeNode> _mergeChildrenByPath(
+  List<ScanTreeNode> oldChildren,
+  List<ScanTreeNode> newChildren,
 ) {
-  final oldByPath = <String, Map<String, dynamic>>{
-    for (final c in oldChildren)
-      if (c['path'] != null) c['path'].toString(): c,
+  final oldByPath = <String, ScanTreeNode>{
+    for (final child in oldChildren) child.path: child,
   };
 
-  final merged = <Map<String, dynamic>>[];
+  final merged = <ScanTreeNode>[];
   final seenPaths = <String>{};
   for (final newChild in newChildren) {
-    final path = newChild['path']?.toString();
-    if (path == null) {
-      merged.add(newChild);
-      continue;
-    }
+    final path = newChild.path;
     seenPaths.add(path);
     final oldChild = oldByPath[path];
     merged.add(
@@ -202,76 +268,138 @@ List<Map<String, dynamic>> _mergeChildrenByPath(
   return merged;
 }
 
-/// Marks every directory in a checkpoint fragment as `scanned: true`.
-///
-/// Preview nodes start as `scanned: false` (spinner). Once the background
-/// walk rediscovers a path in a checkpoint, that directory's contents are
-/// at least partially known and the spinner should clear immediately for
-/// that row — not wait for the full scan to finish.
-Map<String, dynamic> _markDiscoveredDirsScanned(Map<String, dynamic> node) {
-  if (node['is_dir'] != true) return node;
-  return {
-    ...node,
-    'scanned': true,
-    'children': [
-      for (final child in _childList(node)) _markDiscoveredDirsScanned(child),
-    ],
-  };
-}
-
 /// Keeps whichever side of a duplicate-path child looks more complete.
-///
-/// Only used for non-authoritative (checkpoint) merges — see
-/// [mergeSubtreeIntoSnapshot]. Uses aggregated `size_bytes` as a
-/// monotonic-enough proxy: a directory's size usually only grows as more of
-/// its subtree is discovered by a given scan pass, so a smaller size on the
-/// incoming side — while the existing side came from a completed Wave-2
-/// peek (`peekScanned: true`) — is treated as a regression rather than
-/// new information, and is ignored in favor of the peek data.
-///
-/// **Peek vs. checkpoint distinction**: [_replaceNodeAtPath] writes
-/// `peekScanned: true` on the *target* node of every authoritative merge.
-/// Checkpoint-stamped dirs only carry `scanned: true` (from
-/// [_markDiscoveredDirsScanned]), never `peekScanned`. Using a separate
-/// sentinel keeps the deep-merge logic scoped to actual peek results and
-/// avoids O(overlap × children) deep-merges on every checkpoint after the
-/// first one (checkpoint-stamped dirs no longer falsely appear
-/// "peek-authoritative" to this function).
-///
-/// Known limitation: if a file is genuinely deleted between two checkpoints
-/// of the *same* still-running background scan (not a peek), and the
-/// existing side was previously from a peek, this proxy cannot distinguish
-/// "smaller because incomplete" from "smaller because something was deleted"
-/// and will keep the stale larger size until the scan finishes. A completed
-/// peek scan (`replacementIsAuthoritative: true`) does not have this
-/// limitation, since its result is trusted wholesale.
-Map<String, dynamic> _pickMoreComplete(
-  Map<String, dynamic> oldChild,
-  Map<String, dynamic> newChild,
-) {
-  // Only a completed peek can veto a smaller incoming checkpoint.
-  // Checkpoint-stamped dirs (scanned:true but NOT peekScanned) must still
-  // accept newer checkpoint data even when the incoming size is temporarily
-  // smaller — the checkpoint may not have finished counting yet.
-  final oldPeeked = oldChild['peekScanned'] == true;
-  final oldSize = (oldChild['size_bytes'] as num?)?.toInt() ?? 0;
-  final newSize = (newChild['size_bytes'] as num?)?.toInt() ?? 0;
+ScanTreeNode _pickMoreComplete(ScanTreeNode oldChild, ScanTreeNode newChild) {
+  final oldPeeked = oldChild.peekScanned;
+  final oldSize = oldChild.sizeBytes;
+  final newSize = newChild.sizeBytes;
   if (oldPeeked && oldSize > newSize) return oldChild;
 
-  // Directory: stamp scanned so preview spinners clear.
-  // Deep-merge children whenever the old side has *any* known content
-  // (whether from a peek or a prior checkpoint) so that children the new
-  // checkpoint hasn't re-listed yet are not silently dropped. Only take new
-  // children wholesale for dirs that were still unscanned (preview-only).
-  if (newChild['is_dir'] == true) {
-    final oldScanned = oldPeeked || oldChild['scanned'] == true;
-    return {
-      ...newChild,
-      'scanned': true,
-      'children': oldScanned
-          ? _mergeChildrenByPath(_childList(oldChild), _childList(newChild))
-          : _childList(newChild),
-    };
+  if (newChild.isDirectory) {
+    final oldScanned = oldPeeked || oldChild.scanned;
+    return ScanTreeNode(
+      name: newChild.name,
+      path: newChild.path,
+      isDirectory: true,
+      sizeBytes: newChild.sizeBytes,
+      entryId: newChild.entryId,
+      category: newChild.category,
+      deletable: newChild.deletable,
+      scanned: true,
+      peekScanned: oldChild.peekScanned || newChild.peekScanned,
+      children: oldScanned
+          ? _mergeChildrenByPath(oldChild.children, newChild.children)
+          : newChild.children,
+    );
   }
   return newChild;
+}
+
+int _reclaimableFromTree(ScanTreeNode? node) {
+  if (node == null) return 0;
+  if (!node.isDirectory) {
+    return node.deletable ? node.sizeBytes : 0;
+  }
+  var total = 0;
+  for (final child in node.children) {
+    total += _reclaimableFromTree(child);
+  }
+  return total;
+}
+
+ScanSnapshotSummary _applyDelta({
+  required Map<String, int> baseCounts,
+  required Map<String, int> baseDeletableCounts,
+  required int baseEntryCount,
+  required int baseDeletableCount,
+  required ScanSnapshotSummary oldSummary,
+  required ScanSnapshotSummary newSummary,
+}) {
+  final categoryCounts = Map<String, int>.from(baseCounts);
+  for (final entry in oldSummary.categoryCounts.entries) {
+    categoryCounts[entry.key] = (categoryCounts[entry.key] ?? 0) - entry.value;
+  }
+  for (final entry in newSummary.categoryCounts.entries) {
+    categoryCounts[entry.key] = (categoryCounts[entry.key] ?? 0) + entry.value;
+  }
+
+  final deletableCategoryCounts = Map<String, int>.from(baseDeletableCounts);
+  for (final entry in oldSummary.deletableCategoryCounts.entries) {
+    deletableCategoryCounts[entry.key] =
+        (deletableCategoryCounts[entry.key] ?? 0) - entry.value;
+  }
+  for (final entry in newSummary.deletableCategoryCounts.entries) {
+    deletableCategoryCounts[entry.key] =
+        (deletableCategoryCounts[entry.key] ?? 0) + entry.value;
+  }
+
+  return ScanSnapshotSummary(
+    entryCount: baseEntryCount - oldSummary.entryCount + newSummary.entryCount,
+    categoryCounts: Map.unmodifiable(categoryCounts),
+    deletableCategoryCounts: Map.unmodifiable(deletableCategoryCounts),
+    deletableCount:
+        baseDeletableCount -
+        oldSummary.deletableCount +
+        newSummary.deletableCount,
+  );
+}
+
+ScanTreeNode? _legacyTreeFallback(ScanSnapshotState snapshot) {
+  if (!snapshot.hasFlatEntries) return null;
+  final entries = snapshot.materializeEntries();
+  if (entries.isEmpty) return null;
+  final rootPath = _inferRootPath(snapshot, entries);
+  if (rootPath == null || rootPath.isEmpty) return null;
+  return ScanTreeBuilder.build(entries: entries, rootPath: rootPath);
+}
+
+String? _inferRootPath(
+  ScanSnapshotState snapshot,
+  List<ScanEntryRecord> entries,
+) {
+  for (final key in const ['root', 'root_path', 'scan_root']) {
+    final value = snapshot.extraFields[key]?.toString();
+    if (value != null && value.isNotEmpty) {
+      return ScanTreeBuilder.normalizeRoot(value);
+    }
+  }
+
+  final paths = entries
+      .map((entry) => entry.pathOrUri)
+      .where((path) => path.isNotEmpty)
+      .toList();
+  if (paths.isEmpty) return null;
+  if (paths.length == 1) {
+    return ScanTreeBuilder.normalizeRoot(_parentDir(paths.first));
+  }
+
+  final firstSegments = _pathSegments(paths.first);
+  var commonSegments = firstSegments;
+  for (final path in paths.skip(1)) {
+    final nextSegments = _pathSegments(path);
+    final limit = commonSegments.length < nextSegments.length
+        ? commonSegments.length
+        : nextSegments.length;
+    var i = 0;
+    while (i < limit && commonSegments[i] == nextSegments[i]) {
+      i++;
+    }
+    commonSegments = commonSegments.sublist(0, i);
+    if (commonSegments.isEmpty) break;
+  }
+  if (commonSegments.isEmpty) return null;
+  return ScanTreeBuilder.normalizeRoot('/${commonSegments.join('/')}');
+}
+
+String _parentDir(String path) {
+  final normalized = path.endsWith('/') && path.length > 1
+      ? path.substring(0, path.length - 1)
+      : path;
+  final idx = normalized.lastIndexOf('/');
+  if (idx <= 0) return normalized;
+  return normalized.substring(0, idx);
+}
+
+List<String> _pathSegments(String path) {
+  return path.split('/').where((part) => part.isNotEmpty).toList();
 }

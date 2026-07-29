@@ -133,6 +133,18 @@ pub unsafe extern "C" fn volward_get_last_snapshot_json(engine: *mut VolwardEngi
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_get_last_snapshot_catalog_json(
+    engine: *mut VolwardEngine,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    e.get_last_snapshot_catalog_json()
+        .map(to_c_string)
+        .unwrap_or(ptr::null_mut())
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_get_last_progress_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
@@ -168,6 +180,40 @@ pub unsafe extern "C" fn volward_write_last_snapshot_to_path(
     };
     match e.write_last_snapshot_to_path(&path) {
         Ok(id) => to_c_string(id),
+        Err(msg) => to_c_string(msg),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_write_last_snapshot_catalog_to_path(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return to_c_string("error:null engine".to_string());
+    };
+    let Some(path) = cstr_to_string(path) else {
+        return to_c_string("error:null path".to_string());
+    };
+    match e.write_last_snapshot_catalog_to_path(&path) {
+        Ok(id) => to_c_string(id),
+        Err(msg) => to_c_string(msg),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_load_snapshot_catalog_from_path(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return to_c_string("error:null engine".to_string());
+    };
+    let Some(path) = cstr_to_string(path) else {
+        return to_c_string("error:null path".to_string());
+    };
+    match e.load_snapshot_catalog_from_path(&path) {
+        Ok(json) => to_c_string(json),
         Err(msg) => to_c_string(msg),
     }
 }

@@ -78,7 +78,7 @@ pub struct ScanTreeNode {
     pub children: Vec<ScanTreeNode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ScanStats {
     pub paths_seen: u64,
     pub dirs_seen: u64,
@@ -103,6 +103,7 @@ pub struct StorageSnapshot {
     pub stats: ScanStats,
     pub warnings: Vec<String>,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformCapabilities {

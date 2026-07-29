@@ -13,7 +13,11 @@ class FlatRow {
 }
 
 /// Flattens [root] into visible rows based on [expandedPaths].
-List<FlatRow> flattenVisible(ScanTreeNode root, Set<String> expandedPaths) {
+List<FlatRow> flattenVisible(
+  ScanTreeNode root,
+  Set<String> expandedPaths, {
+  Map<String, List<ScanTreeNode>> visibleChildrenByPath = const {},
+}) {
   final out = <FlatRow>[];
 
   void walk(ScanTreeNode node, int depth) {
@@ -25,7 +29,7 @@ List<FlatRow> flattenVisible(ScanTreeNode root, Set<String> expandedPaths) {
       ),
     );
     if (!node.isDirectory || !expandedPaths.contains(node.path)) return;
-    for (final child in node.children) {
+    for (final child in visibleChildrenByPath[node.path] ?? node.children) {
       walk(child, depth + 1);
     }
   }

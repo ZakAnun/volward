@@ -92,7 +92,15 @@ typedef VolwardDeleteEntriesJsonNative =
 typedef VolwardDeleteEntriesJson =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
 
-final class VolwardNativeBridge {
+abstract interface class VolwardBridge {
+  bool get hasSnapshotFileApi;
+  bool get hasSnapshotFilePbApi;
+  bool get hasScanOptionsApi;
+  bool get hasCheckpointApi;
+  bool get hasQuickListApi;
+}
+
+final class VolwardNativeBridge implements VolwardBridge {
   VolwardNativeBridge._(this._lib) {
     _create = _lib
         .lookup<NativeFunction<VolwardEngineCreateNative>>(
@@ -282,24 +290,29 @@ final class VolwardNativeBridge {
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
 
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
+  @override
   bool get hasSnapshotFileApi =>
       _writeLastSnapshotToPath != null && _loadLastSnapshotFromPath != null;
 
   /// True when the bundled dylib supports protobuf file-based snapshot I/O.
   /// Requires `volward_write_last_snapshot_to_path_pb` and
   /// `volward_write_last_checkpoint_to_path_pb` (both added 2026-07-27).
+  @override
   bool get hasSnapshotFilePbApi =>
       _writeLastSnapshotToPathPb != null &&
       _writeLastCheckpointToPathPb != null;
 
   /// True when the bundled dylib accepts incremental scan options.
+  @override
   bool get hasScanOptionsApi => _startScanAsyncWithOptions != null;
 
   /// True when the bundled dylib supports periodic scan checkpoints.
+  @override
   bool get hasCheckpointApi => _writeLastCheckpointToPath != null;
 
   /// True when the bundled dylib supports instant, non-recursive directory
   /// listing (used for the pre-scan preview and click-priority peeks).
+  @override
   bool get hasQuickListApi => _quickListDirJson != null;
 
   Pointer<Void> createEngine() => _create();

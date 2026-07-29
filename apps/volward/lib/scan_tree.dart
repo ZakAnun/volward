@@ -1,3 +1,5 @@
+import 'scan_entry_record.dart';
+
 /// One node in the scan results tree (directory or file leaf).
 class ScanTreeNode {
   ScanTreeNode({
@@ -6,28 +8,147 @@ class ScanTreeNode {
     required this.isDirectory,
     this.sizeBytes = 0,
     this.entryId,
-    this.entry,
-    this.subtreeFileCount,
+    ScanEntryRecord? entry,
+    String? category,
+    bool? deletable,
+    int? subtreeFileCount,
+    int? categoryMask,
+    int? deletableCategoryMask,
+    int? deletableFileCount,
     this.scanned = true,
+    this.peekScanned = false,
     List<ScanTreeNode>? children,
-  }) : children = children ?? [];
+  }) : children = children ?? [],
+       category =
+           category ?? entry?.category ?? (isDirectory ? 'Folder' : 'Unknown'),
+       deletable = deletable ?? entry?.deletable ?? false,
+       subtreeFileCount =
+           subtreeFileCount ?? _deriveFileCount(isDirectory, children),
+       categoryMask =
+           categoryMask ??
+           _deriveCategoryMask(
+             isDirectory,
+             category ?? entry?.category ?? 'Unknown',
+             children,
+           ),
+       deletableCategoryMask =
+           deletableCategoryMask ??
+           _deriveDeletableCategoryMask(
+             isDirectory,
+             category ?? entry?.category ?? 'Unknown',
+             deletable ?? entry?.deletable ?? false,
+             children,
+           ),
+       deletableFileCount =
+           deletableFileCount ??
+           _deriveDeletableFileCount(
+             isDirectory,
+             deletable ?? entry?.deletable ?? false,
+             children,
+           );
 
   final String name;
   final String path;
   final bool isDirectory;
   final int sizeBytes;
   final String? entryId;
-  final Map<String, dynamic>? entry;
+  final String category;
+  final bool deletable;
 
   /// Precomputed file count under this directory (files only, not dirs).
   final int? subtreeFileCount;
+  final int categoryMask;
+  final int deletableCategoryMask;
+  final int deletableFileCount;
 
   /// False for directories whose contents haven't been scanned yet (the
   /// pre-scan preview, or a not-yet-covered node before a Wave-2 peek scan
   /// completes). Always true for files and for data from a real scan
   /// snapshot or checkpoint.
   final bool scanned;
+  final bool peekScanned;
   final List<ScanTreeNode> children;
+
+  /// Backwards-compatible read-only view of the node's leaf payload.
+  ScanEntryRecord? get entry => toEntryRecord();
+
+  static int _deriveFileCount(bool isDirectory, List<ScanTreeNode>? children) {
+    if (!isDirectory) return 1;
+    var count = 0;
+    for (final child in children ?? const <ScanTreeNode>[]) {
+      count += child.fileCount;
+    }
+    return count;
+  }
+
+  static int _deriveCategoryMask(
+    bool isDirectory,
+    String category,
+    List<ScanTreeNode>? children,
+  ) {
+    if (!isDirectory) return ScanEntryRecord.categoryMaskFor(category);
+    var mask = 0;
+    for (final child in children ?? const <ScanTreeNode>[]) {
+      mask |= child.categoryMask;
+    }
+    return mask;
+  }
+
+  static int _deriveDeletableCategoryMask(
+    bool isDirectory,
+    String category,
+    bool deletable,
+    List<ScanTreeNode>? children,
+  ) {
+    if (!isDirectory) {
+      return deletable ? ScanEntryRecord.categoryMaskFor(category) : 0;
+    }
+    var mask = 0;
+    for (final child in children ?? const <ScanTreeNode>[]) {
+      mask |= child.deletableCategoryMask;
+    }
+    return mask;
+  }
+
+  static int _deriveDeletableFileCount(
+    bool isDirectory,
+    bool deletable,
+    List<ScanTreeNode>? children,
+  ) {
+    if (!isDirectory) return deletable ? 1 : 0;
+    var count = 0;
+    for (final child in children ?? const <ScanTreeNode>[]) {
+      count += child.deletableFileCount;
+    }
+    return count;
+  }
+
+  bool matchesView({String? categoryFilter, required bool deletableOnly}) {
+    if (categoryFilter == null && !deletableOnly) return true;
+    final categoryBit = ScanEntryRecord.categoryMaskFor(categoryFilter);
+    if (deletableOnly) {
+      if (deletableFileCount == 0) return false;
+      if (categoryFilter != null) {
+        return (deletableCategoryMask & categoryBit) != 0;
+      }
+      return true;
+    }
+    return (categoryMask & categoryBit) != 0;
+  }
+
+  ScanEntryRecord? toEntryRecord() {
+    if (isDirectory) return null;
+    final id = entryId ?? path;
+    if (id.isEmpty || path.isEmpty) return null;
+    return ScanEntryRecord(
+      id: id,
+      displayName: name,
+      pathOrUri: path,
+      sizeBytes: displayBytes,
+      category: category,
+      deletable: deletable,
+    );
+  }
 
   factory ScanTreeNode.empty(String rootPath) {
     final root = ScanTreeBuilder.normalizeRoot(rootPath);
@@ -38,13 +159,26 @@ class ScanTreeNode {
 
   factory ScanTreeNode.fromSnapshotJson(
     Map<String, dynamic> json, {
-    Map<String, Map<String, dynamic>>? entriesById,
+    Map<String, ScanEntryRecord>? entriesById,
   }) {
     final isDir = json['is_dir'] == true;
     final entryId = json['entry_id']?.toString();
-    Map<String, dynamic>? entry;
+    ScanEntryRecord? entry;
     if (entryId != null && entriesById != null) {
       entry = entriesById[entryId];
+    }
+    if (entry == null && !isDir) {
+      final path = json['path']?.toString() ?? '';
+      final jsonSize = (json['size_bytes'] as num?)?.toInt();
+      final jsonCategory = json['category']?.toString();
+      entry = ScanEntryRecord(
+        id: entryId ?? path,
+        displayName: json['name']?.toString() ?? '',
+        pathOrUri: path,
+        sizeBytes: jsonSize ?? 0,
+        category: jsonCategory ?? 'Unknown',
+        deletable: json['deletable'] == true,
+      );
     }
 
     final childrenJson = json['children'];
@@ -62,22 +196,35 @@ class ScanTreeNode {
       }
     }
 
+    final fallbackPath = json['path']?.toString() ?? '';
+    final fallbackName = json['name']?.toString() ?? '';
+    final jsonSize = (json['size_bytes'] as num?)?.toInt();
+    final entrySize = entry?.sizeBytes ?? 0;
+    final sizeBytes =
+        !isDir && entrySize > 0 && (jsonSize == null || jsonSize == 0)
+        ? entrySize
+        : (jsonSize ?? entrySize);
     return ScanTreeNode(
-      name: json['name']?.toString() ?? '',
-      path: json['path']?.toString() ?? '',
+      name: !isDir && entry != null && entry.displayName.isNotEmpty
+          ? entry.displayName
+          : fallbackName,
+      path: !isDir && entry != null && entry.pathOrUri.isNotEmpty
+          ? entry.pathOrUri
+          : fallbackPath,
       isDirectory: isDir,
-      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      sizeBytes: sizeBytes,
       entryId: entryId,
-      entry: entry,
+      category: entry?.category ?? json['category']?.toString(),
+      deletable: entry?.deletable ?? json['deletable'] == true,
       scanned: json['scanned'] is bool ? json['scanned'] as bool : true,
+      peekScanned: json['peekScanned'] == true,
       children: children,
     );
   }
 
   int get totalBytes {
     if (!isDirectory) {
-      if (sizeBytes > 0) return sizeBytes;
-      return (entry?['size_bytes'] as num?)?.toInt() ?? 0;
+      return sizeBytes;
     }
     if (sizeBytes > 0) return sizeBytes;
     return children.fold<int>(0, (sum, c) => sum + c.totalBytes);
@@ -106,9 +253,11 @@ class ScanTreeNode {
       isDirectory: true,
       sizeBytes: node.sizeBytes,
       entryId: node.entryId,
-      entry: node.entry,
+      category: node.category,
+      deletable: node.deletable,
       subtreeFileCount: count,
       scanned: node.scanned,
+      peekScanned: node.peekScanned,
       children: annotatedChildren,
     );
   }
@@ -120,6 +269,21 @@ class ScanTreeNode {
   /// so the value is computed at most once per node instance, regardless of how
   /// many times [displayBytes] is accessed during sorting or rendering.
   late final int displayBytes = sizeBytes > 0 ? sizeBytes : totalBytes;
+
+  Map<String, dynamic> toWire() {
+    return {
+      'name': name,
+      'path': path,
+      'is_dir': isDirectory,
+      'size_bytes': sizeBytes,
+      'entry_id': entryId,
+      'category': category,
+      'deletable': deletable,
+      'scanned': scanned,
+      if (peekScanned) 'peekScanned': true,
+      'children': children.map((c) => c.toWire()).toList(growable: false),
+    };
+  }
 }
 
 /// Builds a Finder-like directory tree from flat scan entries (file paths only).
@@ -132,7 +296,7 @@ abstract final class ScanTreeBuilder {
   }
 
   static ScanTreeNode build({
-    required List<Map<String, dynamic>> entries,
+    required List<ScanEntryRecord> entries,
     required String rootPath,
   }) {
     final root = normalizeRoot(rootPath);
@@ -141,20 +305,20 @@ abstract final class ScanTreeBuilder {
     final tree = ScanTreeNode(name: rootName, path: root, isDirectory: true);
 
     for (final entry in entries) {
-      final rawPath = entry['path_or_uri']?.toString();
-      if (rawPath == null || rawPath.isEmpty) continue;
+      final rawPath = entry.pathOrUri;
+      if (rawPath.isEmpty) continue;
       _insertFile(tree, root, rawPath, entry);
     }
 
     _sortNode(tree);
-    return tree;
+    return ScanTreeNode.withAggregatedCounts(tree);
   }
 
   static void _insertFile(
     ScanTreeNode root,
     String rootPath,
     String filePath,
-    Map<String, dynamic> entry,
+    ScanEntryRecord entry,
   ) {
     if (!filePath.startsWith(rootPath)) return;
 
@@ -177,9 +341,10 @@ abstract final class ScanTreeBuilder {
             name: segment,
             path: currentPath,
             isDirectory: false,
-            sizeBytes: (entry['size_bytes'] as num?)?.toInt() ?? 0,
-            entryId: entry['id']?.toString(),
-            entry: entry,
+            sizeBytes: entry.sizeBytes,
+            entryId: entry.id,
+            category: entry.category,
+            deletable: entry.deletable,
           ),
         );
         return;
@@ -203,8 +368,9 @@ abstract final class ScanTreeBuilder {
       if (a.isDirectory != b.isDirectory) {
         return a.isDirectory ? -1 : 1;
       }
-      if (a.isDirectory)
+      if (a.isDirectory) {
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      }
       final sa = a.totalBytes;
       final sb = b.totalBytes;
       return sb.compareTo(sa);

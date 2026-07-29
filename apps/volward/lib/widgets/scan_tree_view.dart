@@ -88,12 +88,8 @@ class ScanTreeRow extends StatelessWidget {
 
   Widget _fileTile(BuildContext context, ScanTreeNode node, int nodeDepth) {
     final v = context.volward;
-    final entry = node.entry;
-    if (entry == null) return const SizedBox.shrink();
-
-    final id = entry['id']?.toString() ?? node.entryId ?? '';
-    final category = entry['category']?.toString() ?? '';
-    final deletable = entry['deletable'] == true;
+    final id = node.entryId ?? '';
+    if (id.isEmpty) return const SizedBox.shrink();
     final isSelected = selected.contains(id);
 
     return Container(
@@ -103,7 +99,7 @@ class ScanTreeRow extends StatelessWidget {
       ),
       child: AppleListRow(
         title: node.name,
-        subtitle: '$category · ${formatBytes(entry['size_bytes'] as num?)}',
+        subtitle: '${node.category} · ${formatBytes(node.sizeBytes)}',
         selected: isSelected,
         leading: Padding(
           padding: EdgeInsets.only(left: nodeDepth * 14.0),
@@ -111,15 +107,15 @@ class ScanTreeRow extends StatelessWidget {
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
             value: isSelected,
-            onChanged: (!deletable || busy)
+            onChanged: (!node.deletable || busy)
                 ? null
                 : (val) => onSelectChanged(id, val == true),
           ),
         ),
-        trailing: deletable
+        trailing: node.deletable
             ? Icon(Icons.delete_outline, size: 16, color: v.inkMuted48)
             : null,
-        onTap: (!deletable || busy)
+        onTap: (!node.deletable || busy)
             ? null
             : () => onSelectChanged(id, !isSelected),
       ),
@@ -138,6 +134,7 @@ class ScanTreeView extends StatelessWidget {
     required this.formatBytes,
     this.busy = false,
     this.depth = 0,
+    this.visibleChildrenByPath = const {},
   });
 
   final ScanTreeNode root;
@@ -148,6 +145,7 @@ class ScanTreeView extends StatelessWidget {
   final String Function(num? bytes) formatBytes;
   final bool busy;
   final int depth;
+  final Map<String, List<ScanTreeNode>> visibleChildrenByPath;
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +164,7 @@ class ScanTreeView extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final child in root.children)
+          for (final child in visibleChildrenByPath[root.path] ?? root.children)
             ScanTreeRow(
               row: FlatRow(
                 node: child,

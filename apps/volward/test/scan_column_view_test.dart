@@ -5,6 +5,37 @@ import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 
 void main() {
+  testWidgets('ScanColumnView renders a visible slice', (tester) async {
+    final root = ScanTreeNode(name: 'root', path: '/root', isDirectory: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            height: 240,
+            width: 480,
+            child: ScanColumnView(
+              root: root,
+              visibleChildren: [
+                ScanTreeNode(
+                  name: 'Visible folder',
+                  path: '/root/visible',
+                  isDirectory: true,
+                ),
+              ],
+              selectionChain: const [],
+              onSelect: (_, __) {},
+              formatBytes: (b) => '${b ?? 0} B',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Visible folder'), findsOneWidget);
+  });
+
   testWidgets('ScanColumnView folder tap invokes onSelect', (tester) async {
     ScanTreeNode? selected;
 
@@ -126,4 +157,43 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
+
+  testWidgets(
+    'ScanColumnView keeps folder interaction stable across rebuilds',
+    (tester) async {
+      var selected = 0;
+      final root = ScanTreeNode(
+        name: 'root',
+        path: '/root',
+        isDirectory: true,
+        children: [
+          ScanTreeNode(
+            name: 'Library',
+            path: '/root/Library',
+            isDirectory: true,
+          ),
+        ],
+      );
+
+      Widget buildView() => MaterialApp(
+        home: Scaffold(
+          body: ScanColumnView(
+            root: root,
+            selectionChain: const [],
+            onSelect: (_, __) => selected++,
+            formatBytes: (bytes) => '${bytes ?? 0} B',
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(buildView());
+      for (var i = 0; i < 10; i++) {
+        await tester.tap(find.text('Library'));
+        await tester.pumpWidget(buildView());
+      }
+
+      expect(selected, 10);
+      expect(find.text('Library'), findsOneWidget);
+    },
+  );
 }

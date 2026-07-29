@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:meta/meta.dart';
+import 'package:flutter/foundation.dart';
 
 import 'scan_tree.dart';
 
@@ -22,6 +22,18 @@ abstract final class SnapshotCache {
       return Directory('$home/Library/Application Support/Volward');
     }
     return Directory('${Directory.systemTemp.path}/volward');
+  }
+
+  static bool invalidatesPrefix({
+    required String cachedPath,
+    required int cachedVersion,
+    required String affectedPrefix,
+    required int updateVersion,
+  }) {
+    final matchesPrefix =
+        cachedPath == affectedPrefix ||
+        cachedPath.startsWith('$affectedPrefix/');
+    return matchesPrefix && cachedVersion <= updateVersion;
   }
 
   /// Returns the newest on-disk snapshot file path, if any.
