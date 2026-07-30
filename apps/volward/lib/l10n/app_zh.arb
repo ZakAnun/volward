@@ -1,0 +1,209 @@
+{
+  "@@locale": "zh",
+  "appTitle": "Volward",
+  "settingsTitle": "设置",
+  "settingsAppearanceSection": "外观",
+  "settingsThemeTitle": "主题",
+  "settingsThemeSystem": "跟随系统",
+  "settingsThemeLight": "浅色",
+  "settingsThemeDark": "深色",
+  "settingsAccentColorTitle": "强调色",
+  "settingsAccentColorDescription": "应用于按钮、选中态和进度指示器。",
+  "settingsAccentPreview": "预览",
+  "settingsAccentPrimary": "主色",
+  "settingsLanguageTitle": "语言",
+  "settingsLanguageSystem": "跟随系统",
+  "settingsLanguageChinese": "中文",
+  "settingsLanguageEnglish": "英文",
+  "settingsScanResultsSection": "扫描与结果",
+  "settingsDeletableOnlyTitle": "只显示可清理项",
+  "settingsDeletableOnlyDescription": "仅展示 Volward 判定为低风险清理候选的文件，目前主要是缓存和临时文件。",
+  "settingsIncrementalScanTitle": "增量扫描",
+  "settingsIncrementalScanDescription": "扫描同一目录时复用上次未变化的子目录结果，加快后续扫描。",
+  "settingsIncrementalScanUnsupported": "当前 Rust 库不支持该扫描模式，需要重新 build Rust 后使用。",
+  "filterAll": "全部",
+  "filterCategoryCache": "缓存",
+  "filterCategoryTemp": "临时文件",
+  "filterCategoryMedia": "媒体",
+  "filterCategorySystem": "系统",
+  "sortSizeDesc": "大小 ↓",
+  "sortSizeAsc": "大小 ↑",
+  "sortNameAsc": "名称",
+  "scanColumnPreparingFolder": "正在准备文件夹…",
+  "scanColumnNoFilterMatches": "没有匹配当前筛选的项目。",
+  "navSubtitle": "存储管家",
+  "settingsTooltip": "设置",
+  "scanActionFolder": "选择文件夹…",
+  "scanActionHome": "主目录",
+  "scanActionCancel": "取消",
+  "scanActionStart": "开始扫描",
+  "scanActionRescan": "重新扫描",
+  "deleteActionMoveToTrash": "移到废纸篓",
+  "deleteActionWorking": "处理中…",
+  "deleteConfirmTitle": "移到废纸篓？",
+  "deleteConfirmMessage": "将 {count} 个项目移到废纸篓，预计释放 {bytes}？\n\n需要时可以从废纸篓恢复。",
+  "@deleteConfirmMessage": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "deleteActionDelete": "删除",
+  "deleteSuccessWithFailures": "删除完成，但有 {failedCount} 个失败。已释放 {bytes}。",
+  "@deleteSuccessWithFailures": {
+    "placeholders": {
+      "failedCount": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "deleteSuccess": "已移到废纸篓，释放 {bytes}。重新扫描完成。",
+  "@deleteSuccess": {
+    "placeholders": {
+      "bytes": {}
+    }
+  },
+  "deleteFailed": "删除失败：{error}",
+  "@deleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionNativeOutdatedTitle": "原生库版本过旧",
+  "permissionNativeOutdatedDescription": "请重新构建 Rust（apps/volward/macos/build_rust.sh），并完整重启应用（R）。",
+  "permissionDeepScanReady": "已启用完全磁盘访问，可以进行深度扫描。",
+  "permissionFullDiskRecommended": "建议开启完全磁盘访问，以扫描 ~/Library 缓存。",
+  "permissionFullDiskRecommendedTitle": "建议开启完全磁盘访问",
+  "permissionFullDiskInstructions": "系统设置 → 隐私与安全性 → 完全磁盘访问 → 启用 Volward。调试构建：点击 +，按 Cmd+Shift+G，选择 volward.app。",
+  "permissionOpenSettings": "打开设置",
+  "permissionShowDetails": "显示详情",
+  "permissionHideDetails": "收起详情",
+  "permissionCopyAppPath": "复制 .app 路径",
+  "permissionCheckAgain": "重新检查",
+  "permissionCopiedPath": "已复制：{path}",
+  "@permissionCopiedPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "permissionAppPath": "应用路径：{path}",
+  "@permissionAppPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "permissionUnknownPath": "未知",
+  "folderPickerConfirm": "选择",
+  "scanTargetTitle": "扫描目标",
+  "scanTargetHomeDefault": "主目录（默认）",
+  "scanTargetHomeShort": "主目录",
+  "scanTargetCustomShort": "自定义",
+  "scanHomeLongRunningHint": "主目录全量扫描在大账户上可能需要较长时间，请关注上方项目数量。",
+  "resultsClassifiedCount": "{count} 个已分类",
+  "@resultsClassifiedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resultsReclaimableBytes": "可清理 {bytes}",
+  "@resultsReclaimableBytes": {
+    "placeholders": {
+      "bytes": {}
+    }
+  },
+  "resultsTreeSummary": "树中 {count} 项 · {bytes}",
+  "@resultsTreeSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "resultsUpdating": "正在更新结果…",
+  "resultsNoFilterMatches": "没有匹配当前筛选的项目。",
+  "resultsNoFilterMatchesWithCount": "没有匹配当前筛选的项目（列表中 {count} 项）。",
+  "@resultsNoFilterMatchesWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resultsNoFilesUnder": "{path} 下没有扫描到文件。",
+  "@resultsNoFilesUnder": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "resultsRestoringPreviousScan": "正在恢复上次扫描…",
+  "previewSelectPrompt": "选择一个文件夹或文件",
+  "previewFolderCategory": "文件夹",
+  "previewItemCount": "{count} 个项目",
+  "@previewItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "scanStatusScanning": "扫描中…",
+  "scanPhaseDiscoveringRoots": "正在发现扫描根目录…",
+  "scanPhaseWalking": "正在扫描文件…",
+  "scanPhaseClassifying": "正在分类项目…",
+  "scanPhaseAggregating": "正在汇总结果…",
+  "scanPhaseSavingResults": "正在保存结果…",
+  "scanPhaseLoadingResults": "正在加载结果…",
+  "scanPhaseDone": "完成",
+  "scanProgressItems": "{count} 项",
+  "@scanProgressItems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "scanStatusCancelled": "扫描已取消",
+  "scanStatusFailed": "扫描失败：{error}",
+  "@scanStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "scanStatusFull": "全量",
+  "scanStatusIncremental": "增量",
+  "scanStatusFiles": "{mode}扫描：{count} 个文件",
+  "@scanStatusFiles": {
+    "placeholders": {
+      "mode": {},
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stickySelected": "已选择：{count} · {bytes}",
+  "@stickySelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "stickyDirectoriesLoading": "{count} 个目录加载中…",
+  "@stickyDirectoriesLoading": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stickyBrowseResults": "浏览结果 · 点击下方文件夹",
+  "stickyReadyToScan": "准备扫描",
+  "stickyLoadingEngine": "正在加载引擎…"
+}

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../l10n/l10n.dart';
 import '../scan_tree.dart';
 import '../snapshot_catalog.dart';
 import '../theme/apple_tokens.dart';
@@ -212,8 +213,8 @@ class _ScanColumnViewState extends State<ScanColumnView> {
             child: Center(
               child: Text(
                 columns.first.loading
-                    ? 'Preparing folder…'
-                    : 'No items match the current filters.',
+                    ? context.l10n.scanColumnPreparingFolder
+                    : context.l10n.scanColumnNoFilterMatches,
                 style: context.vwFinePrint.copyWith(color: v.inkMuted48),
               ),
             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'home_page.dart';
+import 'l10n/generated/app_localizations.dart';
 import 'theme/volward_theme.dart';
 import 'theme/volward_theme_settings.dart';
 import 'volward_session.dart';
@@ -54,7 +55,10 @@ class _VolwardAppState extends State<VolwardApp> {
           builder: (context, _) {
             final accent = _themeSettings.accentColor;
             return MaterialApp(
-              title: 'Volward',
+              onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+              locale: _themeSettings.localeOverride,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
               theme: buildVolwardTheme(
                 brightness: Brightness.light,
                 accent: accent,

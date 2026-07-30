@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import 'l10n/l10n.dart';
 import 'macos_settings.dart';
 import 'scan_entry_record.dart';
 import 'scan_tree.dart';
@@ -109,30 +110,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _openFullDiskAccessSettings() async {
     await MacosSettings.touchFullDiskAccessProbe();
+    if (mounted && !_permissionBannerExpanded) {
+      setState(() => _permissionBannerExpanded = true);
+    }
     await MacosSettings.openFullDiskAccessSettings();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text(
-          'If Volward is not listed: tap +, press Cmd+Shift+G, paste the copied .app path, enable the switch, then Check again.',
-        ),
-        action: SnackBarAction(
-          label: 'Copy path',
-          onPressed: () async {
-            await MacosSettings.copyAppBundlePath();
-          },
-        ),
-      ),
-    );
   }
 
   Future<void> _copyAppBundlePath() async {
     await MacosSettings.copyAppBundlePath();
     if (!mounted) return;
     final path = MacosSettings.appBundlePath();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Copied: ${path ?? 'unknown'}')));
+    final l10n = context.l10n;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          l10n.permissionCopiedPath(path ?? l10n.permissionUnknownPath),
+        ),
+      ),
+    );
   }
 
   void _onSessionChanged() {
@@ -148,9 +143,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
       // Scan completed (possibly auto-started by switchScanRoot) — show stats.
       final count = _s.lastSnapshot?.filesInSnapshot ?? 0;
-      final label = _s.incrementalScan ? 'Incremental' : 'Full';
+      final l10n = context.l10n;
+      final label = _s.incrementalScan
+          ? l10n.scanStatusIncremental
+          : l10n.scanStatusFull;
       setState(() {
-        _scanStatus = '$label scan: $count files';
+        _scanStatus = l10n.scanStatusFiles(label, count);
         _columnChain.clear();
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
@@ -193,6 +191,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return ScanTreeBuilder.normalizeRoot(_s.scanRoots.first);
     }
     return ScanTreeBuilder.normalizeRoot(Platform.environment['HOME'] ?? '/');
+  }
+
+  String _scanTargetLabel(BuildContext context) {
+    return _s.scanRoots.isEmpty
+        ? context.l10n.scanTargetHomeDefault
+        : _s.scanRoots.join(', ');
   }
 
   ScanTreeNode? _resolveResultTree() {
@@ -420,21 +424,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return '${(b / 1073741824).toStringAsFixed(2)} GB';
   }
 
-  String _phaseLabel(String phase) =>
-      const {
-        'DiscoveringRoots': 'Discovering roots…',
-        'Walking': 'Scanning files…',
-        'Classifying': 'Classifying entries…',
-        'Aggregating': 'Aggregating results…',
-        'SavingResults': 'Saving results…',
-        'LoadingResults': 'Loading results…',
-        'Done': 'Done',
-      }[phase] ??
-      phase;
+  String _phaseLabel(String phase) {
+    final l10n = context.l10n;
+    return switch (phase) {
+      'DiscoveringRoots' => l10n.scanPhaseDiscoveringRoots,
+      'Walking' => l10n.scanPhaseWalking,
+      'Classifying' => l10n.scanPhaseClassifying,
+      'Aggregating' => l10n.scanPhaseAggregating,
+      'SavingResults' => l10n.scanPhaseSavingResults,
+      'LoadingResults' => l10n.scanPhaseLoadingResults,
+      'Done' => l10n.scanPhaseDone,
+      _ => phase,
+    };
+  }
 
   String _scanProgressSummary() {
     final p = _s.scanProgress;
-    if (p == null) return 'Scanning…';
+    if (p == null) return context.l10n.scanStatusScanning;
     final phase = _phaseLabel(p['phase']?.toString() ?? '');
     final paths = p['paths_seen'];
     final elapsed = _s.scanElapsedLabel;
@@ -444,7 +450,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final pct = frac != null ? frac * 100 : null;
     final pctStr = pct != null ? '${pct.round().clamp(0, 99)}% · ' : '';
     final buf = StringBuffer('$pctStr$phase');
-    if (paths != null && paths != 0) buf.write(' · $paths items');
+    if (paths != null && paths != 0) {
+      buf.write(' · ${context.l10n.scanProgressItems((paths as num).toInt())}');
+    }
     if (elapsed != null) buf.write(' · $elapsed');
     // Deliberately omit current_path — too verbose for a single-line bar.
     return buf.toString();
@@ -475,7 +483,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _pickFolder() async {
-    final path = await getDirectoryPath(confirmButtonText: 'Select');
+    final path = await getDirectoryPath(
+      confirmButtonText: context.l10n.folderPickerConfirm,
+    );
     if (path == null) return;
     await _s.switchScanRoot(path);
   }
@@ -488,15 +498,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       final snapshot = _s.lastSnapshot;
       final count = snapshot?.filesInSnapshot ?? 0;
+      final l10n = context.l10n;
+      final label = incremental
+          ? l10n.scanStatusIncremental
+          : l10n.scanStatusFull;
       setState(() {
-        _scanStatus =
-            '${incremental ? 'Incremental' : 'Full'} scan: $count files · $id';
+        _scanStatus = '${l10n.scanStatusFiles(label, count)} · $id';
       });
     } catch (e) {
       if (!mounted) return;
       final msg = e is ScanCancelledException
-          ? 'Scan cancelled'
-          : 'Scan failed: $e';
+          ? context.l10n.scanStatusCancelled
+          : context.l10n.scanStatusFailed(e.toString());
       setState(() => _scanStatus = msg);
     }
   }
@@ -505,23 +518,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_selected.isEmpty) return;
     final preview = await _s.deleteEntries(_selected.toList(), dryRun: true);
     if (!mounted) return;
+    final l10n = context.l10n;
     final count = (preview['deleted_count'] as num?)?.toInt() ?? 0;
     final freed = (preview['freed_bytes'] as num?)?.toInt() ?? 0;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Move to Trash?'),
-        content: Text(
-          'Move $count item(s) to Trash and free about ${_fmt(freed)}?\n\nYou can restore them from Trash if needed.',
-        ),
+        title: Text(l10n.deleteConfirmTitle),
+        content: Text(l10n.deleteConfirmMessage(count, _fmt(freed))),
         actions: [
           AppleButton(
-            label: 'Cancel',
+            label: l10n.scanActionCancel,
             variant: AppleButtonVariant.pearl,
             onPressed: () => Navigator.pop(ctx, false),
           ),
           AppleButton(
-            label: 'Delete',
+            label: l10n.deleteActionDelete,
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -542,8 +554,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         SnackBar(
           content: Text(
             failedCount > 0
-                ? 'Deleted with $failedCount failure(s). Freed ${_fmt(freedAfter)}.'
-                : 'Moved to Trash. Freed ${_fmt(freedAfter)}. Rescan complete.',
+                ? l10n.deleteSuccessWithFailures(failedCount, _fmt(freedAfter))
+                : l10n.deleteSuccess(_fmt(freedAfter)),
           ),
         ),
       );
@@ -551,7 +563,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      ).showSnackBar(SnackBar(content: Text(l10n.deleteFailed(e.toString()))));
     }
   }
 
@@ -627,12 +639,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               const SizedBox(width: AppleSpacing.xs),
               Tooltip(
-                message: _s.scanTargetLabel,
+                message: _scanTargetLabel(context),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _s.scanRoots.isEmpty ? 'Home' : 'Custom',
+                      _s.scanRoots.isEmpty
+                          ? context.l10n.scanTargetHomeShort
+                          : context.l10n.scanTargetCustomShort,
                       style: context.vwFinePrint,
                     ),
                     if (_s.scanning) ...[
@@ -657,7 +671,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               const SizedBox(width: AppleSpacing.xs),
               AppleButton(
-                label: 'Folder…',
+                label: context.l10n.scanActionFolder,
                 icon: Icons.folder_open_outlined,
                 variant: AppleButtonVariant.pearl,
                 onPressed: _pickFolder,
@@ -665,7 +679,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               if (_s.scanRoots.isNotEmpty) ...[
                 const SizedBox(width: AppleSpacing.xxs),
                 AppleButton(
-                  label: 'Home',
+                  label: context.l10n.scanActionHome,
                   icon: Icons.home_outlined,
                   variant: AppleButtonVariant.pearl,
                   onPressed: () async {
@@ -691,16 +705,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               // no tree copy, zero latency.
               setState(() => _sort = mode);
             },
-            deletableOnly: _deletableOnly,
-            onDeletableOnlyChanged: (v) {
-              setState(() {
-                _deletableOnly = v;
-                _resetColumnNav();
-              });
-            },
-            incrementalScan: _s.incrementalScan,
-            onIncrementalScanChanged: _s.setIncrementalScan,
-            incrementalEnabled: _s.canUseIncrementalScan,
             scanning: _s.scanning,
           ),
         ],
@@ -717,13 +721,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _compactResultsSummary(ScanTreeNode? displayTree, int matchingCount) {
     final snap = _s.lastSnapshot;
     final reclaimable = snap?.reclaimableEstimateBytes;
+    final l10n = context.l10n;
     final parts = <String>[];
     if (displayTree != null) {
       parts.add(_formatTreeSummary(displayTree));
     }
-    parts.add('$matchingCount classified');
+    parts.add(l10n.resultsClassifiedCount(matchingCount));
     if (reclaimable != null) {
-      parts.add('${_fmt(reclaimable)} reclaimable');
+      parts.add(l10n.resultsReclaimableBytes(_fmt(reclaimable)));
     }
     return parts.join(' · ');
   }
@@ -744,10 +749,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: Center(
           child: Text(
             _s.scanning
-                ? 'Updating results…'
+                ? context.l10n.resultsUpdating
                 : matchingCount == 0
-                ? 'No items match the current filters.'
-                : 'No items match the current filters ($matchingCount in list).',
+                ? context.l10n.resultsNoFilterMatches
+                : context.l10n.resultsNoFilterMatchesWithCount(matchingCount),
             style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
@@ -764,7 +769,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
         child: Center(
           child: Text(
-            'Scan returned no files under ${displayTree.path}.',
+            context.l10n.resultsNoFilesUnder(displayTree.path),
             style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
@@ -852,7 +857,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 : restoring
                 ? Center(
                     child: Text(
-                      'Restoring previous scan…',
+                      context.l10n.resultsRestoringPreviousScan,
                       style: context.vwFinePrint,
                     ),
                   )
@@ -889,18 +894,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           const SizedBox(width: AppleSpacing.sm),
           Text('·', style: context.vwNavLinkMuted),
           const SizedBox(width: AppleSpacing.sm),
-          Text('Storage steward', style: context.vwNavLinkMuted),
+          Text(context.l10n.navSubtitle, style: context.vwNavLinkMuted),
           const Spacer(),
           IconButton(
-            tooltip: 'Settings',
+            tooltip: context.l10n.settingsTooltip,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             icon: Icon(Icons.settings_outlined, size: 18, color: v.bodyMuted),
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                      SettingsPage(themeSettings: widget.themeSettings),
+                  builder: (_) => SettingsPage(
+                    themeSettings: widget.themeSettings,
+                    session: _s,
+                    deletableOnly: _deletableOnly,
+                    onDeletableOnlyChanged: (value) {
+                      setState(() {
+                        _deletableOnly = value;
+                        _resetColumnNav();
+                      });
+                    },
+                  ),
                 ),
               );
             },
@@ -912,6 +926,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildPermissionBanner(BuildContext context) {
     final v = context.volward;
+    final l10n = context.l10n;
     if (!_s.ready) {
       return Row(
         children: [
@@ -919,7 +934,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           const SizedBox(width: AppleSpacing.xxs),
           Expanded(
             child: Text(
-              _s.initError ?? 'Loading engine…',
+              _s.initError ?? l10n.stickyLoadingEngine,
               style: context.vwFinePrint,
             ),
           ),
@@ -939,10 +954,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Native library outdated', style: context.vwCaptionStrong),
+            Text(
+              l10n.permissionNativeOutdatedTitle,
+              style: context.vwCaptionStrong,
+            ),
             const SizedBox(height: AppleSpacing.xxs),
             Text(
-              'Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).',
+              l10n.permissionNativeOutdatedDescription,
               style: context.vwFinePrint,
             ),
           ],
@@ -951,18 +969,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
 
     if (_s.deepScanReady) {
-      return Row(
-        children: [
-          Icon(Icons.check_circle, size: 14, color: v.primary),
-          const SizedBox(width: AppleSpacing.xxs),
-          Expanded(
-            child: Text(
-              'Full Disk Access enabled — deep scan on.',
-              style: context.vwFinePrint,
-            ),
-          ),
-        ],
-      );
+      return const SizedBox.shrink();
     }
 
     if (!_permissionBannerExpanded) {
@@ -973,19 +980,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           const SizedBox(width: AppleSpacing.xxs),
           Expanded(
             child: Text(
-              'Full Disk Access recommended for ~/Library cache scan.',
+              l10n.permissionFullDiskRecommended,
               style: context.vwFinePrint,
             ),
           ),
           AppleButton(
-            label: 'Open Settings',
+            label: l10n.permissionOpenSettings,
             icon: Icons.open_in_new,
             variant: AppleButtonVariant.secondary,
             onPressed: _openFullDiskAccessSettings,
           ),
           IconButton(
             icon: Icon(Icons.expand_more, size: 18, color: v.inkMuted80),
-            tooltip: 'Show details',
+            tooltip: l10n.permissionShowDetails,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             onPressed: () => setState(() => _permissionBannerExpanded = true),
@@ -1009,13 +1016,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             children: [
               Expanded(
                 child: Text(
-                  'Full Disk Access recommended',
+                  l10n.permissionFullDiskRecommendedTitle,
                   style: context.vwCaptionStrong,
                 ),
               ),
               IconButton(
                 icon: Icon(Icons.expand_less, size: 18, color: v.inkMuted80),
-                tooltip: 'Hide details',
+                tooltip: l10n.permissionHideDetails,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: () =>
@@ -1024,15 +1031,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ],
           ),
           const SizedBox(height: AppleSpacing.xxs),
-          Text(
-            'System Settings → Privacy & Security → Full Disk Access → enable Volward. '
-            'Debug builds: tap +, Cmd+Shift+G, select volward.app.',
-            style: context.vwFinePrint,
-          ),
+          Text(l10n.permissionFullDiskInstructions, style: context.vwFinePrint),
           if (MacosSettings.appBundlePath() case final path?) ...[
             const SizedBox(height: AppleSpacing.xxs),
             Text(
-              'App path: $path',
+              l10n.permissionAppPath(path),
               style: context.vwFinePrint,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1044,19 +1047,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             runSpacing: AppleSpacing.xs,
             children: [
               AppleButton(
-                label: 'Open Settings',
+                label: l10n.permissionOpenSettings,
                 icon: Icons.open_in_new,
                 variant: AppleButtonVariant.secondary,
                 onPressed: _openFullDiskAccessSettings,
               ),
               AppleButton(
-                label: 'Copy .app path',
+                label: l10n.permissionCopyAppPath,
                 icon: Icons.copy,
                 variant: AppleButtonVariant.pearl,
                 onPressed: _copyAppBundlePath,
               ),
               AppleButton(
-                label: 'Check again',
+                label: l10n.permissionCheckAgain,
                 icon: Icons.refresh,
                 variant: AppleButtonVariant.pearl,
                 onPressed: _s.refreshCapabilities,
@@ -1070,15 +1073,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildScanSection(BuildContext context) {
     final v = context.volward;
+    final l10n = context.l10n;
+    final showPermission =
+        !_s.ready || !_s.hasSnapshotFileApi || !_s.deepScanReady;
     return _pad(
       AppleUtilityCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildPermissionBanner(context),
-            const SizedBox(height: AppleSpacing.sm),
-            Divider(height: 1, color: v.hairline),
-            const SizedBox(height: AppleSpacing.sm),
+            if (showPermission) ...[
+              _buildPermissionBanner(context),
+              const SizedBox(height: AppleSpacing.sm),
+              Divider(height: 1, color: v.hairline),
+              const SizedBox(height: AppleSpacing.sm),
+            ],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1086,10 +1094,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Target', style: context.vwCaptionStrong),
+                      Text(
+                        l10n.scanTargetTitle,
+                        style: context.vwCaptionStrong,
+                      ),
                       const SizedBox(height: 2),
                       Text(
-                        _s.scanTargetLabel,
+                        _scanTargetLabel(context),
                         style: context.vwCaption,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1104,14 +1115,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   alignment: WrapAlignment.end,
                   children: [
                     AppleButton(
-                      label: 'Folder…',
+                      label: l10n.scanActionFolder,
                       icon: Icons.folder_open_outlined,
                       variant: AppleButtonVariant.secondary,
                       onPressed: _pickFolder,
                     ),
                     if (_s.scanRoots.isNotEmpty)
                       AppleButton(
-                        label: 'Home',
+                        label: l10n.scanActionHome,
                         icon: Icons.home_outlined,
                         variant: AppleButtonVariant.pearl,
                         onPressed: () async {
@@ -1121,7 +1132,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                     if (_s.scanning)
                       AppleButton(
-                        label: 'Cancel',
+                        label: l10n.scanActionCancel,
                         icon: Icons.stop_outlined,
                         variant: AppleButtonVariant.darkUtility,
                         onPressed: _s.cancelScan,
@@ -1129,23 +1140,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ],
                 ),
               ],
-            ),
-            const SizedBox(height: AppleSpacing.sm),
-            Tooltip(
-              message: _s.canUseIncrementalScan
-                  ? '复用未变化的文件夹，加快后续扫描（需先完成一次全量扫描）'
-                  : '需要 rebuild Rust 后才可使用增量扫描',
-              child: IgnorePointer(
-                ignoring: _s.scanning || !_s.canUseIncrementalScan,
-                child: Opacity(
-                  opacity: (_s.scanning || !_s.canUseIncrementalScan) ? 0.5 : 1,
-                  child: AppleOptionChip(
-                    label: '增量扫描',
-                    selected: _s.incrementalScan,
-                    onSelected: _s.setIncrementalScan,
-                  ),
-                ),
-              ),
             ),
             if (_s.scanning) ...[
               const SizedBox(height: AppleSpacing.sm),
@@ -1182,10 +1176,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               if (_s.scanRoots.isEmpty) ...[
                 const SizedBox(height: AppleSpacing.xxs),
-                Text(
-                  'Full Home scan can take many minutes on large accounts — watch the item count above.',
-                  style: context.vwFinePrint,
-                ),
+                Text(l10n.scanHomeLongRunningHint, style: context.vwFinePrint),
               ],
             ] else if (_scanStatus != null) ...[
               const SizedBox(height: AppleSpacing.xxs),
@@ -1200,11 +1191,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _formatTreeSummary(ScanTreeNode tree) {
     final filesSeen = _s.lastSnapshot?.stats['files_seen'] as num?;
     final count = filesSeen?.toInt() ?? tree.subtreeFileCount ?? tree.fileCount;
-    return '$count in tree · ${_fmt(tree.displayBytes)}';
+    return context.l10n.resultsTreeSummary(count, _fmt(tree.displayBytes));
   }
 
   Widget _buildItemPreview(BuildContext context, ScanTreeNode? focus) {
     final v = context.volward;
+    final l10n = context.l10n;
     if (focus == null) {
       return _pad(
         Material(
@@ -1216,10 +1208,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: SizedBox(
             height: 36,
             child: Center(
-              child: Text(
-                'Select a folder or file',
-                style: context.vwFinePrint,
-              ),
+              child: Text(l10n.previewSelectPrompt, style: context.vwFinePrint),
             ),
           ),
         ),
@@ -1235,7 +1224,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final isDir = focus.isDirectory;
     final size = isDir ? focus.displayBytes : focus.sizeBytes;
     final subtreeItems = isDir ? focus.fileCount : 0;
-    final category = isDir ? 'Folder' : focus.category;
+    final category = isDir ? l10n.previewFolderCategory : focus.category;
     final deletable = focus.deletable;
     final entryId = focus.entryId;
     final marked = entryId != null && _selected.contains(entryId);
@@ -1278,7 +1267,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                       Text(
                         '${isDir && !focus.scanned ? '—' : _fmt(size)} · $category'
-                        '${isDir ? ' · $subtreeItems items' : ''}',
+                        '${isDir ? ' · ${l10n.previewItemCount(subtreeItems)}' : ''}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.vwFinePrint,
@@ -1311,6 +1300,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildStickyBar(BuildContext context) {
     final busy = _s.deleting || _s.scanning;
+    final l10n = context.l10n;
     final String label;
     final String actionLabel;
     final VoidCallback? actionPressed;
@@ -1319,12 +1309,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_s.scanning) {
       // Elapsed ticks via scanElapsedNotifier below; the label is built there.
       label = '';
-      actionLabel = 'Cancel';
+      actionLabel = l10n.scanActionCancel;
       actionIcon = Icons.stop_outlined;
       actionPressed = _s.cancelScan;
     } else if (_selected.isNotEmpty) {
-      label = 'Selected: ${_selected.length} · ${_fmt(_selectedBytes())}';
-      actionLabel = busy ? 'Working…' : 'Move to Trash';
+      label = l10n.stickySelected(_selected.length, _fmt(_selectedBytes()));
+      actionLabel = busy
+          ? l10n.deleteActionWorking
+          : l10n.deleteActionMoveToTrash;
       actionIcon = busy ? null : Icons.delete_outline;
       actionPressed = busy ? null : _confirmDelete;
     } else {
@@ -1332,10 +1324,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final peekCount = _s.peekInFlight.length;
       label = hasResults
           ? peekCount > 0
-                ? '$peekCount director${peekCount == 1 ? 'y' : 'ies'} loading…'
-                : 'Browse results · tap folders below'
-          : (_s.ready ? 'Ready to scan' : 'Loading engine…');
-      actionLabel = hasResults ? 'Rescan' : 'Start scan';
+                ? l10n.stickyDirectoriesLoading(peekCount)
+                : l10n.stickyBrowseResults
+          : (_s.ready ? l10n.stickyReadyToScan : l10n.stickyLoadingEngine);
+      actionLabel = hasResults ? l10n.scanActionRescan : l10n.scanActionStart;
       actionIcon = Icons.search;
       actionPressed = (_s.ready && !busy && _s.hasSnapshotFileApi)
           ? _startScan

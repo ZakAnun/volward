@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -23,7 +24,10 @@ fn system_time_secs(time: SystemTime) -> i64 {
     }
 }
 
-fn dir_fingerprint_from_read_dir(path: &Path, children: &[Result<DirEntry<((), ())>, Error>]) -> DirFingerprint {
+fn dir_fingerprint_from_read_dir(
+    path: &Path,
+    children: &[Result<DirEntry<((), ())>, Error>],
+) -> DirFingerprint {
     let children_count = children.len().min(u32::MAX as usize) as u32;
     let mtime_secs = fs::metadata(path)
         .ok()
@@ -51,12 +55,7 @@ fn entry_mtime_secs(path: &Path) -> i64 {
             for entry in read_dir.flatten() {
                 if let Ok(child_meta) = entry.metadata() {
                     if child_meta.is_file() {
-                        max = max.max(
-                            child_meta
-                                .modified()
-                                .map(system_time_secs)
-                                .unwrap_or(0),
-                        );
+                        max = max.max(child_meta.modified().map(system_time_secs).unwrap_or(0));
                     }
                 }
             }
@@ -99,23 +98,45 @@ impl DesktopPlatform {
         &self.protected_prefixes
     }
 
-    fn fda_probe_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|h| h.join("Library/Safari/Bookmarks.plist"))
+    fn fda_probe_paths() -> Vec<PathBuf> {
+        let mut probes = Vec::new();
+        if let Some(home) = dirs::home_dir() {
+            probes.extend(Self::home_fda_probe_paths(&home));
+        }
+        probes.push(PathBuf::from(
+            "/Library/Application Support/com.apple.TCC/TCC.db",
+        ));
+        probes
+    }
+
+    fn home_fda_probe_paths(home: &Path) -> Vec<PathBuf> {
+        vec![
+            home.join("Library/Safari/Bookmarks.plist"),
+            home.join("Library/Messages/chat.db"),
+            home.join("Library/Application Support/com.apple.TCC/TCC.db"),
+        ]
+    }
+
+    fn can_read_probe(path: &Path) -> bool {
+        let Ok(mut file) = fs::File::open(path) else {
+            return false;
+        };
+        let mut byte = [0u8; 1];
+        file.read(&mut byte).is_ok()
     }
 
     /// macOS only registers an app in the FDA list after a real read attempt
     /// (metadata/stat alone does not trigger TCC). See Apple Developer Forums #757768.
     fn touch_fda_probe() {
-        if let Some(probe) = Self::fda_probe_path() {
-            let _ = fs::read(&probe);
+        for probe in Self::fda_probe_paths() {
+            let _ = Self::can_read_probe(&probe);
         }
     }
 
     fn has_full_disk_access() -> bool {
-        let Some(probe) = Self::fda_probe_path() else {
-            return false;
-        };
-        fs::read(&probe).is_ok()
+        Self::fda_probe_paths()
+            .iter()
+            .any(|probe| Self::can_read_probe(probe))
     }
 }
 
@@ -183,7 +204,8 @@ impl PlatformStorage for DesktopPlatform {
             if !root_path.exists() {
                 continue;
             }
-            let dir_fingerprints_cache = Arc::new(Mutex::new(HashMap::<PathBuf, DirFingerprint>::new()));
+            let dir_fingerprints_cache =
+                Arc::new(Mutex::new(HashMap::<PathBuf, DirFingerprint>::new()));
             let skipped_subtree_roots = Arc::new(Mutex::new(HashSet::<String>::new()));
             for entry in WalkDir::new(root_path)
                 .skip_hidden(false)
@@ -407,6 +429,40 @@ mod tests {
     }
 
     #[test]
+    fn full_disk_access_probe_uses_multiple_protected_files() {
+        let home = PathBuf::from("/Users/example");
+        let probes = DesktopPlatform::home_fda_probe_paths(&home);
+
+        assert!(probes
+            .iter()
+            .any(|path| path.ends_with("Library/Safari/Bookmarks.plist")));
+        assert!(probes
+            .iter()
+            .any(|path| path.ends_with("Library/Messages/chat.db")));
+        assert!(probes
+            .iter()
+            .any(|path| path.ends_with("Library/Application Support/com.apple.TCC/TCC.db")));
+    }
+
+    #[test]
+    fn full_disk_access_probe_reads_existing_file_only() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let base =
+            std::env::temp_dir().join(format!("volward-fda-probe-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&base).expect("mkdir");
+        let readable = base.join("probe.db");
+        fs::write(&readable, b"ok").expect("write probe");
+
+        assert!(DesktopPlatform::can_read_probe(&readable));
+        assert!(!DesktopPlatform::can_read_probe(&base.join("missing.db")));
+
+        fs::remove_dir_all(base).expect("cleanup");
+    }
+
+    #[test]
     fn walk_emits_directory_fingerprint_from_read_dir() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -526,11 +582,8 @@ mod tests {
             .iter()
             .any(|warning| warning.contains("reused 1 unchanged directories")));
 
-        fs::write(
-            root_path.join("new-after-modify.txt"),
-            b"new file",
-        )
-        .expect("add file to invalidate root fingerprint");
+        fs::write(root_path.join("new-after-modify.txt"), b"new file")
+            .expect("add file to invalidate root fingerprint");
         let third = orchestrator
             .run_scan(
                 "real-incremental-after-modify".to_string(),
@@ -557,10 +610,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root_path = std::env::temp_dir().join(format!(
-            "volward-quicklist-{}-{unique}",
-            std::process::id()
-        ));
+        let root_path =
+            std::env::temp_dir().join(format!("volward-quicklist-{}-{unique}", std::process::id()));
         fs::create_dir_all(root_path.join("sub/nested")).expect("mkdir");
         fs::write(root_path.join("top.txt"), b"hello").expect("write top file");
         fs::write(root_path.join("sub/nested/deep.txt"), b"deep").expect("write nested file");

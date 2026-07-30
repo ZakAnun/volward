@@ -54,7 +54,8 @@ class ScanTreeNode {
              isDirectory,
              deletable ?? entry?.deletable ?? false,
              children,
-           );
+           ),
+       _entry = entry;
 
   final String name;
   final String path;
@@ -73,6 +74,7 @@ class ScanTreeNode {
   final int categoryMask;
   final int deletableCategoryMask;
   final int deletableFileCount;
+  final ScanEntryRecord? _entry;
 
   /// False for directories whose contents haven't been scanned yet (the
   /// pre-scan preview, or a not-yet-covered node before a Wave-2 peek scan
@@ -166,6 +168,7 @@ class ScanTreeNode {
 
   ScanEntryRecord? toEntryRecord() {
     if (isDirectory) return null;
+    if (_entry != null) return _entry;
     final id = entryId ?? path;
     if (id.isEmpty || path.isEmpty) return null;
     return ScanEntryRecord(
@@ -242,6 +245,7 @@ class ScanTreeNode {
       isDirectory: isDir,
       sizeBytes: sizeBytes,
       entryId: entryId,
+      entry: entry,
       category: entry?.category ?? json['category']?.toString(),
       deletable: entry?.deletable ?? json['deletable'] == true,
       scanned: json['scanned'] is bool ? json['scanned'] as bool : true,

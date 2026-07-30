@@ -1,34 +1,35 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 
 enum ScanSortMode { sizeDesc, sizeAsc, nameAsc }
 
 extension ScanSortModeLabel on ScanSortMode {
-  String get label {
+  String label(BuildContext context) {
+    final l10n = context.l10n;
     switch (this) {
       case ScanSortMode.sizeDesc:
-        return 'Size ↓';
+        return l10n.sortSizeDesc;
       case ScanSortMode.sizeAsc:
-        return 'Size ↑';
+        return l10n.sortSizeAsc;
       case ScanSortMode.nameAsc:
-        return 'Name';
+        return l10n.sortNameAsc;
     }
   }
 }
 
-/// Category + sort + toggle filters for scan results.
+/// Category + sort controls for scan results.
 ///
 /// Single-row layout:
-///   [All] [Cache] [Temp] [Media] [System]  ···  [Size ↓ ▾] [✓ Deletable]
+///   [All] [Cache] [Temp] [Media] [System]  ···  [Size ↓ ▾]
 ///
 /// - Type chips: single-select, only the 4 categories that the classifier
 ///   actually emits (Cache / Temp / Media / System) plus "All".
 /// - Sort: popup-menu button — compact, easily extensible.
-/// - Deletable / Incremental: checkbox toggles on the right.
 /// - The whole row scrolls horizontally when the available width is too
-///   narrow for chips + trailing controls (avoids RenderFlex overflow).
+///   narrow for chips + sort controls (avoids RenderFlex overflow).
 class ScanFilterBar extends StatelessWidget {
   const ScanFilterBar({
     super.key,
@@ -36,11 +37,6 @@ class ScanFilterBar extends StatelessWidget {
     required this.onCategoryChanged,
     required this.sortMode,
     required this.onSortChanged,
-    required this.deletableOnly,
-    required this.onDeletableOnlyChanged,
-    required this.incrementalScan,
-    required this.onIncrementalScanChanged,
-    required this.incrementalEnabled,
     required this.scanning,
   });
 
@@ -59,11 +55,6 @@ class ScanFilterBar extends StatelessWidget {
   final ValueChanged<String?> onCategoryChanged;
   final ScanSortMode sortMode;
   final ValueChanged<ScanSortMode> onSortChanged;
-  final bool deletableOnly;
-  final ValueChanged<bool> onDeletableOnlyChanged;
-  final bool incrementalScan;
-  final ValueChanged<bool> onIncrementalScanChanged;
-  final bool incrementalEnabled;
   final bool scanning;
 
   @override
@@ -89,7 +80,7 @@ class ScanFilterBar extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(right: AppleSpacing.xxs),
                     child: _FilterChip(
-                      label: value ?? 'All',
+                      label: _categoryLabel(context, value),
                       selected: categoryFilter == value,
                       onTap: scanning ? null : () => onCategoryChanged(value),
                     ),
@@ -102,25 +93,6 @@ class ScanFilterBar extends StatelessWidget {
                   enabled: !scanning,
                   onChanged: onSortChanged,
                 ),
-                const SizedBox(width: AppleSpacing.xs),
-                _FilterToggle(
-                  label: 'Deletable',
-                  selected: deletableOnly,
-                  enabled: !scanning,
-                  onChanged: onDeletableOnlyChanged,
-                ),
-                if (incrementalEnabled) ...[
-                  const SizedBox(width: AppleSpacing.xs),
-                  Tooltip(
-                    message: '复用未变化的文件夹，加快后续扫描',
-                    child: _FilterToggle(
-                      label: 'Incremental',
-                      selected: incrementalScan,
-                      enabled: !scanning,
-                      onChanged: onIncrementalScanChanged,
-                    ),
-                  ),
-                ],
               ];
 
               // Horizontally scrollable so chips + trailing never overflow.
@@ -143,6 +115,18 @@ class ScanFilterBar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _categoryLabel(BuildContext context, String? value) {
+    final l10n = context.l10n;
+    return switch (value) {
+      null => l10n.filterAll,
+      'Cache' => l10n.filterCategoryCache,
+      'Temp' => l10n.filterCategoryTemp,
+      'Media' => l10n.filterCategoryMedia,
+      'System' => l10n.filterCategorySystem,
+      _ => value,
+    };
   }
 }
 
@@ -227,7 +211,7 @@ class _SortMenuButton extends StatelessWidget {
               value: mode,
               height: 32,
               child: _SortMenuItem(
-                label: mode.label,
+                label: mode.label(context),
                 selected: sortMode == mode,
               ),
             ),
@@ -247,7 +231,7 @@ class _SortMenuButton extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              sortMode.label,
+              sortMode.label(context),
               style: AppleTypography.finePrint.copyWith(
                 color: fg,
                 fontWeight: FontWeight.w500,
@@ -290,58 +274,6 @@ class _SortMenuItem extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ── Deletable / Incremental toggle ───────────────────────────────────────────
-
-class _FilterToggle extends StatelessWidget {
-  const _FilterToggle({
-    required this.label,
-    required this.selected,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final String label;
-  final bool selected;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final v = context.volward;
-    return GestureDetector(
-      onTap: enabled ? () => onChanged(!selected) : null,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: Checkbox(
-              value: selected,
-              onChanged: enabled ? (val) => onChanged(val ?? false) : null,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: AppleTypography.finePrint.copyWith(
-              color: enabled ? v.inkMuted80 : v.inkMuted48,
-              fontWeight: FontWeight.w500,
-              height: 1,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

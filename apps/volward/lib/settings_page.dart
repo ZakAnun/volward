@@ -1,30 +1,63 @@
 import 'package:flutter/material.dart';
 
+import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
+import 'volward_session.dart';
 
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.themeSettings});
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({
+    super.key,
+    required this.themeSettings,
+    required this.session,
+    required this.deletableOnly,
+    required this.onDeletableOnlyChanged,
+  });
 
   final VolwardThemeSettings themeSettings;
+  final VolwardSession session;
+  final bool deletableOnly;
+  final ValueChanged<bool> onDeletableOnlyChanged;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late bool _deletableOnly;
+
+  @override
+  void initState() {
+    super.initState();
+    _deletableOnly = widget.deletableOnly;
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deletableOnly != widget.deletableOnly) {
+      _deletableOnly = widget.deletableOnly;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
+    final l10n = context.l10n;
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       backgroundColor: v.canvasParchment,
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(l10n.settingsTitle),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
       body: ListenableBuilder(
-        listenable: themeSettings,
+        listenable: Listenable.merge([widget.themeSettings, widget.session]),
         builder: (context, _) {
           return ListView(
             padding: const EdgeInsets.fromLTRB(
@@ -34,18 +67,31 @@ class SettingsPage extends StatelessWidget {
               AppleSpacing.xxl,
             ),
             children: [
-              _SectionHeader(title: 'Appearance', tokens: v),
+              _SectionHeader(title: l10n.settingsAppearanceSection, tokens: v),
               const SizedBox(height: AppleSpacing.xs),
               _SettingsCard(
                 tokens: v,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Theme', style: context.vwCaptionStrong),
+                    Text(
+                      l10n.settingsThemeTitle,
+                      style: context.vwCaptionStrong,
+                    ),
                     const SizedBox(height: AppleSpacing.xs),
                     _ThemeModePicker(
-                      value: themeSettings.preference,
-                      onChanged: themeSettings.setPreference,
+                      value: widget.themeSettings.preference,
+                      onChanged: widget.themeSettings.setPreference,
+                    ),
+                    const Divider(height: AppleSpacing.lg),
+                    Text(
+                      l10n.settingsLanguageTitle,
+                      style: context.vwCaptionStrong,
+                    ),
+                    const SizedBox(height: AppleSpacing.xs),
+                    _LocaleModePicker(
+                      value: widget.themeSettings.localePreference,
+                      onChanged: widget.themeSettings.setLocalePreference,
                     ),
                   ],
                 ),
@@ -56,10 +102,13 @@ class SettingsPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Accent color', style: context.vwCaptionStrong),
+                    Text(
+                      l10n.settingsAccentColorTitle,
+                      style: context.vwCaptionStrong,
+                    ),
                     const SizedBox(height: AppleSpacing.xs),
                     Text(
-                      'Applies to buttons, selections, and progress indicators.',
+                      l10n.settingsAccentColorDescription,
                       style: context.vwFinePrint,
                     ),
                     const SizedBox(height: AppleSpacing.sm),
@@ -72,10 +121,10 @@ class SettingsPage extends StatelessWidget {
                             label: preset.$1,
                             color: preset.$2,
                             selected:
-                                themeSettings.accentColor.toARGB32() ==
+                                widget.themeSettings.accentColor.toARGB32() ==
                                 preset.$2.toARGB32(),
                             onTap: () =>
-                                themeSettings.setAccentColor(preset.$2),
+                                widget.themeSettings.setAccentColor(preset.$2),
                           ),
                       ],
                     ),
@@ -103,9 +152,15 @@ class SettingsPage extends StatelessWidget {
                             ),
                             const SizedBox(width: AppleSpacing.xs),
                             Expanded(
-                              child: Text('Preview', style: context.vwCaption),
+                              child: Text(
+                                l10n.settingsAccentPreview,
+                                style: context.vwCaption,
+                              ),
                             ),
-                            Text('Primary', style: context.vwFinePrint),
+                            Text(
+                              l10n.settingsAccentPrimary,
+                              style: context.vwFinePrint,
+                            ),
                           ],
                         ),
                       ),
@@ -113,9 +168,84 @@ class SettingsPage extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: AppleSpacing.lg),
+              _SectionHeader(title: l10n.settingsScanResultsSection, tokens: v),
+              const SizedBox(height: AppleSpacing.xs),
+              _SettingsCard(
+                tokens: v,
+                child: Column(
+                  children: [
+                    _SettingsSwitch(
+                      title: l10n.settingsDeletableOnlyTitle,
+                      subtitle: l10n.settingsDeletableOnlyDescription,
+                      value: _deletableOnly,
+                      enabled: !widget.session.scanning,
+                      onChanged: (value) {
+                        setState(() => _deletableOnly = value);
+                        widget.onDeletableOnlyChanged(value);
+                      },
+                    ),
+                    const Divider(height: AppleSpacing.lg),
+                    _SettingsSwitch(
+                      title: l10n.settingsIncrementalScanTitle,
+                      subtitle: widget.session.canUseIncrementalScan
+                          ? l10n.settingsIncrementalScanDescription
+                          : l10n.settingsIncrementalScanUnsupported,
+                      value: widget.session.incrementalScan,
+                      enabled:
+                          !widget.session.scanning &&
+                          widget.session.canUseIncrementalScan,
+                      onChanged: widget.session.setIncrementalScan,
+                    ),
+                  ],
+                ),
+              ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SettingsSwitch extends StatelessWidget {
+  const _SettingsSwitch({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = context.volward;
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: context.vwCaptionStrong),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: context.vwFinePrint.copyWith(color: v.inkMuted48),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppleSpacing.md),
+          Switch.adaptive(value: value, onChanged: enabled ? onChanged : null),
+        ],
       ),
     );
   }
@@ -173,10 +303,80 @@ class _ThemeModePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
+    final l10n = context.l10n;
     final segments = [
-      (VolwardThemePreference.system, 'System', Icons.brightness_auto_outlined),
-      (VolwardThemePreference.light, 'Light', Icons.light_mode_outlined),
-      (VolwardThemePreference.dark, 'Dark', Icons.dark_mode_outlined),
+      (
+        VolwardThemePreference.system,
+        l10n.settingsThemeSystem,
+        Icons.brightness_auto_outlined,
+      ),
+      (
+        VolwardThemePreference.light,
+        l10n.settingsThemeLight,
+        Icons.light_mode_outlined,
+      ),
+      (
+        VolwardThemePreference.dark,
+        l10n.settingsThemeDark,
+        Icons.dark_mode_outlined,
+      ),
+    ];
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: v.surfacePearl,
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        border: Border.all(color: v.hairline),
+      ),
+      child: SizedBox(
+        height: 64,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < segments.length; i++) ...[
+              if (i > 0) Container(width: 1, color: v.hairline),
+              Expanded(
+                child: _ThemeModeSegment(
+                  label: segments[i].$2,
+                  icon: segments[i].$3,
+                  selected: value == segments[i].$1,
+                  onTap: () => onChanged(segments[i].$1),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocaleModePicker extends StatelessWidget {
+  const _LocaleModePicker({required this.value, required this.onChanged});
+
+  final VolwardLocalePreference value;
+  final ValueChanged<VolwardLocalePreference> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = context.volward;
+    final l10n = context.l10n;
+    final segments = [
+      (
+        VolwardLocalePreference.system,
+        l10n.settingsLanguageSystem,
+        Icons.language_outlined,
+      ),
+      (
+        VolwardLocalePreference.zh,
+        l10n.settingsLanguageChinese,
+        Icons.translate_outlined,
+      ),
+      (
+        VolwardLocalePreference.en,
+        l10n.settingsLanguageEnglish,
+        Icons.translate_outlined,
+      ),
     ];
 
     return DecoratedBox(

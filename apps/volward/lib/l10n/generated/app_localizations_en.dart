@@ -1,0 +1,360 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for English (`en`).
+class AppLocalizationsEn extends AppLocalizations {
+  AppLocalizationsEn([String locale = 'en']) : super(locale);
+
+  @override
+  String get appTitle => 'Volward';
+
+  @override
+  String get settingsTitle => 'Settings';
+
+  @override
+  String get settingsAppearanceSection => 'Appearance';
+
+  @override
+  String get settingsThemeTitle => 'Theme';
+
+  @override
+  String get settingsThemeSystem => 'System';
+
+  @override
+  String get settingsThemeLight => 'Light';
+
+  @override
+  String get settingsThemeDark => 'Dark';
+
+  @override
+  String get settingsAccentColorTitle => 'Accent color';
+
+  @override
+  String get settingsAccentColorDescription =>
+      'Applies to buttons, selections, and progress indicators.';
+
+  @override
+  String get settingsAccentPreview => 'Preview';
+
+  @override
+  String get settingsAccentPrimary => 'Primary';
+
+  @override
+  String get settingsLanguageTitle => 'Language';
+
+  @override
+  String get settingsLanguageSystem => 'System';
+
+  @override
+  String get settingsLanguageChinese => 'Chinese';
+
+  @override
+  String get settingsLanguageEnglish => 'English';
+
+  @override
+  String get settingsScanResultsSection => 'Scan & results';
+
+  @override
+  String get settingsDeletableOnlyTitle => 'Deletable only';
+
+  @override
+  String get settingsDeletableOnlyDescription =>
+      'Only show entries Volward marks as low-risk cleanup candidates, currently cache and temp files.';
+
+  @override
+  String get settingsIncrementalScanTitle => 'Incremental scan';
+
+  @override
+  String get settingsIncrementalScanDescription =>
+      'Reuse unchanged subdirectories from the previous scan of the same folder to speed up later scans.';
+
+  @override
+  String get settingsIncrementalScanUnsupported =>
+      'The bundled Rust library does not support this scan mode yet. Rebuild Rust before using it.';
+
+  @override
+  String get filterAll => 'All';
+
+  @override
+  String get filterCategoryCache => 'Cache';
+
+  @override
+  String get filterCategoryTemp => 'Temp';
+
+  @override
+  String get filterCategoryMedia => 'Media';
+
+  @override
+  String get filterCategorySystem => 'System';
+
+  @override
+  String get sortSizeDesc => 'Size ↓';
+
+  @override
+  String get sortSizeAsc => 'Size ↑';
+
+  @override
+  String get sortNameAsc => 'Name';
+
+  @override
+  String get scanColumnPreparingFolder => 'Preparing folder…';
+
+  @override
+  String get scanColumnNoFilterMatches => 'No items match the current filters.';
+
+  @override
+  String get navSubtitle => 'Storage steward';
+
+  @override
+  String get settingsTooltip => 'Settings';
+
+  @override
+  String get scanActionFolder => 'Folder…';
+
+  @override
+  String get scanActionHome => 'Home';
+
+  @override
+  String get scanActionCancel => 'Cancel';
+
+  @override
+  String get scanActionStart => 'Start scan';
+
+  @override
+  String get scanActionRescan => 'Rescan';
+
+  @override
+  String get deleteActionMoveToTrash => 'Move to Trash';
+
+  @override
+  String get deleteActionWorking => 'Working…';
+
+  @override
+  String get deleteConfirmTitle => 'Move to Trash?';
+
+  @override
+  String deleteConfirmMessage(int count, Object bytes) {
+    return 'Move $count item(s) to Trash and free about $bytes?\n\nYou can restore them from Trash if needed.';
+  }
+
+  @override
+  String get deleteActionDelete => 'Delete';
+
+  @override
+  String deleteSuccessWithFailures(int failedCount, Object bytes) {
+    return 'Deleted with $failedCount failure(s). Freed $bytes.';
+  }
+
+  @override
+  String deleteSuccess(Object bytes) {
+    return 'Moved to Trash. Freed $bytes. Rescan complete.';
+  }
+
+  @override
+  String deleteFailed(Object error) {
+    return 'Delete failed: $error';
+  }
+
+  @override
+  String get permissionNativeOutdatedTitle => 'Native library outdated';
+
+  @override
+  String get permissionNativeOutdatedDescription =>
+      'Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).';
+
+  @override
+  String get permissionDeepScanReady =>
+      'Full Disk Access enabled — deep scan on.';
+
+  @override
+  String get permissionFullDiskRecommended =>
+      'Full Disk Access recommended for ~/Library cache scan.';
+
+  @override
+  String get permissionFullDiskRecommendedTitle =>
+      'Full Disk Access recommended';
+
+  @override
+  String get permissionFullDiskInstructions =>
+      'System Settings → Privacy & Security → Full Disk Access → enable Volward. Debug builds: tap +, Cmd+Shift+G, select volward.app.';
+
+  @override
+  String get permissionOpenSettings => 'Open Settings';
+
+  @override
+  String get permissionShowDetails => 'Show details';
+
+  @override
+  String get permissionHideDetails => 'Hide details';
+
+  @override
+  String get permissionCopyAppPath => 'Copy .app path';
+
+  @override
+  String get permissionCheckAgain => 'Check again';
+
+  @override
+  String permissionCopiedPath(Object path) {
+    return 'Copied: $path';
+  }
+
+  @override
+  String permissionAppPath(Object path) {
+    return 'App path: $path';
+  }
+
+  @override
+  String get permissionUnknownPath => 'unknown';
+
+  @override
+  String get folderPickerConfirm => 'Select';
+
+  @override
+  String get scanTargetTitle => 'Target';
+
+  @override
+  String get scanTargetHomeDefault => 'Home (default)';
+
+  @override
+  String get scanTargetHomeShort => 'Home';
+
+  @override
+  String get scanTargetCustomShort => 'Custom';
+
+  @override
+  String get scanHomeLongRunningHint =>
+      'Full Home scan can take many minutes on large accounts — watch the item count above.';
+
+  @override
+  String resultsClassifiedCount(int count) {
+    return '$count classified';
+  }
+
+  @override
+  String resultsReclaimableBytes(Object bytes) {
+    return '$bytes reclaimable';
+  }
+
+  @override
+  String resultsTreeSummary(int count, Object bytes) {
+    return '$count in tree · $bytes';
+  }
+
+  @override
+  String get resultsUpdating => 'Updating results…';
+
+  @override
+  String get resultsNoFilterMatches => 'No items match the current filters.';
+
+  @override
+  String resultsNoFilterMatchesWithCount(int count) {
+    return 'No items match the current filters ($count in list).';
+  }
+
+  @override
+  String resultsNoFilesUnder(Object path) {
+    return 'Scan returned no files under $path.';
+  }
+
+  @override
+  String get resultsRestoringPreviousScan => 'Restoring previous scan…';
+
+  @override
+  String get previewSelectPrompt => 'Select a folder or file';
+
+  @override
+  String get previewFolderCategory => 'Folder';
+
+  @override
+  String previewItemCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '1 item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get scanStatusScanning => 'Scanning…';
+
+  @override
+  String get scanPhaseDiscoveringRoots => 'Discovering roots…';
+
+  @override
+  String get scanPhaseWalking => 'Scanning files…';
+
+  @override
+  String get scanPhaseClassifying => 'Classifying entries…';
+
+  @override
+  String get scanPhaseAggregating => 'Aggregating results…';
+
+  @override
+  String get scanPhaseSavingResults => 'Saving results…';
+
+  @override
+  String get scanPhaseLoadingResults => 'Loading results…';
+
+  @override
+  String get scanPhaseDone => 'Done';
+
+  @override
+  String scanProgressItems(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '1 item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get scanStatusCancelled => 'Scan cancelled';
+
+  @override
+  String scanStatusFailed(Object error) {
+    return 'Scan failed: $error';
+  }
+
+  @override
+  String get scanStatusFull => 'Full';
+
+  @override
+  String get scanStatusIncremental => 'Incremental';
+
+  @override
+  String scanStatusFiles(Object mode, int count) {
+    return '$mode scan: $count files';
+  }
+
+  @override
+  String stickySelected(int count, Object bytes) {
+    return 'Selected: $count · $bytes';
+  }
+
+  @override
+  String stickyDirectoriesLoading(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count directories loading…',
+      one: '1 directory loading…',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get stickyBrowseResults => 'Browse results · tap folders below';
+
+  @override
+  String get stickyReadyToScan => 'Ready to scan';
+
+  @override
+  String get stickyLoadingEngine => 'Loading engine…';
+}

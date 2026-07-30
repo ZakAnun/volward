@@ -2,16 +2,32 @@ import Cocoa
 import FlutterMacOS
 
 private enum MacSettings {
+  private static func protectedProbeURLs() -> [URL] {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    return [
+      home.appendingPathComponent("Library/Safari/Bookmarks.plist"),
+      home.appendingPathComponent("Library/Messages/chat.db"),
+      home.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db"),
+      URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db"),
+    ]
+  }
+
+  private static func touchProbeURL(_ url: URL) {
+    guard let handle = try? FileHandle(forReadingFrom: url) else {
+      return
+    }
+    defer {
+      try? handle.close()
+    }
+    _ = handle.readData(ofLength: 1)
+  }
+
   /// Trigger TCC from the main app executable (not the Rust dylib).
   /// Metadata/stat alone does not register the app in the FDA list.
   static func touchFullDiskAccessProbe() {
-    let safari = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent("Library/Safari/Bookmarks.plist")
-    _ = try? Data(contentsOf: safari)
-
-    // Apple Developer Forums #757768: a real open attempt can prepopulate FDA.
-    let tcc = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
-    _ = try? Data(contentsOf: tcc)
+    for url in protectedProbeURLs() {
+      touchProbeURL(url)
+    }
   }
 
   static func openFullDiskAccessSettings() {

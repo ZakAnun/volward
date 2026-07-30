@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
-  Widget wrap(Widget child) {
+  Widget wrap(Widget child, {Locale locale = const Locale('en')}) {
     return MaterialApp(
+      locale: locale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: buildVolwardTheme(brightness: Brightness.light),
       home: Scaffold(body: child),
     );
@@ -22,11 +26,6 @@ void main() {
           onCategoryChanged: (cat) => selectedCategory = cat,
           sortMode: sort,
           onSortChanged: (mode) => sort = mode,
-          deletableOnly: false,
-          onDeletableOnlyChanged: (_) {},
-          incrementalScan: false,
-          onIncrementalScanChanged: (_) {},
-          incrementalEnabled: true,
           scanning: false,
         ),
       ),
@@ -48,11 +47,6 @@ void main() {
           onCategoryChanged: (_) {},
           sortMode: ScanSortMode.sizeDesc,
           onSortChanged: (_) {},
-          deletableOnly: false,
-          onDeletableOnlyChanged: (_) {},
-          incrementalScan: false,
-          onIncrementalScanChanged: (_) {},
-          incrementalEnabled: false,
           scanning: false,
         ),
       ),
@@ -73,11 +67,6 @@ void main() {
           onCategoryChanged: (_) {},
           sortMode: ScanSortMode.nameAsc,
           onSortChanged: (_) {},
-          deletableOnly: false,
-          onDeletableOnlyChanged: (_) {},
-          incrementalScan: false,
-          onIncrementalScanChanged: (_) {},
-          incrementalEnabled: false,
           scanning: false,
         ),
       ),
@@ -85,6 +74,25 @@ void main() {
 
     // The button label should reflect the current sort mode.
     expect(find.text('Name'), findsOneWidget);
+  });
+
+  testWidgets('ScanFilterBar uses localized labels', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        ScanFilterBar(
+          categoryFilter: null,
+          onCategoryChanged: (_) {},
+          sortMode: ScanSortMode.nameAsc,
+          onSortChanged: (_) {},
+          scanning: false,
+        ),
+        locale: const Locale('zh'),
+      ),
+    );
+
+    expect(find.text('全部'), findsOneWidget);
+    expect(find.text('缓存'), findsOneWidget);
+    expect(find.text('名称'), findsOneWidget);
   });
 
   testWidgets('ScanFilterBar sort menu invokes callback on selection', (
@@ -99,11 +107,6 @@ void main() {
           onCategoryChanged: (_) {},
           sortMode: sort,
           onSortChanged: (mode) => sort = mode,
-          deletableOnly: false,
-          onDeletableOnlyChanged: (_) {},
-          incrementalScan: false,
-          onIncrementalScanChanged: (_) {},
-          incrementalEnabled: false,
           scanning: false,
         ),
       ),
@@ -133,11 +136,6 @@ void main() {
           onCategoryChanged: (_) {},
           sortMode: ScanSortMode.sizeDesc,
           onSortChanged: (_) {},
-          deletableOnly: false,
-          onDeletableOnlyChanged: (_) {},
-          incrementalScan: true,
-          onIncrementalScanChanged: (_) {},
-          incrementalEnabled: true,
           scanning: false,
         ),
       ),
@@ -146,7 +144,7 @@ void main() {
     // No RenderFlex overflow exceptions; right-side controls stay visible.
     expect(tester.takeException(), isNull);
     expect(find.text('Size ↓'), findsOneWidget);
-    expect(find.text('Deletable'), findsOneWidget);
-    expect(find.text('Incremental'), findsOneWidget);
+    expect(find.text('Deletable'), findsNothing);
+    expect(find.text('Incremental'), findsNothing);
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../scan_tree.dart';
 import '../scan_tree_flatten.dart';
 import '../theme/apple_tokens.dart';
@@ -99,7 +100,8 @@ class ScanTreeRow extends StatelessWidget {
       ),
       child: AppleListRow(
         title: node.name,
-        subtitle: '${node.category} · ${formatBytes(node.sizeBytes)}',
+        subtitle:
+            '${_categoryLabel(context, node.category)} · ${formatBytes(node.sizeBytes)}',
         selected: isSelected,
         leading: Padding(
           padding: EdgeInsets.only(left: nodeDepth * 14.0),
@@ -120,6 +122,17 @@ class ScanTreeRow extends StatelessWidget {
             : () => onSelectChanged(id, !isSelected),
       ),
     );
+  }
+
+  String _categoryLabel(BuildContext context, String category) {
+    final l10n = context.l10n;
+    return switch (category) {
+      'Cache' => l10n.filterCategoryCache,
+      'Temp' => l10n.filterCategoryTemp,
+      'Media' => l10n.filterCategoryMedia,
+      'System' => l10n.filterCategorySystem,
+      _ => category,
+    };
   }
 }
 

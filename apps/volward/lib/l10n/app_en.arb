@@ -1,0 +1,209 @@
+{
+  "@@locale": "en",
+  "appTitle": "Volward",
+  "settingsTitle": "Settings",
+  "settingsAppearanceSection": "Appearance",
+  "settingsThemeTitle": "Theme",
+  "settingsThemeSystem": "System",
+  "settingsThemeLight": "Light",
+  "settingsThemeDark": "Dark",
+  "settingsAccentColorTitle": "Accent color",
+  "settingsAccentColorDescription": "Applies to buttons, selections, and progress indicators.",
+  "settingsAccentPreview": "Preview",
+  "settingsAccentPrimary": "Primary",
+  "settingsLanguageTitle": "Language",
+  "settingsLanguageSystem": "System",
+  "settingsLanguageChinese": "Chinese",
+  "settingsLanguageEnglish": "English",
+  "settingsScanResultsSection": "Scan & results",
+  "settingsDeletableOnlyTitle": "Deletable only",
+  "settingsDeletableOnlyDescription": "Only show entries Volward marks as low-risk cleanup candidates, currently cache and temp files.",
+  "settingsIncrementalScanTitle": "Incremental scan",
+  "settingsIncrementalScanDescription": "Reuse unchanged subdirectories from the previous scan of the same folder to speed up later scans.",
+  "settingsIncrementalScanUnsupported": "The bundled Rust library does not support this scan mode yet. Rebuild Rust before using it.",
+  "filterAll": "All",
+  "filterCategoryCache": "Cache",
+  "filterCategoryTemp": "Temp",
+  "filterCategoryMedia": "Media",
+  "filterCategorySystem": "System",
+  "sortSizeDesc": "Size ↓",
+  "sortSizeAsc": "Size ↑",
+  "sortNameAsc": "Name",
+  "scanColumnPreparingFolder": "Preparing folder…",
+  "scanColumnNoFilterMatches": "No items match the current filters.",
+  "navSubtitle": "Storage steward",
+  "settingsTooltip": "Settings",
+  "scanActionFolder": "Folder…",
+  "scanActionHome": "Home",
+  "scanActionCancel": "Cancel",
+  "scanActionStart": "Start scan",
+  "scanActionRescan": "Rescan",
+  "deleteActionMoveToTrash": "Move to Trash",
+  "deleteActionWorking": "Working…",
+  "deleteConfirmTitle": "Move to Trash?",
+  "deleteConfirmMessage": "Move {count} item(s) to Trash and free about {bytes}?\n\nYou can restore them from Trash if needed.",
+  "@deleteConfirmMessage": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "deleteActionDelete": "Delete",
+  "deleteSuccessWithFailures": "Deleted with {failedCount} failure(s). Freed {bytes}.",
+  "@deleteSuccessWithFailures": {
+    "placeholders": {
+      "failedCount": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "deleteSuccess": "Moved to Trash. Freed {bytes}. Rescan complete.",
+  "@deleteSuccess": {
+    "placeholders": {
+      "bytes": {}
+    }
+  },
+  "deleteFailed": "Delete failed: {error}",
+  "@deleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "permissionNativeOutdatedTitle": "Native library outdated",
+  "permissionNativeOutdatedDescription": "Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).",
+  "permissionDeepScanReady": "Full Disk Access enabled — deep scan on.",
+  "permissionFullDiskRecommended": "Full Disk Access recommended for ~/Library cache scan.",
+  "permissionFullDiskRecommendedTitle": "Full Disk Access recommended",
+  "permissionFullDiskInstructions": "System Settings → Privacy & Security → Full Disk Access → enable Volward. Debug builds: tap +, Cmd+Shift+G, select volward.app.",
+  "permissionOpenSettings": "Open Settings",
+  "permissionShowDetails": "Show details",
+  "permissionHideDetails": "Hide details",
+  "permissionCopyAppPath": "Copy .app path",
+  "permissionCheckAgain": "Check again",
+  "permissionCopiedPath": "Copied: {path}",
+  "@permissionCopiedPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "permissionAppPath": "App path: {path}",
+  "@permissionAppPath": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "permissionUnknownPath": "unknown",
+  "folderPickerConfirm": "Select",
+  "scanTargetTitle": "Target",
+  "scanTargetHomeDefault": "Home (default)",
+  "scanTargetHomeShort": "Home",
+  "scanTargetCustomShort": "Custom",
+  "scanHomeLongRunningHint": "Full Home scan can take many minutes on large accounts — watch the item count above.",
+  "resultsClassifiedCount": "{count} classified",
+  "@resultsClassifiedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resultsReclaimableBytes": "{bytes} reclaimable",
+  "@resultsReclaimableBytes": {
+    "placeholders": {
+      "bytes": {}
+    }
+  },
+  "resultsTreeSummary": "{count} in tree · {bytes}",
+  "@resultsTreeSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "resultsUpdating": "Updating results…",
+  "resultsNoFilterMatches": "No items match the current filters.",
+  "resultsNoFilterMatchesWithCount": "No items match the current filters ({count} in list).",
+  "@resultsNoFilterMatchesWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resultsNoFilesUnder": "Scan returned no files under {path}.",
+  "@resultsNoFilesUnder": {
+    "placeholders": {
+      "path": {}
+    }
+  },
+  "resultsRestoringPreviousScan": "Restoring previous scan…",
+  "previewSelectPrompt": "Select a folder or file",
+  "previewFolderCategory": "Folder",
+  "previewItemCount": "{count, plural, =1{1 item} other{{count} items}}",
+  "@previewItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "scanStatusScanning": "Scanning…",
+  "scanPhaseDiscoveringRoots": "Discovering roots…",
+  "scanPhaseWalking": "Scanning files…",
+  "scanPhaseClassifying": "Classifying entries…",
+  "scanPhaseAggregating": "Aggregating results…",
+  "scanPhaseSavingResults": "Saving results…",
+  "scanPhaseLoadingResults": "Loading results…",
+  "scanPhaseDone": "Done",
+  "scanProgressItems": "{count, plural, =1{1 item} other{{count} items}}",
+  "@scanProgressItems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "scanStatusCancelled": "Scan cancelled",
+  "scanStatusFailed": "Scan failed: {error}",
+  "@scanStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "scanStatusFull": "Full",
+  "scanStatusIncremental": "Incremental",
+  "scanStatusFiles": "{mode} scan: {count} files",
+  "@scanStatusFiles": {
+    "placeholders": {
+      "mode": {},
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stickySelected": "Selected: {count} · {bytes}",
+  "@stickySelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "bytes": {}
+    }
+  },
+  "stickyDirectoriesLoading": "{count, plural, =1{1 directory loading…} other{{count} directories loading…}}",
+  "@stickyDirectoriesLoading": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stickyBrowseResults": "Browse results · tap folders below",
+  "stickyReadyToScan": "Ready to scan",
+  "stickyLoadingEngine": "Loading engine…"
+}

@@ -51,6 +51,7 @@ class VolwardSession extends ChangeNotifier {
   final Set<String> _peekInFlight = {};
   final Set<String> _peekCompleted = {};
   static const int _maxConcurrentPeeks = 2;
+  static const int _maxPreviewEntries = 2000;
 
   // Incremental counters for scannedFraction — recomputed once per snapshot
   // update inside _recomputeProgressCounters(), then read O(1) by the UI.
@@ -413,6 +414,7 @@ class VolwardSession extends ChangeNotifier {
     // overwritten mid-flight and two _runScanAutostart() competing.
     if (_switchingRoot) return;
     _switchingRoot = true;
+    var handedOffToBackground = false;
     try {
       final newRoots = path != null ? [path] : <String>[];
       final newRoot = path ?? _defaultScanRoot();
@@ -436,13 +438,29 @@ class VolwardSession extends ChangeNotifier {
         cancelScan();
         // Reset hydration state so the engine doesn't carry the old root's
         // snapshot into the new scan as an incremental base.
-        _engineHydrated = false;
+        _engineHydrated = true;
         _restoredSnapshotForHydration = null;
       }
 
       // Fresh scan for the new root.
       _scanRoots = newRoots;
+      _lastSnapshot = null;
+      _restoredSnapshotForHydration = null;
+      _engineHydrated = true;
+      _snapshotVersion++;
+      _invalidatedPrefixes.clear();
       notifyListeners();
+      handedOffToBackground = true;
+      unawaited(_previewThenRunScanAutostart());
+    } finally {
+      if (!handedOffToBackground) {
+        _switchingRoot = false;
+      }
+    }
+  }
+
+  Future<void> _previewThenRunScanAutostart() async {
+    try {
       await previewTarget();
       // Fire-and-forget — errors surface via _lastError / notifyListeners.
       unawaited(_runScanAutostart());
@@ -488,8 +506,11 @@ class VolwardSession extends ChangeNotifier {
       return;
     }
 
+    final previewEntries = entries.length > _maxPreviewEntries
+        ? entries.take(_maxPreviewEntries).toList(growable: false)
+        : entries;
     _lastSnapshot = ScanSnapshotState.fromWire(
-      buildPreviewSnapshot(rootPath: root, quickListEntries: entries),
+      buildPreviewSnapshot(rootPath: root, quickListEntries: previewEntries),
     );
     notifyListeners();
   }
