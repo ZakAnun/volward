@@ -350,14 +350,14 @@ class VolwardSession extends ChangeNotifier {
     _restoringSnapshot = true;
     notifyListeners();
     try {
-      final snap = await Isolate.run(() => _decodeSnapshotJsonFile(path));
-      if (snap == null) return;
+      final restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
+      if (restored == null) return;
       // Skip synchronous setLastSnapshot (jsonEncode + FFI) here — it blocks
       // the main thread for hundreds of ms on large snapshots.  Instead mark
       // the engine as needing hydration; _hydrateEngineIfNeeded() will do the
       // FFI call just before the next runScan(), which is the only place Rust
       // needs an up-to-date snapshot anyway.
-      _lastSnapshot = ScanSnapshotState.fromWire(snap);
+      _lastSnapshot = restored;
       _restoredSnapshotForHydration = _lastSnapshot;
       _engineHydrated = false;
       debugPrint('VolwardSession: restored cached snapshot from $path');
@@ -989,6 +989,11 @@ Map<String, dynamic>? _decodeSnapshotJsonFile(String path) {
   final raw = File(path).readAsStringSync();
   final decoded = jsonDecode(raw);
   return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+}
+
+ScanSnapshotState? _restoreSnapshotStateFile(String path) {
+  final snap = _decodeSnapshotFile(path);
+  return snap == null ? null : ScanSnapshotState.fromWire(snap);
 }
 
 /// Decodes a snapshot or checkpoint file, dispatching on the file extension.
