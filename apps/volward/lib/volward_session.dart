@@ -122,7 +122,6 @@ class VolwardSession extends ChangeNotifier {
 
   int get snapshotVersion => _snapshotVersion;
 
-  @visibleForTesting
   Set<String> get invalidatedPrefixes => Set.unmodifiable(_invalidatedPrefixes);
 
   @visibleForTesting

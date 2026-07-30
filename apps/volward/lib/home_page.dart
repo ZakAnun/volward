@@ -5,6 +5,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import 'macos_settings.dart';
+import 'scan_entry_record.dart';
 import 'scan_tree.dart';
 import 'theme/apple_tokens.dart';
 import 'settings_page.dart';
@@ -15,6 +16,7 @@ import 'widgets/apple_widgets.dart';
 import 'widgets/scan_column_view.dart';
 import 'widgets/scan_filter_bar.dart';
 import 'scan_tree_navigation.dart';
+import 'snapshot_catalog.dart';
 import 'snapshot_query.dart';
 import 'snapshot_view_cache.dart';
 
@@ -42,11 +44,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
   bool _prevScanning = false;
   bool _permissionBannerExpanded = false;
-  // Tracks the last `_lastSnapshot.snapshotId` we already refreshed the
-  // column-nav caches for, so plain progress ticks (which fire ~3x/sec via
-  // VolwardSession.notifyListeners but don't touch _lastSnapshot) don't
-  // trigger a full tree re-sort/re-aggregate on every tick while browsing
-  // during a background scan.
+  // Tracks the last `_lastSnapshot.snapshotId` we already observed, so plain
+  // progress ticks do not trigger a full page rebuild while browsing during a
+  // background scan.
   String? _lastRefreshedSnapshotId;
 
   // ---------- canonical snapshot cache ----------
@@ -59,6 +59,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? _cachedSelectedBytesKey; // snapshot ID + selection IDs.
   final SnapshotViewCache<List<ScanTreeNode>> _visibleChildrenCache =
       SnapshotViewCache(capacity: 128);
+  final Set<SnapshotQueryKey> _pendingVisibleChildrenQueries = {};
+
+  static const int _asyncVisibleChildrenThreshold = 512;
+  static const int _maxAsyncSortedChildren = 2048;
 
   VolwardSession get _s => widget.session;
 
@@ -92,6 +96,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_onSessionChanged);
     _columnNavTick.dispose();
+    _pendingVisibleChildrenQueries.clear();
     super.dispose();
   }
 
@@ -159,7 +164,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final snapId = _s.lastSnapshot?.snapshotId;
       if (snapId != null && snapId != _lastRefreshedSnapshotId) {
         _lastRefreshedSnapshotId = snapId;
-        _invalidateSnapshotCaches();
+        _invalidateSnapshotCachesForSessionUpdate();
         final tree = _resolveResultTree();
         if (_columnChain.isNotEmpty && tree != null) {
           // Only fire _columnNavTick++ (and thus a ListenableBuilder rebuild)
@@ -219,6 +224,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _cachedResolvedTreeKey = null;
     _cachedSelectedBytesKey = null;
     _visibleChildrenCache.clear();
+    _pendingVisibleChildrenQueries.clear();
+  }
+
+  void _invalidateSnapshotCachesForSessionUpdate() {
+    _cachedResolvedTree = null;
+    _cachedResolvedTreeKey = null;
+    _cachedSelectedBytesKey = null;
+
+    final prefixes = _s.invalidatedPrefixes;
+    if (prefixes.isEmpty) {
+      _visibleChildrenCache.clear();
+      _pendingVisibleChildrenQueries.clear();
+      return;
+    }
+    for (final prefix in prefixes) {
+      _visibleChildrenCache.invalidatePath(prefix);
+    }
+    _pendingVisibleChildrenQueries.removeWhere((key) {
+      for (final prefix in prefixes) {
+        if (key.path == prefix || key.path.startsWith('$prefix/')) {
+          return true;
+        }
+      }
+      return false;
+    });
   }
 
   void _resetColumnNav() {
@@ -230,14 +260,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _columnChain
       ..clear()
       ..addAll(next);
+    _prunePendingVisibleQueries();
     _columnNavTick.value++;
+  }
+
+  void _prunePendingVisibleQueries() {
+    final visiblePaths = <String>{};
+    final root = _cachedResolvedTree ?? _s.lastSnapshot?.tree;
+    if (root != null) visiblePaths.add(root.path);
+    for (final node in _columnChain) {
+      visiblePaths.add(node.path);
+    }
+    _pendingVisibleChildrenQueries.removeWhere(
+      (key) => !visiblePaths.contains(key.path),
+    );
   }
 
   void _onColumnSelect(int columnIndex, ScanTreeNode node) {
     _setColumnChain(_columnChain.take(columnIndex).toList()..add(node));
     if (node.isDirectory && !node.scanned) {
-      unawaited(_s.peekScan(node.path));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_s.peekScan(node.path));
+      });
     }
+  }
+
+  SnapshotQueryKey _visibleChildrenKeyFor(ScanTreeNode node) {
+    return SnapshotQueryKey(
+      snapshotId: 'node-view',
+      version: identityHashCode(node),
+      path: node.path,
+      categoryFilter: _categoryFilter,
+      deletableOnly: _deletableOnly,
+      sortMode: _sort,
+    );
   }
 
   List<ScanTreeNode> _visibleChildrenFor(ScanTreeNode node) {
@@ -245,24 +301,101 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (snap == null || !node.isDirectory) {
       return node.children;
     }
-    final key = SnapshotQueryKey(
-      snapshotId: snap.snapshotId,
-      version: _s.snapshotVersion,
-      path: node.path,
-      categoryFilter: _categoryFilter,
-      deletableOnly: _deletableOnly,
-      sortMode: _sort,
-    );
+    final key = _visibleChildrenKeyFor(node);
     final cached = _visibleChildrenCache[key];
     if (cached != null) {
       return cached;
     }
-    final queried = snap.catalog.query(key).directNodes;
+    if (node.children.length > _asyncVisibleChildrenThreshold) {
+      if (key.categoryFilter == null && !key.deletableOnly) {
+        _visibleChildrenCache[key] = node.children;
+        return node.children;
+      }
+      _scheduleVisibleChildrenQuery(key, node);
+      return const <ScanTreeNode>[];
+    }
+    final queried = SnapshotCatalog.queryNode(
+      key: key,
+      node: node,
+      includeEntryRecords: false,
+    ).directNodes;
     final result = queried.isEmpty && node.children.isNotEmpty
         ? const <ScanTreeNode>[]
         : queried;
     _visibleChildrenCache[key] = result;
     return result;
+  }
+
+  bool _isPreparingVisibleChildren(ScanTreeNode node) {
+    return _pendingVisibleChildrenQueries.contains(
+      _visibleChildrenKeyFor(node),
+    );
+  }
+
+  void _scheduleVisibleChildrenQuery(SnapshotQueryKey key, ScanTreeNode node) {
+    if (!_pendingVisibleChildrenQueries.add(key)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_prepareVisibleChildrenQuery(key, node));
+    });
+  }
+
+  Future<void> _prepareVisibleChildrenQuery(
+    SnapshotQueryKey key,
+    ScanTreeNode node,
+  ) async {
+    final children = node.children;
+    final names = <String>[];
+    final bytes = <int>[];
+    final directories = <bool>[];
+    final categoryMasks = <int>[];
+    final deletableCategoryMasks = <int>[];
+    final deletableFileCounts = <int>[];
+
+    try {
+      for (var index = 0; index < children.length; index++) {
+        if (!mounted || !_pendingVisibleChildrenQueries.contains(key)) return;
+        final child = children[index];
+        names.add(child.name);
+        bytes.add(child.displayBytes);
+        directories.add(child.isDirectory);
+        categoryMasks.add(child.categoryMask);
+        deletableCategoryMasks.add(child.deletableCategoryMask);
+        deletableFileCounts.add(child.deletableFileCount);
+        if (index % 2048 == 2047) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+
+      if (!mounted || !_pendingVisibleChildrenQueries.contains(key)) return;
+      final input = _VisibleChildrenSortInput(
+        sortIndex: key.sortMode.index,
+        categoryBit: key.categoryFilter == null
+            ? null
+            : ScanEntryRecord.categoryMaskFor(key.categoryFilter),
+        deletableOnly: key.deletableOnly,
+        names: names,
+        bytes: bytes,
+        directories: directories,
+        categoryMasks: categoryMasks,
+        deletableCategoryMasks: deletableCategoryMasks,
+        deletableFileCounts: deletableFileCounts,
+      );
+      final indices = _visibleChildrenIndices(input);
+      if (indices.length <= _maxAsyncSortedChildren) {
+        _sortVisibleChildrenIndices(input, indices);
+      }
+      if (!mounted || !_pendingVisibleChildrenQueries.contains(key)) return;
+      _visibleChildrenCache[key] = List.unmodifiable([
+        for (final index in indices)
+          if (index >= 0 && index < children.length) children[index],
+      ]);
+      _columnNavTick.value++;
+    } catch (_) {
+      // A failed async view preparation should not break browsing; the next
+      // rebuild can retry and still has the unsorted direct children fallback.
+    } finally {
+      _pendingVisibleChildrenQueries.remove(key);
+    }
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
@@ -645,11 +778,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       visibleChildrenByPath: {
         for (final node in _columnChain) node.path: _visibleChildrenFor(node),
       },
+      loadingChildrenPaths: {
+        if (_isPreparingVisibleChildren(displayTree)) displayTree.path,
+        for (final node in _columnChain)
+          if (_isPreparingVisibleChildren(node)) node.path,
+      },
       childrenPreSorted: true,
       selectionChain: List.unmodifiable(_columnChain),
       onSelect: _onColumnSelect,
       formatBytes: _fmt,
-      selectedEntryIds: _selected,
+      selectedEntryIds: Set.unmodifiable(_selected),
       peekInFlight: _s.peekInFlight,
       busy: _s.deleting || _s.scanning,
       sortMode: _sort,
@@ -1229,4 +1367,88 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+class _VisibleChildrenSortInput {
+  const _VisibleChildrenSortInput({
+    required this.sortIndex,
+    required this.categoryBit,
+    required this.deletableOnly,
+    required this.names,
+    required this.bytes,
+    required this.directories,
+    required this.categoryMasks,
+    required this.deletableCategoryMasks,
+    required this.deletableFileCounts,
+  });
+
+  final int sortIndex;
+  final int? categoryBit;
+  final bool deletableOnly;
+  final List<String> names;
+  final List<int> bytes;
+  final List<bool> directories;
+  final List<int> categoryMasks;
+  final List<int> deletableCategoryMasks;
+  final List<int> deletableFileCounts;
+}
+
+List<int> _visibleChildrenIndices(_VisibleChildrenSortInput input) {
+  final directories = <int>[];
+  final files = <int>[];
+  final count = input.names.length;
+  for (var index = 0; index < count; index++) {
+    if (!_matchesVisibleProjection(input, index)) continue;
+    if (input.directories[index]) {
+      directories.add(index);
+    } else {
+      files.add(index);
+    }
+  }
+  return <int>[...directories, ...files];
+}
+
+void _sortVisibleChildrenIndices(
+  _VisibleChildrenSortInput input,
+  List<int> indices,
+) {
+  int compare(int left, int right) {
+    final sortMode = ScanSortMode
+        .values[input.sortIndex.clamp(0, ScanSortMode.values.length - 1)];
+    switch (sortMode) {
+      case ScanSortMode.sizeAsc:
+        return input.bytes[left].compareTo(input.bytes[right]);
+      case ScanSortMode.sizeDesc:
+        return input.bytes[right].compareTo(input.bytes[left]);
+      case ScanSortMode.nameAsc:
+        return SnapshotCatalog.compareAsciiCaseInsensitive(
+          input.names[left],
+          input.names[right],
+        );
+    }
+  }
+
+  final split = indices.indexWhere((index) => !input.directories[index]);
+  if (split < 0) {
+    indices.sort(compare);
+    return;
+  }
+  final sortedDirectories = indices.sublist(0, split)..sort(compare);
+  final sortedFiles = indices.sublist(split)..sort(compare);
+  indices
+    ..setRange(0, split, sortedDirectories)
+    ..setRange(split, indices.length, sortedFiles);
+}
+
+bool _matchesVisibleProjection(_VisibleChildrenSortInput input, int index) {
+  final categoryBit = input.categoryBit;
+  if (categoryBit == null && !input.deletableOnly) return true;
+  if (input.deletableOnly) {
+    if (input.deletableFileCounts[index] == 0) return false;
+    if (categoryBit != null) {
+      return (input.deletableCategoryMasks[index] & categoryBit) != 0;
+    }
+    return true;
+  }
+  return (input.categoryMasks[index] & categoryBit!) != 0;
 }

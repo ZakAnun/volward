@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../scan_tree.dart';
+import '../snapshot_catalog.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'scan_filter_bar.dart';
@@ -19,6 +20,7 @@ class ScanColumnView extends StatefulWidget {
     required this.formatBytes,
     this.visibleChildren,
     this.visibleChildrenByPath = const {},
+    this.loadingChildrenPaths = const {},
     this.selectedEntryIds = const {},
     this.peekInFlight = const {},
     this.busy = false,
@@ -32,6 +34,7 @@ class ScanColumnView extends StatefulWidget {
   final ScanTreeNode root;
   final List<ScanTreeNode>? visibleChildren;
   final Map<String, List<ScanTreeNode>> visibleChildrenByPath;
+  final Set<String> loadingChildrenPaths;
   final List<ScanTreeNode> selectionChain;
   final ScanColumnSelectCallback onSelect;
   final String Function(num? bytes) formatBytes;
@@ -100,11 +103,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
 
   void _scrollToEnd() {
     if (!_hScroll.hasClients) return;
-    _hScroll.animateTo(
-      _hScroll.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-    );
+    _hScroll.jumpTo(_hScroll.position.maxScrollExtent);
   }
 
   @override
@@ -113,7 +112,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
     super.dispose();
   }
 
-  List<List<ScanTreeNode>> _columns() {
+  List<_FinderColumnData> _columns() {
     List<ScanTreeNode> childrenFor(ScanTreeNode node) {
       return widget.visibleChildrenByPath[node.path] ??
           (node.path == widget.root.path && widget.visibleChildren != null
@@ -121,10 +120,22 @@ class _ScanColumnViewState extends State<ScanColumnView> {
               : node.children);
     }
 
-    final cols = <List<ScanTreeNode>>[_sorted(childrenFor(widget.root))];
+    final cols = <_FinderColumnData>[
+      _FinderColumnData(
+        path: widget.root.path,
+        items: _sorted(childrenFor(widget.root)),
+        loading: widget.loadingChildrenPaths.contains(widget.root.path),
+      ),
+    ];
     for (final node in widget.selectionChain) {
       if (node.isDirectory) {
-        cols.add(_sorted(childrenFor(node)));
+        cols.add(
+          _FinderColumnData(
+            path: node.path,
+            items: _sorted(childrenFor(node)),
+            loading: widget.loadingChildrenPaths.contains(node.path),
+          ),
+        );
       }
     }
     return cols;
@@ -173,7 +184,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
         case ScanSortMode.sizeAsc:
           return a.displayBytes.compareTo(b.displayBytes);
         case ScanSortMode.nameAsc:
-          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          return SnapshotCatalog.compareAsciiCaseInsensitive(a.name, b.name);
       }
     });
     _sortCache[key] = (viewKey, list);
@@ -191,7 +202,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
         }
 
         final columns = _columns();
-        if (columns.first.isEmpty) {
+        if (columns.first.items.isEmpty) {
           return DecoratedBox(
             decoration: BoxDecoration(
               color: v.canvas,
@@ -200,7 +211,9 @@ class _ScanColumnViewState extends State<ScanColumnView> {
             ),
             child: Center(
               child: Text(
-                'No items match the current filters.',
+                columns.first.loading
+                    ? 'Preparing folder…'
+                    : 'No items match the current filters.',
                 style: context.vwFinePrint.copyWith(color: v.inkMuted48),
               ),
             ),
@@ -235,7 +248,9 @@ class _ScanColumnViewState extends State<ScanColumnView> {
                     return _FinderColumn(
                       width: widget.columnWidth,
                       height: height,
-                      items: columns[columnIndex],
+                      path: columns[columnIndex].path,
+                      items: columns[columnIndex].items,
+                      loading: columns[columnIndex].loading,
                       selected: columnIndex < widget.selectionChain.length
                           ? widget.selectionChain[columnIndex]
                           : null,
@@ -255,8 +270,167 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   }
 }
 
+class _FinderColumnData {
+  const _FinderColumnData({
+    required this.path,
+    required this.items,
+    required this.loading,
+  });
+
+  final String path;
+  final List<ScanTreeNode> items;
+  final bool loading;
+}
+
 class _FinderColumn extends StatelessWidget {
   const _FinderColumn({
+    required this.width,
+    required this.height,
+    required this.path,
+    required this.items,
+    required this.loading,
+    required this.selected,
+    required this.onSelect,
+    required this.formatBytes,
+    required this.selectedEntryIds,
+    required this.peekInFlight,
+  });
+
+  final double width;
+  final double height;
+  final String path;
+  final List<ScanTreeNode> items;
+  final bool loading;
+  final ScanTreeNode? selected;
+  final ValueChanged<ScanTreeNode> onSelect;
+  final String Function(num? bytes) formatBytes;
+  final Set<String> selectedEntryIds;
+  final Set<String> peekInFlight;
+
+  static const int _paintedColumnThreshold = 240;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = context.volward;
+    final rowStyle = _FinderRowStyle(
+      selectedBackground: v.primaryFocus,
+      markedBackground: v.primary.withValues(alpha: 0.08),
+      folderIcon: v.folderIcon,
+      selectedFolderIcon: v.folderIconOnPrimary,
+      fileIcon: v.inkMuted48,
+      idleIcon: v.inkMuted48,
+      selectedIdleIcon: v.onPrimary.withValues(alpha: 0.85),
+      progressColor: v.primary,
+      selectedProgressColor: v.onPrimary,
+      normalName: context.vwCaption.copyWith(
+        color: v.body,
+        fontWeight: FontWeight.w400,
+      ),
+      selectedName: context.vwCaption.copyWith(
+        color: v.onPrimary,
+        fontWeight: FontWeight.w600,
+      ),
+      normalSize: context.vwFinePrint.copyWith(
+        color: v.inkMuted48,
+        fontSize: 11,
+      ),
+      selectedSize: context.vwFinePrint.copyWith(
+        color: v.onPrimary.withValues(alpha: 0.85),
+        fontSize: 11,
+      ),
+    );
+    return SizedBox(
+      width: width,
+      height: height,
+      child: items.isEmpty && loading
+          ? const Center(
+              child: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              ),
+            )
+          : items.length > _paintedColumnThreshold
+          ? _PaintedFinderColumn(
+              width: width,
+              height: height,
+              items: items,
+              selected: selected,
+              onSelect: onSelect,
+              formatBytes: formatBytes,
+              selectedEntryIds: selectedEntryIds,
+              peekInFlight: peekInFlight,
+              style: rowStyle,
+            )
+          : ListView.builder(
+              primary: false,
+              itemExtent: 28,
+              scrollCacheExtent: const ScrollCacheExtent.pixels(112),
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: false,
+              addSemanticIndexes: false,
+              padding: const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final node = items[index];
+                final isSelected = selected?.path == node.path;
+                final entryId = node.entryId;
+                final marked =
+                    entryId != null && selectedEntryIds.contains(entryId);
+                final isDir = node.isDirectory;
+                final subtitle = isDir
+                    ? (node.scanned ? formatBytes(node.displayBytes) : '—')
+                    : formatBytes(node.sizeBytes);
+
+                return _FinderRow(
+                  node: node,
+                  isSelected: isSelected,
+                  markedForDelete: marked,
+                  subtitle: subtitle,
+                  style: rowStyle,
+                  peekInFlight: peekInFlight.contains(node.path),
+                  onTap: () => onSelect(node),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _FinderRowStyle {
+  const _FinderRowStyle({
+    required this.selectedBackground,
+    required this.markedBackground,
+    required this.folderIcon,
+    required this.selectedFolderIcon,
+    required this.fileIcon,
+    required this.idleIcon,
+    required this.selectedIdleIcon,
+    required this.progressColor,
+    required this.selectedProgressColor,
+    required this.normalName,
+    required this.selectedName,
+    required this.normalSize,
+    required this.selectedSize,
+  });
+
+  final Color selectedBackground;
+  final Color markedBackground;
+  final Color folderIcon;
+  final Color selectedFolderIcon;
+  final Color fileIcon;
+  final Color idleIcon;
+  final Color selectedIdleIcon;
+  final Color progressColor;
+  final Color selectedProgressColor;
+  final TextStyle normalName;
+  final TextStyle selectedName;
+  final TextStyle normalSize;
+  final TextStyle selectedSize;
+}
+
+class _PaintedFinderColumn extends StatefulWidget {
+  const _PaintedFinderColumn({
     required this.width,
     required this.height,
     required this.items,
@@ -265,6 +439,7 @@ class _FinderColumn extends StatelessWidget {
     required this.formatBytes,
     required this.selectedEntryIds,
     required this.peekInFlight,
+    required this.style,
   });
 
   final double width;
@@ -275,46 +450,318 @@ class _FinderColumn extends StatelessWidget {
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
   final Set<String> peekInFlight;
+  final _FinderRowStyle style;
+
+  @override
+  State<_PaintedFinderColumn> createState() => _PaintedFinderColumnState();
+}
+
+class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
+  static const double _rowHeight = 28;
+  static const double _verticalPadding = AppleSpacing.xxs;
+
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _handleTap(TapUpDetails details) {
+    final y = details.localPosition.dy - _verticalPadding;
+    final index = y ~/ _rowHeight;
+    if (index < 0 || index >= widget.items.length) return;
+    widget.onSelect(widget.items[index]);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ListView.builder(
+    final contentHeight =
+        widget.items.length * _rowHeight + _verticalPadding * 2;
+    return Scrollbar(
+      controller: _scrollController,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _scrollController,
         primary: false,
-        itemExtent: 28,
-        scrollCacheExtent: const ScrollCacheExtent.pixels(560),
-        padding: const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
-        itemCount: items.length,
-        itemBuilder: (context, index) {
-          final node = items[index];
-          final isSelected = selected?.path == node.path;
-          final entryId = node.entryId;
-          final marked = entryId != null && selectedEntryIds.contains(entryId);
-
-          return _FinderRow(
-            key: ValueKey(node.path),
-            node: node,
-            isSelected: isSelected,
-            markedForDelete: marked,
-            formatBytes: formatBytes,
-            peekInFlight: peekInFlight.contains(node.path),
-            onTap: () => onSelect(node),
-          );
-        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: _handleTap,
+          child: SizedBox(
+            width: widget.width,
+            height: contentHeight < widget.height
+                ? widget.height
+                : contentHeight,
+            child: CustomPaint(
+              painter: _FinderColumnPainter(
+                scrollController: _scrollController,
+                viewportHeight: widget.height,
+                items: widget.items,
+                selectedPath: widget.selected?.path,
+                formatBytes: widget.formatBytes,
+                selectedEntryIds: widget.selectedEntryIds,
+                peekInFlight: widget.peekInFlight,
+                style: widget.style,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
+class _FinderColumnPainter extends CustomPainter {
+  _FinderColumnPainter({
+    required this.scrollController,
+    required this.viewportHeight,
+    required this.items,
+    required this.selectedPath,
+    required this.formatBytes,
+    required this.selectedEntryIds,
+    required this.peekInFlight,
+    required this.style,
+  }) : super(repaint: scrollController);
+
+  static const double _rowHeight = 28;
+  static const double _verticalPadding = AppleSpacing.xxs;
+  static const double _leftPadding = AppleSpacing.xs;
+  static const double _iconSize = 16;
+  static const double _gap = AppleSpacing.xxs;
+  static const double _trailingWidth = 54;
+
+  final ScrollController scrollController;
+  final double viewportHeight;
+  final List<ScanTreeNode> items;
+  final String? selectedPath;
+  final String Function(num? bytes) formatBytes;
+  final Set<String> selectedEntryIds;
+  final Set<String> peekInFlight;
+  final _FinderRowStyle style;
+  final _textCache = <_PaintedTextKey, TextPainter>{};
+  final _sizeLabelCache = <int, String>{};
+  final _iconCache = <_PaintedIconKey, TextPainter>{};
+
+  static const int _maxTextCacheEntries = 256;
+  static const int _maxSizeLabelCacheEntries = 256;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final offset = scrollController.hasClients
+        ? scrollController.offset.clamp(0.0, double.infinity)
+        : 0.0;
+    final first = ((offset - _verticalPadding) / _rowHeight).floor().clamp(
+      0,
+      items.length,
+    );
+    final last = ((offset + viewportHeight - _verticalPadding) / _rowHeight)
+        .ceil()
+        .clamp(0, items.length);
+
+    for (var index = first; index < last; index++) {
+      _paintRow(canvas, size, index);
+    }
+  }
+
+  void _paintRow(Canvas canvas, Size size, int index) {
+    final node = items[index];
+    final y = _verticalPadding + index * _rowHeight;
+    final selected = node.path == selectedPath;
+    final entryId = node.entryId;
+    final marked = entryId != null && selectedEntryIds.contains(entryId);
+    final bg = selected
+        ? style.selectedBackground
+        : marked
+        ? style.markedBackground
+        : Colors.transparent;
+    if ((bg.a * 255.0).round().clamp(0, 255) != 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, y, size.width, _rowHeight),
+        Paint()..color = bg,
+      );
+    }
+
+    final isDir = node.isDirectory;
+    final muted = selected ? style.selectedIdleIcon : style.idleIcon;
+    final iconColor = isDir
+        ? (selected ? style.selectedFolderIcon : style.folderIcon)
+        : style.fileIcon;
+    final icon = isDir ? Icons.folder : Icons.insert_drive_file_outlined;
+    _iconPainter(icon, iconColor).paint(canvas, Offset(_leftPadding, y + 6));
+
+    final trailing = isDir ? null : _sizeLabel(index, node.sizeBytes);
+    final trailingWidth = trailing == null ? 18.0 : _trailingWidth;
+    const nameLeft = _leftPadding + _iconSize + _gap;
+    final nameRight = size.width - _leftPadding - trailingWidth;
+    if (nameRight > nameLeft) {
+      _textPainter(
+        text: node.name,
+        style: selected ? style.selectedName : style.normalName,
+        maxWidth: nameRight - nameLeft,
+        align: TextAlign.left,
+      ).paint(canvas, Offset(nameLeft, y + 6));
+    }
+
+    if (isDir) {
+      final statusIcon = !node.scanned ? Icons.more_horiz : Icons.chevron_right;
+      _iconPainter(
+        statusIcon,
+        muted,
+      ).paint(canvas, Offset(size.width - _leftPadding - 14, y + 7));
+    } else if (trailing != null) {
+      _textPainter(
+        text: trailing,
+        style: selected ? style.selectedSize : style.normalSize,
+        maxWidth: _trailingWidth,
+        align: TextAlign.right,
+      ).paint(
+        canvas,
+        Offset(size.width - _leftPadding - _trailingWidth, y + 7),
+      );
+    }
+  }
+
+  String _sizeLabel(int index, int sizeBytes) {
+    final cached = _sizeLabelCache.remove(index);
+    if (cached != null) {
+      _sizeLabelCache[index] = cached;
+      return cached;
+    }
+    final label = formatBytes(sizeBytes);
+    _sizeLabelCache[index] = label;
+    while (_sizeLabelCache.length > _maxSizeLabelCacheEntries) {
+      _sizeLabelCache.remove(_sizeLabelCache.keys.first);
+    }
+    return label;
+  }
+
+  TextPainter _iconPainter(IconData icon, Color color) {
+    final size = icon == Icons.more_horiz || icon == Icons.chevron_right
+        ? 14.0
+        : _iconSize;
+    final key = _PaintedIconKey(
+      codePoint: icon.codePoint,
+      color: color,
+      size: size,
+    );
+    final cached = _iconCache[key];
+    if (cached != null) return cached;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    _iconCache[key] = painter;
+    return painter;
+  }
+
+  TextPainter _textPainter({
+    required String text,
+    required TextStyle style,
+    required double maxWidth,
+    TextAlign align = TextAlign.left,
+  }) {
+    final key = _PaintedTextKey(
+      text: text,
+      style: style,
+      maxWidth: maxWidth,
+      align: align,
+    );
+    final cached = _textCache.remove(key);
+    if (cached != null) {
+      _textCache[key] = cached;
+      return cached;
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+      textAlign: align,
+    )..layout(maxWidth: maxWidth);
+    _textCache[key] = painter;
+    while (_textCache.length > _maxTextCacheEntries) {
+      _textCache.remove(_textCache.keys.first);
+    }
+    return painter;
+  }
+
+  @override
+  bool shouldRepaint(covariant _FinderColumnPainter oldDelegate) {
+    return oldDelegate.items != items ||
+        oldDelegate.selectedPath != selectedPath ||
+        oldDelegate.selectedEntryIds != selectedEntryIds ||
+        oldDelegate.peekInFlight != peekInFlight ||
+        oldDelegate.style != style ||
+        oldDelegate.viewportHeight != viewportHeight;
+  }
+}
+
+class _PaintedTextKey {
+  const _PaintedTextKey({
+    required this.text,
+    required this.style,
+    required this.maxWidth,
+    required this.align,
+  });
+
+  final String text;
+  final TextStyle style;
+  final double maxWidth;
+  final TextAlign align;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _PaintedTextKey &&
+        other.text == text &&
+        other.style == style &&
+        other.maxWidth == maxWidth &&
+        other.align == align;
+  }
+
+  @override
+  int get hashCode => Object.hash(text, style, maxWidth, align);
+}
+
+class _PaintedIconKey {
+  const _PaintedIconKey({
+    required this.codePoint,
+    required this.color,
+    required this.size,
+  });
+
+  final int codePoint;
+  final Color color;
+  final double size;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _PaintedIconKey &&
+        other.codePoint == codePoint &&
+        other.color == color &&
+        other.size == size;
+  }
+
+  @override
+  int get hashCode => Object.hash(codePoint, color, size);
+}
+
 class _FinderRow extends StatelessWidget {
   const _FinderRow({
-    super.key,
     required this.node,
     required this.isSelected,
     required this.markedForDelete,
-    required this.formatBytes,
+    required this.subtitle,
+    required this.style,
     required this.onTap,
     this.peekInFlight = false,
   });
@@ -322,38 +769,28 @@ class _FinderRow extends StatelessWidget {
   final ScanTreeNode node;
   final bool isSelected;
   final bool markedForDelete;
-  final String Function(num? bytes) formatBytes;
+  final String subtitle;
+  final _FinderRowStyle style;
   final VoidCallback onTap;
 
   /// True when a peek scan is actively running for this node's path.
   final bool peekInFlight;
 
-  Color _background(VolwardTokens v) {
-    if (isSelected) return v.primaryFocus;
-    if (markedForDelete) return v.primary.withValues(alpha: 0.08);
+  Color get _background {
+    if (isSelected) return style.selectedBackground;
+    if (markedForDelete) return style.markedBackground;
     return Colors.transparent;
   }
 
   @override
   Widget build(BuildContext context) {
-    final v = context.volward;
     final isDir = node.isDirectory;
-    final fg = isSelected ? v.onPrimary : v.body;
-    final muted = isSelected
-        ? v.onPrimary.withValues(alpha: 0.85)
-        : v.inkMuted48;
-    final bg = _background(v);
+    final muted = isSelected ? style.selectedIdleIcon : style.idleIcon;
 
-    final subtitle = isDir
-        ? (node.scanned ? formatBytes(node.displayBytes) : '—')
-        : formatBytes(node.sizeBytes);
-
-    return Material(
-      color: bg,
-      child: InkWell(
-        hoverColor: isSelected ? Colors.transparent : v.dividerSoft,
-        splashColor: Colors.transparent,
-        highlightColor: isSelected ? Colors.transparent : v.dividerSoft,
+    return ColoredBox(
+      color: _background,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
           height: 28,
@@ -365,8 +802,10 @@ class _FinderRow extends StatelessWidget {
                   isDir ? Icons.folder : Icons.insert_drive_file_outlined,
                   size: 16,
                   color: isDir
-                      ? (isSelected ? v.folderIconOnPrimary : v.folderIcon)
-                      : muted,
+                      ? (isSelected
+                            ? style.selectedFolderIcon
+                            : style.folderIcon)
+                      : style.fileIcon,
                 ),
                 const SizedBox(width: AppleSpacing.xxs),
                 Expanded(
@@ -374,12 +813,7 @@ class _FinderRow extends StatelessWidget {
                     node.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.vwCaption.copyWith(
-                      color: fg,
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                    ),
+                    style: isSelected ? style.selectedName : style.normalName,
                   ),
                 ),
                 if (isDir)
@@ -389,7 +823,9 @@ class _FinderRow extends StatelessWidget {
                           height: 12,
                           child: CircularProgressIndicator(
                             strokeWidth: 1.5,
-                            color: isSelected ? v.onPrimary : v.primary,
+                            color: isSelected
+                                ? style.selectedProgressColor
+                                : style.progressColor,
                           ),
                         )
                       : (!node.scanned)
@@ -398,10 +834,7 @@ class _FinderRow extends StatelessWidget {
                 else
                   Text(
                     subtitle,
-                    style: context.vwFinePrint.copyWith(
-                      color: muted,
-                      fontSize: 11,
-                    ),
+                    style: isSelected ? style.selectedSize : style.normalSize,
                   ),
               ],
             ),

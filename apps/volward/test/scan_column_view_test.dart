@@ -106,18 +106,14 @@ void main() {
       ),
     );
 
-    final selectedContainer = tester.widget<AnimatedContainer>(
+    final selectedContainer = tester.widget<ColoredBox>(
       find
-          .ancestor(
-            of: find.text('Library'),
-            matching: find.byType(AnimatedContainer),
-          )
+          .ancestor(of: find.text('Library'), matching: find.byType(ColoredBox))
           .first,
     );
 
-    final decoration = selectedContainer.decoration! as BoxDecoration;
-    expect(decoration.color, isNot(Colors.transparent));
-    expect(decoration.color, isNot(Colors.white));
+    expect(selectedContainer.color, isNot(Colors.transparent));
+    expect(selectedContainer.color, isNot(Colors.white));
   });
 
   testWidgets(
