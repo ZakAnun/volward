@@ -7,9 +7,11 @@ macOS 桌面端 Flutter UI，依赖同仓库 Rust `libvolward_facade` dylib。�
 ## 运行
 
 ```bash
-# 先编译 Rust（Rust 变更后必做）
-cd macos && bash build_rust.sh
+# 推荐：一键预检 Debug 签名、重建 Rust 并启动 macOS
+bash scripts/run_macos_debug.sh
 
+# 如需手动分步
+cd macos && bash build_rust.sh
 cd ..
 fvm flutter pub get
 fvm flutter run -d macos

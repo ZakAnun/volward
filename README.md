@@ -57,18 +57,18 @@ volward/
 ## 快速开始（macOS）
 
 ```bash
-# 1. 编译 Rust 并拷贝 dylib（修改 Rust 后必做）
-cd apps/volward/macos
-bash build_rust.sh
+# 一键预检 Debug 签名、重建 Rust 并启动 macOS
+cd apps/volward
+bash scripts/run_macos_debug.sh
 
-# 2. Flutter 依赖与运行
-cd ../..
+# 如需手动分步（均从仓库根目录开始）
+cd apps/volward/macos && bash build_rust.sh
+cd ..
 fvm install stable    # 首次
 fvm use stable
 fvm flutter pub get
 fvm flutter run -d macos
 ```
-
 Rust 或 FFI 变更后请 **Hot restart (R)**，不要只 hot reload。若提示 native 库过时，重新执行 `build_rust.sh` 后再 restart。
 
 ## 网络代理（可选）
