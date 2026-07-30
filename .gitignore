@@ -40,6 +40,9 @@ apps/volward/android/local.properties
 **/*.keystore
 **/credentials.json
 
+# Local Xcode signing overrides (Team ID, etc.)
+**/*.local.xcconfig
+
 # OS
 .DS_Store
 
