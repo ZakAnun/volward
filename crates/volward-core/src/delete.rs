@@ -1,4 +1,4 @@
-use crate::model::{DeleteReport, StorageSnapshot};
+use crate::model::{DeleteReport, StorageSnapshot, TrashEmptyReport};
 use crate::platform::{PlatformError, PlatformStorage};
 
 pub struct DeleteOrchestrator;
@@ -60,6 +60,10 @@ impl DeleteOrchestrator {
             freed_bytes: actual_freed,
         })
     }
+
+    pub fn empty_trash(platform: &dyn PlatformStorage) -> Result<TrashEmptyReport, PlatformError> {
+        platform.empty_trash()
+    }
 }
 
 #[cfg(test)]
@@ -73,12 +77,14 @@ mod tests {
 
     struct MockPlatform {
         trashed: std::sync::Mutex<Vec<String>>,
+        trash_cleared_count: usize,
     }
 
     impl MockPlatform {
         fn new() -> Self {
             Self {
                 trashed: std::sync::Mutex::new(Vec::new()),
+                trash_cleared_count: 2,
             }
         }
     }
@@ -123,6 +129,12 @@ mod tests {
                 deleted_count: paths.len(),
                 failed_paths: vec![],
                 freed_bytes: 0,
+            })
+        }
+
+        fn empty_trash(&self) -> Result<TrashEmptyReport, PlatformError> {
+            Ok(TrashEmptyReport {
+                cleared_count: self.trash_cleared_count,
             })
         }
 
@@ -226,5 +238,12 @@ mod tests {
             *platform.trashed.lock().unwrap(),
             vec!["/tmp/cache.bin".to_string()]
         );
+    }
+
+    #[test]
+    fn empty_trash_delegates_to_platform() {
+        let platform = MockPlatform::new();
+        let report = DeleteOrchestrator::empty_trash(&platform).unwrap();
+        assert_eq!(report.cleared_count, 2);
     }
 }

@@ -104,7 +104,6 @@ pub struct StorageSnapshot {
     pub warnings: Vec<String>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformCapabilities {
     pub level: CapabilityLevel,
@@ -147,4 +146,9 @@ pub struct DeleteReport {
     pub deleted_count: usize,
     pub failed_paths: Vec<String>,
     pub freed_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashEmptyReport {
+    pub cleared_count: usize,
 }

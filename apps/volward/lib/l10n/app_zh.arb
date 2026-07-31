@@ -37,7 +37,17 @@
   "scanActionHome": "主目录",
   "scanActionCancel": "取消",
   "scanActionStart": "开始扫描",
-  "scanActionRescan": "重新扫描",
+  "scanActionRescan": "刷新",
+  "trashActionEmpty": "清空废纸篓",
+  "trashEmptyConfirmTitle": "清空废纸篓？",
+  "trashEmptyConfirmMessage": "将废纸篓中的所有内容永久删除？此操作不可撤销。",
+  "trashEmptySuccess": "废纸篓已清空，结果已刷新。",
+  "trashEmptyFailed": "清空废纸篓失败：{error}",
+  "@trashEmptyFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "deleteActionMoveToTrash": "移到废纸篓",
   "deleteActionWorking": "处理中…",
   "deleteConfirmTitle": "移到废纸篓？",
@@ -203,7 +213,7 @@
       }
     }
   },
-  "stickyBrowseResults": "浏览结果 · 点击下方文件夹",
+  "stickyBrowseResults": "选择要移到废纸篓的项目",
   "stickyReadyToScan": "准备扫描",
   "stickyLoadingEngine": "正在加载引擎…"
 }

@@ -29,5 +29,7 @@ void main() {
     expect(session.selectedEntryIds, {'entry-a'});
     expect(session.snapshotVersion, 2);
     expect(session.invalidatedPrefixes, {'/root/changed'});
+    expect(session.consumeInvalidatedPrefixes(), {'/root/changed'});
+    expect(session.invalidatedPrefixes, isEmpty);
   });
 }

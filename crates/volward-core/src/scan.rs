@@ -679,7 +679,10 @@ mod tests {
                 &cancel,
                 |_p| {},
                 |checkpoint| {
-                    checkpoints.lock().unwrap().push(checkpoint.tree.children.len());
+                    checkpoints
+                        .lock()
+                        .unwrap()
+                        .push(checkpoint.tree.children.len());
                 },
             )
             .expect("scan should succeed");

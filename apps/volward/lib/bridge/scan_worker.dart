@@ -35,8 +35,7 @@ void volwardScanIsolate(List<dynamic> args) {
   } catch (e, st) {
     progressPort.send(<String, dynamic>{
       'type': 'error',
-      'error':
-          'Native bridge failed to start: $e\n$st\n'
+      'error': 'Native bridge failed to start: $e\n$st\n'
           'Rebuild Rust: cd apps/volward/macos && bash build_rust.sh then restart the app (R).',
     });
     return;
@@ -113,10 +112,25 @@ void volwardScanIsolate(List<dynamic> args) {
             'phase': 'Done',
             'paths_seen': pathsSeen?.toInt() ?? 0,
           });
+
+          // Persist catalog index alongside snapshot (Design §7.2).
+          // Workers that rebuild the engine from the index file can query
+          // directory children without hydrating the full snapshot.
+          String? indexPath;
+          if (bridge.hasIndexApi) {
+            final idxTmpPath =
+                '${Directory.systemTemp.path}/volward-$jobId.index.json';
+            final result = bridge.writeLastIndexToPath(engine, idxTmpPath);
+            if (result != null && !result.startsWith('error:')) {
+              indexPath = idxTmpPath;
+            }
+          }
+
           progressPort.send(<String, dynamic>{
             'type': 'done',
             'snapshot_path': tmpPath,
             'snapshot_id': snapshotId,
+            if (indexPath != null) 'index_path': indexPath,
           });
         } catch (e, st) {
           progressPort.send(<String, dynamic>{
@@ -165,6 +179,18 @@ void volwardScanIsolate(List<dynamic> args) {
           progressPort.send(<String, dynamic>{
             'type': 'checkpoint',
             'snapshot_path': uniquePath,
+            if (bridge.hasIndexApi)
+              ...() {
+                // Also persist the index snapshot for the checkpoint so the UI
+                // can query directory children without full hydration.
+                final idxPath =
+                    '${Directory.systemTemp.path}/volward-$jobId-checkpoint-$tickCount.index.json';
+                final result = bridge.writeLastIndexToPath(engine, idxPath);
+                if (result != null && !result.startsWith('error:')) {
+                  return {'index_path': idxPath};
+                }
+                return const <String, dynamic>{};
+              }(),
           });
         }
       }
@@ -201,9 +227,13 @@ void volwardPeekScanIsolate(List<dynamic> args) {
 
   try {
     final jobId = 'peek-${DateTime.now().millisecondsSinceEpoch}';
-    final startResult = bridge.startScanAsyncWithOptions(engine, jobId, [
-      path,
-    ], incremental: false);
+    final startResult = bridge.startScanAsyncWithOptions(
+        engine,
+        jobId,
+        [
+          path,
+        ],
+        incremental: false);
     if (startResult.startsWith('error:')) {
       resultPort.send(<String, dynamic>{'type': 'error', 'error': startResult});
       bridge.freeEngine(engine);

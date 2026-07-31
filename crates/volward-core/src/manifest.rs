@@ -185,10 +185,8 @@ mod tests {
 
     #[test]
     fn legacy_manifest_without_max_child_mtime_defaults_to_zero() {
-        let fp: DirFingerprint = serde_json::from_str(
-            r#"{"mtime_secs":1,"children_count":2}"#,
-        )
-        .expect("legacy fingerprint");
+        let fp: DirFingerprint = serde_json::from_str(r#"{"mtime_secs":1,"children_count":2}"#)
+            .expect("legacy fingerprint");
         assert_eq!(fp.max_child_mtime_secs, 0);
         assert!(!fp.matches(&DirFingerprint {
             mtime_secs: 1,

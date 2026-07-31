@@ -323,8 +323,38 @@ abstract class AppLocalizations {
   /// No description provided for @scanActionRescan.
   ///
   /// In en, this message translates to:
-  /// **'Rescan'**
+  /// **'Refresh'**
   String get scanActionRescan;
+
+  /// No description provided for @trashActionEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty Trash'**
+  String get trashActionEmpty;
+
+  /// No description provided for @trashEmptyConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty Trash?'**
+  String get trashEmptyConfirmTitle;
+
+  /// No description provided for @trashEmptyConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently delete everything in Trash? This cannot be undone.'**
+  String get trashEmptyConfirmMessage;
+
+  /// No description provided for @trashEmptySuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Trash emptied. Results refreshed.'**
+  String get trashEmptySuccess;
+
+  /// No description provided for @trashEmptyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty Trash failed: {error}'**
+  String trashEmptyFailed(Object error);
 
   /// No description provided for @deleteActionMoveToTrash.
   ///
@@ -659,7 +689,7 @@ abstract class AppLocalizations {
   /// No description provided for @stickyBrowseResults.
   ///
   /// In en, this message translates to:
-  /// **'Browse results · tap folders below'**
+  /// **'Select items to move to Trash'**
   String get stickyBrowseResults;
 
   /// No description provided for @stickyReadyToScan.

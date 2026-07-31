@@ -92,12 +92,55 @@ typedef VolwardDeleteEntriesJsonNative =
 typedef VolwardDeleteEntriesJson =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
 
+typedef VolwardEmptyTrashJsonNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardEmptyTrashJson = Pointer<Utf8> Function(Pointer<Void>);
+
+// ---------------------------------------------------------------------------
+// Catalog index API typedefs (Design §5.3)
+// ---------------------------------------------------------------------------
+
+typedef VolwardQueryDirectoryJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Bool,
+      Pointer<Utf8>,
+    );
+typedef VolwardQueryDirectoryJson =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      bool,
+      Pointer<Utf8>,
+    );
+
+typedef VolwardRefreshDirectoryNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardRefreshDirectory =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardLoadIndexFromPathNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardLoadIndexFromPath =
+    bool Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardWriteLastIndexToPathNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastIndexToPath =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardIndexVersionNative = Uint64 Function(Pointer<Void>);
+typedef VolwardIndexVersion = int Function(Pointer<Void>);
+
 abstract interface class VolwardBridge {
   bool get hasSnapshotFileApi;
   bool get hasSnapshotFilePbApi;
   bool get hasScanOptionsApi;
   bool get hasCheckpointApi;
   bool get hasQuickListApi;
+  bool get hasIndexApi;
 }
 
 final class VolwardNativeBridge implements VolwardBridge {
@@ -171,6 +214,12 @@ final class VolwardNativeBridge implements VolwardBridge {
           'volward_delete_entries_json',
         )
         .asFunction();
+    _emptyTrashJson = _tryLookupEmptyTrashJson();
+    _queryDirectoryJson = _tryLookupQueryDirectoryJson();
+    _refreshDirectory = _tryLookupRefreshDirectory();
+    _loadIndexFromPath = _tryLookupLoadIndexFromPath();
+    _writeLastIndexToPath = _tryLookupWriteLastIndexToPath();
+    _indexVersion = _tryLookupIndexVersion();
   }
 
   VolwardStartScanAsyncWithOptions? _tryLookupStartScanAsyncWithOptions() {
@@ -288,6 +337,14 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardQuickListDirJson? _quickListDirJson;
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
+  late final VolwardEmptyTrashJson? _emptyTrashJson;
+
+  // Catalog index API fields
+  late final VolwardQueryDirectoryJson? _queryDirectoryJson;
+  late final VolwardRefreshDirectory? _refreshDirectory;
+  late final VolwardLoadIndexFromPath? _loadIndexFromPath;
+  late final VolwardWriteLastIndexToPath? _writeLastIndexToPath;
+  late final VolwardIndexVersion? _indexVersion;
 
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
   @override
@@ -314,6 +371,15 @@ final class VolwardNativeBridge implements VolwardBridge {
   /// listing (used for the pre-scan preview and click-priority peeks).
   @override
   bool get hasQuickListApi => _quickListDirJson != null;
+
+  /// True when the bundled dylib supports catalog index query/refresh APIs
+  /// (Design §5.3 — added 2026-07-31).
+  @override
+  bool get hasIndexApi =>
+      _queryDirectoryJson != null &&
+      _refreshDirectory != null &&
+      _loadIndexFromPath != null &&
+      _writeLastIndexToPath != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -510,6 +576,18 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  Map<String, dynamic> emptyTrash(Pointer<Void> engine) {
+    final lookup = _emptyTrashJson;
+    if (lookup == null) {
+      return const {
+        'error':
+            'native dylib missing volward_empty_trash_json — rebuild Rust',
+      };
+    }
+    final out = lookup(engine);
+    return _decodeJsonPtr(out);
+  }
+
   Map<String, dynamic> _decodeJsonPtr(Pointer<Utf8> ptr) {
     try {
       final raw = ptr.toDartString();
@@ -537,5 +615,165 @@ final class VolwardNativeBridge implements VolwardBridge {
       return DynamicLibrary.open(libPath);
     }
     throw UnsupportedError('Volward native bridge: unsupported platform');
+  }
+
+  VolwardEmptyTrashJson? _tryLookupEmptyTrashJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardEmptyTrashJsonNative>>(
+            'volward_empty_trash_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Catalog index API — try-lookup helpers + public methods
+  // ---------------------------------------------------------------------------
+
+  VolwardQueryDirectoryJson? _tryLookupQueryDirectoryJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardQueryDirectoryJsonNative>>(
+            'volward_query_directory_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardRefreshDirectory? _tryLookupRefreshDirectory() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardRefreshDirectoryNative>>(
+            'volward_refresh_directory',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardLoadIndexFromPath? _tryLookupLoadIndexFromPath() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardLoadIndexFromPathNative>>(
+            'volward_load_index_from_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardWriteLastIndexToPath? _tryLookupWriteLastIndexToPath() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardWriteLastIndexToPathNative>>(
+            'volward_write_last_index_to_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardIndexVersion? _tryLookupIndexVersion() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardIndexVersionNative>>(
+            'volward_index_version',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Query direct children of [path] from the Rust catalog index.
+  /// Returns a parsed `SnapshotQueryResult` JSON map.
+  /// Pure in-memory — does NOT trigger a file-system scan.
+  /// Throws [UnsupportedError] if the dylib lacks the index API.
+  Map<String, dynamic> queryDirectoryJson(
+    Pointer<Void> engine,
+    String path, {
+    String? categoryFilter,
+    bool deletableOnly = false,
+    String sortMode = 'size_desc',
+  }) {
+    final fn = _queryDirectoryJson;
+    if (fn == null) {
+      throw UnsupportedError(
+        'volward_query_directory_json not available — rebuild Rust',
+      );
+    }
+    final pathPtr = path.toNativeUtf8();
+    final catPtr = categoryFilter != null
+        ? categoryFilter.toNativeUtf8()
+        : Pointer<Utf8>.fromAddress(0);
+    final sortPtr = sortMode.toNativeUtf8();
+    try {
+      final out = fn(engine, pathPtr, catPtr, deletableOnly, sortPtr);
+      return _decodeJsonPtr(out);
+    } finally {
+      calloc.free(pathPtr);
+      if (categoryFilter != null) calloc.free(catPtr);
+      calloc.free(sortPtr);
+    }
+  }
+
+  /// Re-query the existing catalog for [path] — pure in-memory, no scan.
+  /// Returns a parsed `SnapshotQueryResult` JSON map.
+  /// Throws [UnsupportedError] if the dylib lacks the index API.
+  Map<String, dynamic> refreshDirectory(Pointer<Void> engine, String path) {
+    final fn = _refreshDirectory;
+    if (fn == null) {
+      throw UnsupportedError(
+        'volward_refresh_directory not available — rebuild Rust',
+      );
+    }
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = fn(engine, pathPtr);
+      return _decodeJsonPtr(out);
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Load a persisted index file into the engine. Returns true on success.
+  bool loadIndexFromPath(Pointer<Void> engine, String path) {
+    final fn = _loadIndexFromPath;
+    if (fn == null) return false;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      return fn(engine, pathPtr);
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Persist the current index to [path]. Returns snapshot_id or `error:…`.
+  String? writeLastIndexToPath(Pointer<Void> engine, String path) {
+    final fn = _writeLastIndexToPath;
+    if (fn == null) return null;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = fn(engine, pathPtr);
+      return out.toDartString();
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Current catalog version counter from Rust.
+  /// Dart uses this as [SnapshotQueryKey.version] for cache alignment.
+  int indexVersion(Pointer<Void> engine) {
+    final fn = _indexVersion;
+    if (fn == null) return 0;
+    return fn(engine);
   }
 }

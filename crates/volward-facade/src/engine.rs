@@ -7,11 +7,14 @@ use std::sync::{Arc, Mutex};
 use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
-use volward_core::model::{DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot};
-use volward_core::SnapshotCatalog;
+use volward_core::model::{
+    DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot, TrashEmptyReport,
+};
 use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
+use volward_core::SnapshotCatalog;
+use volward_core::SnapshotIndex;
 
 use crate::proto;
 
@@ -43,6 +46,11 @@ pub struct VolwardEngine {
     cancel: Arc<AtomicBool>,
     is_scanning: Arc<AtomicBool>,
     last_snapshot: Arc<Mutex<Option<StorageSnapshot>>>,
+    /// Authoritative path-keyed index rebuilt whenever a new snapshot is set.
+    /// Dart queries this via FFI instead of hydrating the full snapshot.
+    last_index: Arc<Mutex<Option<SnapshotIndex>>>,
+    /// Monotonic version counter — incremented each time last_index is rebuilt.
+    index_version: Arc<std::sync::atomic::AtomicU64>,
     last_progress: Arc<Mutex<Option<ScanProgress>>>,
     last_checkpoint: Arc<Mutex<Option<StorageSnapshot>>>,
     _scan_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
@@ -61,6 +69,8 @@ impl VolwardEngine {
             cancel: Arc::new(AtomicBool::new(false)),
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: Arc::new(Mutex::new(None)),
+            last_index: Arc::new(Mutex::new(None)),
+            index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_progress: Arc::new(Mutex::new(None)),
             last_checkpoint: Arc::new(Mutex::new(None)),
             _scan_handle: Arc::new(Mutex::new(None)),
@@ -82,9 +92,94 @@ impl VolwardEngine {
     }
 
     pub fn set_last_snapshot(&self, snapshot: StorageSnapshot) {
+        // Rebuild the path-keyed index atomically alongside the snapshot so
+        // Dart can query it immediately without a separate hydration call.
+        let version = self.index_version.fetch_add(1, Ordering::Relaxed) + 1;
+        let index = SnapshotIndex::from_snapshot_with_version(&snapshot, version);
+        if let Ok(mut g) = self.last_index.lock() {
+            *g = Some(index);
+        }
         if let Ok(mut g) = self.last_snapshot.lock() {
             *g = Some(snapshot);
         }
+    }
+
+    /// Current catalog version — Dart uses this as `SnapshotQueryKey.version`
+    /// so cache invalidation is aligned with the Rust index.
+    pub fn index_version(&self) -> u64 {
+        self.index_version.load(Ordering::Relaxed)
+    }
+
+    // ------------------------------------------------------------------
+    // Catalog index queries (Design §5.3 — Dart calls these over FFI)
+    // ------------------------------------------------------------------
+
+    /// Query direct children of `path` with optional filter/sort.
+    /// Pure in-memory — no file-system scan triggered.
+    pub fn query_directory_json(
+        &self,
+        path: &str,
+        category_filter: Option<&str>,
+        deletable_only: bool,
+        sort_mode: &str,
+    ) -> Result<String, String> {
+        let guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
+        let index = guard
+            .as_ref()
+            .ok_or_else(|| "error:no index loaded".to_string())?;
+        index.query_directory_json(path, category_filter, deletable_only, sort_mode)
+    }
+
+    /// Re-query the existing index for `path` — pure in-memory, no scan.
+    /// This is the implementation of Design §7.2 "current directory refresh".
+    pub fn refresh_directory(&self, path: &str) -> Result<String, String> {
+        let guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
+        let index = guard
+            .as_ref()
+            .ok_or_else(|| "error:no index loaded".to_string())?;
+        index.refresh_directory_json(path)
+    }
+
+    /// Load a persisted index file into the engine.
+    /// On success the in-memory index is replaced and the version counter bumped.
+    pub fn load_index_from_path(&self, path: &str) -> Result<(), String> {
+        let json = std::fs::read_to_string(path).map_err(|e| format!("error:read index: {e}"))?;
+        let index = serde_json::from_str::<SnapshotIndex>(&json)
+            .or_else(|_| {
+                serde_json::from_str::<StorageSnapshot>(&json)
+                    .map(|snapshot| SnapshotIndex::from(&snapshot))
+            })
+            .map_err(|e| format!("error:parse index: {e}"))?;
+        self.index_version.store(index.version, Ordering::Relaxed);
+        if let Ok(mut g) = self.last_index.lock() {
+            *g = Some(index);
+        }
+        Ok(())
+    }
+
+    /// Persist the current index (as a snapshot JSON) to `path`.
+    /// Returns the snapshot_id on success.
+    pub fn write_last_index_to_path(&self, path: &str) -> Result<String, String> {
+        let index = self
+            .last_index
+            .lock()
+            .map_err(|e| format!("lock: {e}"))?
+            .clone()
+            .or_else(|| {
+                self.last_snapshot
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().map(SnapshotIndex::from))
+            })
+            .ok_or_else(|| "error:no index".to_string())?;
+        let file = File::create(path).map_err(|e| format!("error:create index: {e}"))?;
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, &index)
+            .map_err(|e| format!("error:serialize index: {e}"))?;
+        writer
+            .flush()
+            .map_err(|e| format!("error:flush index: {e}"))?;
+        Ok(index.snapshot_id)
     }
 
     pub fn is_scan_running(&self) -> bool {
@@ -231,6 +326,10 @@ impl VolwardEngine {
             .map_err(|e| e.to_string())
     }
 
+    pub fn empty_trash(&self) -> Result<TrashEmptyReport, String> {
+        DeleteOrchestrator::empty_trash(&*self.platform).map_err(|e| e.to_string())
+    }
+
     pub fn probe_capabilities_json(&self) -> String {
         serde_json::to_string(&self.probe_capabilities()).unwrap_or_else(|_| "{}".to_string())
     }
@@ -324,7 +423,9 @@ impl VolwardEngine {
         let mut writer = BufWriter::new(file);
         serde_json::to_writer(&mut writer, &catalog)
             .map_err(|e| format!("error:serialize catalog: {e}"))?;
-        writer.flush().map_err(|e| format!("error:flush catalog: {e}"))?;
+        writer
+            .flush()
+            .map_err(|e| format!("error:flush catalog: {e}"))?;
         Ok(catalog.snapshot_id)
     }
 
@@ -384,9 +485,7 @@ fn write_snapshot_pb_atomic(snapshot: &StorageSnapshot, path: &str) -> Result<St
         writer
             .write_all(&bytes)
             .map_err(|e| format!("error:write pb: {e}"))?;
-        writer
-            .flush()
-            .map_err(|e| format!("error:flush pb: {e}"))?;
+        writer.flush().map_err(|e| format!("error:flush pb: {e}"))?;
     }
     std::fs::rename(&tmp, path).map_err(|e| {
         // Best-effort cleanup so a failed rename doesn't leak temp files.

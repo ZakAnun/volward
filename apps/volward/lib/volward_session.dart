@@ -14,6 +14,7 @@ import 'scan_tree.dart';
 import 'scan_snapshot_merge.dart';
 import 'scan_snapshot_state.dart';
 import 'snapshot_cache.dart';
+import 'snapshot_query.dart';
 
 /// Thrown when the user cancels an in-progress scan.
 class ScanCancelledException implements Exception {
@@ -28,10 +29,15 @@ class ScanCancelledException implements Exception {
 class VolwardSession extends ChangeNotifier {
   VolwardSession() {
     _initialize();
+    instance = this;
   }
 
-  @visibleForTesting
   VolwardSession.test() : _ready = true;
+
+  /// Global reference set when the singleton is constructed.
+  /// Used by [SnapshotCatalog.queryNode] to access the catalog fast path
+  /// without requiring an explicit parameter thread-through.
+  static VolwardSession? instance;
 
   Pointer<Void>? _engine;
   bool _ready = false;
@@ -60,18 +66,19 @@ class VolwardSession extends ChangeNotifier {
   int _snapshotVersion = 0;
   final Set<String> _invalidatedPrefixes = {};
   DateTime? _lastProgressRecompute;
-  // Track whether the native engine's last_snapshot matches _lastSnapshot.
-  // False after restoring a snapshot from disk (defers expensive FFI hydration
-  // to just before runScan()), or when _lastSnapshot changes without FFI sync.
-  bool _engineHydrated = false;
   // Guards switchScanRoot against concurrent invocations (e.g. rapid taps
   // while previewTarget's Isolate is in flight).
   bool _switchingRoot = false;
-  // Holds the full snapshot restored from disk, separate from _lastSnapshot
-  // which may be overwritten by a lightweight preview snapshot before runScan()
-  // is called.  _hydrateEngineIfNeeded() prefers this so Rust always receives
-  // a structurally complete snapshot rather than a preview stub.
-  ScanSnapshotState? _restoredSnapshotForHydration;
+
+  // ── Catalog-backed current-directory state (Design §6.1) ──────────────────
+  // Tracks the currently browsed directory path for targeted refresh.
+  // Updated by HomePage via setCurrentDirectory(); falls back to scan root.
+  String? _currentDirectoryPath;
+
+  // Test-only probe: the catalog-backed flow should never hydrate a full
+  // Dart snapshot back into Rust before refresh/scan.
+  @visibleForTesting
+  bool didAttemptHydration = false;
   // Throttle display-update notifications from _applyMerge. Checkpoints can
   // arrive 5-10×/sec; rebuilding the full widget tree that often is the primary
   // source of UI jank. We still update _lastSnapshot on every checkpoint for
@@ -114,6 +121,35 @@ class VolwardSession extends ChangeNotifier {
   bool get scanning => _scanning;
   bool get deleting => _deleting;
   String? get lastJobId => _lastJobId;
+
+  /// True when the bundled dylib supports catalog index query/refresh APIs.
+  bool get hasIndexApi {
+    // Guard: if the engine hasn't been initialised yet (e.g. in unit tests via
+    // VolwardSession.test()), return false rather than attempting to dlopen the
+    // dylib, which would crash in environments without the native library.
+    if (!_ready || _engine == null) return false;
+    return VolwardNativeBridge.instance.hasIndexApi;
+  }
+
+  /// Current combined view version for cache-key alignment (Design §5.4).
+  ///
+  /// Combines the Rust catalog's data version (reflects when the index was
+  /// last rebuilt from a new snapshot) with the Dart-side [_snapshotVersion]
+  /// (incremented by [refreshCurrentDirectory] and other UI-intent operations).
+  ///
+  /// Using both guarantees that:
+  /// - A new scan result (Rust version bump) invalidates the view cache.
+  /// - A catalog refresh call (Dart _snapshotVersion bump, no data change)
+  ///   also invalidates the cache and triggers a rebuild in [_onSessionChanged].
+  int get catalogVersion {
+    final engine = _engine;
+    final rustVersion = (engine != null && hasIndexApi)
+        ? VolwardNativeBridge.instance.indexVersion(engine)
+        : 0;
+    // XOR-combine so either dimension changing produces a new value.
+    return rustVersion ^ (_snapshotVersion << 20);
+  }
+
   ScanSnapshotState? get lastSnapshot => _lastSnapshot;
   Map<String, dynamic>? get lastDeleteReport => _lastDeleteReport;
   Map<String, dynamic>? get scanProgress => _scanProgress;
@@ -124,6 +160,12 @@ class VolwardSession extends ChangeNotifier {
   int get snapshotVersion => _snapshotVersion;
 
   Set<String> get invalidatedPrefixes => Set.unmodifiable(_invalidatedPrefixes);
+
+  Set<String> consumeInvalidatedPrefixes() {
+    final prefixes = Set<String>.from(_invalidatedPrefixes);
+    _invalidatedPrefixes.clear();
+    return prefixes;
+  }
 
   @visibleForTesting
   void setSnapshotForTest(ScanSnapshotState snapshot) {
@@ -339,9 +381,8 @@ class VolwardSession extends ChangeNotifier {
   Future<void> _restoreCachedSnapshot() async {
     if (!_ready || _engine == null || _scanning) return;
 
-    final preferredRoot = _scanRoots.isNotEmpty
-        ? _scanRoots.first
-        : _defaultScanRoot();
+    final preferredRoot =
+        _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
     final path = await SnapshotCache.latestSnapshotPath(
       preferredRoot: preferredRoot,
     );
@@ -352,14 +393,7 @@ class VolwardSession extends ChangeNotifier {
     try {
       final restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
       if (restored == null) return;
-      // Skip synchronous setLastSnapshot (jsonEncode + FFI) here — it blocks
-      // the main thread for hundreds of ms on large snapshots.  Instead mark
-      // the engine as needing hydration; _hydrateEngineIfNeeded() will do the
-      // FFI call just before the next runScan(), which is the only place Rust
-      // needs an up-to-date snapshot anyway.
       _lastSnapshot = restored;
-      _restoredSnapshotForHydration = _lastSnapshot;
-      _engineHydrated = false;
       debugPrint('VolwardSession: restored cached snapshot from $path');
     } catch (e, st) {
       debugPrint('VolwardSession: restore cached snapshot failed: $e\n$st');
@@ -369,33 +403,36 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  /// Path the UI is currently browsing — used as the refresh target.
+  /// Set by [setCurrentDirectory] from [HomePage] column selection.
+  String? get currentDirectoryPath => _currentDirectoryPath;
+
+  /// The path that [refreshCurrentDirectory] will target (Design §6.1):
+  /// focused subdirectory → scan root → default home.
+  String get refreshTargetPath =>
+      _currentDirectoryPath ??
+      (_scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot());
+
+  /// Called by [HomePage] whenever the column selection changes.
+  void setCurrentDirectory(String? path) {
+    if (_currentDirectoryPath == path) return;
+    _currentDirectoryPath = path;
+    // No notifyListeners() — this is UI-state bookkeeping, not display data.
+  }
+
+  @visibleForTesting
+  void setCurrentPathForTest(String path) => _currentDirectoryPath = path;
+
   void setScanRoots(List<String> roots) {
     _scanRoots = List.from(roots);
+    _currentDirectoryPath = null;
     notifyListeners();
   }
 
   void clearScanRoots() {
     _scanRoots = [];
+    _currentDirectoryPath = null;
     notifyListeners();
-  }
-
-  /// Synchronises the native engine's last_snapshot with the Dart-side
-  /// [_lastSnapshot].  Called just before [runScan] so the heavy
-  /// jsonEncode+FFI work happens on a predictable, intentional code path
-  /// rather than during snapshot restore (which would freeze the UI).
-  void _hydrateEngineIfNeeded() {
-    if (_engineHydrated) return;
-    // Prefer the full restored snapshot over _lastSnapshot, which may have been
-    // overwritten by a lightweight preview stub (buildPreviewSnapshot) that Rust
-    // cannot meaningfully parse as an incremental base.
-    final snap = _restoredSnapshotForHydration ?? _lastSnapshot;
-    if (snap == null || _engine == null) return;
-    if (VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap.toWire())) {
-      _engineHydrated = true;
-      _restoredSnapshotForHydration = null; // consumed — free the memory
-    } else {
-      debugPrint('VolwardSession: failed to hydrate engine before scan');
-    }
   }
 
   /// Switch the active scan root, implementing Plan B:
@@ -418,9 +455,8 @@ class VolwardSession extends ChangeNotifier {
     try {
       final newRoots = path != null ? [path] : <String>[];
       final newRoot = path ?? _defaultScanRoot();
-      final currentRoot = _scanRoots.isNotEmpty
-          ? _scanRoots.first
-          : _defaultScanRoot();
+      final currentRoot =
+          _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
 
       if (_scanning) {
         final isSubtree =
@@ -430,23 +466,19 @@ class VolwardSession extends ChangeNotifier {
           // Keep the full scan running — just narrow the display and peek-scan
           // the new root so it fills in immediately.
           _scanRoots = newRoots;
+          _currentDirectoryPath = null;
           notifyListeners();
           unawaited(peekScan(newRoot));
           return;
         }
         // Unrelated root: cancel first, then fall through to fresh scan below.
         cancelScan();
-        // Reset hydration state so the engine doesn't carry the old root's
-        // snapshot into the new scan as an incremental base.
-        _engineHydrated = true;
-        _restoredSnapshotForHydration = null;
       }
 
       // Fresh scan for the new root.
       _scanRoots = newRoots;
+      _currentDirectoryPath = null;
       _lastSnapshot = null;
-      _restoredSnapshotForHydration = null;
-      _engineHydrated = true;
       _snapshotVersion++;
       _invalidatedPrefixes.clear();
       notifyListeners();
@@ -515,15 +547,80 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Query direct children of [path] from the Rust catalog index.
+  ///
+  /// Returns null if the index API is unavailable so callers can fall back to
+  /// the tree-based path.  Called by [HomePage._visibleChildrenFor] on every
+  /// cache miss so results are always fresh after [refreshCurrentDirectory].
+  List<SnapshotNodeRecord>? queryDirectoryChildrenFromCatalog(
+    String path, {
+    String? categoryFilter,
+    bool deletableOnly = false,
+    String sortMode = 'size_desc',
+  }) {
+    if (!hasIndexApi || _engine == null) return null;
+    try {
+      final result = VolwardNativeBridge.instance.queryDirectoryJson(
+        _engine!,
+        path,
+        categoryFilter: categoryFilter,
+        deletableOnly: deletableOnly,
+        sortMode: sortMode,
+      );
+      final nodes = result['direct_children'] as List?;
+      if (nodes == null) return null;
+      return nodes
+          .whereType<Map<String, dynamic>>()
+          .map(SnapshotNodeRecord.fromJson)
+          .toList(growable: false);
+    } catch (e) {
+      debugPrint('VolwardSession.queryDirectoryChildrenFromCatalog: $e');
+      return null;
+    }
+  }
+
+  /// Refreshes the currently focused directory.
+  ///
+  /// Subdirectories use a scoped re-scan so local filesystem changes are
+  /// reflected without re-scanning the whole root. The root target falls back
+  /// to the normal full scan worker so large refreshes stay file-backed rather
+  /// than shipping a giant snapshot through the UI isolate.
+  Future<void> refreshCurrentDirectory() async {
+    if (!_ready || _engine == null) return;
+    final path = refreshTargetPath;
+    final root = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    final target = ScanTreeBuilder.normalizeRoot(path);
+    if (target == root) {
+      _currentDirectoryPath = null;
+    } else {
+      _currentDirectoryPath = path;
+    }
+    _invalidatedPrefixes.add(path);
+    _snapshotVersion++;
+    notifyListeners();
+    try {
+      if (target == root) {
+        await runScan();
+      } else {
+        await peekScan(path, force: true);
+      }
+    } catch (e, st) {
+      debugPrint('VolwardSession: refreshCurrentDirectory failed: $e\n$st');
+    }
+  }
+
   /// Triggers a small, scoped scan of [path] so its contents/size become
   /// available immediately, without waiting for the background full scan
   /// to reach it. No-op if a peek for this path is already in flight or
   /// already completed this session, or if the concurrency limit is hit
   /// (extra clicks are simply dropped — the background scan will cover the
   /// path eventually regardless).
-  Future<void> peekScan(String path) async {
+  Future<void> peekScan(String path, {bool force = false}) async {
     if (!_ready || _engine == null) return;
-    if (_peekInFlight.contains(path) || _peekCompleted.contains(path)) return;
+    if (_peekInFlight.contains(path)) return;
+    if (!force && _peekCompleted.contains(path)) return;
     if (_peekInFlight.length >= _maxConcurrentPeeks) return;
     // volwardPeekScanIsolate requires startScanAsyncWithOptions. If the dylib
     // is outdated, log once and let the isolate report the error — at least
@@ -537,6 +634,7 @@ class VolwardSession extends ChangeNotifier {
     }
 
     _peekInFlight.add(path);
+    notifyListeners();
     ReceivePort? receivePort;
     try {
       receivePort = ReceivePort();
@@ -548,11 +646,15 @@ class VolwardSession extends ChangeNotifier {
         final tree = message['tree'];
         final entriesRaw = message['entries'];
         if (tree is Map) {
+          // Do not load a peek-scan index into the main engine: the peek engine
+          // only scanned this subtree, so its index would replace the full
+          // catalog with a partial one. The merged Dart tree is the authoritative
+          // overlay for this focused branch until the next full scan.
           final entries = (entriesRaw is List)
               ? entriesRaw
-                    .whereType<Map>()
-                    .map((e) => Map<String, dynamic>.from(e))
-                    .toList()
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList()
               : <Map<String, dynamic>>[];
           await _applyMerge(
             path,
@@ -572,6 +674,7 @@ class VolwardSession extends ChangeNotifier {
     } finally {
       receivePort?.close();
       _peekInFlight.remove(path);
+      notifyListeners();
     }
   }
 
@@ -624,9 +727,6 @@ class VolwardSession extends ChangeNotifier {
     if (_scanning) {
       throw StateError('A scan is already in progress');
     }
-    // Sync the native engine with the current Dart snapshot before scanning.
-    // This is deferred from restore to avoid blocking the UI on startup.
-    _hydrateEngineIfNeeded();
     if (!hasSnapshotFileApi) {
       throw StateError(
         'Native library is outdated. Run: cd apps/volward/macos && bash build_rust.sh '
@@ -689,22 +789,31 @@ class VolwardSession extends ChangeNotifier {
         if (path != null && path.isNotEmpty) {
           unawaited(_applyCheckpointFromFile(path));
         }
+        // Load catalog index from checkpoint if available (Design §7.2).
+        final indexPath = m['index_path']?.toString();
+        if (indexPath != null && indexPath.isNotEmpty && _engine != null) {
+          VolwardNativeBridge.instance.loadIndexFromPath(_engine!, indexPath);
+        }
       } else if (type == 'done') {
         _touchScanActivity(phase: 'LoadingResults');
         _closeScanChannels();
+        final indexPath = m['index_path']?.toString();
+        if (indexPath != null && indexPath.isNotEmpty && _engine != null) {
+          VolwardNativeBridge.instance.loadIndexFromPath(_engine!, indexPath);
+        }
+        // Load catalog index before snapshot so Dart queries are available
+        // immediately (Design §7.3 — no full hydration on startup).
         final path = m['snapshot_path']?.toString();
         if (path != null && path.isNotEmpty) {
-          _loadSnapshotFromFile(path)
-              .then((snap) {
-                if (!completer.isCompleted) {
-                  completer.complete(snap);
-                }
-              })
-              .catchError((Object e, StackTrace st) {
-                if (!completer.isCompleted) {
-                  completer.completeError(e, st);
-                }
-              });
+          _loadSnapshotFromFile(path).then((snap) {
+            if (!completer.isCompleted) {
+              completer.complete(snap);
+            }
+          }).catchError((Object e, StackTrace st) {
+            if (!completer.isCompleted) {
+              completer.completeError(e, st);
+            }
+          });
         } else {
           final snap = m['snapshot'];
           completer.complete(
@@ -804,6 +913,35 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> emptyTrash({
+    bool rescanAfterEmpty = true,
+  }) async {
+    if (!_ready || _engine == null) {
+      throw StateError(_initError ?? 'Native engine not ready');
+    }
+
+    _deleting = true;
+    _lastError = null;
+    notifyListeners();
+    try {
+      final report = VolwardNativeBridge.instance.emptyTrash(_engine!);
+      if (report.containsKey('error')) {
+        throw StateError(report['error'].toString());
+      }
+      if (rescanAfterEmpty && _lastSnapshot != null) {
+        await runScan();
+      }
+      return report;
+    } catch (e, st) {
+      _lastError = '$e';
+      debugPrint('VolwardSession empty trash failed: $e\n$st');
+      rethrow;
+    } finally {
+      _deleting = false;
+      notifyListeners();
+    }
+  }
+
   Future<ScanSnapshotState?> _loadSnapshotFromFile(String path) async {
     final pathsSeen = (_scanProgress?['paths_seen'] as num?)?.toInt();
     _setScanProgressPhase('LoadingResults', pathsSeen: pathsSeen);
@@ -823,7 +961,6 @@ class VolwardSession extends ChangeNotifier {
     if (!VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
       throw StateError('Failed to load scan snapshot into engine');
     }
-    _engineHydrated = true; // Engine now matches the snapshot we just loaded.
     return ScanSnapshotState.fromWire(snap);
   }
 
@@ -842,9 +979,9 @@ class VolwardSession extends ChangeNotifier {
 
       final entries = (checkpoint['entries'] is List)
           ? (checkpoint['entries'] as List)
-                .whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList()
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
           : <Map<String, dynamic>>[];
 
       await _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
@@ -946,8 +1083,7 @@ class VolwardSession extends ChangeNotifier {
     // with O(N log N) display-tree recomputations.  Authoritative merges (peek
     // results) always notify immediately so the user sees results without delay.
     final now = DateTime.now();
-    final shouldNotify =
-        authoritative ||
+    final shouldNotify = authoritative ||
         !_scanning ||
         _lastApplyMergeNotify == null ||
         now.difference(_lastApplyMergeNotify!) >= _kDisplayNotifyGap;

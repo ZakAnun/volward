@@ -324,9 +324,120 @@ pub unsafe extern "C" fn volward_delete_entries_json(
     to_c_string(e.delete_entries_json(&snapshot_id, entry_ids, dry_run))
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn volward_empty_trash_json(engine: *mut VolwardEngine) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    match e.empty_trash() {
+        Ok(report) => {
+            to_c_string(serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()))
+        }
+        Err(msg) => to_c_string(serde_json::json!({ "error": msg }).to_string()),
+    }
+}
+
 unsafe fn cstr_to_string(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
     CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Catalog index APIs (Design §5.3 — Dart queries these instead of hydrating)
+// ---------------------------------------------------------------------------
+
+/// Query direct children of `path` with optional filter/sort.
+/// Returns JSON `SnapshotQueryResult` or `{"error":"…"}`.
+/// Pure in-memory — does NOT trigger a file-system scan.
+#[no_mangle]
+pub unsafe extern "C" fn volward_query_directory_json(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+    category_filter: *const c_char, // may be null
+    deletable_only: bool,
+    sort_mode: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let path = match cstr_to_string(path) {
+        Some(p) => p,
+        None => return to_c_string(r#"{"error":"null path"}"#.to_string()),
+    };
+    let category_filter = cstr_to_string(category_filter);
+    let sort_mode = cstr_to_string(sort_mode).unwrap_or_else(|| "size_desc".to_string());
+    match e.query_directory_json(
+        &path,
+        category_filter.as_deref(),
+        deletable_only,
+        &sort_mode,
+    ) {
+        Ok(json) => to_c_string(json),
+        Err(msg) => to_c_string(serde_json::json!({"error": msg}).to_string()),
+    }
+}
+
+/// Re-query the existing index for `path` — pure in-memory, no scan.
+/// Returns JSON `SnapshotQueryResult` or `{"error":"…"}`.
+#[no_mangle]
+pub unsafe extern "C" fn volward_refresh_directory(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let path = match cstr_to_string(path) {
+        Some(p) => p,
+        None => return to_c_string(r#"{"error":"null path"}"#.to_string()),
+    };
+    match e.refresh_directory(&path) {
+        Ok(json) => to_c_string(json),
+        Err(msg) => to_c_string(serde_json::json!({"error": msg}).to_string()),
+    }
+}
+
+/// Load a persisted index file into the engine.
+/// Returns true on success.
+#[no_mangle]
+pub unsafe extern "C" fn volward_load_index_from_path(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    let Some(path) = cstr_to_string(path) else {
+        return false;
+    };
+    e.load_index_from_path(&path).is_ok()
+}
+
+/// Persist the current index to `path`.
+/// Returns the snapshot_id on success, or `error:…` on failure.
+#[no_mangle]
+pub unsafe extern "C" fn volward_write_last_index_to_path(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let path = match cstr_to_string(path) {
+        Some(p) => p,
+        None => return to_c_string("error:null path".to_string()),
+    };
+    match e.write_last_index_to_path(&path) {
+        Ok(id) => to_c_string(id),
+        Err(msg) => to_c_string(msg),
+    }
+}
+
+/// Returns the current catalog version counter as a u64.
+/// Dart uses this as `SnapshotQueryKey.version` for cache alignment.
+#[no_mangle]
+pub unsafe extern "C" fn volward_index_version(engine: *mut VolwardEngine) -> u64 {
+    engine_ref(engine).map(|e| e.index_version()).unwrap_or(0)
 }

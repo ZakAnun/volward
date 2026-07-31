@@ -124,7 +124,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanActionStart => 'Start scan';
 
   @override
-  String get scanActionRescan => 'Rescan';
+  String get scanActionRescan => 'Refresh';
+
+  @override
+  String get trashActionEmpty => 'Empty Trash';
+
+  @override
+  String get trashEmptyConfirmTitle => 'Empty Trash?';
+
+  @override
+  String get trashEmptyConfirmMessage =>
+      'Permanently delete everything in Trash? This cannot be undone.';
+
+  @override
+  String get trashEmptySuccess => 'Trash emptied. Results refreshed.';
+
+  @override
+  String trashEmptyFailed(Object error) {
+    return 'Empty Trash failed: $error';
+  }
 
   @override
   String get deleteActionMoveToTrash => 'Move to Trash';
@@ -350,7 +368,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get stickyBrowseResults => 'Browse results · tap folders below';
+  String get stickyBrowseResults => 'Select items to move to Trash';
 
   @override
   String get stickyReadyToScan => 'Ready to scan';

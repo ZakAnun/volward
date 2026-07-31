@@ -39,7 +39,11 @@ impl From<&StorageSnapshot> for SnapshotCatalog {
             reclaimable_estimate_bytes: snapshot.reclaimable_estimate_bytes,
             stats: snapshot.stats.clone(),
             entry_count: snapshot.entries.len() as u64,
-            deletable_count: snapshot.entries.iter().filter(|entry| entry.deletable).count() as u64,
+            deletable_count: snapshot
+                .entries
+                .iter()
+                .filter(|entry| entry.deletable)
+                .count() as u64,
             category_counts,
             deletable_category_counts,
         }

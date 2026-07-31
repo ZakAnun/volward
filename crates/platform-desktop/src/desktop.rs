@@ -2,12 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jwalk::{DirEntry, Error, WalkDir};
 use volward_core::manifest::DirFingerprint;
+use volward_core::model::TrashEmptyReport;
 use volward_core::model::{
     CapabilityLevel, DeleteReport, PlatformCapabilities, RawFsEntry, ScanRoot, VolumeStats,
 };
@@ -316,6 +319,45 @@ impl PlatformStorage for DesktopPlatform {
             failed_paths,
             freed_bytes: 0,
         })
+    }
+
+    fn empty_trash(&self) -> Result<TrashEmptyReport, PlatformError> {
+        #[cfg(target_os = "macos")]
+        {
+            let output = Command::new("osascript")
+                .args(["-e", "tell application \"Finder\" to empty the trash"])
+                .output()
+                .map_err(PlatformError::Io)?;
+            if output.status.success() {
+                return Ok(TrashEmptyReport { cleared_count: 0 });
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            return Err(PlatformError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("osascript empty trash failed: {stderr}"),
+            )));
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let items = trash::os_limited::list().map_err(|e| {
+                PlatformError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
+            let cleared_count = items.len();
+            if cleared_count == 0 {
+                return Ok(TrashEmptyReport { cleared_count: 0 });
+            }
+            trash::os_limited::purge_all(items).map_err(|e| {
+                PlatformError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
+            Ok(TrashEmptyReport { cleared_count })
+        }
     }
 
     fn open_permission_settings(&self) -> Result<(), PlatformError> {

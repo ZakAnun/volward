@@ -93,12 +93,12 @@ void main() {
     test('scanned_at_ms and reclaimable_estimate_bytes decoded as int', () {
       final b = snap()
         ..string(1, 'snap-002')
-        ..varint(2, 1_700_000_000_000) // int64 ms timestamp
-        ..varint(6, 987_654_321); // reclaimable_estimate_bytes
+        ..varint(2, 1700000000000) // int64 ms timestamp
+        ..varint(6, 987654321); // reclaimable_estimate_bytes
 
       final result = decodeSnapshotPb(b.build())!;
-      expect(result['scanned_at_ms'], 1_700_000_000_000);
-      expect(result['reclaimable_estimate_bytes'], 987_654_321);
+      expect(result['scanned_at_ms'], 1700000000000);
+      expect(result['reclaimable_estimate_bytes'], 987654321);
     });
 
     // -----------------------------------------------------------------------
@@ -110,7 +110,7 @@ void main() {
         ..string(1, 'Documents') // name
         ..string(2, '/root/Documents') // path
         ..varint(3, 1) // is_dir = true
-        ..varint(4, 512_000); // size_bytes
+        ..varint(4, 512000); // size_bytes
 
       final b = snap()
         ..string(1, 'snap-tree')
@@ -122,7 +122,7 @@ void main() {
       expect(t['name'], 'Documents');
       expect(t['path'], '/root/Documents');
       expect(t['is_dir'], isTrue);
-      expect(t['size_bytes'], 512_000);
+      expect(t['size_bytes'], 512000);
       expect(t['scanned'], isFalse);
       expect(t['children'], isEmpty);
     });
@@ -148,7 +148,7 @@ void main() {
         ..string(1, 'photo.jpg')
         ..string(2, '/root/photo.jpg')
         ..varint(3, 0) // is_dir = false
-        ..varint(4, 2_048)
+        ..varint(4, 2048)
         ..string(5, 'entry-abc'); // entry_id
 
       final b = snap()
@@ -193,7 +193,7 @@ void main() {
         ..string(1, 'ent-1') // id
         ..string(2, 'Cache dir') // display_name
         ..string(3, '/Library/Caches/foo') // path_or_uri
-        ..varint(4, 8_192) // size_bytes
+        ..varint(4, 8192) // size_bytes
         ..varint(5, 1) // category = Cache
         ..varint(6, 2) // risk_level = Medium
         ..varint(8, 1); // deletable = true
@@ -210,7 +210,7 @@ void main() {
       expect(entry['id'], 'ent-1');
       expect(entry['display_name'], 'Cache dir');
       expect(entry['path_or_uri'], '/Library/Caches/foo');
-      expect(entry['size_bytes'], 8_192);
+      expect(entry['size_bytes'], 8192);
       expect(entry['category'], 'Cache');
       expect(entry['risk_level'], 'Medium');
       expect(entry['deletable'], isTrue);

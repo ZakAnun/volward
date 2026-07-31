@@ -24,11 +24,7 @@ pub fn parse_scan_bench_args(args: &[String]) -> ScanBenchOptions {
         match args[i].as_str() {
             "--root" => {
                 i += 1;
-                root = Some(
-                    args.get(i)
-                        .expect("--root requires a path")
-                        .clone(),
-                );
+                root = Some(args.get(i).expect("--root requires a path").clone());
             }
             "--entries" => {
                 i += 1;
@@ -178,19 +174,12 @@ pub fn run_snapshot_bench(snapshot: &StorageSnapshot, iterations: u32) -> Vec<Be
 }
 
 pub fn print_bench_report(snapshot: &StorageSnapshot, iterations: u32, results: &[BenchResult]) {
-    let baseline_size = results
-        .first()
-        .map(|r| r.size_bytes)
-        .unwrap_or(1)
-        .max(1);
+    let baseline_size = results.first().map(|r| r.size_bytes).unwrap_or(1).max(1);
 
     println!("Volward snapshot serialize benchmark (F0)");
     println!("snapshot_id: {}", snapshot.snapshot_id);
     println!("entries: {}", snapshot.entries.len());
-    println!(
-        "tree children: {}",
-        snapshot.tree.children.len()
-    );
+    println!("tree children: {}", snapshot.tree.children.len());
     println!("iterations: {iterations}");
     println!();
     println!(

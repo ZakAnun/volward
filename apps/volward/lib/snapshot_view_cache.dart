@@ -20,6 +20,12 @@ class SnapshotViewCache<T> {
     }
   }
 
+  /// True when the cache contains an entry for [key].
+  bool containsKey(SnapshotQueryKey key) => _values.containsKey(key);
+
+  /// Returns a cached entry without updating the LRU order.
+  T? peek(SnapshotQueryKey key) => _values[key];
+
   void invalidatePath(String path) {
     _values.removeWhere((key, _) {
       final keyPath = key.path;

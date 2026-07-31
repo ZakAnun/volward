@@ -4,12 +4,13 @@ import 'package:flutter/rendering.dart';
 import '../l10n/l10n.dart';
 import '../scan_tree.dart';
 import '../snapshot_catalog.dart';
+import '../snapshot_query.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'scan_filter_bar.dart';
 
-typedef ScanColumnSelectCallback =
-    void Function(int columnIndex, ScanTreeNode node);
+typedef ScanColumnSelectCallback = void Function(
+    int columnIndex, SnapshotNodeRecord node);
 
 /// macOS Finder-style column browser for [root] scan tree.
 class ScanColumnView extends StatefulWidget {
@@ -33,8 +34,8 @@ class ScanColumnView extends StatefulWidget {
   });
 
   final ScanTreeNode root;
-  final List<ScanTreeNode>? visibleChildren;
-  final Map<String, List<ScanTreeNode>> visibleChildrenByPath;
+  final List<SnapshotNodeRecord>? visibleChildren;
+  final Map<String, List<SnapshotNodeRecord>> visibleChildrenByPath;
   final Set<String> loadingChildrenPaths;
   final List<ScanTreeNode> selectionChain;
   final ScanColumnSelectCallback onSelect;
@@ -87,7 +88,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   // Avoids re-sorting all visible columns on every navigation tick when the
   // underlying data hasn't changed.  Cleared whenever root identity changes
   // (i.e. a new snapshot was merged) to prevent stale entries from accumulating.
-  final Map<int, (_ColumnViewKey, List<ScanTreeNode>)> _sortCache = {};
+  final Map<int, (_ColumnViewKey, List<SnapshotNodeRecord>)> _sortCache = {};
 
   @override
   void didUpdateWidget(covariant ScanColumnView oldWidget) {
@@ -114,11 +115,13 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   }
 
   List<_FinderColumnData> _columns() {
-    List<ScanTreeNode> childrenFor(ScanTreeNode node) {
+    List<SnapshotNodeRecord> childrenFor(ScanTreeNode node) {
       return widget.visibleChildrenByPath[node.path] ??
           (node.path == widget.root.path && widget.visibleChildren != null
               ? widget.visibleChildren!
-              : node.children);
+              : node.children.map(SnapshotNodeRecord.fromTree).toList(
+                    growable: false,
+                  ));
     }
 
     final cols = <_FinderColumnData>[
@@ -149,7 +152,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
   /// Results are cached by list identity so that repeated calls during the same
   /// render (e.g. column-nav ticks with unchanged data) return the pre-sorted
   /// list with zero additional work.
-  List<ScanTreeNode> _sorted(List<ScanTreeNode> items) {
+  List<SnapshotNodeRecord> _sorted(List<SnapshotNodeRecord> items) {
     if (widget.childrenPreSorted) {
       return items;
     }
@@ -164,12 +167,10 @@ class _ScanColumnViewState extends State<ScanColumnView> {
       return cached.$2;
     }
     final list = items
-        .where(
-          (node) => node.matchesView(
-            categoryFilter: widget.categoryFilter,
-            deletableOnly: widget.deletableOnly,
-          ),
-        )
+        .where((node) => node.matchesView(
+              categoryFilter: widget.categoryFilter,
+              deletableOnly: widget.deletableOnly,
+            ))
         .toList(growable: false);
     if (list.length <= 1) {
       _sortCache[key] = (viewKey, list);
@@ -246,7 +247,14 @@ class _ScanColumnViewState extends State<ScanColumnView> {
                     color: v.hairline,
                   ),
                   itemBuilder: (context, columnIndex) {
+                    // Stable key: keyed by the column's directory path so
+                    // Flutter reuses the element (and its ScrollController
+                    // state) when columns are inserted/removed during
+                    // navigation.  Without this, every _columnNavTick rebuild
+                    // destroys and recreates all column scroll state, causing
+                    // the visible flash/jump on directory tap.
                     return _FinderColumn(
+                      key: ValueKey(columns[columnIndex].path),
                       width: widget.columnWidth,
                       height: height,
                       path: columns[columnIndex].path,
@@ -279,12 +287,13 @@ class _FinderColumnData {
   });
 
   final String path;
-  final List<ScanTreeNode> items;
+  final List<SnapshotNodeRecord> items;
   final bool loading;
 }
 
 class _FinderColumn extends StatelessWidget {
   const _FinderColumn({
+    super.key,
     required this.width,
     required this.height,
     required this.path,
@@ -300,10 +309,10 @@ class _FinderColumn extends StatelessWidget {
   final double width;
   final double height;
   final String path;
-  final List<ScanTreeNode> items;
+  final List<SnapshotNodeRecord> items;
   final bool loading;
   final ScanTreeNode? selected;
-  final ValueChanged<ScanTreeNode> onSelect;
+  final ValueChanged<SnapshotNodeRecord> onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
   final Set<String> peekInFlight;
@@ -352,48 +361,53 @@ class _FinderColumn extends StatelessWidget {
               ),
             )
           : items.length > _paintedColumnThreshold
-          ? _PaintedFinderColumn(
-              width: width,
-              height: height,
-              items: items,
-              selected: selected,
-              onSelect: onSelect,
-              formatBytes: formatBytes,
-              selectedEntryIds: selectedEntryIds,
-              peekInFlight: peekInFlight,
-              style: rowStyle,
-            )
-          : ListView.builder(
-              primary: false,
-              itemExtent: 28,
-              scrollCacheExtent: const ScrollCacheExtent.pixels(112),
-              addAutomaticKeepAlives: false,
-              addRepaintBoundaries: false,
-              addSemanticIndexes: false,
-              padding: const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final node = items[index];
-                final isSelected = selected?.path == node.path;
-                final entryId = node.entryId;
-                final marked =
-                    entryId != null && selectedEntryIds.contains(entryId);
-                final isDir = node.isDirectory;
-                final subtitle = isDir
-                    ? (node.scanned ? formatBytes(node.displayBytes) : '—')
-                    : formatBytes(node.sizeBytes);
-
-                return _FinderRow(
-                  node: node,
-                  isSelected: isSelected,
-                  markedForDelete: marked,
-                  subtitle: subtitle,
+              ? _PaintedFinderColumn(
+                  width: width,
+                  height: height,
+                  items: items,
+                  selected: selected,
+                  onSelect: onSelect,
+                  formatBytes: formatBytes,
+                  selectedEntryIds: selectedEntryIds,
+                  peekInFlight: peekInFlight,
                   style: rowStyle,
-                  peekInFlight: peekInFlight.contains(node.path),
-                  onTap: () => onSelect(node),
-                );
-              },
-            ),
+                )
+              : ListView.builder(
+                  primary: false,
+                  itemExtent: 28,
+                  // 500px = ~18 rows pre-rendered above/below viewport.
+                  // The old value (112px = 4 rows) caused frame drops on fast
+                  // scroll because off-screen rows were destroyed and rebuilt
+                  // before the rasteriser could keep up.
+                  scrollCacheExtent: const ScrollCacheExtent.pixels(500),
+                  addAutomaticKeepAlives: false,
+                  addRepaintBoundaries: false,
+                  addSemanticIndexes: false,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final node = items[index];
+                    final isSelected = selected?.path == node.path;
+                    final entryId = node.entryId;
+                    final marked =
+                        entryId != null && selectedEntryIds.contains(entryId);
+                    final isDir = node.isDirectory;
+                    final subtitle = isDir
+                        ? (node.scanned ? formatBytes(node.displayBytes) : '—')
+                        : formatBytes(node.sizeBytes);
+
+                    return _FinderRow(
+                      node: node,
+                      isSelected: isSelected,
+                      markedForDelete: marked,
+                      subtitle: subtitle,
+                      style: rowStyle,
+                      peekInFlight: peekInFlight.contains(node.path),
+                      onTap: () => onSelect(node),
+                    );
+                  },
+                ),
     );
   }
 }
@@ -445,9 +459,9 @@ class _PaintedFinderColumn extends StatefulWidget {
 
   final double width;
   final double height;
-  final List<ScanTreeNode> items;
+  final List<SnapshotNodeRecord> items;
   final ScanTreeNode? selected;
-  final ValueChanged<ScanTreeNode> onSelect;
+  final ValueChanged<SnapshotNodeRecord> onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
   final Set<String> peekInFlight;
@@ -491,9 +505,8 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
           onTapUp: _handleTap,
           child: SizedBox(
             width: widget.width,
-            height: contentHeight < widget.height
-                ? widget.height
-                : contentHeight,
+            height:
+                contentHeight < widget.height ? widget.height : contentHeight,
             child: CustomPaint(
               painter: _FinderColumnPainter(
                 scrollController: _scrollController,
@@ -534,7 +547,7 @@ class _FinderColumnPainter extends CustomPainter {
 
   final ScrollController scrollController;
   final double viewportHeight;
-  final List<ScanTreeNode> items;
+  final List<SnapshotNodeRecord> items;
   final String? selectedPath;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
@@ -553,9 +566,9 @@ class _FinderColumnPainter extends CustomPainter {
         ? scrollController.offset.clamp(0.0, double.infinity)
         : 0.0;
     final first = ((offset - _verticalPadding) / _rowHeight).floor().clamp(
-      0,
-      items.length,
-    );
+          0,
+          items.length,
+        );
     final last = ((offset + viewportHeight - _verticalPadding) / _rowHeight)
         .ceil()
         .clamp(0, items.length);
@@ -574,8 +587,8 @@ class _FinderColumnPainter extends CustomPainter {
     final bg = selected
         ? style.selectedBackground
         : marked
-        ? style.markedBackground
-        : Colors.transparent;
+            ? style.markedBackground
+            : Colors.transparent;
     if ((bg.a * 255.0).round().clamp(0, 255) != 0) {
       canvas.drawRect(
         Rect.fromLTWH(0, y, size.width, _rowHeight),
@@ -767,7 +780,7 @@ class _FinderRow extends StatelessWidget {
     this.peekInFlight = false,
   });
 
-  final ScanTreeNode node;
+  final SnapshotNodeRecord node;
   final bool isSelected;
   final bool markedForDelete;
   final String subtitle;
@@ -804,8 +817,8 @@ class _FinderRow extends StatelessWidget {
                   size: 16,
                   color: isDir
                       ? (isSelected
-                            ? style.selectedFolderIcon
-                            : style.folderIcon)
+                          ? style.selectedFolderIcon
+                          : style.folderIcon)
                       : style.fileIcon,
                 ),
                 const SizedBox(width: AppleSpacing.xxs),
@@ -830,8 +843,8 @@ class _FinderRow extends StatelessWidget {
                           ),
                         )
                       : (!node.scanned)
-                      ? Icon(Icons.more_horiz, size: 14, color: muted)
-                      : Icon(Icons.chevron_right, size: 14, color: muted)
+                          ? Icon(Icons.more_horiz, size: 14, color: muted)
+                          : Icon(Icons.chevron_right, size: 14, color: muted)
                 else
                   Text(
                     subtitle,

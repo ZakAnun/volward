@@ -123,7 +123,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanActionStart => '开始扫描';
 
   @override
-  String get scanActionRescan => '重新扫描';
+  String get scanActionRescan => '刷新';
+
+  @override
+  String get trashActionEmpty => '清空废纸篓';
+
+  @override
+  String get trashEmptyConfirmTitle => '清空废纸篓？';
+
+  @override
+  String get trashEmptyConfirmMessage => '将废纸篓中的所有内容永久删除？此操作不可撤销。';
+
+  @override
+  String get trashEmptySuccess => '废纸篓已清空，结果已刷新。';
+
+  @override
+  String trashEmptyFailed(Object error) {
+    return '清空废纸篓失败：$error';
+  }
 
   @override
   String get deleteActionMoveToTrash => '移到废纸篓';
@@ -327,7 +344,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get stickyBrowseResults => '浏览结果 · 点击下方文件夹';
+  String get stickyBrowseResults => '选择要移到废纸篓的项目';
 
   @override
   String get stickyReadyToScan => '准备扫描';

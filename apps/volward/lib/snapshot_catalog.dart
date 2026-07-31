@@ -2,6 +2,7 @@ import 'scan_entry_record.dart';
 import 'scan_snapshot_state.dart';
 import 'scan_tree.dart';
 import 'snapshot_query.dart';
+import 'volward_session.dart';
 import 'widgets/scan_filter_bar.dart';
 
 class SnapshotCatalog {
@@ -66,6 +67,46 @@ class SnapshotCatalog {
   }) {
     if (!node.isDirectory) return _emptyResult;
 
+    // Fast path: delegate to Rust catalog when the index API is available
+    // (Design §7 — avoids Dart tree traversal and keeps memory bounded).
+    final session = VolwardSession.instance;
+    if (session != null && session.hasIndexApi) {
+      final catalogChildren = session.queryDirectoryChildrenFromCatalog(
+        node.path,
+        categoryFilter: key.categoryFilter,
+        deletableOnly: key.deletableOnly,
+        sortMode: rustSortModeName(key.sortMode),
+      );
+      if (catalogChildren != null) {
+        // Convert SnapshotNodeRecord → ScanTreeNode for compatibility with
+        // the rest of the Dart codebase that still uses ScanTreeNode.
+        final allNodes = catalogChildren
+            .map((r) => r.toScanTreeNode())
+            .toList(growable: false);
+        final dirs = allNodes.where((n) => n.isDirectory).toList();
+        final files = allNodes.where((n) => !n.isDirectory).toList();
+        final entries = includeEntryRecords
+            ? files
+                .map((n) => n.toEntryRecord())
+                .whereType<ScanEntryRecord>()
+                .toList(growable: false)
+            : const <ScanEntryRecord>[];
+        final totalBytes = files.fold<int>(0, (s, n) => s + n.displayBytes);
+        final reclaimable = files.where((n) => n.deletable).fold<int>(
+              0,
+              (s, n) => s + n.displayBytes,
+            );
+        return SnapshotQueryResult(
+          directNodes: List.unmodifiable(<ScanTreeNode>[...dirs, ...files]),
+          directChildren: List.unmodifiable(dirs),
+          directEntries: List.unmodifiable(entries),
+          totalBytes: totalBytes,
+          reclaimableBytes: reclaimable,
+        );
+      }
+    }
+
+    // Fallback: Dart-side tree traversal for older builds without index API.
     final children = <ScanTreeNode>[];
     final fileNodes = <ScanTreeNode>[];
     var total = 0;
@@ -90,9 +131,9 @@ class SnapshotCatalog {
     fileNodes.sort((left, right) => _compareNodes(key.sortMode, left, right));
     final sortedEntries = includeEntryRecords
         ? fileNodes
-              .map((node) => node.toEntryRecord())
-              .whereType<ScanEntryRecord>()
-              .toList(growable: false)
+            .map((node) => node.toEntryRecord())
+            .whereType<ScanEntryRecord>()
+            .toList(growable: false)
         : const <ScanEntryRecord>[];
     return SnapshotQueryResult(
       directNodes: List.unmodifiable(<ScanTreeNode>[...children, ...fileNodes]),

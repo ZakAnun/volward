@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::manifest::DirFingerprint;
-use crate::model::{DeleteReport, PlatformCapabilities, RawFsEntry, ScanRoot, VolumeStats};
+use crate::model::{
+    DeleteReport, PlatformCapabilities, RawFsEntry, ScanRoot, TrashEmptyReport, VolumeStats,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformError {
@@ -43,6 +45,10 @@ pub trait PlatformStorage: Send + Sync {
     ) -> Result<u64, PlatformError>;
 
     fn trash_paths(&self, paths: &[String]) -> Result<DeleteReport, PlatformError>;
+
+    fn empty_trash(&self) -> Result<TrashEmptyReport, PlatformError> {
+        Err(PlatformError::Unsupported("empty_trash"))
+    }
 
     fn volume_stats(&self, root: &ScanRoot) -> Result<VolumeStats, PlatformError>;
 

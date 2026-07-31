@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/scan_tree.dart';
+import 'package:volward/snapshot_query.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 import 'package:volward/widgets/scan_filter_bar.dart';
@@ -18,11 +19,12 @@ void main() {
             width: 480,
             child: ScanColumnView(
               root: root,
-              visibleChildren: [
-                ScanTreeNode(
+              visibleChildren: const [
+                SnapshotNodeRecord(
                   name: 'Visible folder',
                   path: '/root/visible',
                   isDirectory: true,
+                  sizeBytes: 0,
                 ),
               ],
               selectionChain: const [],
@@ -38,7 +40,7 @@ void main() {
   });
 
   testWidgets('ScanColumnView folder tap invokes onSelect', (tester) async {
-    ScanTreeNode? selected;
+    SnapshotNodeRecord? selected;
 
     final root = ScanTreeNode(
       name: 'root',
@@ -215,15 +217,15 @@ void main() {
       );
 
       Widget buildView() => MaterialApp(
-        home: Scaffold(
-          body: ScanColumnView(
-            root: root,
-            selectionChain: const [],
-            onSelect: (_, __) => selected++,
-            formatBytes: (bytes) => '${bytes ?? 0} B',
-          ),
-        ),
-      );
+            home: Scaffold(
+              body: ScanColumnView(
+                root: root,
+                selectionChain: const [],
+                onSelect: (_, __) => selected++,
+                formatBytes: (bytes) => '${bytes ?? 0} B',
+              ),
+            ),
+          );
 
       await tester.pumpWidget(buildView());
       for (var i = 0; i < 10; i++) {
@@ -250,14 +252,14 @@ void main() {
             width: 480,
             child: ScanColumnView(
               root: root,
-              visibleChildren: [
-                ScanTreeNode(
+              visibleChildren: const [
+                SnapshotNodeRecord(
                   name: 'Small first',
                   path: '/root/small',
                   isDirectory: true,
                   sizeBytes: 1,
                 ),
-                ScanTreeNode(
+                SnapshotNodeRecord(
                   name: 'Large second',
                   path: '/root/large',
                   isDirectory: true,

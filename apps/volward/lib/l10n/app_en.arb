@@ -37,7 +37,17 @@
   "scanActionHome": "Home",
   "scanActionCancel": "Cancel",
   "scanActionStart": "Start scan",
-  "scanActionRescan": "Rescan",
+  "scanActionRescan": "Refresh",
+  "trashActionEmpty": "Empty Trash",
+  "trashEmptyConfirmTitle": "Empty Trash?",
+  "trashEmptyConfirmMessage": "Permanently delete everything in Trash? This cannot be undone.",
+  "trashEmptySuccess": "Trash emptied. Results refreshed.",
+  "trashEmptyFailed": "Empty Trash failed: {error}",
+  "@trashEmptyFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "deleteActionMoveToTrash": "Move to Trash",
   "deleteActionWorking": "Working…",
   "deleteConfirmTitle": "Move to Trash?",
@@ -203,7 +213,7 @@
       }
     }
   },
-  "stickyBrowseResults": "Browse results · tap folders below",
+  "stickyBrowseResults": "Select items to move to Trash",
   "stickyReadyToScan": "Ready to scan",
   "stickyLoadingEngine": "Loading engine…"
 }
