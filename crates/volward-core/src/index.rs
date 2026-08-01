@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{EntryCategory, StorageSnapshot};
+use crate::model::{EntryCategory, StorageEntry, StorageSnapshot};
 
 // ---------------------------------------------------------------------------
 // Query structs (returned to callers / serialised to Dart over FFI)
@@ -54,20 +54,36 @@ pub struct SnapshotQueryResult {
     pub reclaimable_bytes: u64,
 }
 
+/// Lightweight catalog summary for Dart/UI state.
+///
+/// This lets the UI render counts and root metadata without hydrating the full
+/// recursive snapshot tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotIndexSummary {
+    pub snapshot_id: String,
+    pub root_path: String,
+    pub root_size_bytes: u64,
+    pub scanned_at_ms: i64,
+    pub version: u64,
+    pub scan_state: String,
+    pub reclaimable_estimate_bytes: u64,
+    pub entry_count: u64,
+    pub deletable_count: u64,
+    pub category_counts: HashMap<String, u64>,
+    pub deletable_counts: HashMap<String, u64>,
+}
+
 // ---------------------------------------------------------------------------
 // Internal index records (not sent over FFI — held inside SnapshotIndex)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DirectoryRecord {
-    path: String,
     parent_path: Option<String>,
     name: String,
     size_bytes: u64,
     scanned: bool,
     peek_scanned: bool,
-    /// Ordered list of direct child paths (dirs first, then files).
-    child_paths: Vec<String>,
     category_mask: u64,
     deletable_category_mask: u64,
     deletable_file_count: u64,
@@ -204,11 +220,44 @@ impl SnapshotIndex {
         self.reclaimable_estimate_bytes
     }
 
+    pub fn summary(&self) -> SnapshotIndexSummary {
+        SnapshotIndexSummary {
+            snapshot_id: self.snapshot_id.clone(),
+            root_path: self.root_path.clone(),
+            root_size_bytes: self
+                .directory_by_path
+                .get(&self.root_path)
+                .map(|dir| dir.size_bytes)
+                .unwrap_or(0),
+            scanned_at_ms: self.scanned_at_ms,
+            version: self.version,
+            scan_state: self.scan_state.clone(),
+            reclaimable_estimate_bytes: self.reclaimable_estimate_bytes,
+            entry_count: self.entry_by_id.len().min(u64::MAX as usize) as u64,
+            deletable_count: self.deletable_counts.values().sum(),
+            category_counts: self.category_counts.clone(),
+            deletable_counts: self.deletable_counts.clone(),
+        }
+    }
+
+    pub fn summary_json(&self) -> Result<String, String> {
+        serde_json::to_string(&self.summary()).map_err(|e| format!("error:serialize: {e}"))
+    }
+
+    pub fn deletable_entries_for_ids(&self, entry_ids: &[String]) -> Vec<SnapshotEntryRecord> {
+        entry_ids
+            .iter()
+            .filter_map(|id| self.entry_by_id.get(id))
+            .filter(|entry| entry.deletable)
+            .cloned()
+            .collect()
+    }
+
     pub fn directory_record(&self, path: &str) -> Option<SnapshotDirectoryRecord> {
         self.directory_by_path
             .get(path)
             .map(|r| SnapshotDirectoryRecord {
-                path: r.path.clone(),
+                path: path.to_string(),
                 parent_path: r.parent_path.clone(),
                 name: r.name.clone(),
                 size_bytes: r.size_bytes,
@@ -263,7 +312,7 @@ impl SnapshotIndex {
                     continue;
                 }
                 direct_children.push(SnapshotNodeRecord {
-                    path: dir.path.clone(),
+                    path: child_path.clone(),
                     name: dir.name.clone(),
                     is_directory: true,
                     size_bytes: dir.size_bytes,
@@ -357,15 +406,322 @@ impl From<&StorageSnapshot> for SnapshotIndex {
     }
 }
 
+/// Incremental builder used by the scanner to avoid materialising a recursive
+/// `StorageSnapshot` before creating the catalog.
+pub struct SnapshotIndexBuilder {
+    root_path: String,
+    directory_by_path: HashMap<String, DirectoryRecord>,
+    entry_by_id: HashMap<String, SnapshotEntryRecord>,
+    entry_by_path: HashMap<String, String>,
+    children_by_path: HashMap<String, Vec<String>>,
+    category_counts: HashMap<String, u64>,
+    deletable_counts: HashMap<String, u64>,
+    reclaimable_estimate_bytes: u64,
+}
+
+impl SnapshotIndexBuilder {
+    pub fn new(root_path: &str) -> Self {
+        let root_path = normalize_path(root_path);
+        let root_name = name_of(&root_path);
+        let mut directory_by_path = HashMap::new();
+        directory_by_path.insert(
+            root_path.clone(),
+            DirectoryRecord {
+                parent_path: None,
+                name: root_name,
+                size_bytes: 0,
+                scanned: true,
+                peek_scanned: false,
+                category_mask: 0,
+                deletable_category_mask: 0,
+                deletable_file_count: 0,
+            },
+        );
+        let mut children_by_path = HashMap::new();
+        children_by_path.insert(root_path.clone(), Vec::new());
+        Self {
+            root_path,
+            directory_by_path,
+            entry_by_id: HashMap::new(),
+            entry_by_path: HashMap::new(),
+            children_by_path,
+            category_counts: HashMap::new(),
+            deletable_counts: HashMap::new(),
+            reclaimable_estimate_bytes: 0,
+        }
+    }
+
+    pub fn ensure_dir(&mut self, path: &str) {
+        let path = normalize_path(path);
+        if !path_is_at_or_below(&path, &self.root_path) {
+            return;
+        }
+        self.ensure_dir_internal(&path);
+    }
+
+    pub fn record_file_size(&mut self, path: &str, size_bytes: u64) {
+        let path = normalize_path(path);
+        if !path_is_at_or_below(&path, &self.root_path) {
+            return;
+        }
+        let parent_path = parent_path_of_for_root(&path, &self.root_path);
+        self.ensure_dir_internal(&parent_path);
+        self.propagate_file_size(&parent_path, size_bytes);
+    }
+
+    pub fn insert_entry(&mut self, entry: StorageEntry) {
+        if !path_is_at_or_below(&entry.path_or_uri, &self.root_path) {
+            return;
+        }
+        let parent_path = parent_path_of_for_root(&entry.path_or_uri, &self.root_path);
+        self.ensure_dir_internal(&parent_path);
+
+        let category = category_string(&entry.category).to_string();
+        let category_mask = category_mask_for_name(&category);
+        *self.category_counts.entry(category.clone()).or_insert(0) += 1;
+        if entry.deletable {
+            *self.deletable_counts.entry(category.clone()).or_insert(0) += 1;
+            self.reclaimable_estimate_bytes = self
+                .reclaimable_estimate_bytes
+                .saturating_add(entry.size_bytes);
+        }
+
+        let id = entry.id.clone();
+        let path = entry.path_or_uri.clone();
+        self.entry_by_path.insert(path.clone(), id.clone());
+        self.entry_by_id.insert(
+            id,
+            SnapshotEntryRecord {
+                id: entry.id,
+                path: path.clone(),
+                parent_path: parent_path.clone(),
+                display_name: entry.display_name,
+                size_bytes: entry.size_bytes,
+                category,
+                deletable: entry.deletable,
+            },
+        );
+        self.add_child_once(&parent_path, &path);
+        self.propagate_entry_metadata(&parent_path, category_mask, entry.deletable);
+    }
+
+    pub fn graft_directory_from_index(&mut self, source: &SnapshotIndex, dir_path: &str) {
+        let dir_path = normalize_path(dir_path);
+        let Some(source_dir) = source.directory_by_path.get(&dir_path).cloned() else {
+            return;
+        };
+        if !path_is_at_or_below(&dir_path, &self.root_path) {
+            return;
+        }
+
+        let parent_path = if dir_path == self.root_path {
+            None
+        } else {
+            let parent_path = parent_path_of_for_root(&dir_path, &self.root_path);
+            self.ensure_dir_internal(&parent_path);
+            self.add_child_once(&parent_path, &dir_path);
+            Some(parent_path)
+        };
+
+        let mut directory_paths = source
+            .directory_by_path
+            .keys()
+            .filter(|path| path_is_at_or_below(path, &dir_path))
+            .cloned()
+            .collect::<Vec<_>>();
+        directory_paths.sort_by_key(|path| path.len());
+
+        for path in directory_paths {
+            if let Some(record) = source.directory_by_path.get(&path) {
+                self.directory_by_path.insert(path.clone(), record.clone());
+            }
+            if let Some(children) = source.children_by_path.get(&path) {
+                self.children_by_path.insert(path, children.clone());
+            }
+        }
+
+        for entry in source
+            .entry_by_id
+            .values()
+            .filter(|entry| path_is_at_or_below(&entry.path, &dir_path))
+        {
+            let category = entry.category.clone();
+            *self.category_counts.entry(category.clone()).or_insert(0) += 1;
+            if entry.deletable {
+                *self.deletable_counts.entry(category).or_insert(0) += 1;
+                self.reclaimable_estimate_bytes = self
+                    .reclaimable_estimate_bytes
+                    .saturating_add(entry.size_bytes);
+            }
+            self.entry_by_path
+                .insert(entry.path.clone(), entry.id.clone());
+            self.entry_by_id.insert(entry.id.clone(), entry.clone());
+        }
+
+        if let Some(parent_path) = parent_path {
+            self.propagate_grafted_directory_to_ancestors(&parent_path, &source_dir);
+        }
+    }
+
+    pub fn finish(
+        self,
+        snapshot_id: String,
+        scanned_at_ms: i64,
+        version: u64,
+        scan_state: String,
+    ) -> SnapshotIndex {
+        SnapshotIndex {
+            snapshot_id,
+            root_path: self.root_path,
+            scanned_at_ms,
+            version,
+            scan_state,
+            reclaimable_estimate_bytes: self.reclaimable_estimate_bytes,
+            directory_by_path: self.directory_by_path,
+            entry_by_id: self.entry_by_id,
+            entry_by_path: self.entry_by_path,
+            children_by_path: self.children_by_path,
+            category_counts: self.category_counts,
+            deletable_counts: self.deletable_counts,
+        }
+    }
+
+    fn ensure_dir_internal(&mut self, path: &str) {
+        if self.directory_by_path.contains_key(path) {
+            return;
+        }
+        if path == self.root_path {
+            return;
+        }
+
+        let parent_path = parent_path_of_for_root(path, &self.root_path);
+        self.ensure_dir_internal(&parent_path);
+        self.directory_by_path.insert(
+            path.to_string(),
+            DirectoryRecord {
+                parent_path: Some(parent_path.clone()),
+                name: name_of(path),
+                size_bytes: 0,
+                scanned: true,
+                peek_scanned: false,
+                category_mask: 0,
+                deletable_category_mask: 0,
+                deletable_file_count: 0,
+            },
+        );
+        self.children_by_path.entry(path.to_string()).or_default();
+        self.add_child_once(&parent_path, path);
+    }
+
+    fn add_child_once(&mut self, parent_path: &str, child_path: &str) {
+        let children = self
+            .children_by_path
+            .entry(parent_path.to_string())
+            .or_default();
+        if !children.iter().any(|existing| existing == child_path) {
+            children.push(child_path.to_string());
+        }
+    }
+
+    fn propagate_file_size(&mut self, parent_path: &str, size_bytes: u64) {
+        let mut current = Some(parent_path.to_string());
+        while let Some(path) = current {
+            let next = self
+                .directory_by_path
+                .get(&path)
+                .and_then(|dir| dir.parent_path.clone());
+            if let Some(dir) = self.directory_by_path.get_mut(&path) {
+                dir.size_bytes = dir.size_bytes.saturating_add(size_bytes);
+            }
+            current = next;
+        }
+    }
+
+    fn propagate_entry_metadata(&mut self, parent_path: &str, category_mask: u64, deletable: bool) {
+        let mut current = Some(parent_path.to_string());
+        while let Some(path) = current {
+            let next = self
+                .directory_by_path
+                .get(&path)
+                .and_then(|dir| dir.parent_path.clone());
+            if let Some(dir) = self.directory_by_path.get_mut(&path) {
+                dir.category_mask |= category_mask;
+                if deletable {
+                    dir.deletable_category_mask |= category_mask;
+                    dir.deletable_file_count = dir.deletable_file_count.saturating_add(1);
+                }
+            }
+            current = next;
+        }
+    }
+
+    fn propagate_grafted_directory_to_ancestors(
+        &mut self,
+        parent_path: &str,
+        source_dir: &DirectoryRecord,
+    ) {
+        let mut current = Some(parent_path.to_string());
+        while let Some(path) = current {
+            let next = self
+                .directory_by_path
+                .get(&path)
+                .and_then(|dir| dir.parent_path.clone());
+            if let Some(dir) = self.directory_by_path.get_mut(&path) {
+                dir.size_bytes = dir.size_bytes.saturating_add(source_dir.size_bytes);
+                dir.category_mask |= source_dir.category_mask;
+                dir.deletable_category_mask |= source_dir.deletable_category_mask;
+                dir.deletable_file_count = dir
+                    .deletable_file_count
+                    .saturating_add(source_dir.deletable_file_count);
+            }
+            current = next;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn normalize_path(path: &str) -> String {
+    if path.len() > 1 && path.ends_with('/') {
+        path[..path.len() - 1].to_string()
+    } else if path.is_empty() {
+        "/".to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+fn name_of(path: &str) -> String {
+    path.rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(path)
+        .to_string()
+}
 
 fn parent_path_of(path: &str) -> String {
     match path.rfind('/') {
         Some(i) if i > 0 => path[..i].to_string(),
         _ => "/".to_string(),
     }
+}
+
+fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
+    if path == root_path {
+        return root_path.to_string();
+    }
+    path.rfind('/')
+        .map(|idx| path[..idx].to_string())
+        .filter(|parent| path_is_at_or_below(parent, root_path))
+        .unwrap_or_else(|| root_path.to_string())
+}
+
+fn path_is_at_or_below(path: &str, root: &str) -> bool {
+    path == root
+        || (path.starts_with(root)
+            && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
 }
 
 fn walk_tree(
@@ -402,13 +758,11 @@ fn walk_tree(
     let mut deletable_category_mask = 0u64;
     let mut deletable_file_count = 0u64;
     let rec = DirectoryRecord {
-        path: node.path.clone(),
         parent_path: parent.map(|s| s.to_string()),
         name,
         size_bytes: node.size_bytes,
         scanned: true,
         peek_scanned: false,
-        child_paths: node.children.iter().map(|c| c.path.clone()).collect(),
         category_mask: 0,
         deletable_category_mask: 0,
         deletable_file_count: 0,

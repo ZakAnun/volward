@@ -78,11 +78,53 @@ abstract final class SnapshotCache {
 
   static Map<String, dynamic>? _readManifest(File file) {
     try {
+      final header = _readManifestHeader(file);
+      final root = _extractJsonStringField(header, 'root');
+      final snapshotPath = _extractJsonStringField(header, 'snapshot_path');
+      final scannedAt = _extractJsonIntField(header, 'scanned_at_ms');
+      if (root != null || snapshotPath != null || scannedAt != null) {
+        return <String, dynamic>{
+          if (root != null) 'root': root,
+          if (snapshotPath != null) 'snapshot_path': snapshotPath,
+          if (scannedAt != null) 'scanned_at_ms': scannedAt,
+        };
+      }
+
       final decoded = jsonDecode(file.readAsStringSync());
       return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
     } catch (_) {
       return null;
     }
+  }
+
+  static String _readManifestHeader(File file) {
+    const maxHeaderBytes = 64 * 1024;
+    final raf = file.openSync();
+    try {
+      final size = raf.lengthSync();
+      final length = size < maxHeaderBytes ? size : maxHeaderBytes;
+      final bytes = raf.readSync(length);
+      return utf8.decode(bytes, allowMalformed: true);
+    } finally {
+      raf.closeSync();
+    }
+  }
+
+  static String? _extractJsonStringField(String jsonHeader, String field) {
+    final pattern = RegExp('"$field"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"');
+    final match = pattern.firstMatch(jsonHeader);
+    if (match == null) return null;
+    try {
+      return jsonDecode('"${match.group(1)}"') as String?;
+    } catch (_) {
+      return match.group(1);
+    }
+  }
+
+  static int? _extractJsonIntField(String jsonHeader, String field) {
+    final pattern = RegExp('"$field"\\s*:\\s*(\\d+)');
+    final match = pattern.firstMatch(jsonHeader);
+    return int.tryParse(match?.group(1) ?? '');
   }
 
   static String? _resolveSnapshotPath(

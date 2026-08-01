@@ -12,6 +12,7 @@ use crate::manifest::{
 use crate::model::{PlatformCapabilities, ScanPhase, ScanProgress, ScanStats, StorageSnapshot};
 use crate::platform::{PlatformError, PlatformStorage, WalkAction, WalkOptions};
 use crate::scan_tree::{find_subtree, ScanTreeBuilder};
+use crate::SnapshotIndexBuilder;
 
 pub struct ScanOrchestrator<'a> {
     platform: &'a dyn PlatformStorage,
@@ -376,6 +377,222 @@ impl<'a> ScanOrchestrator<'a> {
 
         Ok(snapshot)
     }
+
+    pub fn run_index_scan(
+        &self,
+        job_id: String,
+        user_selected: Vec<String>,
+        incremental: bool,
+        cancel: &AtomicBool,
+        mut on_progress: impl FnMut(ScanProgress),
+    ) -> Result<crate::SnapshotIndex, PlatformError> {
+        on_progress(ScanProgress {
+            job_id: job_id.clone(),
+            phase: ScanPhase::DiscoveringRoots,
+            paths_seen: 0,
+            bytes_seen: 0,
+            current_path: None,
+        });
+
+        let roots = self.platform.discover_roots(&user_selected)?;
+        let root_path = roots.first().map(|r| r.path.as_str()).unwrap_or("/");
+        let mut index_builder = SnapshotIndexBuilder::new(root_path);
+        let mut stats = ScanStats::default();
+        let mut bytes_seen = 0u64;
+        let mut warnings = Vec::new();
+        let mut dir_fingerprints = HashMap::<String, DirFingerprint>::new();
+        let mut walk_completed = false;
+
+        let loaded_manifest = incremental
+            .then(|| self.manifest_store.load(root_path))
+            .flatten()
+            .filter(|manifest| manifest.root == root_path);
+
+        if incremental && loaded_manifest.is_none() {
+            warnings.push(
+                "Incremental scan: no prior scan cache for this root; performing a full walk."
+                    .to_string(),
+            );
+        }
+
+        let incremental_cache = loaded_manifest.and_then(|manifest| {
+            self.snapshot_store
+                .load_index(root_path)
+                .filter(|index| index.snapshot_id == manifest.snapshot_id)
+                .map(|index| (manifest, index))
+        });
+        if incremental && incremental_cache.is_none() {
+            warnings.push(
+                "Incremental scan: cached index missing or outdated; performing a full walk."
+                    .to_string(),
+            );
+        }
+        let baseline_fingerprints = incremental_cache.as_ref().map(|(manifest, _index)| {
+            manifest
+                .dir_fingerprints
+                .iter()
+                .map(|(path, fingerprint)| (path.clone(), fingerprint.clone()))
+                .collect::<HashMap<_, _>>()
+        });
+        let mut skipped_dirs = Vec::<String>::new();
+
+        if !self.platform.is_deep_scan_ready() {
+            warnings.push(
+                "Deep scan not ready (e.g. grant Full Disk Access on macOS for full Library access)."
+                    .to_string(),
+            );
+        }
+
+        on_progress(ScanProgress {
+            job_id: job_id.clone(),
+            phase: ScanPhase::Walking,
+            paths_seen: 0,
+            bytes_seen: 0,
+            current_path: roots.first().map(|r| r.path.clone()),
+        });
+
+        let mut last_path: Option<String> = None;
+        let mut progress_counter = 0u64;
+        let mut walk = |e: crate::model::RawFsEntry| -> WalkAction {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return WalkAction::Stop;
+            }
+            stats.paths_seen += 1;
+            bytes_seen = bytes_seen.saturating_add(e.size_bytes);
+            last_path = Some(e.path.clone());
+            progress_counter += 1;
+            if progress_counter % 1000 == 0 {
+                on_progress(ScanProgress {
+                    job_id: job_id.clone(),
+                    phase: ScanPhase::Walking,
+                    paths_seen: stats.paths_seen,
+                    bytes_seen,
+                    current_path: last_path.clone(),
+                });
+            }
+
+            if e.is_dir {
+                stats.dirs_seen += 1;
+                if let Some(fingerprint) = e.dir_fingerprint {
+                    if baseline_fingerprints
+                        .as_ref()
+                        .and_then(|baseline| baseline.get(&e.path))
+                        .is_some_and(|baseline| baseline.matches(&fingerprint))
+                    {
+                        skipped_dirs.push(e.path.clone());
+                    }
+                    dir_fingerprints.insert(e.path.clone(), fingerprint);
+                }
+                index_builder.ensure_dir(&e.path);
+            } else {
+                stats.files_seen += 1;
+                index_builder.record_file_size(&e.path, e.size_bytes);
+                if let Some(classified) =
+                    self.classifier
+                        .classify_path(&e.path, e.size_bytes, false, &job_id)
+                {
+                    stats.files_in_snapshot += 1;
+                    index_builder.insert_entry(classified);
+                }
+            }
+
+            WalkAction::Continue
+        };
+
+        match self.platform.walk_entries(
+            &roots,
+            WalkOptions {
+                baseline_fingerprints: baseline_fingerprints.as_ref(),
+            },
+            cancel,
+            &mut walk,
+        ) {
+            Err(PlatformError::Cancelled) => {
+                stats.truncated = true;
+                stats.incomplete_reason = Some("Scan cancelled.".into());
+                warnings.push("Scan cancelled.".into());
+            }
+            Err(other) => return Err(other),
+            Ok(skipped) => {
+                walk_completed = true;
+                stats.paths_skipped = skipped;
+                stats.truncated = false;
+                if skipped > 0 {
+                    warnings.push(format!(
+                        "{skipped} path(s) skipped due to permission or I/O errors."
+                    ));
+                }
+            }
+        }
+
+        on_progress(ScanProgress {
+            job_id: job_id.clone(),
+            phase: ScanPhase::Aggregating,
+            paths_seen: stats.paths_seen,
+            bytes_seen,
+            current_path: last_path,
+        });
+
+        if let Some((manifest, cached_index)) = incremental_cache.as_ref() {
+            for dir in &skipped_dirs {
+                index_builder.graft_directory_from_index(cached_index, dir);
+            }
+            for (path, fingerprint) in &manifest.dir_fingerprints {
+                if skipped_dirs
+                    .iter()
+                    .any(|dir| path_is_at_or_below(path, dir) && path != dir.as_str())
+                {
+                    dir_fingerprints
+                        .entry(path.clone())
+                        .or_insert_with(|| fingerprint.clone());
+                }
+            }
+            if !skipped_dirs.is_empty() {
+                warnings.push(format!(
+                    "Incremental scan reused {} unchanged directories.",
+                    skipped_dirs.len()
+                ));
+            }
+        }
+
+        let snapshot_id = Uuid::new_v4().to_string();
+        let scanned_at_ms = unix_ms();
+        let scan_state = if stats.truncated {
+            "Cancelled".to_string()
+        } else {
+            "Done".to_string()
+        };
+        let index = index_builder.finish(snapshot_id.clone(), scanned_at_ms, 1, scan_state);
+
+        if walk_completed {
+            let mut manifest = ScanManifest {
+                root: root_path.to_string(),
+                scanned_at_ms,
+                snapshot_id,
+                snapshot_path: None,
+                dir_fingerprints,
+            };
+            match self.snapshot_store.save_index(root_path, &index) {
+                Ok(path) => {
+                    manifest.snapshot_path = Some(path.to_string_lossy().into_owned());
+                }
+                Err(error) => warnings.push(format!("Failed to save index cache: {error}")),
+            }
+            if let Err(error) = self.manifest_store.save(&manifest) {
+                warnings.push(format!("Failed to save scan manifest: {error}"));
+            }
+        }
+
+        on_progress(ScanProgress {
+            job_id,
+            phase: ScanPhase::Done,
+            paths_seen: stats.paths_seen,
+            bytes_seen,
+            current_path: None,
+        });
+
+        Ok(index)
+    }
 }
 
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
@@ -559,6 +776,137 @@ mod tests {
         assert_eq!(snapshot.entries.len(), 0);
         assert!(!snapshot.stats.truncated);
         assert!(snapshot.stats.incomplete_reason.is_none());
+    }
+
+    #[test]
+    fn index_scan_builds_catalog_without_snapshot_tree() {
+        let (temp, mut platform) = build_temp_scan_platform(0);
+        let cache_file = temp.path().join("Caches").join("keep.cache");
+        let unknown_file = temp.path().join("Documents").join("notes.txt");
+        fs::create_dir_all(cache_file.parent().unwrap()).expect("create cache dir");
+        fs::create_dir_all(unknown_file.parent().unwrap()).expect("create documents dir");
+        fs::write(&cache_file, b"cached").expect("write cache file");
+        fs::write(&unknown_file, b"untracked content").expect("write unknown file");
+        platform.entries.push(crate::model::RawFsEntry {
+            path: temp.path().join("Caches").to_string_lossy().to_string(),
+            is_dir: true,
+            size_bytes: 0,
+            dir_fingerprint: Some(DirFingerprint {
+                mtime_secs: 1_700_000_100,
+                children_count: 1,
+                max_child_mtime_secs: 1_700_000_101,
+            }),
+        });
+        platform.entries.push(crate::model::RawFsEntry {
+            path: cache_file.to_string_lossy().to_string(),
+            is_dir: false,
+            size_bytes: 6,
+            dir_fingerprint: None,
+        });
+        platform.entries.push(crate::model::RawFsEntry {
+            path: temp.path().join("Documents").to_string_lossy().to_string(),
+            is_dir: true,
+            size_bytes: 0,
+            dir_fingerprint: None,
+        });
+        platform.entries.push(crate::model::RawFsEntry {
+            path: unknown_file.to_string_lossy().to_string(),
+            is_dir: false,
+            size_bytes: 17,
+            dir_fingerprint: None,
+        });
+
+        let cancel = AtomicBool::new(false);
+        let orchestrator = ScanOrchestrator::new(&platform, Classifier::default());
+        let index = orchestrator
+            .run_index_scan(
+                "test-index-scan".to_string(),
+                vec![],
+                false,
+                &cancel,
+                |_p| {},
+            )
+            .expect("index scan should succeed");
+
+        let root_path = platform.root.path.as_str();
+        let root = index.query_directory(root_path, None, false, "name");
+        assert_eq!(root.direct_children.len(), 2);
+        assert!(root
+            .direct_children
+            .iter()
+            .any(|child| child.name == "Caches"));
+        assert!(root
+            .direct_children
+            .iter()
+            .any(|child| child.name == "Documents"));
+
+        let caches = index.query_directory(
+            &temp.path().join("Caches").to_string_lossy(),
+            Some("Cache"),
+            true,
+            "name",
+        );
+        assert_eq!(caches.direct_children.len(), 1);
+        assert_eq!(caches.direct_entries.len(), 1);
+        assert_eq!(caches.reclaimable_bytes, 6);
+        assert_eq!(index.summary().reclaimable_estimate_bytes, 6);
+        assert_eq!(index.summary().root_size_bytes, 23);
+    }
+
+    #[test]
+    fn incremental_index_scan_grafts_skipped_cached_directories() {
+        let (temp, mut platform) = build_temp_scan_platform(0);
+        let cache_dir = temp.path().join("Caches");
+        let cache_file = cache_dir.join("keep.cache");
+        fs::create_dir_all(&cache_dir).expect("create cache dir");
+        fs::write(&cache_file, b"cached").expect("write cache file");
+        platform.entries.push(crate::model::RawFsEntry {
+            path: cache_dir.to_string_lossy().to_string(),
+            is_dir: true,
+            size_bytes: 0,
+            dir_fingerprint: None,
+        });
+        platform.entries.push(crate::model::RawFsEntry {
+            path: cache_file.to_string_lossy().to_string(),
+            is_dir: false,
+            size_bytes: 6,
+            dir_fingerprint: None,
+        });
+
+        let manifest_dir = temp.path().join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        let seed = orchestrator
+            .run_index_scan("seed-index".to_string(), vec![], false, &cancel, |_p| {})
+            .expect("seed index scan should succeed");
+        assert_eq!(
+            seed.query_directory(&cache_dir.to_string_lossy(), None, false, "name")
+                .direct_entries
+                .len(),
+            1
+        );
+
+        let mut done_paths_seen = 0;
+        let reused = orchestrator
+            .run_index_scan(
+                "incremental-index".to_string(),
+                vec![],
+                true,
+                &cancel,
+                |progress| {
+                    if progress.phase == ScanPhase::Done {
+                        done_paths_seen = progress.paths_seen;
+                    }
+                },
+            )
+            .expect("incremental index scan should succeed");
+
+        let caches = reused.query_directory(&cache_dir.to_string_lossy(), None, false, "name");
+        assert_eq!(done_paths_seen, 1);
+        assert_eq!(caches.direct_entries.len(), 1);
+        assert_eq!(caches.direct_entries[0].size_bytes, 6);
     }
 
     #[test]

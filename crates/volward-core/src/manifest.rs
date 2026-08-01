@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::index::SnapshotIndex;
 use crate::model::StorageSnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -107,9 +108,26 @@ impl FileSnapshotStore {
         Ok(path)
     }
 
+    pub fn save_index(&self, root: &str, index: &SnapshotIndex) -> Result<PathBuf, String> {
+        std::fs::create_dir_all(&self.base_dir).map_err(|e| e.to_string())?;
+        let path = self.path_for_root(root);
+        let temp_path = temp_path_for(&path);
+        let file = File::create(&temp_path).map_err(|e| e.to_string())?;
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, index).map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
+        std::fs::rename(&temp_path, &path).map_err(|e| e.to_string())?;
+        Ok(path)
+    }
+
     pub fn load_snapshot(&self, root: &str) -> Option<StorageSnapshot> {
         let file = File::open(self.path_for_root(root)).ok()?;
         serde_json::from_reader(BufReader::new(file)).ok()
+    }
+
+    pub fn load_index(&self, root: &str) -> Option<SnapshotIndex> {
+        let file = File::open(self.path_for_root(root)).ok()?;
+        serde_json::from_reader::<_, SnapshotIndex>(BufReader::new(file)).ok()
     }
 }
 

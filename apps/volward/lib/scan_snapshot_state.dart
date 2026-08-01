@@ -21,6 +21,53 @@ class ScanSnapshotState {
     required this.extraFields,
   }) : _flatEntries = flatEntries;
 
+  factory ScanSnapshotState.fromIndexSummary(Map<String, dynamic> summary) {
+    final snapshotId = summary['snapshot_id']?.toString() ?? '';
+    final rootPath = summary['root_path']?.toString() ?? '';
+    final rootParts = rootPath.split('/').where((s) => s.isNotEmpty).toList();
+    final root = ScanTreeNode(
+      name: rootParts.isEmpty
+          ? (rootPath.isEmpty ? 'root' : rootPath)
+          : rootParts.last,
+      path: rootPath.isEmpty ? '/' : rootPath,
+      isDirectory: true,
+      sizeBytes: (summary['root_size_bytes'] as num?)?.toInt() ?? 0,
+      scanned: true,
+    );
+    final categoryCounts = _stringCountMap(summary['category_counts']);
+    final deletableCategoryCounts =
+        _stringCountMap(summary['deletable_counts']);
+    final stats = <String, dynamic>{
+      'files_in_snapshot': (summary['entry_count'] as num?)?.toInt() ?? 0,
+      'scan_state': summary['scan_state']?.toString() ?? 'Done',
+    };
+    final extraFields = Map<String, dynamic>.from(summary)
+      ..remove('snapshot_id')
+      ..remove('root_path')
+      ..remove('root_size_bytes')
+      ..remove('scanned_at_ms')
+      ..remove('version')
+      ..remove('scan_state')
+      ..remove('reclaimable_estimate_bytes')
+      ..remove('entry_count')
+      ..remove('deletable_count')
+      ..remove('category_counts')
+      ..remove('deletable_counts');
+    return ScanSnapshotState(
+      snapshotId: snapshotId,
+      scannedAtMs: (summary['scanned_at_ms'] as num?)?.toInt(),
+      stats: stats,
+      reclaimableEstimateBytes:
+          (summary['reclaimable_estimate_bytes'] as num?)?.toInt() ?? 0,
+      tree: root,
+      entryCount: (summary['entry_count'] as num?)?.toInt() ?? 0,
+      categoryCounts: categoryCounts,
+      deletableCategoryCounts: deletableCategoryCounts,
+      deletableCount: (summary['deletable_count'] as num?)?.toInt() ?? 0,
+      extraFields: Map.unmodifiable(extraFields),
+    );
+  }
+
   factory ScanSnapshotState.fromWire(Map<String, dynamic> wire) {
     final treeWire = wire['tree'];
     final keepFlatEntries = treeWire is! Map;
@@ -212,6 +259,16 @@ class ScanSnapshotState {
       ...extraFields,
     };
   }
+}
+
+Map<String, int> _stringCountMap(Object? wire) {
+  final out = <String, int>{};
+  if (wire is Map) {
+    for (final entry in wire.entries) {
+      out[entry.key.toString()] = (entry.value as num?)?.toInt() ?? 0;
+    }
+  }
+  return Map.unmodifiable(out);
 }
 
 class ScanSnapshotSummary {

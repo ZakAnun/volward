@@ -96,26 +96,12 @@ void volwardScanIsolate(List<dynamic> args) {
             'paths_seen': pathsSeen?.toInt() ?? 0,
           });
 
-          final tmpExt = bridge.hasSnapshotFilePbApi ? 'pb' : 'json';
-          final tmpPath = '${Directory.systemTemp.path}/volward-$jobId.$tmpExt';
-          final snapshotId = _persistSnapshot(bridge, engine, tmpPath);
-          if (snapshotId.startsWith('error:')) {
-            progressPort.send(<String, dynamic>{
-              'type': 'error',
-              'error': snapshotId,
-            });
-            return;
-          }
-
           progressPort.send(<String, dynamic>{
             'type': 'progress',
             'phase': 'Done',
             'paths_seen': pathsSeen?.toInt() ?? 0,
           });
 
-          // Persist catalog index alongside snapshot (Design §7.2).
-          // Workers that rebuild the engine from the index file can query
-          // directory children without hydrating the full snapshot.
           String? indexPath;
           if (bridge.hasIndexApi) {
             final idxTmpPath =
@@ -123,15 +109,47 @@ void volwardScanIsolate(List<dynamic> args) {
             final result = bridge.writeLastIndexToPath(engine, idxTmpPath);
             if (result != null && !result.startsWith('error:')) {
               indexPath = idxTmpPath;
+              progressPort.send(<String, dynamic>{
+                'type': 'done',
+                'snapshot_id': result,
+                'index_path': indexPath,
+              });
+            } else {
+              final tmpExt = bridge.hasSnapshotFilePbApi ? 'pb' : 'json';
+              final tmpPath =
+                  '${Directory.systemTemp.path}/volward-$jobId.$tmpExt';
+              final snapshotId = _persistSnapshot(bridge, engine, tmpPath);
+              if (snapshotId.startsWith('error:')) {
+                progressPort.send(<String, dynamic>{
+                  'type': 'error',
+                  'error': snapshotId,
+                });
+                return;
+              }
+              progressPort.send(<String, dynamic>{
+                'type': 'done',
+                'snapshot_path': tmpPath,
+                'snapshot_id': snapshotId,
+              });
             }
+          } else {
+            final tmpExt = bridge.hasSnapshotFilePbApi ? 'pb' : 'json';
+            final tmpPath =
+                '${Directory.systemTemp.path}/volward-$jobId.$tmpExt';
+            final snapshotId = _persistSnapshot(bridge, engine, tmpPath);
+            if (snapshotId.startsWith('error:')) {
+              progressPort.send(<String, dynamic>{
+                'type': 'error',
+                'error': snapshotId,
+              });
+              return;
+            }
+            progressPort.send(<String, dynamic>{
+              'type': 'done',
+              'snapshot_path': tmpPath,
+              'snapshot_id': snapshotId,
+            });
           }
-
-          progressPort.send(<String, dynamic>{
-            'type': 'done',
-            'snapshot_path': tmpPath,
-            'snapshot_id': snapshotId,
-            if (indexPath != null) 'index_path': indexPath,
-          });
         } catch (e, st) {
           progressPort.send(<String, dynamic>{
             'type': 'error',
@@ -149,9 +167,8 @@ void volwardScanIsolate(List<dynamic> args) {
         progressPort.send(<String, dynamic>{'type': 'progress', ...progress});
       }
 
-      // Roughly every 2s (300ms * 7), stream a partial snapshot so the UI
-      // can render progress without waiting for the whole scan to finish.
-      if (bridge.hasCheckpointApi && tickCount % 7 == 0) {
+      // Old builds without the catalog index API still stream checkpoints.
+      if (!bridge.hasIndexApi && bridge.hasCheckpointApi && tickCount % 7 == 0) {
         // Prefer the protobuf variant (atomic temp+rename, smaller payload)
         // when the dylib supports it; fall back to JSON for older builds.
         final usePb = bridge.hasSnapshotFilePbApi;
@@ -179,18 +196,6 @@ void volwardScanIsolate(List<dynamic> args) {
           progressPort.send(<String, dynamic>{
             'type': 'checkpoint',
             'snapshot_path': uniquePath,
-            if (bridge.hasIndexApi)
-              ...() {
-                // Also persist the index snapshot for the checkpoint so the UI
-                // can query directory children without full hydration.
-                final idxPath =
-                    '${Directory.systemTemp.path}/volward-$jobId-checkpoint-$tickCount.index.json';
-                final result = bridge.writeLastIndexToPath(engine, idxPath);
-                if (result != null && !result.startsWith('error:')) {
-                  return {'index_path': idxPath};
-                }
-                return const <String, dynamic>{};
-              }(),
           });
         }
       }

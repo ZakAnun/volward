@@ -435,6 +435,19 @@ pub unsafe extern "C" fn volward_write_last_index_to_path(
     }
 }
 
+/// Returns lightweight metadata for the current index.
+/// Returns JSON summary or `{"error":"…"}`.
+#[no_mangle]
+pub unsafe extern "C" fn volward_get_index_summary_json(engine: *mut VolwardEngine) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    match e.get_index_summary_json() {
+        Ok(json) => to_c_string(json),
+        Err(msg) => to_c_string(serde_json::json!({"error": msg}).to_string()),
+    }
+}
+
 /// Returns the current catalog version counter as a u64.
 /// Dart uses this as `SnapshotQueryKey.version` for cache alignment.
 #[no_mangle]

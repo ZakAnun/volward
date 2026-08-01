@@ -1,3 +1,4 @@
+use crate::index::SnapshotEntryRecord;
 use crate::model::{DeleteReport, StorageSnapshot, TrashEmptyReport};
 use crate::platform::{PlatformError, PlatformStorage};
 
@@ -15,7 +16,6 @@ impl DeleteOrchestrator {
         }
 
         let mut paths = Vec::new();
-        let mut freed_bytes = 0u64;
 
         for id in entry_ids {
             let Some(entry) = snapshot.entries.iter().find(|e| e.id == *id) else {
@@ -24,10 +24,43 @@ impl DeleteOrchestrator {
             if !entry.deletable {
                 continue;
             }
-            paths.push(entry.path_or_uri.clone());
-            freed_bytes = freed_bytes.saturating_add(entry.size_bytes);
+            paths.push((entry.path_or_uri.clone(), entry.size_bytes));
         }
 
+        Self::delete_paths(paths, dry_run, platform)
+    }
+
+    pub fn delete_index_entries(
+        snapshot_id: &str,
+        entries: &[SnapshotEntryRecord],
+        dry_run: bool,
+        platform: &dyn PlatformStorage,
+    ) -> Result<DeleteReport, PlatformError> {
+        if snapshot_id.is_empty() {
+            return Err(PlatformError::Unsupported("empty snapshot_id"));
+        }
+
+        let mut paths = Vec::new();
+
+        for entry in entries {
+            if !entry.deletable {
+                continue;
+            }
+            paths.push((entry.path.clone(), entry.size_bytes));
+        }
+
+        Self::delete_paths(paths, dry_run, platform)
+    }
+
+    fn delete_paths(
+        paths: Vec<(String, u64)>,
+        dry_run: bool,
+        platform: &dyn PlatformStorage,
+    ) -> Result<DeleteReport, PlatformError> {
+        let freed_bytes = paths
+            .iter()
+            .map(|(_, size)| *size)
+            .fold(0u64, u64::saturating_add);
         if dry_run {
             return Ok(DeleteReport {
                 deleted_count: paths.len(),
@@ -44,15 +77,16 @@ impl DeleteOrchestrator {
             });
         }
 
-        let report = platform.trash_paths(&paths)?;
-        let actual_freed = snapshot
-            .entries
+        let path_only = paths
             .iter()
-            .filter(|e| {
-                paths.contains(&e.path_or_uri) && !report.failed_paths.contains(&e.path_or_uri)
-            })
-            .map(|e| e.size_bytes)
-            .sum();
+            .map(|(path, _)| path.clone())
+            .collect::<Vec<_>>();
+        let report = platform.trash_paths(&path_only)?;
+        let actual_freed = paths
+            .iter()
+            .filter(|(path, _)| !report.failed_paths.contains(path))
+            .map(|(_, size)| *size)
+            .fold(0u64, u64::saturating_add);
 
         Ok(DeleteReport {
             deleted_count: report.deleted_count,

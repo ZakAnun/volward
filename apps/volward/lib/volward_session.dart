@@ -58,6 +58,7 @@ class VolwardSession extends ChangeNotifier {
   final Set<String> _peekCompleted = {};
   static const int _maxConcurrentPeeks = 2;
   static const int _maxPreviewEntries = 2000;
+  static const int _maxAutoRestoreBytes = 128 * 1024 * 1024;
 
   // Incremental counters for scannedFraction — recomputed once per snapshot
   // update inside _recomputeProgressCounters(), then read O(1) by the UI.
@@ -103,6 +104,10 @@ class VolwardSession extends ChangeNotifier {
   bool _scanChannelsClosed = false;
   DateTime? _lastScanActivityAt;
   DateTime? _savingPhaseStartedAt;
+  DateTime? _lastNativeProgressNotifyAt;
+  String? _lastNativeProgressPhase;
+  bool _scanRunningOnMainEngine = false;
+  bool _scanCancelRequested = false;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -381,17 +386,46 @@ class VolwardSession extends ChangeNotifier {
   Future<void> _restoreCachedSnapshot() async {
     if (!_ready || _engine == null || _scanning) return;
 
-    final preferredRoot =
-        _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+    final preferredRoot = _scanRoots.isNotEmpty
+        ? _scanRoots.first
+        : _defaultScanRoot();
     final path = await SnapshotCache.latestSnapshotPath(
       preferredRoot: preferredRoot,
     );
     if (path == null) return;
+    final cacheFile = File(path);
+    try {
+      final size = await cacheFile.length();
+      if (size > _maxAutoRestoreBytes) {
+        debugPrint(
+          'VolwardSession: skip auto-restore for oversized cache '
+          '$path (${size ~/ (1024 * 1024)} MB)',
+        );
+        return;
+      }
+    } catch (_) {
+      return;
+    }
 
     _restoringSnapshot = true;
     notifyListeners();
     try {
-      final restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
+      ScanSnapshotState? restored;
+      if (hasIndexApi) {
+        final loaded = VolwardNativeBridge.instance.loadIndexFromPath(
+          _engine!,
+          path,
+        );
+        if (loaded) {
+          final summary = VolwardNativeBridge.instance.getIndexSummaryJson(
+            _engine!,
+          );
+          if (summary != null && !summary.containsKey('error')) {
+            restored = ScanSnapshotState.fromIndexSummary(summary);
+          }
+        }
+      }
+      restored ??= await Isolate.run(() => _restoreSnapshotStateFile(path));
       if (restored == null) return;
       _lastSnapshot = restored;
       debugPrint('VolwardSession: restored cached snapshot from $path');
@@ -455,8 +489,9 @@ class VolwardSession extends ChangeNotifier {
     try {
       final newRoots = path != null ? [path] : <String>[];
       final newRoot = path ?? _defaultScanRoot();
-      final currentRoot =
-          _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+      final currentRoot = _scanRoots.isNotEmpty
+          ? _scanRoots.first
+          : _defaultScanRoot();
 
       if (_scanning) {
         final isSubtree =
@@ -652,9 +687,9 @@ class VolwardSession extends ChangeNotifier {
           // overlay for this focused branch until the next full scan.
           final entries = (entriesRaw is List)
               ? entriesRaw
-                  .whereType<Map>()
-                  .map((e) => Map<String, dynamic>.from(e))
-                  .toList()
+                    .whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList()
               : <Map<String, dynamic>>[];
           await _applyMerge(
             path,
@@ -754,8 +789,12 @@ class VolwardSession extends ChangeNotifier {
     _scanProgress = null;
     _workerCancelPort = null;
     _scanChannelsClosed = false;
+    _scanRunningOnMainEngine = false;
+    _scanCancelRequested = false;
     _lastScanActivityAt = null;
     _savingPhaseStartedAt = null;
+    _lastNativeProgressNotifyAt = null;
+    _lastNativeProgressPhase = null;
     _peekInFlight.clear();
     _peekCompleted.clear();
     // Clear stale fraction from a previous scan, then seed counters from
@@ -768,6 +807,33 @@ class VolwardSession extends ChangeNotifier {
     _recomputeProgressCounters(force: true);
     _startScanElapsedTimer();
     notifyListeners();
+
+    if (hasIndexApi) {
+      final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
+      _lastJobId = jobId;
+      try {
+        _lastSnapshot = await _awaitScanWithStallGuard(
+          _runIndexScanOnMainEngine(jobId, effectiveRoots),
+        );
+        notifyListeners();
+        return _lastSnapshot?.snapshotId ?? 'done';
+      } on ScanCancelledException catch (e) {
+        _lastError = e.message;
+        rethrow;
+      } catch (e, st) {
+        _lastError = '$e';
+        debugPrint('VolwardSession index scan failed: $e\n$st');
+        rethrow;
+      } finally {
+        _scanRunningOnMainEngine = false;
+        _scanning = false;
+        _lastScanActivityAt = null;
+        _savingPhaseStartedAt = null;
+        _stopScanElapsedTimer();
+        _publishScannedFraction(); // hide progress once scanning ends
+        notifyListeners();
+      }
+    }
 
     _scanReceivePort = ReceivePort();
     _scanCancelInitPort = ReceivePort();
@@ -786,7 +852,7 @@ class VolwardSession extends ChangeNotifier {
         notifyListeners();
       } else if (type == 'checkpoint') {
         final path = m['snapshot_path']?.toString();
-        if (path != null && path.isNotEmpty) {
+        if (!hasIndexApi && path != null && path.isNotEmpty) {
           unawaited(_applyCheckpointFromFile(path));
         }
         // Load catalog index from checkpoint if available (Design §7.2).
@@ -798,22 +864,43 @@ class VolwardSession extends ChangeNotifier {
         _touchScanActivity(phase: 'LoadingResults');
         _closeScanChannels();
         final indexPath = m['index_path']?.toString();
+        var loadedIndex = true;
         if (indexPath != null && indexPath.isNotEmpty && _engine != null) {
-          VolwardNativeBridge.instance.loadIndexFromPath(_engine!, indexPath);
+          loadedIndex = VolwardNativeBridge.instance.loadIndexFromPath(
+            _engine!,
+            indexPath,
+          );
         }
-        // Load catalog index before snapshot so Dart queries are available
-        // immediately (Design §7.3 — no full hydration on startup).
+        final summary = !loadedIndex || _engine == null
+            ? null
+            : VolwardNativeBridge.instance.getIndexSummaryJson(_engine!);
         final path = m['snapshot_path']?.toString();
-        if (path != null && path.isNotEmpty) {
-          _loadSnapshotFromFile(path).then((snap) {
-            if (!completer.isCompleted) {
-              completer.complete(snap);
-            }
-          }).catchError((Object e, StackTrace st) {
-            if (!completer.isCompleted) {
-              completer.completeError(e, st);
-            }
-          });
+        if (summary != null && !summary.containsKey('error')) {
+          if (path != null && path.isNotEmpty) {
+            _deleteTempResultFile(path);
+          }
+          if (indexPath != null && indexPath.isNotEmpty) {
+            _deleteTempResultFile(indexPath);
+          }
+          completer.complete(ScanSnapshotState.fromIndexSummary(summary));
+        } else if (path != null && path.isNotEmpty) {
+          if (indexPath != null && indexPath.isNotEmpty) {
+            _deleteTempResultFile(indexPath);
+          }
+          _loadSnapshotFromFile(path)
+              .then((snap) {
+                if (!completer.isCompleted) {
+                  completer.complete(snap);
+                }
+              })
+              .catchError((Object e, StackTrace st) {
+                if (!completer.isCompleted) {
+                  completer.completeError(e, st);
+                }
+              });
+        } else if (indexPath != null && indexPath.isNotEmpty) {
+          _deleteTempResultFile(indexPath);
+          completer.completeError('Failed to load catalog index');
         } else {
           final snap = m['snapshot'];
           completer.complete(
@@ -964,6 +1051,89 @@ class VolwardSession extends ChangeNotifier {
     return ScanSnapshotState.fromWire(snap);
   }
 
+  Future<ScanSnapshotState?> _runIndexScanOnMainEngine(
+    String jobId,
+    List<String> roots,
+  ) async {
+    if (!_ready || _engine == null) {
+      throw StateError('Native engine not ready');
+    }
+    final bridge = VolwardNativeBridge.instance;
+    final startResult = bridge.startScanAsyncWithOptions(
+      _engine!,
+      jobId,
+      roots,
+      incremental: _incrementalScan,
+    );
+    if (startResult.startsWith('error:')) {
+      throw StateError(startResult);
+    }
+
+    _scanRunningOnMainEngine = true;
+    _touchScanActivity(phase: 'Walking');
+
+    while (bridge.isScanRunning(_engine!)) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!_scanning || _scanCancelRequested) {
+        bridge.cancelScan(_engine!);
+        // Wait for the native worker to exit so the next scan can start
+        // cleanly on the shared main engine.
+        while (bridge.isScanRunning(_engine!)) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        throw ScanCancelledException();
+      }
+      final progress = bridge.getLastProgress(_engine!);
+      if (progress != null) {
+        final phase = progress['phase']?.toString();
+        _touchScanActivity(phase: phase);
+        _scanProgress = progress;
+        _notifyNativeProgressIfNeeded(phase);
+      }
+    }
+    if (_scanCancelRequested) {
+      throw ScanCancelledException();
+    }
+
+    final progress = bridge.getLastProgress(_engine!);
+    final pathsSeen = (progress?['paths_seen'] as num?)?.toInt();
+    _setScanProgressPhase('Done', pathsSeen: pathsSeen);
+    _touchScanActivity(phase: 'LoadingResults');
+
+    final summary = bridge.getIndexSummaryJson(_engine!);
+    if (summary == null || summary.containsKey('error')) {
+      throw StateError(
+        summary?['error']?.toString() ?? 'Failed to load catalog index',
+      );
+    }
+    return ScanSnapshotState.fromIndexSummary(summary);
+  }
+
+  void _notifyNativeProgressIfNeeded(String? phase) {
+    final now = DateTime.now();
+    final phaseChanged = phase != null && phase != _lastNativeProgressPhase;
+    final elapsed = _lastNativeProgressNotifyAt == null
+        ? null
+        : now.difference(_lastNativeProgressNotifyAt!);
+    if (phaseChanged ||
+        elapsed == null ||
+        elapsed >= const Duration(seconds: 1)) {
+      _lastNativeProgressPhase = phase;
+      _lastNativeProgressNotifyAt = now;
+      notifyListeners();
+    }
+  }
+
+  void _deleteTempResultFile(String path) {
+    unawaited(() async {
+      try {
+        await File(path).delete();
+      } catch (_) {
+        // Best-effort cleanup for worker temp files.
+      }
+    }());
+  }
+
   Future<void> _applyCheckpointFromFile(String path) async {
     try {
       final checkpoint = await Isolate.run(() => _decodeSnapshotFile(path));
@@ -979,9 +1149,9 @@ class VolwardSession extends ChangeNotifier {
 
       final entries = (checkpoint['entries'] is List)
           ? (checkpoint['entries'] as List)
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
           : <Map<String, dynamic>>[];
 
       await _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
@@ -1083,7 +1253,8 @@ class VolwardSession extends ChangeNotifier {
     // with O(N log N) display-tree recomputations.  Authoritative merges (peek
     // results) always notify immediately so the user sees results without delay.
     final now = DateTime.now();
-    final shouldNotify = authoritative ||
+    final shouldNotify =
+        authoritative ||
         !_scanning ||
         _lastApplyMergeNotify == null ||
         now.difference(_lastApplyMergeNotify!) >= _kDisplayNotifyGap;
@@ -1096,9 +1267,16 @@ class VolwardSession extends ChangeNotifier {
   void cancelScan() {
     if (!_scanning) return;
 
-    _workerCancelPort?.send('cancel');
-    _workerCancelPort = null;
-    _closeScanChannels();
+    if (_scanRunningOnMainEngine && _engine != null) {
+      _scanCancelRequested = true;
+      VolwardNativeBridge.instance.cancelScan(_engine!);
+      _scanRunningOnMainEngine = false;
+    } else {
+      _scanCancelRequested = true;
+      _workerCancelPort?.send('cancel');
+      _workerCancelPort = null;
+      _closeScanChannels();
+    }
 
     final completer = _activeScanCompleter;
     if (completer != null && !completer.isCompleted) {

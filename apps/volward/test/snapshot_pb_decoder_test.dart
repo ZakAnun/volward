@@ -47,9 +47,9 @@ class _Proto3Builder {
 }
 
 // Convenience factories for the three message types used in tests.
-_Proto3Builder snap() => _Proto3Builder(); // StorageSnapshot
-_Proto3Builder treeNode() => _Proto3Builder(); // ScanTreeNode
-_Proto3Builder entryBuilder() => _Proto3Builder(); // StorageEntry
+_Proto3Builder _snap() => _Proto3Builder(); // StorageSnapshot
+_Proto3Builder _treeNode() => _Proto3Builder(); // ScanTreeNode
+_Proto3Builder _entryBuilder() => _Proto3Builder(); // StorageEntry
 
 void main() {
   group('decodeSnapshotPb', () {
@@ -80,7 +80,7 @@ void main() {
     // -----------------------------------------------------------------------
 
     test('minimal snapshot — only snapshot_id — decodes correctly', () {
-      final b = snap()..string(1, 'snap-001');
+      final b = _snap()..string(1, 'snap-001');
       final result = decodeSnapshotPb(b.build());
 
       expect(result, isNotNull);
@@ -91,7 +91,7 @@ void main() {
     });
 
     test('scanned_at_ms and reclaimable_estimate_bytes decoded as int', () {
-      final b = snap()
+      final b = _snap()
         ..string(1, 'snap-002')
         ..varint(2, 1700000000000) // int64 ms timestamp
         ..varint(6, 987654321); // reclaimable_estimate_bytes
@@ -106,13 +106,13 @@ void main() {
     // -----------------------------------------------------------------------
 
     test('tree node — basic fields decoded correctly', () {
-      final tree = treeNode()
+      final tree = _treeNode()
         ..string(1, 'Documents') // name
         ..string(2, '/root/Documents') // path
         ..varint(3, 1) // is_dir = true
         ..varint(4, 512000); // size_bytes
 
-      final b = snap()
+      final b = _snap()
         ..string(1, 'snap-tree')
         ..embedded(8, tree);
 
@@ -130,12 +130,12 @@ void main() {
     test('tree node — entry_id absent when field not set', () {
       // entry_id is `optional string` (field 5); proto3 omits absent optional
       // string fields, so the decoded Map must not contain the key at all.
-      final tree = treeNode()
+      final tree = _treeNode()
         ..string(1, 'dir')
         ..string(2, '/root/dir')
         ..varint(3, 1);
 
-      final b = snap()
+      final b = _snap()
         ..string(1, 's')
         ..embedded(8, tree);
       final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
@@ -144,14 +144,14 @@ void main() {
     });
 
     test('tree node — entry_id present when field is set', () {
-      final tree = treeNode()
+      final tree = _treeNode()
         ..string(1, 'photo.jpg')
         ..string(2, '/root/photo.jpg')
         ..varint(3, 0) // is_dir = false
         ..varint(4, 2048)
         ..string(5, 'entry-abc'); // entry_id
 
-      final b = snap()
+      final b = _snap()
         ..string(1, 's')
         ..embedded(8, tree);
       final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
@@ -160,20 +160,20 @@ void main() {
     });
 
     test('tree node — nested children decoded recursively', () {
-      final child = treeNode()
+      final child = _treeNode()
         ..string(1, 'child')
         ..string(2, '/root/child')
         ..varint(3, 1)
         ..varint(4, 100);
 
-      final parent = treeNode()
+      final parent = _treeNode()
         ..string(1, 'root')
         ..string(2, '/root')
         ..varint(3, 1)
         ..varint(4, 100)
         ..embedded(6, child); // field 6 = repeated children
 
-      final b = snap()
+      final b = _snap()
         ..string(1, 'snap-nested')
         ..embedded(8, parent);
       final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
@@ -189,7 +189,7 @@ void main() {
     // -----------------------------------------------------------------------
 
     test('StorageEntry — id, size_bytes, category decoded correctly', () {
-      final e = entryBuilder()
+      final e = _entryBuilder()
         ..string(1, 'ent-1') // id
         ..string(2, 'Cache dir') // display_name
         ..string(3, '/Library/Caches/foo') // path_or_uri
@@ -198,7 +198,7 @@ void main() {
         ..varint(6, 2) // risk_level = Medium
         ..varint(8, 1); // deletable = true
 
-      final b = snap()
+      final b = _snap()
         ..string(1, 'snap-entry')
         ..embedded(7, e); // field 7 = entries
 
@@ -217,14 +217,14 @@ void main() {
     });
 
     test('multiple StorageEntry fields accumulated in entries list', () {
-      final e1 = entryBuilder()
+      final e1 = _entryBuilder()
         ..string(1, 'a')
         ..varint(5, 1); // Cache
-      final e2 = entryBuilder()
+      final e2 = _entryBuilder()
         ..string(1, 'b')
         ..varint(5, 2); // Temp
 
-      final b = snap()
+      final b = _snap()
         ..string(1, 'snap-multi')
         ..embedded(7, e1)
         ..embedded(7, e2);
@@ -240,10 +240,10 @@ void main() {
     // -----------------------------------------------------------------------
 
     test('unknown category enum value falls back to "Unknown"', () {
-      final e = entryBuilder()
+      final e = _entryBuilder()
         ..string(1, 'x')
         ..varint(5, 99);
-      final b = snap()
+      final b = _snap()
         ..string(1, 's')
         ..embedded(7, e);
       final entry = (decodeSnapshotPb(b.build())!['entries'] as List).first;
@@ -251,10 +251,10 @@ void main() {
     });
 
     test('unknown risk_level enum value falls back to "Low"', () {
-      final e = entryBuilder()
+      final e = _entryBuilder()
         ..string(1, 'x')
         ..varint(6, 99);
-      final b = snap()
+      final b = _snap()
         ..string(1, 's')
         ..embedded(7, e);
       final entry = (decodeSnapshotPb(b.build())!['entries'] as List).first;
@@ -262,7 +262,7 @@ void main() {
     });
 
     test('unknown capability enum value falls back to "FullPath"', () {
-      final b = snap()
+      final b = _snap()
         ..string(1, 's')
         ..varint(3, 99); // capability = unknown
       expect(decodeSnapshotPb(b.build())!['capability'], 'FullPath');
@@ -280,13 +280,13 @@ void main() {
       () {
         // Rust writes peek_scanned=false by default; decoded Map must not
         // contain 'peekScanned' so merge logic treats the node as non-peeked.
-        final tree = treeNode()
+        final tree = _treeNode()
           ..string(1, 'dir')
           ..string(2, '/d')
           ..varint(3, 1)
           ..varint(8, 0); // peek_scanned = false
 
-        final b = snap()
+        final b = _snap()
           ..string(1, 's')
           ..embedded(8, tree);
         final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;
@@ -301,13 +301,13 @@ void main() {
       () {
         // If Rust ever starts persisting peek_scanned, the decoded Map must use
         // camelCase 'peekScanned' so _pickMoreComplete recognises it correctly.
-        final tree = treeNode()
+        final tree = _treeNode()
           ..string(1, 'dir')
           ..string(2, '/d')
           ..varint(3, 1)
           ..varint(8, 1); // peek_scanned = true
 
-        final b = snap()
+        final b = _snap()
           ..string(1, 's')
           ..embedded(8, tree);
         final t = decodeSnapshotPb(b.build())!['tree'] as Map<String, dynamic>;

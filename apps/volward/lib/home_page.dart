@@ -51,6 +51,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Ordinal backing: survives hot reload when enum type/name changes.
   int _sortIndex = ScanSortMode.sizeDesc.index;
   final Set<String> _selected = {};
+  final Map<String, int> _selectedSizes = {};
   final List<ScanTreeNode> _columnChain = [];
   final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
   bool _prevScanning = false;
@@ -147,6 +148,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!_prevScanning && _s.scanning) {
       setState(() {
         _selected.clear();
+        _selectedSizes.clear();
         _scanStatus = null;
         _columnChain.clear();
         _columnNavTick.value++;
@@ -164,6 +166,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _columnChain.clear();
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
+        _selectedSizes.clear();
         _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
       });
     } else {
@@ -364,7 +367,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _scheduleVisibleChildrenQuery(
         key,
         node,
-        preferTree: _shouldUseTreeOverlayForPath(node.path),
+        preferTree:
+            node.children.isNotEmpty && _shouldUseTreeOverlayForPath(node.path),
       );
       return const <SnapshotNodeRecord>[];
     }
@@ -511,8 +515,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {
       if (_selected.contains(id)) {
         _selected.remove(id);
+        _selectedSizes.remove(id);
       } else {
         _selected.add(id);
+        _selectedSizes[id] = node.displayBytes;
       }
     });
   }
@@ -569,16 +575,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Returns the total size of the currently-selected entries.
-  /// Cached by snapshot ID plus selected IDs so the O(N) iteration only re-runs
+  /// Cached by snapshot ID plus selected IDs so the summary only recomputes
   /// after selection or snapshot changes.
   int _selectedBytes() {
-    final snap = _s.lastSnapshot;
-    if (snap == null || _selected.isEmpty) return 0;
+    if (_selected.isEmpty) return 0;
     final selectedKey =
         _selected.isEmpty ? '' : (_selected.toList()..sort()).join(',');
-    final compositeKey = '${snap.snapshotId}|$selectedKey';
+    final compositeKey = '${_s.lastSnapshot?.snapshotId ?? ''}|$selectedKey';
     if (compositeKey == _cachedSelectedBytesKey) return _cachedSelectedBytes;
-    _cachedSelectedBytes = snap.selectedBytes(_selected);
+    _cachedSelectedBytes = _selected.fold<int>(
+      0,
+      (sum, id) => sum + (_selectedSizes[id] ?? 0),
+    );
     _cachedSelectedBytesKey = compositeKey;
     return _cachedSelectedBytes;
   }
@@ -647,6 +655,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
       if (!mounted) return;
       setState(_selected.clear);
+      _selectedSizes.clear();
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
       final failed = report['failed_paths'];
       final failedCount = failed is List ? failed.length : 0;
@@ -925,7 +934,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _scheduleVisibleChildrenQuery(
         rootKey,
         displayTree,
-        preferTree: _shouldUseTreeOverlayForPath(displayTree.path),
+        preferTree: displayTree.children.isNotEmpty &&
+            _shouldUseTreeOverlayForPath(displayTree.path),
       );
     }
     // Only skip the empty-state when the catalog API is present and the root is

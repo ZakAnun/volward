@@ -62,4 +62,37 @@ void main() {
     final path = await SnapshotCache.latestSnapshotPath();
     expect(path, '${snapshots.path}/deadbeef.json');
   });
+
+  test(
+    'latestSnapshotPath reads manifest header without full json decode',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('volward-cache-test');
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.delete(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      final manifests = Directory('${temp.path}/manifests')..createSync();
+      final snapshots = Directory('${temp.path}/snapshots')..createSync();
+
+      final snapshotFile = File('${snapshots.path}/large.json')
+        ..writeAsStringSync(jsonEncode({'snapshot_id': 'snap-large'}));
+      File('${manifests.path}/large.json').writeAsStringSync('''
+{
+  "root": "/Users/test",
+  "scanned_at_ms": 3000,
+  "snapshot_id": "snap-large",
+  "snapshot_path": "${snapshotFile.path}",
+  "dir_fingerprints": {
+    ${List.filled(20000, '"x": {"mtime_secs": 1}').join(',')}
+  }
+''');
+
+      final path = await SnapshotCache.latestSnapshotPath(
+        preferredRoot: '/Users/test',
+      );
+      expect(path, snapshotFile.path);
+    },
+  );
 }

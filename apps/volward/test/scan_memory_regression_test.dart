@@ -5,6 +5,32 @@ import 'package:volward/snapshot_view_cache.dart';
 import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
+  test('index summary snapshot keeps only root metadata in Dart', () {
+    final snapshot = ScanSnapshotState.fromIndexSummary({
+      'snapshot_id': 'snap-index',
+      'root_path': '/Users/test',
+      'root_size_bytes': 4096,
+      'scanned_at_ms': 123,
+      'version': 7,
+      'scan_state': 'Done',
+      'reclaimable_estimate_bytes': 64,
+      'entry_count': 3,
+      'deletable_count': 2,
+      'category_counts': {'Cache': 2, 'Media': 1},
+      'deletable_counts': {'Cache': 2},
+    });
+
+    expect(snapshot.snapshotId, 'snap-index');
+    expect(snapshot.filesInSnapshot, 3);
+    expect(snapshot.deletableCount, 2);
+    expect(snapshot.reclaimableEstimateBytes, 64);
+    expect(snapshot.tree?.path, '/Users/test');
+    expect(snapshot.tree?.children, isEmpty);
+    expect(snapshot.hasFlatEntries, isFalse);
+    expect(snapshot.categoryCounts['Cache'], 2);
+    expect(snapshot.deletableCategoryCounts['Cache'], 2);
+  });
+
   test('repeated category switches keep snapshot view cache bounded', () {
     final snapshot = ScanSnapshotState.fromWire({
       'snapshot_id': 'memory-regression',

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use jwalk::{DirEntry, Error, WalkDir};
+use jwalk::{DirEntry, Error, Parallelism, WalkDir};
 use volward_core::manifest::DirFingerprint;
 use volward_core::model::TrashEmptyReport;
 use volward_core::model::{
@@ -49,22 +49,30 @@ fn dir_fingerprint_from_read_dir(
 }
 
 fn entry_mtime_secs(path: &Path) -> i64 {
-    let Ok(metadata) = fs::metadata(path) else {
-        return 0;
-    };
-    let mut max = metadata.modified().map(system_time_secs).unwrap_or(0);
-    if metadata.is_dir() {
-        if let Ok(read_dir) = fs::read_dir(path) {
-            for entry in read_dir.flatten() {
-                if let Ok(child_meta) = entry.metadata() {
-                    if child_meta.is_file() {
-                        max = max.max(child_meta.modified().map(system_time_secs).unwrap_or(0));
-                    }
-                }
-            }
+    fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .map(system_time_secs)
+        .unwrap_or(0)
+}
+
+fn has_child_directory(children: &[Result<DirEntry<((), ())>, Error>]) -> bool {
+    children
+        .iter()
+        .flatten()
+        .any(|child| child.file_type().is_dir())
+}
+
+fn scan_parallelism() -> usize {
+    const DEFAULT_MAX_THREADS: usize = 8;
+    if let Ok(raw) = std::env::var("VOLWARD_SCAN_THREADS") {
+        if let Ok(value) = raw.parse::<usize>() {
+            return value.clamp(1, 32);
         }
     }
-    max
+    std::thread::available_parallelism()
+        .map(|value| value.get().clamp(2, DEFAULT_MAX_THREADS))
+        .unwrap_or(4)
 }
 
 pub struct DesktopPlatform {
@@ -208,34 +216,32 @@ impl PlatformStorage for DesktopPlatform {
                 continue;
             }
             let dir_fingerprints_cache =
-                Arc::new(Mutex::new(HashMap::<PathBuf, DirFingerprint>::new()));
-            let skipped_subtree_roots = Arc::new(Mutex::new(HashSet::<String>::new()));
+                Arc::new(Mutex::new(HashMap::<PathBuf, Option<DirFingerprint>>::new()));
             for entry in WalkDir::new(root_path)
+                .parallelism(Parallelism::RayonNewPool(scan_parallelism()))
                 .skip_hidden(false)
                 .follow_links(false)
                 .sort(false)
                 .process_read_dir({
                     let protected = self.protected_prefixes.clone();
                     let dir_fingerprints_cache = dir_fingerprints_cache.clone();
-                    let skipped_subtree_roots = skipped_subtree_roots.clone();
                     let baseline_fingerprints = baseline_fingerprints.clone();
                     move |_depth, path, _state, children| {
                         let current_fingerprint = dir_fingerprint_from_read_dir(path, children);
-                        if let Ok(mut cache) = dir_fingerprints_cache.lock() {
-                            cache.insert(path.to_path_buf(), current_fingerprint.clone());
-                        }
                         let path_str = path.to_string_lossy().to_string();
                         let unchanged = baseline_fingerprints
                             .as_ref()
                             .and_then(|fingerprints| fingerprints.get(&path_str))
                             .is_some_and(|baseline| baseline.matches(&current_fingerprint));
-                        if unchanged {
-                            if let Ok(mut skipped) = skipped_subtree_roots.lock() {
-                                skipped.insert(path_str);
-                            }
-                            for child in children.iter_mut().flatten() {
-                                child.read_children_path = None;
-                            }
+                        let subtree_skipped = unchanged && !has_child_directory(children);
+                        if let Ok(mut cache) = dir_fingerprints_cache.lock() {
+                            cache.insert(
+                                path.to_path_buf(),
+                                (!unchanged || subtree_skipped).then_some(current_fingerprint),
+                            );
+                        }
+                        if subtree_skipped {
+                            children.clear();
                         }
                         prune_child_directories(children, &protected);
                     }
@@ -254,15 +260,6 @@ impl PlatformStorage for DesktopPlatform {
                 };
                 let path = entry.path();
                 let path_str = path.to_string_lossy().to_string();
-                let is_below_skipped_root =
-                    skipped_subtree_roots.lock().ok().is_some_and(|skipped| {
-                        skipped
-                            .iter()
-                            .any(|root| is_strict_descendant(&path_str, root))
-                    });
-                if is_below_skipped_root {
-                    continue;
-                }
                 if is_protected_path(&path, &self.protected_prefixes) {
                     continue;
                 }
@@ -276,17 +273,23 @@ impl PlatformStorage for DesktopPlatform {
                 };
                 let size_bytes = if is_dir { 0 } else { metadata.len() };
                 let dir_fingerprint = if is_dir {
-                    dir_fingerprints_cache
-                        .lock()
-                        .ok()
-                        .and_then(|cache| cache.get(&path).cloned())
-                        .or_else(|| {
+                    if let Ok(cache) = dir_fingerprints_cache.lock() {
+                        if let Some(cached) = cache.get(&path) {
+                            cached.clone()
+                        } else {
                             Some(DirFingerprint {
                                 mtime_secs: metadata.modified().map(system_time_secs).unwrap_or(0),
                                 children_count: 0,
                                 max_child_mtime_secs: 0,
                             })
+                        }
+                    } else {
+                        Some(DirFingerprint {
+                            mtime_secs: metadata.modified().map(system_time_secs).unwrap_or(0),
+                            children_count: 0,
+                            max_child_mtime_secs: 0,
                         })
+                    }
                 } else {
                     None
                 };
@@ -449,13 +452,6 @@ impl PlatformStorage for DesktopPlatform {
     }
 }
 
-fn is_strict_descendant(path: &str, root: &str) -> bool {
-    if path == root || !path.starts_with(root) {
-        return false;
-    }
-    root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -549,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn entry_mtime_includes_nested_file_changes() {
+    fn entry_mtime_tracks_direct_entry_changes() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
@@ -558,16 +554,16 @@ mod tests {
             "volward-entry-mtime-{}-{unique}",
             std::process::id()
         ));
-        let nested = base.join("Caches");
-        fs::create_dir_all(&nested).expect("mkdir");
-        fs::write(nested.join("f.bin"), b"1").expect("write");
-        let before = entry_mtime_secs(&nested);
+        fs::create_dir_all(&base).expect("mkdir");
+        let file = base.join("f.bin");
+        fs::write(&file, b"1").expect("write");
+        let before = entry_mtime_secs(&file);
         std::thread::sleep(std::time::Duration::from_secs(1));
-        fs::write(nested.join("f.bin"), b"modified").expect("rewrite");
-        let after = entry_mtime_secs(&nested);
+        fs::write(&file, b"modified").expect("rewrite");
+        let after = entry_mtime_secs(&file);
         assert!(
             after > before,
-            "nested file mtime should propagate (before={before}, after={after})"
+            "direct file mtime should update (before={before}, after={after})"
         );
         fs::remove_dir_all(base).expect("cleanup");
     }
@@ -622,10 +618,11 @@ mod tests {
         assert!(second
             .warnings
             .iter()
-            .any(|warning| warning.contains("reused 1 unchanged directories")));
+            .any(|warning| warning.contains("Incremental scan reused")));
 
-        fs::write(root_path.join("new-after-modify.txt"), b"new file")
-            .expect("add file to invalidate root fingerprint");
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        fs::write(root_path.join("Caches/two.bin"), b"modified cache file")
+            .expect("modify file inside reused subtree");
         let third = orchestrator
             .run_scan(
                 "real-incremental-after-modify".to_string(),
@@ -638,10 +635,11 @@ mod tests {
             .expect("incremental scan after file change should succeed");
         assert!(
             third.stats.paths_seen > second.stats.paths_seen,
-            "directory structure change should invalidate reuse (second={}, third={})",
+            "subdirectory file change should invalidate reuse (second={}, third={})",
             second.stats.paths_seen,
             third.stats.paths_seen
         );
+        assert!(third.tree.size_bytes > first.tree.size_bytes);
 
         fs::remove_dir_all(base_path).expect("remove test directory");
     }

@@ -131,6 +131,10 @@ typedef VolwardWriteLastIndexToPathNative =
 typedef VolwardWriteLastIndexToPath =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 
+typedef VolwardGetIndexSummaryJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetIndexSummaryJson = Pointer<Utf8> Function(Pointer<Void>);
+
 typedef VolwardIndexVersionNative = Uint64 Function(Pointer<Void>);
 typedef VolwardIndexVersion = int Function(Pointer<Void>);
 
@@ -219,6 +223,7 @@ final class VolwardNativeBridge implements VolwardBridge {
     _refreshDirectory = _tryLookupRefreshDirectory();
     _loadIndexFromPath = _tryLookupLoadIndexFromPath();
     _writeLastIndexToPath = _tryLookupWriteLastIndexToPath();
+    _getIndexSummaryJson = _tryLookupGetIndexSummaryJson();
     _indexVersion = _tryLookupIndexVersion();
   }
 
@@ -344,6 +349,7 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardRefreshDirectory? _refreshDirectory;
   late final VolwardLoadIndexFromPath? _loadIndexFromPath;
   late final VolwardWriteLastIndexToPath? _writeLastIndexToPath;
+  late final VolwardGetIndexSummaryJson? _getIndexSummaryJson;
   late final VolwardIndexVersion? _indexVersion;
 
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
@@ -379,7 +385,8 @@ final class VolwardNativeBridge implements VolwardBridge {
       _queryDirectoryJson != null &&
       _refreshDirectory != null &&
       _loadIndexFromPath != null &&
-      _writeLastIndexToPath != null;
+      _writeLastIndexToPath != null &&
+      _getIndexSummaryJson != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -681,6 +688,18 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  VolwardGetIndexSummaryJson? _tryLookupGetIndexSummaryJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardGetIndexSummaryJsonNative>>(
+            'volward_get_index_summary_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
   VolwardIndexVersion? _tryLookupIndexVersion() {
     try {
       return _lib
@@ -767,6 +786,14 @@ final class VolwardNativeBridge implements VolwardBridge {
     } finally {
       calloc.free(pathPtr);
     }
+  }
+
+  /// Current lightweight index summary from Rust.
+  Map<String, dynamic>? getIndexSummaryJson(Pointer<Void> engine) {
+    final fn = _getIndexSummaryJson;
+    if (fn == null) return null;
+    final out = fn(engine);
+    return _decodeJsonPtr(out);
   }
 
   /// Current catalog version counter from Rust.

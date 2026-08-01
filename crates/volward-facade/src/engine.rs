@@ -143,35 +143,61 @@ impl VolwardEngine {
     /// Load a persisted index file into the engine.
     /// On success the in-memory index is replaced and the version counter bumped.
     pub fn load_index_from_path(&self, path: &str) -> Result<(), String> {
-        let json = std::fs::read_to_string(path).map_err(|e| format!("error:read index: {e}"))?;
-        let index = serde_json::from_str::<SnapshotIndex>(&json)
-            .or_else(|_| {
-                serde_json::from_str::<StorageSnapshot>(&json)
+        let file = File::open(path).map_err(|e| format!("error:open index: {e}"))?;
+        let index = match serde_json::from_reader::<_, SnapshotIndex>(file) {
+            Ok(index) => index,
+            Err(index_error) => {
+                let file = File::open(path).map_err(|e| format!("error:open snapshot: {e}"))?;
+                serde_json::from_reader::<_, StorageSnapshot>(file)
                     .map(|snapshot| SnapshotIndex::from(&snapshot))
-            })
-            .map_err(|e| format!("error:parse index: {e}"))?;
+                    .map_err(|snapshot_error| {
+                        format!("error:parse index: {index_error}; snapshot: {snapshot_error}")
+                    })?
+            }
+        };
         self.index_version.store(index.version, Ordering::Relaxed);
         if let Ok(mut g) = self.last_index.lock() {
             *g = Some(index);
         }
+        if let Ok(mut g) = self.last_snapshot.lock() {
+            *g = None;
+        }
         Ok(())
+    }
+
+    pub fn get_index_summary_json(&self) -> Result<String, String> {
+        let guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
+        let index = guard
+            .as_ref()
+            .ok_or_else(|| "error:no index loaded".to_string())?;
+        index.summary_json()
     }
 
     /// Persist the current index (as a snapshot JSON) to `path`.
     /// Returns the snapshot_id on success.
     pub fn write_last_index_to_path(&self, path: &str) -> Result<String, String> {
-        let index = self
-            .last_index
+        {
+            let guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
+            if let Some(index) = guard.as_ref() {
+                let file = File::create(path).map_err(|e| format!("error:create index: {e}"))?;
+                let mut writer = BufWriter::new(file);
+                serde_json::to_writer(&mut writer, index)
+                    .map_err(|e| format!("error:serialize index: {e}"))?;
+                writer
+                    .flush()
+                    .map_err(|e| format!("error:flush index: {e}"))?;
+                return Ok(index.snapshot_id.clone());
+            }
+        }
+
+        let snapshot_guard = self
+            .last_snapshot
             .lock()
-            .map_err(|e| format!("lock: {e}"))?
-            .clone()
-            .or_else(|| {
-                self.last_snapshot
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.as_ref().map(SnapshotIndex::from))
-            })
+            .map_err(|e| format!("lock snapshot: {e}"))?;
+        let snapshot = snapshot_guard
+            .as_ref()
             .ok_or_else(|| "error:no index".to_string())?;
+        let index = SnapshotIndex::from(snapshot);
         let file = File::create(path).map_err(|e| format!("error:create index: {e}"))?;
         let mut writer = BufWriter::new(file);
         serde_json::to_writer(&mut writer, &index)
@@ -247,12 +273,18 @@ impl VolwardEngine {
             return "error:scan already in progress".to_string();
         }
 
+        // Clear any prior cancel request so a new async scan is not aborted
+        // immediately when the shared main engine is reused after cancel.
+        self.cancel.store(false, Ordering::Relaxed);
+
         let platform = self.platform.clone();
         let cancel = self.cancel.clone();
         let last_snapshot = self.last_snapshot.clone();
+        let last_index = self.last_index.clone();
         let last_progress = self.last_progress.clone();
         let last_checkpoint = self.last_checkpoint.clone();
         let is_scanning = self.is_scanning.clone();
+        let index_version = self.index_version.clone();
         let scan_handle = self._scan_handle.clone();
 
         let job_id_clone = job_id.clone();
@@ -260,7 +292,7 @@ impl VolwardEngine {
         let handle = std::thread::spawn(move || {
             let classifier = load_classifier_from_arc(&platform);
             let orchestrator = ScanOrchestrator::new(platform.as_ref(), classifier);
-            match orchestrator.run_scan(
+            match orchestrator.run_index_scan(
                 job_id_clone,
                 roots,
                 incremental,
@@ -270,18 +302,25 @@ impl VolwardEngine {
                         *g = Some(progress);
                     }
                 },
-                |checkpoint| {
-                    if let Ok(mut g) = last_checkpoint.lock() {
-                        *g = Some(checkpoint);
-                    }
-                },
             ) {
-                Ok(snapshot) => {
-                    if let Ok(mut g) = last_snapshot.lock() {
-                        *g = Some(snapshot);
-                    }
-                    if let Ok(mut g) = last_checkpoint.lock() {
-                        *g = None;
+                Ok(mut index) => {
+                    // A cancelled walk returns a truncated catalog. Keep any prior
+                    // good index so Dart (which still shows the previous snapshot)
+                    // does not suddenly query/delete against partial results.
+                    if index.scan_state == "Cancelled" {
+                        // leave last_index / last_snapshot unchanged
+                    } else {
+                        let version = index_version.fetch_add(1, Ordering::Relaxed) + 1;
+                        index.version = version;
+                        if let Ok(mut g) = last_index.lock() {
+                            *g = Some(index);
+                        }
+                        if let Ok(mut g) = last_snapshot.lock() {
+                            *g = None;
+                        }
+                        if let Ok(mut g) = last_checkpoint.lock() {
+                            *g = None;
+                        }
                     }
                 }
                 Err(_e) => {
@@ -316,6 +355,23 @@ impl VolwardEngine {
         entry_ids: Vec<String>,
         dry_run: bool,
     ) -> Result<DeleteReport, String> {
+        {
+            let guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
+            if let Some(index) = guard.as_ref() {
+                if index.snapshot_id != snapshot_id {
+                    return Err("Snapshot expired or mismatch".to_string());
+                }
+                let entries = index.deletable_entries_for_ids(&entry_ids);
+                return DeleteOrchestrator::delete_index_entries(
+                    &index.snapshot_id,
+                    &entries,
+                    dry_run,
+                    &*self.platform,
+                )
+                .map_err(|e| e.to_string());
+            }
+        }
+
         let snapshot = self
             .get_last_snapshot()
             .ok_or_else(|| "No snapshot loaded".to_string())?;
@@ -356,28 +412,36 @@ impl VolwardEngine {
     /// Serializes the last checkpoint directly to `path`. Returns
     /// `error:no checkpoint` if the current scan hasn't produced one yet.
     pub fn write_last_checkpoint_to_path(&self, path: &str) -> Result<String, String> {
-        let snapshot = self
-            .get_last_checkpoint()
+        let guard = self
+            .last_checkpoint
+            .lock()
+            .map_err(|e| format!("lock checkpoint: {e}"))?;
+        let snapshot = guard
+            .as_ref()
             .ok_or_else(|| "error:no checkpoint".to_string())?;
         let file = File::create(path).map_err(|e| format!("error:create checkpoint: {e}"))?;
         let mut writer = BufWriter::new(file);
-        serde_json::to_writer(&mut writer, &snapshot)
+        serde_json::to_writer(&mut writer, snapshot)
             .map_err(|e| format!("error:serialize checkpoint: {e}"))?;
         writer
             .flush()
             .map_err(|e| format!("error:flush checkpoint: {e}"))?;
-        Ok(snapshot.snapshot_id)
+        Ok(snapshot.snapshot_id.clone())
     }
 
     /// Encodes the last checkpoint as protobuf and writes it atomically to
     /// `path` (temp file + rename), so a concurrent reader never observes a
     /// truncated file. Returns `error:no checkpoint` if none exists yet.
     pub fn write_last_checkpoint_to_path_pb(&self, path: &str) -> Result<String, String> {
-        let snapshot = self
-            .get_last_checkpoint()
+        let guard = self
+            .last_checkpoint
+            .lock()
+            .map_err(|e| format!("lock checkpoint: {e}"))?;
+        let snapshot = guard
+            .as_ref()
             .ok_or_else(|| "error:no checkpoint".to_string())?;
         let id = snapshot.snapshot_id.clone();
-        write_snapshot_pb_atomic(&snapshot, path)?;
+        write_snapshot_pb_atomic(snapshot, path)?;
         Ok(id)
     }
 
@@ -401,24 +465,32 @@ impl VolwardEngine {
     /// Serializes the last snapshot directly to [path] without an intermediate Dart copy.
     /// Returns the snapshot_id on success, or `error:…` on failure.
     pub fn write_last_snapshot_to_path(&self, path: &str) -> Result<String, String> {
-        let snapshot = self
-            .get_last_snapshot()
+        let guard = self
+            .last_snapshot
+            .lock()
+            .map_err(|e| format!("lock snapshot: {e}"))?;
+        let snapshot = guard
+            .as_ref()
             .ok_or_else(|| "error:no snapshot".to_string())?;
         let file = File::create(path).map_err(|e| format!("error:create snapshot: {e}"))?;
         let mut writer = BufWriter::new(file);
-        serde_json::to_writer(&mut writer, &snapshot)
+        serde_json::to_writer(&mut writer, snapshot)
             .map_err(|e| format!("error:serialize snapshot: {e}"))?;
         writer
             .flush()
             .map_err(|e| format!("error:flush snapshot: {e}"))?;
-        Ok(snapshot.snapshot_id)
+        Ok(snapshot.snapshot_id.clone())
     }
 
     pub fn write_last_snapshot_catalog_to_path(&self, path: &str) -> Result<String, String> {
-        let snapshot = self
-            .get_last_snapshot()
+        let guard = self
+            .last_snapshot
+            .lock()
+            .map_err(|e| format!("lock snapshot: {e}"))?;
+        let snapshot = guard
+            .as_ref()
             .ok_or_else(|| "error:no snapshot".to_string())?;
-        let catalog = SnapshotCatalog::from(&snapshot);
+        let catalog = SnapshotCatalog::from(snapshot);
         let file = File::create(path).map_err(|e| format!("error:create catalog: {e}"))?;
         let mut writer = BufWriter::new(file);
         serde_json::to_writer(&mut writer, &catalog)
@@ -439,11 +511,15 @@ impl VolwardEngine {
     /// Encodes the last snapshot as protobuf and writes it atomically to
     /// `path` (temp file + rename). Returns the snapshot_id on success.
     pub fn write_last_snapshot_to_path_pb(&self, path: &str) -> Result<String, String> {
-        let snapshot = self
-            .get_last_snapshot()
+        let guard = self
+            .last_snapshot
+            .lock()
+            .map_err(|e| format!("lock snapshot: {e}"))?;
+        let snapshot = guard
+            .as_ref()
             .ok_or_else(|| "error:no snapshot".to_string())?;
         let id = snapshot.snapshot_id.clone();
-        write_snapshot_pb_atomic(&snapshot, path)?;
+        write_snapshot_pb_atomic(snapshot, path)?;
         Ok(id)
     }
 

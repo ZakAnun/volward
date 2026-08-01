@@ -12,8 +12,8 @@ pub mod snapshot_catalog;
 pub use classify::Classifier;
 pub use delete::DeleteOrchestrator;
 pub use index::{
-    SnapshotDirectoryRecord, SnapshotEntryRecord, SnapshotIndex, SnapshotNodeRecord,
-    SnapshotQueryResult,
+    SnapshotDirectoryRecord, SnapshotEntryRecord, SnapshotIndex, SnapshotIndexBuilder,
+    SnapshotNodeRecord, SnapshotQueryResult,
 };
 pub use model::*;
 pub use platform::{PlatformError, PlatformStorage, WalkAction, WalkOptions};
