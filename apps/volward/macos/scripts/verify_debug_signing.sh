@@ -39,6 +39,16 @@ codesign -dv --verbose=2 "$APP_PATH" 2>&1 | tee "$TMP_FILE"
 
 if grep -Eq 'Signature=adhoc|Authority=\(ad hoc\)' "$TMP_FILE"; then
   echo "error: built app is still ad-hoc signed" >&2
+  echo "hint: remove the stale Debug app and rebuild after setup:" >&2
+  echo "  rm -rf \"$APP_PATH\"" >&2
+  echo "  cd apps/volward && bash scripts/run_macos_debug.sh" >&2
+  echo "Or confirm DEVELOPMENT_TEAM in Runner/Configs/TeamSettings.local.xcconfig" >&2
+  exit 1
+fi
+
+if ! grep -q 'TeamIdentifier=' "$TMP_FILE" || grep -q 'TeamIdentifier=not set' "$TMP_FILE"; then
+  echo "error: signed app has no TeamIdentifier (DEVELOPMENT_TEAM not applied)" >&2
+  echo "hint: re-run bash scripts/setup_macos.sh, then delete the Debug app and rebuild." >&2
   exit 1
 fi
 
