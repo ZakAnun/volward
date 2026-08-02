@@ -1,2 +1,7 @@
 #include "../../Flutter/Flutter-Debug.xcconfig"
 #include "Warnings.xcconfig"
+
+// Apply local Team ID at project level too (not only Runner via AppInfo).
+// Otherwise nested targets with an empty DEVELOPMENT_TEAM may fall back to the
+// first keychain "Apple Development" identity (e.g. company cert 9C53WK2TNN).
+#include? "TeamSettings.local.xcconfig"

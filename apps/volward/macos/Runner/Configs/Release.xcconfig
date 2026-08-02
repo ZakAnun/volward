@@ -1,2 +1,5 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
+
+// Same as Debug: keep DEVELOPMENT_TEAM available for all macOS targets.
+#include? "TeamSettings.local.xcconfig"
