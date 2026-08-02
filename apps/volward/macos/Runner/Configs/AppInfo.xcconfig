@@ -5,7 +5,8 @@
 // 'flutter create' template.
 
 // Local-only Team ID for Automatic Apple Development signing.
-// Copy TeamSettings.local.xcconfig.example → TeamSettings.local.xcconfig
+// Prefer: from repo root run `bash scripts/setup_macos.sh`
+// Or copy TeamSettings.local.xcconfig.example → TeamSettings.local.xcconfig
 #include? "TeamSettings.local.xcconfig"
 
 // The application's name. By default this is also the title of the Flutter window.

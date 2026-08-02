@@ -25,6 +25,9 @@ migrate_working_dir/
 
 # FVM
 
+# Local Xcode signing overrides
+macos/Runner/Configs/TeamSettings.local.xcconfig
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id

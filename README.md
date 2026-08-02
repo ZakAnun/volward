@@ -50,30 +50,38 @@ volward/
 
 ## 环境要求
 
-- **Rust**（stable，`~/.cargo/bin` 在 PATH 中）
-- **FVM** + **Flutter stable**（`apps/volward` 锁定 stable，当前解析约 Flutter 3.44 / Dart 3.12）
-- **macOS** 用于日常开发与运行
+- **macOS** + **Xcode**（App Store），并在 Xcode → Settings → Accounts 登录自己的 Apple ID（用于 Debug 签名）
+- **Rust**（stable，`~/.cargo/bin` 在 PATH 中；也可由 setup 安装）
+- **FVM** + **Flutter stable**（`apps/volward` 锁定 stable；也可由 setup 安装）
+- **protoc**（`brew install protobuf`；Rust facade 的 `build.rs` 需要；也可由 setup 安装）
 
 ## 快速开始（macOS）
 
 ```bash
-# 一键预检 Debug 签名、重建 Rust 并启动 macOS
+# 1) 首次：在仓库根目录执行（请先完成上面的 Xcode Apple ID 登录）
+bash scripts/setup_macos.sh
+
+# 2) 日常开发 / 运行
 cd apps/volward
 bash scripts/run_macos_debug.sh
 
 # 如需手动分步（均从仓库根目录开始）
 cd apps/volward/macos && bash build_rust.sh
 cd ..
-fvm install stable    # 首次
+fvm install stable    # 首次（setup 已做过可跳过）
 fvm use stable
 fvm flutter pub get
 fvm flutter run -d macos
 ```
+
+`setup_macos.sh` 会：检查 Xcode/CLT → **先配置本地签名**（缺证书会立刻失败并提示）→ 安装/检查 Homebrew `protobuf`、Rust、FVM + Flutter → `pub get` / `cargo fetch` → 编译 `libvolward_facade`。  
+每人各自生成 gitignore 的 `TeamSettings.local.xcconfig`（用自己的 Apple Development Team，**不必共用证书**）。常用参数：`--team <ID>`、`-y`（仅当能唯一判定 Personal Team 时自动选择）、`--skip-build`。
+
 Rust 或 FFI 变更后请 **Hot restart (R)**，不要只 hot reload。若提示 native 库过时，重新执行 `build_rust.sh` 后再 restart。
 
 ## 网络代理（可选）
 
-构建若遇 crates.io / pub 超时，可设置代理（`build_rust.sh` 在未设置时默认 `127.0.0.1:7890`）：
+构建若遇 crates.io / pub 超时，可设置代理（`setup_macos.sh` / `build_rust.sh` 仅在本机 `127.0.0.1:7890` 可连通时才会自动使用该代理）：
 
 ```bash
 export http_proxy=http://127.0.0.1:7890

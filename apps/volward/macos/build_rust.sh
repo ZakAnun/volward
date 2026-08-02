@@ -4,10 +4,21 @@ set -euo pipefail
 # Resolve volward workspace from this script (macos/build_rust.sh → ../../..)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-export http_proxy="${http_proxy:-http://127.0.0.1:7890}"
-export https_proxy="${https_proxy:-http://127.0.0.1:7890}"
-export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}"
-export HTTPS_PROXY="${HTTPS_PROXY:-$https_proxy}"
+
+# Honor explicit proxy env; otherwise only default to local 7890 if it looks alive.
+# (Forcing a dead 127.0.0.1:7890 breaks cargo for contributors without a local proxy.)
+if [[ -z "${http_proxy:-${HTTP_PROXY:-}}" && -z "${https_proxy:-${HTTPS_PROXY:-}}" ]]; then
+  if curl -fsS --connect-timeout 1 "http://127.0.0.1:7890" >/dev/null 2>&1 \
+    || nc -z -G 1 127.0.0.1 7890 >/dev/null 2>&1; then
+    export http_proxy="http://127.0.0.1:7890"
+    export https_proxy="http://127.0.0.1:7890"
+  fi
+else
+  export http_proxy="${http_proxy:-${HTTP_PROXY:-}}"
+  export https_proxy="${https_proxy:-${HTTPS_PROXY:-}}"
+fi
+export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"
+export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-}}"
 export PATH="${HOME}/.cargo/bin:${PATH}"
 
 cd "${WORKSPACE_ROOT}"

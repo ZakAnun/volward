@@ -8,13 +8,15 @@ APP_PATH="${1:-}"
 
 if [[ ! -f "$LOCAL_TEAM_FILE" ]]; then
   echo "error: missing $LOCAL_TEAM_FILE" >&2
-  echo "Copy $EXAMPLE_TEAM_FILE to TeamSettings.local.xcconfig and set DEVELOPMENT_TEAM." >&2
+  echo "Run from repo root: bash scripts/setup_macos.sh" >&2
+  echo "Or copy $EXAMPLE_TEAM_FILE to TeamSettings.local.xcconfig and set DEVELOPMENT_TEAM." >&2
   exit 1
 fi
 
 if ! grep -Eq '^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*[A-Z0-9]{10}[[:space:]]*$' "$LOCAL_TEAM_FILE"; then
   echo "error: DEVELOPMENT_TEAM is missing or invalid in $LOCAL_TEAM_FILE" >&2
   echo "Expected a 10-character Apple Team ID, e.g. DEVELOPMENT_TEAM = ABCD123456" >&2
+  echo "Or re-run: bash scripts/setup_macos.sh --team YOUR_TEAM_ID" >&2
   exit 1
 fi
 

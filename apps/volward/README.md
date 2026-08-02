@@ -7,7 +7,12 @@ macOS 桌面端 Flutter UI，依赖同仓库 Rust `libvolward_facade` dylib。�
 ## 运行
 
 ```bash
-# 推荐：一键预检 Debug 签名、重建 Rust 并启动 macOS
+# 首次：在仓库根目录安装依赖 + 本地签名配置
+#   cd ../.. && bash scripts/setup_macos.sh
+# 若已在本目录（apps/volward），等价于：
+bash ../../scripts/setup_macos.sh
+
+# 日常：一键预检 Debug 签名、重建 Rust 并启动 macOS
 bash scripts/run_macos_debug.sh
 
 # 如需手动分步
