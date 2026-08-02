@@ -31,10 +31,17 @@ Typical first-time flow:
 EOF
 }
 
-log() { printf '==> %s\n' "$*"; }
-ok() { printf '    ok: %s\n' "$*"; }
+log() { printf '==> %s\n' "$*" >&2; }
+ok() { printf '    ok: %s\n' "$*" >&2; }
 warn() { printf '    warn: %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# Run a command with a soft timeout (seconds). Returns 124 on timeout.
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -62,7 +69,7 @@ export PATH="${HOME}/.cargo/bin:${HOME}/.pub-cache/bin:${HOME}/fvm/default/bin:$
 export http_proxy="${http_proxy:-${HTTP_PROXY:-}}"
 export https_proxy="${https_proxy:-${HTTPS_PROXY:-}}"
 if [[ -z "${http_proxy}" && -z "${https_proxy}" ]]; then
-  if curl -fsS --connect-timeout 1 "http://127.0.0.1:7890" >/dev/null 2>&1 \
+  if curl -fsS --connect-timeout 1 --max-time 2 "http://127.0.0.1:7890" >/dev/null 2>&1 \
     || nc -z -G 1 127.0.0.1 7890 >/dev/null 2>&1; then
     export http_proxy="http://127.0.0.1:7890"
     export https_proxy="http://127.0.0.1:7890"
@@ -75,18 +82,34 @@ require_macos() {
   [[ "$(uname -s)" == "Darwin" ]] || die "this setup script only supports macOS"
 }
 
+read_xcode_version() {
+  local plist="/Applications/Xcode.app/Contents/Info.plist"
+  if [[ -f "$plist" ]]; then
+    plutil -extract CFBundleShortVersionString raw "$plist" 2>/dev/null && return 0
+  fi
+  # Fallback only; xcodebuild can hang while waiting for first-launch UI / license.
+  run_with_timeout 8 xcodebuild -version 2>/dev/null | awk 'NR==1{print; exit}'
+}
+
 check_xcode() {
   log "Checking Xcode / Command Line Tools"
   if ! xcode-select -p >/dev/null 2>&1; then
     die "Xcode Command Line Tools missing. Run: xcode-select --install"
   fi
+  ok "developer dir: $(xcode-select -p)"
+
   if [[ ! -d /Applications/Xcode.app ]]; then
     die "Xcode.app not found under /Applications. Install Xcode from the App Store, open it once, then re-run setup."
   fi
+
   local xcode_ver
-  xcode_ver="$(xcodebuild -version 2>/dev/null | awk 'NR==1{print; exit}')"
+  xcode_ver="$(read_xcode_version || true)"
   ok "Xcode present (${xcode_ver:-unknown})"
-  ok "developer dir: $(xcode-select -p)"
+
+  # Cheap existence check only — avoid a blocking `xcodebuild -version`.
+  if [[ ! -x /usr/bin/xcodebuild && ! -x "$(xcode-select -p)/usr/bin/xcodebuild" ]]; then
+    die "xcodebuild not found. Open Xcode once to finish installation, then re-run setup."
+  fi
 }
 
 ensure_brew() {
@@ -278,6 +301,7 @@ setup_signing() {
     return
   fi
 
+  log "Scanning Keychain for Apple Development certificates…"
   local teams=()
   local orgs=()
   local personal_idxs=()
