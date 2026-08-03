@@ -25,6 +25,80 @@ class ScanCancelledException implements Exception {
   String toString() => message;
 }
 
+class _ScanProgressBand {
+  const _ScanProgressBand({
+    required this.start,
+    required this.end,
+    required this.duration,
+  });
+
+  final double start;
+  final double end;
+  final Duration duration;
+}
+
+_ScanProgressBand _scanProgressBandFor(String? phase) {
+  return switch (phase) {
+    'DiscoveringRoots' => const _ScanProgressBand(
+        start: 0.0,
+        end: 0.04,
+        duration: Duration(seconds: 2),
+      ),
+    'Walking' => const _ScanProgressBand(
+        start: 0.04,
+        end: 0.86,
+        duration: Duration(minutes: 4),
+      ),
+    'Classifying' => const _ScanProgressBand(
+        start: 0.86,
+        end: 0.93,
+        duration: Duration(seconds: 25),
+      ),
+    'Aggregating' => const _ScanProgressBand(
+        start: 0.93,
+        end: 0.97,
+        duration: Duration(seconds: 15),
+      ),
+    'SavingResults' => const _ScanProgressBand(
+        start: 0.97,
+        end: 0.99,
+        duration: Duration(seconds: 8),
+      ),
+    'LoadingResults' => const _ScanProgressBand(
+        start: 0.99,
+        end: 0.995,
+        duration: Duration(seconds: 4),
+      ),
+    _ => const _ScanProgressBand(
+        start: 0.0,
+        end: 0.99,
+        duration: Duration(minutes: 4),
+      ),
+  };
+}
+
+@visibleForTesting
+double? estimateScanFraction({
+  required bool scanning,
+  required String? phase,
+  required DateTime? scanStartedAt,
+  required DateTime now,
+}) {
+  if (!scanning) return null;
+  if (phase == 'Done') return 1.0;
+
+  final startedAt = scanStartedAt;
+  if (startedAt == null) return 0.0;
+
+  final band = _scanProgressBandFor(phase);
+  final elapsedMs = now.difference(startedAt).inMilliseconds;
+  final phaseProgress = elapsedMs <= 0
+      ? 0.0
+      : elapsedMs / (elapsedMs + band.duration.inMilliseconds);
+  final estimated = band.start + (band.end - band.start) * phaseProgress;
+  return estimated.clamp(0.0, 0.99).toDouble();
+}
+
 /// Holds the native Volward engine pointer and exposes async wrappers for UI.
 class VolwardSession extends ChangeNotifier {
   VolwardSession() {
@@ -59,17 +133,11 @@ class VolwardSession extends ChangeNotifier {
   static const int _maxConcurrentPeeks = 2;
   static const int _maxPreviewEntries = 2000;
   static const int _maxAutoRestoreBytes = 128 * 1024 * 1024;
-
-  // Incremental counters for scannedFraction — recomputed once per snapshot
-  // update inside _recomputeProgressCounters(), then read O(1) by the UI.
-  int _scannedDirCount = 0;
-  int _totalDirCount = 0;
   int _snapshotVersion = 0;
   final Set<String> _invalidatedPrefixes = {};
-  DateTime? _lastProgressRecompute;
-  // Guards switchScanRoot against concurrent invocations (e.g. rapid taps
-  // while previewTarget's Isolate is in flight).
-  bool _switchingRoot = false;
+  // Monotonic token for root switches. If the user picks folders quickly, only
+  // the latest preview/scan handoff may update the visible snapshot.
+  int _rootSwitchGeneration = 0;
 
   // ── Catalog-backed current-directory state (Design §6.1) ──────────────────
   // Tracks the currently browsed directory path for targeted refresh.
@@ -89,9 +157,9 @@ class VolwardSession extends ChangeNotifier {
   // Exposes the scan elapsed label as a ValueNotifier so the sticky bar can
   // react to the 1-Hz tick independently without triggering a full page rebuild.
   final ValueNotifier<String?> scanElapsedNotifier = ValueNotifier(null);
-  // Directory-scan progress (0–1, or null when hidden). Updated after the
-  // deferred tree walk in [_recomputeProgressCounters] so progress widgets can
-  // rebuild locally without a full [notifyListeners] / page rebuild.
+  // Estimated directory-scan progress (0–1, or null when hidden). Driven by
+  // scan phase + elapsed time so it advances smoothly without walking the
+  // full tree on every checkpoint.
   final ValueNotifier<double?> scannedFractionNotifier = ValueNotifier(null);
   SendPort? _workerCancelPort;
   Timer? _scanElapsedTimer;
@@ -108,6 +176,8 @@ class VolwardSession extends ChangeNotifier {
   String? _lastNativeProgressPhase;
   bool _scanRunningOnMainEngine = false;
   bool _scanCancelRequested = false;
+  bool _targetPreviewLoading = false;
+  DateTime? _targetPreviewStartedAt;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -117,6 +187,8 @@ class VolwardSession extends ChangeNotifier {
 
   /// Safety net for runaway scans; normal Home scans should finish well below this.
   static const Duration _scanAbsoluteMax = Duration(hours: 8);
+
+  static const Duration _minTargetPreviewLoading = Duration(milliseconds: 180);
 
   bool get ready => _ready;
   String? get initError => _initError;
@@ -205,16 +277,19 @@ class VolwardSession extends ChangeNotifier {
   Set<String> get peekInFlight => Set.unmodifiable(_peekInFlight);
 
   /// Fraction of directories in the current tree that have been scanned
-  /// (0.0–1.0). Returns null when a scan is not running, when the tree is
-  /// empty, or when every directory is already scanned (so the progress
-  /// indicator is hidden rather than stuck at 100%).
+  /// (0.0–1.0). This is an estimated progress bar derived from the active scan
+  /// phase and elapsed time rather than a tree-wide directory-count ratio.
+  /// Returns null when a scan is not running.
   ///
   /// Prefer listening to [scannedFractionNotifier] for UI that should update
-  /// when counters finish their deferred recompute (without a full page notify).
+  /// when the estimate ticks forward (without a full page notify).
   double? get scannedFraction {
-    if (!_scanning || _totalDirCount == 0) return null;
-    final f = _scannedDirCount / _totalDirCount;
-    return f >= 1.0 ? null : f;
+    return estimateScanFraction(
+      scanning: _scanning,
+      phase: _scanProgress?['phase']?.toString() ?? 'DiscoveringRoots',
+      scanStartedAt: _scanStartedAt,
+      now: DateTime.now(),
+    );
   }
 
   /// Pushes [scannedFraction] into [scannedFractionNotifier] only when the
@@ -239,6 +314,7 @@ class VolwardSession extends ChangeNotifier {
   /// True while loading a previously saved scan from disk cache.
   bool get restoringSnapshot => _restoringSnapshot;
   bool _restoringSnapshot = false;
+  bool get targetPreviewLoading => _targetPreviewLoading;
 
   String get scanTargetLabel =>
       _scanRoots.isEmpty ? 'Home (default)' : _scanRoots.join(', ');
@@ -263,12 +339,14 @@ class VolwardSession extends ChangeNotifier {
 
   void _startScanElapsedTimer() {
     _scanStartedAt = DateTime.now();
+    scanElapsedNotifier.value = scanElapsedLabel;
     _scanElapsedTimer?.cancel();
     _scanElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_scanning) {
         // Only update the elapsed label — don't fire a full notifyListeners()
         // which would rebuild the entire page on every tick.
         scanElapsedNotifier.value = scanElapsedLabel;
+        _publishScannedFraction();
       }
     });
   }
@@ -288,6 +366,7 @@ class VolwardSession extends ChangeNotifier {
       if (_scanProgress?['paths_seen'] != null && pathsSeen == null)
         'paths_seen': _scanProgress!['paths_seen'],
     };
+    _publishScannedFraction();
     notifyListeners();
   }
 
@@ -386,9 +465,8 @@ class VolwardSession extends ChangeNotifier {
   Future<void> _restoreCachedSnapshot() async {
     if (!_ready || _engine == null || _scanning) return;
 
-    final preferredRoot = _scanRoots.isNotEmpty
-        ? _scanRoots.first
-        : _defaultScanRoot();
+    final preferredRoot =
+        _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
     final path = await SnapshotCache.latestSnapshotPath(
       preferredRoot: preferredRoot,
     );
@@ -480,65 +558,67 @@ class VolwardSession extends ChangeNotifier {
   ///   cancelled, the new root is previewed, and a fresh full scan is started
   ///   automatically.
   Future<void> switchScanRoot(String? path) async {
-    // Debounce rapid taps: if a previous switchScanRoot is still awaiting
-    // previewTarget's Isolate, ignore the new call to avoid _scanRoots being
-    // overwritten mid-flight and two _runScanAutostart() competing.
-    if (_switchingRoot) return;
-    _switchingRoot = true;
-    var handedOffToBackground = false;
-    try {
-      final newRoots = path != null ? [path] : <String>[];
-      final newRoot = path ?? _defaultScanRoot();
-      final currentRoot = _scanRoots.isNotEmpty
-          ? _scanRoots.first
-          : _defaultScanRoot();
+    final generation = ++_rootSwitchGeneration;
+    final newRoots = path != null ? [path] : <String>[];
+    final newRoot = ScanTreeBuilder.normalizeRoot(path ?? _defaultScanRoot());
+    final currentRoot = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    final keepRunningScan = _scanning &&
+        (newRoot == currentRoot || newRoot.startsWith('$currentRoot/'));
 
-      if (_scanning) {
-        final isSubtree =
-            newRoot == currentRoot || newRoot.startsWith('$currentRoot/');
+    if (_scanning && !keepRunningScan) {
+      cancelScan();
+    }
 
-        if (isSubtree) {
-          // Keep the full scan running — just narrow the display and peek-scan
-          // the new root so it fills in immediately.
-          _scanRoots = newRoots;
-          _currentDirectoryPath = null;
-          notifyListeners();
-          unawaited(peekScan(newRoot));
-          return;
-        }
-        // Unrelated root: cancel first, then fall through to fresh scan below.
-        cancelScan();
-      }
+    _scanRoots = newRoots;
+    _currentDirectoryPath = null;
+    _lastSnapshot = null;
+    _lastDeleteReport = null;
+    _targetPreviewLoading = true;
+    _targetPreviewStartedAt = DateTime.now();
+    _snapshotVersion++;
+    _invalidatedPrefixes.clear();
+    _peekInFlight.clear();
+    _peekCompleted.clear();
+    notifyListeners();
 
-      // Fresh scan for the new root.
-      _scanRoots = newRoots;
-      _currentDirectoryPath = null;
-      _lastSnapshot = null;
-      _snapshotVersion++;
-      _invalidatedPrefixes.clear();
-      notifyListeners();
-      handedOffToBackground = true;
-      unawaited(_previewThenRunScanAutostart());
-    } finally {
-      if (!handedOffToBackground) {
-        _switchingRoot = false;
-      }
+    unawaited(
+      _previewThenContinueRootSwitch(
+        generation,
+        newRoot: newRoot,
+        startFullScan: !keepRunningScan,
+      ),
+    );
+  }
+
+  Future<void> _previewThenContinueRootSwitch(
+    int generation, {
+    required String newRoot,
+    required bool startFullScan,
+  }) async {
+    await previewTarget(expectedGeneration: generation);
+    if (generation != _rootSwitchGeneration) return;
+    if (startFullScan) {
+      await _waitForScanIdle(generation);
+      if (generation != _rootSwitchGeneration) return;
+      // Fire-and-forget — errors surface via _lastError / notifyListeners.
+      unawaited(_runScanAutostart(generation));
+    } else {
+      unawaited(peekScan(newRoot, force: true));
     }
   }
 
-  Future<void> _previewThenRunScanAutostart() async {
-    try {
-      await previewTarget();
-      // Fire-and-forget — errors surface via _lastError / notifyListeners.
-      unawaited(_runScanAutostart());
-    } finally {
-      _switchingRoot = false;
+  Future<void> _waitForScanIdle(int generation) async {
+    while (_scanning && generation == _rootSwitchGeneration) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
   /// Internal helper: start a scan and store the completion status without
   /// surfacing a Future to the caller (used by [switchScanRoot]).
-  Future<void> _runScanAutostart() async {
+  Future<void> _runScanAutostart([int? generation]) async {
+    if (generation != null && generation != _rootSwitchGeneration) return;
     try {
       await runScan();
     } on ScanCancelledException {
@@ -552,11 +632,16 @@ class VolwardSession extends ChangeNotifier {
   /// before any deep scan starts. No-op if the native dylib doesn't support
   /// quick_list_dir yet (old build) — callers fall back to the pre-scan
   /// section in that case.
-  Future<void> previewTarget() async {
+  Future<void> previewTarget({int? expectedGeneration}) async {
     if (!_ready || _engine == null) return;
-    if (!VolwardNativeBridge.instance.hasQuickListApi) return;
+    if (!VolwardNativeBridge.instance.hasQuickListApi) {
+      _clearTargetPreviewLoading(expectedGeneration);
+      return;
+    }
 
-    final root = _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+    final root = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
     List<Map<String, dynamic>> entries;
     try {
       entries = await Isolate.run(() {
@@ -570,6 +655,22 @@ class VolwardSession extends ChangeNotifier {
       });
     } catch (e, st) {
       debugPrint('VolwardSession: previewTarget failed: $e\n$st');
+      _clearTargetPreviewLoading(expectedGeneration);
+      return;
+    }
+
+    if (expectedGeneration != null &&
+        expectedGeneration != _rootSwitchGeneration) {
+      return;
+    }
+    final activeRoot = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    if (activeRoot != root) return;
+
+    await _holdTargetPreviewLoading(expectedGeneration);
+    if (expectedGeneration != null &&
+        expectedGeneration != _rootSwitchGeneration) {
       return;
     }
 
@@ -579,6 +680,32 @@ class VolwardSession extends ChangeNotifier {
     _lastSnapshot = ScanSnapshotState.fromWire(
       buildPreviewSnapshot(rootPath: root, quickListEntries: previewEntries),
     );
+    _targetPreviewLoading = false;
+    _targetPreviewStartedAt = null;
+    notifyListeners();
+  }
+
+  Future<void> _holdTargetPreviewLoading(int? expectedGeneration) async {
+    final started = _targetPreviewStartedAt;
+    if (started == null) return;
+    final elapsed = DateTime.now().difference(started);
+    final remaining = _minTargetPreviewLoading - elapsed;
+    if (remaining <= Duration.zero) return;
+    await Future<void>.delayed(remaining);
+    if (expectedGeneration != null &&
+        expectedGeneration != _rootSwitchGeneration) {
+      return;
+    }
+  }
+
+  void _clearTargetPreviewLoading(int? expectedGeneration) {
+    if (expectedGeneration != null &&
+        expectedGeneration != _rootSwitchGeneration) {
+      return;
+    }
+    if (!_targetPreviewLoading) return;
+    _targetPreviewLoading = false;
+    _targetPreviewStartedAt = null;
     notifyListeners();
   }
 
@@ -657,16 +784,7 @@ class VolwardSession extends ChangeNotifier {
     if (_peekInFlight.contains(path)) return;
     if (!force && _peekCompleted.contains(path)) return;
     if (_peekInFlight.length >= _maxConcurrentPeeks) return;
-    // volwardPeekScanIsolate requires startScanAsyncWithOptions. If the dylib
-    // is outdated, log once and let the isolate report the error — at least
-    // the peek won't silently add this path to _peekCompleted and block retries.
-    if (!VolwardNativeBridge.instance.hasScanOptionsApi) {
-      debugPrint(
-        'VolwardSession: peekScan skipped for $path — rebuild Rust '
-        '(cd apps/volward/macos && bash build_rust.sh) then restart (R).',
-      );
-      return;
-    }
+    final generation = _rootSwitchGeneration;
 
     _peekInFlight.add(path);
     notifyListeners();
@@ -678,6 +796,7 @@ class VolwardSession extends ChangeNotifier {
       if (message is! Map) return;
       final type = message['type']?.toString();
       if (type == 'done') {
+        if (generation != _rootSwitchGeneration) return;
         final tree = message['tree'];
         final entriesRaw = message['entries'];
         if (tree is Map) {
@@ -687,9 +806,9 @@ class VolwardSession extends ChangeNotifier {
           // overlay for this focused branch until the next full scan.
           final entries = (entriesRaw is List)
               ? entriesRaw
-                    .whereType<Map>()
-                    .map((e) => Map<String, dynamic>.from(e))
-                    .toList()
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList()
               : <Map<String, dynamic>>[];
           await _applyMerge(
             path,
@@ -784,6 +903,9 @@ class VolwardSession extends ChangeNotifier {
           ];
 
     _scanning = true;
+    final scanGeneration = _rootSwitchGeneration;
+    _targetPreviewLoading = false;
+    _targetPreviewStartedAt = null;
     _lastError = null;
     _lastDeleteReport = null;
     _scanProgress = null;
@@ -797,26 +919,21 @@ class VolwardSession extends ChangeNotifier {
     _lastNativeProgressPhase = null;
     _peekInFlight.clear();
     _peekCompleted.clear();
-    // Clear stale fraction from a previous scan, then seed counters from
-    // whatever tree is already in _lastSnapshot (usually the preview).
-    // Without the seed, scannedFraction stays null until the first checkpoint
-    // and the UI shows "…" rather than a real % at startup.
-    _scannedDirCount = 0;
-    _totalDirCount = 0;
-    _publishScannedFraction();
-    _recomputeProgressCounters(force: true);
     _startScanElapsedTimer();
-    notifyListeners();
+    _setScanProgressPhase('DiscoveringRoots', pathsSeen: 0);
 
     if (hasIndexApi) {
       final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
       _lastJobId = jobId;
       try {
-        _lastSnapshot = await _awaitScanWithStallGuard(
+        final snapshot = await _awaitScanWithStallGuard(
           _runIndexScanOnMainEngine(jobId, effectiveRoots),
         );
-        notifyListeners();
-        return _lastSnapshot?.snapshotId ?? 'done';
+        if (scanGeneration == _rootSwitchGeneration) {
+          _lastSnapshot = snapshot;
+          notifyListeners();
+        }
+        return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
       } on ScanCancelledException catch (e) {
         _lastError = e.message;
         rethrow;
@@ -853,7 +970,7 @@ class VolwardSession extends ChangeNotifier {
       } else if (type == 'checkpoint') {
         final path = m['snapshot_path']?.toString();
         if (!hasIndexApi && path != null && path.isNotEmpty) {
-          unawaited(_applyCheckpointFromFile(path));
+          unawaited(_applyCheckpointFromFile(path, scanGeneration));
         }
         // Load catalog index from checkpoint if available (Design §7.2).
         final indexPath = m['index_path']?.toString();
@@ -887,17 +1004,15 @@ class VolwardSession extends ChangeNotifier {
           if (indexPath != null && indexPath.isNotEmpty) {
             _deleteTempResultFile(indexPath);
           }
-          _loadSnapshotFromFile(path)
-              .then((snap) {
-                if (!completer.isCompleted) {
-                  completer.complete(snap);
-                }
-              })
-              .catchError((Object e, StackTrace st) {
-                if (!completer.isCompleted) {
-                  completer.completeError(e, st);
-                }
-              });
+          _loadSnapshotFromFile(path).then((snap) {
+            if (!completer.isCompleted) {
+              completer.complete(snap);
+            }
+          }).catchError((Object e, StackTrace st) {
+            if (!completer.isCompleted) {
+              completer.completeError(e, st);
+            }
+          });
         } else if (indexPath != null && indexPath.isNotEmpty) {
           _deleteTempResultFile(indexPath);
           completer.completeError('Failed to load catalog index');
@@ -932,9 +1047,12 @@ class VolwardSession extends ChangeNotifier {
         _scanCancelInitPort!.sendPort,
         _incrementalScan,
       ]);
-      _lastSnapshot = await _awaitScanWithStallGuard(completer.future);
-      notifyListeners();
-      return _lastSnapshot?.snapshotId ?? 'done';
+      final snapshot = await _awaitScanWithStallGuard(completer.future);
+      if (scanGeneration == _rootSwitchGeneration) {
+        _lastSnapshot = snapshot;
+        notifyListeners();
+      }
+      return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
     } on ScanCancelledException catch (e) {
       _lastError = e.message;
       rethrow;
@@ -1134,7 +1252,10 @@ class VolwardSession extends ChangeNotifier {
     }());
   }
 
-  Future<void> _applyCheckpointFromFile(String path) async {
+  Future<void> _applyCheckpointFromFile(
+    String path,
+    int expectedGeneration,
+  ) async {
     try {
       final checkpoint = await Isolate.run(() => _decodeSnapshotFile(path));
       try {
@@ -1149,11 +1270,12 @@ class VolwardSession extends ChangeNotifier {
 
       final entries = (checkpoint['entries'] is List)
           ? (checkpoint['entries'] as List)
-                .whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList()
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
           : <Map<String, dynamic>>[];
 
+      if (expectedGeneration != _rootSwitchGeneration) return;
       await _applyMerge(rootPath, Map<String, dynamic>.from(tree), entries);
     } catch (e, st) {
       // Two expected, benign errors are swallowed silently:
@@ -1166,52 +1288,6 @@ class VolwardSession extends ChangeNotifier {
         debugPrint('VolwardSession: apply checkpoint failed: $e\n$st');
       }
     }
-  }
-
-  /// Recomputes [_scannedDirCount] and [_totalDirCount] by walking the raw
-  /// [_lastSnapshot] tree. O(tree size) but throttled to at most once per 500ms
-  /// to avoid jank from frequent checkpoints on large trees. Pass [force: true]
-  /// to bypass the throttle (e.g., at scan startup or completion).
-  void _recomputeProgressCounters({bool force = false}) {
-    // Throttle: skip if called within 500ms of the last recompute, unless forced.
-    final now = DateTime.now();
-    if (!force && _lastProgressRecompute != null) {
-      final elapsed = now.difference(_lastProgressRecompute!);
-      if (elapsed < const Duration(milliseconds: 500)) {
-        return; // skip this update, counters are recent enough
-      }
-    }
-    _lastProgressRecompute = now;
-
-    // Defer the O(tree) traversal to the next event-loop iteration so it does
-    // not block the current frame's build/layout/paint pipeline.  Progress UI
-    // listens to [scannedFractionNotifier] and tolerates being one tick late.
-    final snapshot = _lastSnapshot; // capture before async gap
-    unawaited(
-      Future<void>(() {
-        if (snapshot == null || !identical(snapshot, _lastSnapshot)) return;
-        var total = 0;
-        var done = 0;
-        void visit(ScanTreeNode node) {
-          if (!node.isDirectory) return;
-          total++;
-          if (node.scanned) done++;
-          for (final c in node.children) {
-            visit(c);
-          }
-        }
-
-        final root = snapshot.tree;
-        if (root != null) {
-          visit(root);
-        }
-        _scannedDirCount = done;
-        _totalDirCount = total;
-        // Local notifier only — do NOT call notifyListeners() here (that would
-        // rebuild the whole page on every deferred walk).
-        _publishScannedFraction();
-      }),
-    );
   }
 
   Future<void> _applyMerge(
@@ -1246,15 +1322,13 @@ class VolwardSession extends ChangeNotifier {
     );
     _snapshotVersion++;
     _invalidatedPrefixes.add(targetPath);
-    _recomputeProgressCounters();
     // Throttle UI notifications: checkpoints can arrive 5-10×/sec.  We always
     // update _lastSnapshot above for correctness; we just batch widget rebuilds
     // to at most once per _kDisplayNotifyGap so the main thread isn't saturated
     // with O(N log N) display-tree recomputations.  Authoritative merges (peek
     // results) always notify immediately so the user sees results without delay.
     final now = DateTime.now();
-    final shouldNotify =
-        authoritative ||
+    final shouldNotify = authoritative ||
         !_scanning ||
         _lastApplyMergeNotify == null ||
         now.difference(_lastApplyMergeNotify!) >= _kDisplayNotifyGap;

@@ -32,4 +32,34 @@ void main() {
     expect(session.consumeInvalidatedPrefixes(), {'/root/changed'});
     expect(session.invalidatedPrefixes, isEmpty);
   });
+
+  test('estimated scan progress advances over time and finishes at 100%', () {
+    final startedAt = DateTime.utc(2026, 8, 3, 12);
+
+    final initial = estimateScanFraction(
+      scanning: true,
+      phase: 'DiscoveringRoots',
+      scanStartedAt: startedAt,
+      now: startedAt,
+    );
+    final later = estimateScanFraction(
+      scanning: true,
+      phase: 'DiscoveringRoots',
+      scanStartedAt: startedAt,
+      now: startedAt.add(const Duration(seconds: 3)),
+    );
+    final done = estimateScanFraction(
+      scanning: true,
+      phase: 'Done',
+      scanStartedAt: startedAt,
+      now: startedAt.add(const Duration(seconds: 3)),
+    );
+
+    expect(initial, isNotNull);
+    expect(later, isNotNull);
+    expect(done, isNotNull);
+    expect(later!, greaterThan(initial!));
+    expect(later, lessThan(0.04));
+    expect(done, 1.0);
+  });
 }

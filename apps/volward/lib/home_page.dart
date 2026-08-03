@@ -63,6 +63,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Tracks the last catalog version so refreshCurrentDirectory() (which does
   // not change snapshotId) still triggers a rebuild via setState.
   int _lastRefreshedCatalogVersion = -1;
+  bool _lastTargetPreviewLoading = false;
 
   // ---------- canonical snapshot cache ----------
   ScanTreeNode? _cachedResolvedTree;
@@ -145,7 +146,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _onSessionChanged() {
-    if (!_prevScanning && _s.scanning) {
+    final targetPreviewChanged =
+        _lastTargetPreviewLoading != _s.targetPreviewLoading;
+    _lastTargetPreviewLoading = _s.targetPreviewLoading;
+
+    if (targetPreviewChanged && _s.targetPreviewLoading) {
+      setState(() {
+        _selected.clear();
+        _selectedSizes.clear();
+        _scanStatus = null;
+        _columnChain.clear();
+        _columnNavTick.value++;
+        _invalidateSnapshotCaches();
+        _lastRefreshedSnapshotId = null;
+        _lastRefreshedCatalogVersion = _s.catalogVersion;
+      });
+    } else if (!_prevScanning && _s.scanning) {
       setState(() {
         _selected.clear();
         _selectedSizes.clear();
@@ -180,7 +196,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final catalogVer = _s.catalogVersion;
       final snapChanged = snapId != null && snapId != _lastRefreshedSnapshotId;
       final catalogChanged = catalogVer != _lastRefreshedCatalogVersion;
-      if (snapChanged || catalogChanged) {
+      if (snapChanged || catalogChanged || targetPreviewChanged) {
         if (snapChanged) _lastRefreshedSnapshotId = snapId;
         _lastRefreshedCatalogVersion = catalogVer;
         _invalidateSnapshotCachesForSessionUpdate();
@@ -241,6 +257,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _cachedResolvedTree = tree;
     _cachedResolvedTreeKey = snapId;
     return tree;
+  }
+
+  bool _snapshotMatchesCurrentRoot() {
+    final tree = _s.lastSnapshot?.tree;
+    if (tree == null || tree.path.isEmpty) return false;
+    return ScanTreeBuilder.normalizeRoot(tree.path) == _scanRootPath();
   }
 
   void _invalidateSnapshotCaches() {
@@ -336,6 +358,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         path.startsWith('$focused/');
   }
 
+  bool get _showingPreviewSnapshot =>
+      _s.lastSnapshot?.snapshotId.startsWith('preview-') == true;
+
+  bool _shouldUseTreeChildrenFor(ScanTreeNode node) {
+    if (node.children.isEmpty) return false;
+    return _showingPreviewSnapshot || _shouldUseTreeOverlayForPath(node.path);
+  }
+
   SnapshotQueryKey _visibleChildrenKeyFor(ScanTreeNode node) {
     // Use the Rust catalog version so view-cache invalidation is aligned with
     // the authoritative index (Design §5.4).  Falls back to snapshotVersion
@@ -363,12 +393,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return cached;
     }
 
+    if (_s.hasIndexApi && _shouldUseTreeChildrenFor(node)) {
+      final result = SnapshotCatalog.queryNode(
+        key: key,
+        node: node,
+        includeEntryRecords: false,
+      ).directNodes.map(SnapshotNodeRecord.fromTree).toList(growable: false);
+      _visibleChildrenCache[key] = result;
+      return result;
+    }
+
     if (_s.hasIndexApi) {
       _scheduleVisibleChildrenQuery(
         key,
         node,
-        preferTree:
-            node.children.isNotEmpty && _shouldUseTreeOverlayForPath(node.path),
+        preferTree: _shouldUseTreeChildrenFor(node),
       );
       return const <SnapshotNodeRecord>[];
     }
@@ -549,14 +588,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _scanProgressSummary() {
     final p = _s.scanProgress;
     if (p == null) return context.l10n.scanStatusScanning;
-    final phase = _phaseLabel(p['phase']?.toString() ?? '');
+    final phaseKey = p['phase']?.toString() ?? '';
+    final phase = _phaseLabel(phaseKey);
     final paths = p['paths_seen'];
     final elapsed = _s.scanElapsedLabel;
     final frac = _s.scannedFraction;
-    // Cap displayed % at 99 — rounding 0.998 to 100 looks wrong while still
-    // scanning, and scannedFraction already returns null once truly complete.
-    final pct = frac != null ? frac * 100 : null;
-    final pctStr = pct != null ? '${pct.round().clamp(0, 99)}% · ' : '';
+    // Cap displayed % at 99 while the scan is active; only the Done phase can
+    // report 100 so completion never appears before the native scan finishes.
+    final pct = frac != null
+        ? (phaseKey == 'Done' ? 100 : (frac * 100).floor().clamp(0, 99))
+        : null;
+    final pctStr = pct != null ? '$pct% · ' : '';
     final buf = StringBuffer('$pctStr$phase');
     if (paths != null && paths != 0) {
       buf.write(' · ${context.l10n.scanProgressItems((paths as num).toInt())}');
@@ -934,8 +976,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _scheduleVisibleChildrenQuery(
         rootKey,
         displayTree,
-        preferTree: displayTree.children.isNotEmpty &&
-            _shouldUseTreeOverlayForPath(displayTree.path),
+        preferTree: _shouldUseTreeChildrenFor(displayTree),
       );
     }
     // Only skip the empty-state when the catalog API is present and the root is
@@ -973,8 +1014,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         for (final node in _columnChain)
           if (_isPreparingVisibleChildren(node)) node.path,
       },
-      childrenPreSorted:
-          _s.hasIndexApi && _categoryFilter == null && !_deletableOnly,
+      childrenPreSorted: _s.hasIndexApi &&
+          !_showingPreviewSnapshot &&
+          _categoryFilter == null &&
+          !_deletableOnly,
       selectionChain: List.unmodifiable(_columnChain),
       onSelect: _onColumnSelect,
       formatBytes: _fmt,
@@ -990,7 +1033,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final restoring = _s.restoringSnapshot;
-    final hasResults = !restoring && _s.lastSnapshot != null;
+    final snapshotMatchesCurrentRoot = _snapshotMatchesCurrentRoot();
+    final loadingTarget =
+        _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
+    final hasResults = !restoring &&
+        !loadingTarget &&
+        _s.lastSnapshot != null &&
+        snapshotMatchesCurrentRoot;
     final displayTree = hasResults ? _resolveResultTree() : null;
     final matchingCount = hasResults ? _matchingEntryCount() : 0;
 
@@ -1000,8 +1049,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         children: [
           _buildTopNav(context),
           Expanded(
-            child: restoring
-                ? _buildRestoreLoading(context)
+            child: restoring || loadingTarget
+                ? _buildRestoreLoading(
+                    context,
+                    label: restoring
+                        ? context.l10n.resultsRestoringPreviousScan
+                        : context.l10n.scanColumnPreparingFolder,
+                  )
                 : hasResults
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1056,7 +1110,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildRestoreLoading(BuildContext context) {
+  Widget _buildRestoreLoading(BuildContext context, {required String label}) {
     final v = context.volward;
     Widget skeletonBar(
       double width, {
@@ -1110,10 +1164,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        context.l10n.resultsRestoringPreviousScan,
-                        style: context.vwFinePrintInk,
-                      ),
+                      Text(label, style: context.vwFinePrintInk),
                       const SizedBox(height: 4),
                       skeletonBar(280, height: 8),
                     ],

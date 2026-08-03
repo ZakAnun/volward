@@ -168,7 +168,9 @@ void volwardScanIsolate(List<dynamic> args) {
       }
 
       // Old builds without the catalog index API still stream checkpoints.
-      if (!bridge.hasIndexApi && bridge.hasCheckpointApi && tickCount % 7 == 0) {
+      if (!bridge.hasIndexApi &&
+          bridge.hasCheckpointApi &&
+          tickCount % 7 == 0) {
         // Prefer the protobuf variant (atomic temp+rename, smaller payload)
         // when the dylib supports it; fall back to JSON for older builds.
         final usePb = bridge.hasSnapshotFilePbApi;
@@ -232,45 +234,29 @@ void volwardPeekScanIsolate(List<dynamic> args) {
 
   try {
     final jobId = 'peek-${DateTime.now().millisecondsSinceEpoch}';
-    final startResult = bridge.startScanAsyncWithOptions(
-        engine,
-        jobId,
-        [
-          path,
-        ],
-        incremental: false);
-    if (startResult.startsWith('error:')) {
-      resultPort.send(<String, dynamic>{'type': 'error', 'error': startResult});
-      bridge.freeEngine(engine);
+    final result = bridge.startScan(engine, jobId, [path]);
+    if (result.startsWith('error:')) {
+      resultPort.send(<String, dynamic>{'type': 'error', 'error': result});
       return;
     }
 
-    Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (bridge.isScanRunning(engine)) return;
-      timer.cancel();
-      try {
-        final snapshot = bridge.getLastSnapshot(engine);
-        if (snapshot == null) {
-          resultPort.send(<String, dynamic>{
-            'type': 'error',
-            'error': 'error:peek scan produced no snapshot',
-          });
-          return;
-        }
-        resultPort.send(<String, dynamic>{
-          'type': 'done',
-          'path': path,
-          'tree': snapshot['tree'],
-          'entries': snapshot['entries'],
-        });
-      } catch (e, st) {
-        resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
-      } finally {
-        bridge.freeEngine(engine);
-      }
+    final snapshot = bridge.getLastSnapshot(engine);
+    if (snapshot == null) {
+      resultPort.send(<String, dynamic>{
+        'type': 'error',
+        'error': 'error:peek scan produced no snapshot',
+      });
+      return;
+    }
+    resultPort.send(<String, dynamic>{
+      'type': 'done',
+      'path': path,
+      'tree': snapshot['tree'],
+      'entries': snapshot['entries'],
     });
   } catch (e, st) {
     resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
+  } finally {
     bridge.freeEngine(engine);
   }
 }
