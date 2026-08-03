@@ -761,7 +761,6 @@ class VolwardSession extends ChangeNotifier {
       _currentDirectoryPath = path;
     }
     _invalidatedPrefixes.add(path);
-    _snapshotVersion++;
     notifyListeners();
     try {
       if (target == root) {
