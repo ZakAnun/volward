@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{EntryCategory, StorageEntry, StorageSnapshot};
+use crate::model::{EntryCategory, ScanStats, StorageEntry, StorageSnapshot};
 use crate::string_table::StringTable;
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ pub struct SnapshotIndexSummary {
     pub version: u64,
     pub scan_state: String,
     pub reclaimable_estimate_bytes: u64,
+    pub stats: ScanStats,
     pub entry_count: u64,
     pub deletable_count: u64,
     pub category_counts: HashMap<String, u64>,
@@ -139,6 +140,7 @@ pub struct SnapshotIndex {
     pub version: u64,
     pub scan_state: String,
     pub reclaimable_estimate_bytes: u64,
+    pub stats: ScanStats,
 
     /// String interning table — every unique path/name/category stored once.
     table: StringTable,
@@ -164,8 +166,8 @@ impl Serialize for SnapshotIndex {
     where
         S: serde::Serializer,
     {
-        let mut st = serializer.serialize_struct("SnapshotIndexSerde", 15)?;
-        st.serialize_field("format_version", &2u32)?;
+        let mut st = serializer.serialize_struct("SnapshotIndexSerde", 16)?;
+        st.serialize_field("format_version", &3u32)?;
         st.serialize_field("snapshot_id", &self.snapshot_id)?;
         st.serialize_field("root_path", &self.root_path)?;
         st.serialize_field("scanned_at_ms", &self.scanned_at_ms)?;
@@ -175,6 +177,7 @@ impl Serialize for SnapshotIndex {
             "reclaimable_estimate_bytes",
             &self.reclaimable_estimate_bytes,
         )?;
+        st.serialize_field("stats", &self.stats)?;
         st.serialize_field("strings", &StringTableStrings(&self.table))?;
         st.serialize_field("root_id", &self.root_id)?;
         st.serialize_field("directories", &TupleMapEntries(&self.directory_by_id))?;
@@ -197,9 +200,9 @@ impl<'de> Deserialize<'de> for SnapshotIndex {
     {
         use serde::de::Error;
         let s = SnapshotIndexSerde::deserialize(deserializer)?;
-        if s.format_version != 2 {
+        if s.format_version != 2 && s.format_version != 3 {
             return Err(D::Error::custom(format!(
-                "unsupported SnapshotIndex format_version {} (expected 2)",
+                "unsupported SnapshotIndex format_version {} (expected 2 or 3)",
                 s.format_version
             )));
         }
@@ -254,6 +257,8 @@ struct SnapshotIndexSerde {
     version: u64,
     scan_state: String,
     reclaimable_estimate_bytes: u64,
+    #[serde(default)]
+    stats: ScanStats,
     strings: Vec<Box<str>>,
     root_id: u32,
     directories: Vec<(u32, DirectoryRecord)>,
@@ -274,6 +279,7 @@ impl From<SnapshotIndexSerde> for SnapshotIndex {
             version: s.version,
             scan_state: s.scan_state,
             reclaimable_estimate_bytes: s.reclaimable_estimate_bytes,
+            stats: s.stats,
             table,
             root_id: s.root_id,
             directory_by_id: s.directories.into_iter().collect(),
@@ -355,6 +361,7 @@ impl SnapshotIndex {
             version,
             scan_state: "Done".to_string(),
             reclaimable_estimate_bytes: snapshot.reclaimable_estimate_bytes,
+            stats: snapshot.stats.clone(),
             table,
             root_id,
             directory_by_id,
@@ -395,6 +402,7 @@ impl SnapshotIndex {
             version: self.version,
             scan_state: self.scan_state.clone(),
             reclaimable_estimate_bytes: self.reclaimable_estimate_bytes,
+            stats: self.stats.clone(),
             entry_count: self.entry_by_id.len().min(u64::MAX as usize) as u64,
             deletable_count: self.deletable_counts.values().sum(),
             category_counts: self.category_counts.clone(),
@@ -808,6 +816,7 @@ impl SnapshotIndexBuilder {
         scanned_at_ms: i64,
         version: u64,
         scan_state: String,
+        stats: ScanStats,
     ) -> SnapshotIndex {
         SnapshotIndex {
             snapshot_id,
@@ -816,6 +825,7 @@ impl SnapshotIndexBuilder {
             version,
             scan_state,
             reclaimable_estimate_bytes: self.reclaimable_estimate_bytes,
+            stats,
             table: self.table,
             root_id: self.root_id,
             directory_by_id: self.directory_by_id,
@@ -1311,7 +1321,21 @@ mod tests {
             deletable: true,
             reason: "cache".to_string(),
         });
-        let index = builder.finish("snap-1".to_string(), 1, 1, "Done".to_string());
+        let index = builder.finish(
+            "snap-1".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats {
+                paths_seen: 3,
+                dirs_seen: 2,
+                files_seen: 1,
+                files_in_snapshot: 1,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
+        );
 
         // Build via from_snapshot.
         let snapshot = build_test_snapshot();

@@ -506,6 +506,7 @@ class VolwardSession extends ChangeNotifier {
       restored ??= await Isolate.run(() => _restoreSnapshotStateFile(path));
       if (restored == null) return;
       _lastSnapshot = restored;
+      _logSnapshotMemoryState('restore');
       debugPrint('VolwardSession: restored cached snapshot from $path');
     } catch (e, st) {
       debugPrint('VolwardSession: restore cached snapshot failed: $e\n$st');
@@ -931,6 +932,7 @@ class VolwardSession extends ChangeNotifier {
         );
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
+          _logSnapshotMemoryState('scan-complete');
           notifyListeners();
         }
         return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
@@ -1050,6 +1052,7 @@ class VolwardSession extends ChangeNotifier {
       final snapshot = await _awaitScanWithStallGuard(completer.future);
       if (scanGeneration == _rootSwitchGeneration) {
         _lastSnapshot = snapshot;
+        _logSnapshotMemoryState('scan-complete');
         notifyListeners();
       }
       return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
@@ -1167,6 +1170,49 @@ class VolwardSession extends ChangeNotifier {
       throw StateError('Failed to load scan snapshot into engine');
     }
     return ScanSnapshotState.fromWire(snap);
+  }
+
+  void _logSnapshotMemoryState(String source) {
+    final snapshot = _lastSnapshot;
+    if (snapshot == null) return;
+    final stats = snapshot.stats;
+    final progress = _scanProgress;
+    final rootPath = snapshot.tree?.path ?? '';
+    int? readInt(dynamic value) =>
+        value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+
+    final pathsSeen = readInt(stats['paths_seen']) ??
+        readInt(progress?['paths_seen']);
+    final dirsSeen = readInt(stats['dirs_seen']) ?? readInt(progress?['dirs_seen']);
+    final filesSeen =
+        readInt(stats['files_seen']) ?? readInt(progress?['files_seen']);
+    final filesInSnapshot =
+        readInt(stats['files_in_snapshot']) ?? snapshot.entryCount;
+    final scanPhase =
+        stats['scan_state']?.toString() ?? progress?['phase']?.toString() ?? '-';
+    final pathsSkipped = readInt(stats['paths_skipped']);
+    final truncated = stats['truncated']?.toString();
+    final incompleteReason = stats['incomplete_reason']?.toString();
+    final treeBytes = snapshot.tree?.displayBytes ?? 0;
+    final rssBytes = ProcessInfo.currentRss;
+    final rssMb = (rssBytes / (1024 * 1024)).toStringAsFixed(1);
+    debugPrint(
+      'VolwardSession: $source memory snapshot '
+      'root=$rootPath '
+      'snapshotId=${snapshot.snapshotId} '
+      'rss=${rssMb}MB '
+      'scan_phase=$scanPhase '
+      'paths_seen=${pathsSeen ?? '-'} '
+      'dirs_seen=${dirsSeen ?? '-'} '
+      'files_seen=${filesSeen ?? '-'} '
+      'files_in_snapshot=$filesInSnapshot '
+      'paths_skipped=${pathsSkipped ?? '-'} '
+      'truncated=${truncated ?? '-'} '
+      'incomplete_reason=${incompleteReason ?? '-'} '
+      'entryCount=${snapshot.entryCount} '
+      'treeBytes=$treeBytes '
+      'reclaimable=${snapshot.reclaimableEstimateBytes}',
+    );
   }
 
   Future<ScanSnapshotState?> _runIndexScanOnMainEngine(

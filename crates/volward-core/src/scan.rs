@@ -562,7 +562,13 @@ impl<'a> ScanOrchestrator<'a> {
         } else {
             "Done".to_string()
         };
-        let index = index_builder.finish(snapshot_id.clone(), scanned_at_ms, 1, scan_state);
+        let index = index_builder.finish(
+            snapshot_id.clone(),
+            scanned_at_ms,
+            1,
+            scan_state,
+            stats.clone(),
+        );
 
         if walk_completed {
             let mut manifest = ScanManifest {
