@@ -202,16 +202,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _invalidateSnapshotCachesForSessionUpdate();
         final tree = _resolveResultTree();
         if (_columnChain.isNotEmpty && tree != null) {
-          // Only fire _columnNavTick++ (and thus a ListenableBuilder rebuild)
-          // when the resolved paths actually changed — avoids a gratuitous
-          // column-browser rebuild on every peek/checkpoint whose result
-          // doesn't structurally change the currently-visible path.
-          final refreshed = refreshColumnChain(tree, _columnChain);
-          final chainChanged = refreshed.length != _columnChain.length ||
-              !Iterable.generate(
-                refreshed.length,
-              ).every((i) => refreshed[i].path == _columnChain[i].path);
-          if (chainChanged) _setColumnChain(refreshed);
+          // When the catalog index API is active, Dart tree.children is empty
+          // (children come from Rust), so refreshColumnChain would always
+          // truncate the chain to []. Skip the re-validation; the
+          // visible-children cache invalidation above is sufficient.
+          if (!_s.hasIndexApi) {
+            final refreshed = refreshColumnChain(tree, _columnChain);
+            final chainChanged = refreshed.length != _columnChain.length ||
+                !Iterable.generate(
+                  refreshed.length,
+                ).every((i) => refreshed[i].path == _columnChain[i].path);
+            if (chainChanged) _setColumnChain(refreshed);
+          }
         }
         setState(() {});
       }
@@ -393,10 +395,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return cached;
     }
 
-    if (_s.hasIndexApi && _shouldUseTreeChildrenFor(node)) {
+    // Re-resolve from the live tree so peek-scan merges (which update
+    // tree.children but leave _columnChain nodes stale) are visible to
+    // _shouldUseTreeChildrenFor and SnapshotCatalog.queryNode.
+    final liveNode = _shouldUseTreeOverlayForPath(node.path)
+        ? (_findNodeByPath(_cachedResolvedTree, node.path) ?? node)
+        : node;
+
+    if (_s.hasIndexApi && _shouldUseTreeChildrenFor(liveNode)) {
       final result = SnapshotCatalog.queryNode(
         key: key,
-        node: node,
+        node: liveNode,
         includeEntryRecords: false,
       ).directNodes.map(SnapshotNodeRecord.fromTree).toList(growable: false);
       _visibleChildrenCache[key] = result;
@@ -406,30 +415,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_s.hasIndexApi) {
       _scheduleVisibleChildrenQuery(
         key,
-        node,
-        preferTree: _shouldUseTreeChildrenFor(node),
+        liveNode,
+        preferTree: _shouldUseTreeChildrenFor(liveNode),
       );
       return const <SnapshotNodeRecord>[];
     }
 
     // Fallback: Dart-side tree traversal for older builds without index API.
-    if (node.children.length > _asyncVisibleChildrenThreshold) {
+    if (liveNode.children.length > _asyncVisibleChildrenThreshold) {
       if (key.categoryFilter == null && !key.deletableOnly) {
-        final direct = node.children
+        final direct = liveNode.children
             .map(SnapshotNodeRecord.fromTree)
             .toList(growable: false);
         _visibleChildrenCache[key] = direct;
         return direct;
       }
-      _scheduleVisibleChildrenQuery(key, node);
+      _scheduleVisibleChildrenQuery(key, liveNode);
       return const <SnapshotNodeRecord>[];
     }
     final queried = SnapshotCatalog.queryNode(
       key: key,
-      node: node,
+      node: liveNode,
       includeEntryRecords: false,
     ).directNodes.map(SnapshotNodeRecord.fromTree).toList(growable: false);
-    final result = queried.isEmpty && node.children.isNotEmpty
+    final result = queried.isEmpty && liveNode.children.isNotEmpty
         ? const <SnapshotNodeRecord>[]
         : queried;
     _visibleChildrenCache[key] = result;
