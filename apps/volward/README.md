@@ -32,9 +32,11 @@ fvm flutter test
 
 | 路径 | 说明 |
 |------|------|
-| `lib/home_page.dart` | 单页主界面：预览、扫描、结果、列浏览、删除 |
-| `lib/settings_page.dart` | 主题与 accent 设置 |
-| `lib/volward_session.dart` | 扫描/删除会话、进度、`previewTarget` / `peekScan`、checkpoint 合并与 snapshot 恢复 |
+| `lib/home_page.dart` | 单页主界面：预览、扫描、结果、列浏览、删除 / 清空废纸篓 |
+| `lib/settings_page.dart` | 主题、accent、增量扫描、语言 |
+| `lib/volward_session.dart` | 扫描/删除会话、catalog 查询、当前目录刷新、peek / checkpoint |
+| `lib/snapshot_catalog.dart` | 按需目录查询（委托 Rust index） |
+| `lib/l10n/` | 中英 ARB + `gen_l10n` |
 | `lib/scan_preview.dart` | `quick_list_dir` → 即时预览 snapshot |
 | `lib/scan_snapshot_merge.dart` | 子树合并（checkpoint upsert / peek 权威覆盖） |
 | `lib/scan_tree_navigation.dart` | checkpoint 后按 path 刷新列导航链 |

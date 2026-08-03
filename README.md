@@ -18,20 +18,22 @@ macOS 桌面存储管家：**Flutter UI + Rust 扫描核心 + 平台层**。渐�
 
 ### 结果浏览
 
+- **Catalog 按需查询**：Rust 持权威索引，Dart 按当前目录查询子项（避免整树 hydrate）；刷新作用于**当前浏览目录**
 - **Finder 式多列目录浏览**（列宽固定，横向滚动）；后台 checkpoint / peek 合并时**保持当前列导航位置**
 - 未扫完的目录显示加载态与尺寸占位「—」，扫完后填入真实大小与子项
-- **筛选栏**：分类（All / Cache / Temp / Media / Unknown / System）、Deletable、排序（Size ↓/↑、Name）
+- **筛选栏**：分类（All / Cache / Temp / Media / System）、Deletable、排序（Size ↓/↑、Name）
 - 底部 **预览条** 显示当前选中项；可勾选可删文件
-- **Move to Trash**：先 dry-run 预览，确认后删除并可选自动重扫
+- **Move to Trash**：先 dry-run 预览，确认后删除并可选自动重扫；支持 **Empty Trash**
 
-### 外观
+### 外观与本地化
 
-- 右上角 **Settings**：主题（跟随系统 / 浅色 / 深色）、6 种 accent 色
-- Apple 风格设计 token，浅色/深色语义色一致
+- 右上角 **Settings**：主题（跟随系统 / 浅色 / 深色）、6 种 accent 色、增量扫描开关、语言（跟随系统 / 中文 / English）
+- Apple 风格设计 token，浅色/深色语义色一致；UI 外壳文案走 `gen_l10n`
 
 ### macOS 权限
 
 - 未授予 **Full Disk Access (FDA)** 时仍可扫描部分目录；深度扫描 `~/Library` 等 TCC 保护路径需 FDA
+- Debug/Profile 使用稳定 Apple Development 签名，避免反复授权
 - 应用内提供打开系统设置、复制 `.app` 路径等引导
 
 ## 仓库结构
@@ -110,19 +112,44 @@ fvm flutter run -d macos
 
 | 路径 | 说明 |
 |------|------|
-| `~/Library/Application Support/Volward/manifests/` | 扫描 manifest（含 snapshot 路径、指纹） |
-| `~/Library/Application Support/Volward/snapshots/` | 持久化 snapshot JSON |
-| `~/Library/Application Support/Volward/settings.json` | 主题与 accent 偏好 |
+| `~/Library/Application Support/Volward/manifests/` | 扫描 manifest（含 snapshot / index 路径、指纹） |
+| `~/Library/Application Support/Volward/snapshots/` | 持久化 snapshot / catalog index |
+| `~/Library/Application Support/Volward/settings.json` | 主题、accent、语言等偏好 |
 
 测试可通过环境变量 `VOLWARD_CACHE_DIR` 指向临时目录。
 
+## 当前进度（2026-08-03）
+
+**macOS MVP 闭环已可演示**：选目录 → 渐进扫描 → 筛选多选 → 删至废纸篓 / 清空废纸篓 → 再扫或当前目录刷新。
+
+| 波次 | 状态 | 说明 |
+|------|------|------|
+| MVP 闭环（筛排多选、目录选择、YAML 规则、进度） | ✅ | 单页 `home_page` 收口 |
+| Finder 全量列浏览 | ✅ | 无 Top-N 截断 |
+| 全盘扫描性能 + 增量开关 | ✅ | P0 Release 优化仍排除 |
+| 渐进式扫描（预览 / checkpoint / Peek） | ✅ | 见下方已知残留 |
+| Catalog 查询 + 当前目录刷新 | ✅ | 主引擎 index 扫描，去整树 hydrate |
+| 中英 i18n | ✅ | Settings 可切换，无需重启 |
+| macOS Debug 稳定签名 / setup | ✅ | 正式 Notarization 未做 |
+| SnapshotIndex 字符串 intern | ✅ | catalog 磁盘格式 v2 |
+
+**已知残留 / 明确未做**
+
+- 启动恢复：无匹配目标根时可能回退到全局最新自定义目录快照
+- 分类预留未实现：`AppData` / `Orphan` / `Duplicate`
+- 正式分发：Release 签名、Notarization、Win/Linux UI 联调、FRB 迁移
+
 ## 文档
 
-设计与计划文档见 `docs/superpowers/`（状态以各 spec 文首「状态」字段为准）：
+设计与计划文档见 `docs/superpowers/`（本地参考；状态以各 spec 文首「状态」字段为准）：
 
-| 主题 | Spec | 状态（2026-07-26） |
-|------|------|-------------------|
+| 主题 | Spec | 状态 |
+|------|------|------|
 | MVP 闭环 | `specs/2026-05-29-mvp-closure-design.md` | ✅ 已实现 |
 | Finder 全量树 | `specs/2026-07-23-scan-tree-finder-design.md` | ✅ 已实现 v2 |
-| 全盘扫描性能 / 增量 | `specs/2026-07-23-full-scan-performance-design.md` | ✅ P1 + P2（F0 bench） |
+| 全盘扫描性能 / 增量 | `specs/2026-07-23-full-scan-performance-design.md` | ✅ P1 + P2（F0 bench；P0 Release 排除） |
 | 渐进式扫描 | `specs/2026-07-24-progressive-scan-design.md` | ✅ Wave 1 + Wave 2 |
+| 单份快照 + 增量视图 | `specs/2026-07-29-single-snapshot-incremental-view-design.md` | ✅ 已实现（catalog/query 层） |
+| 中英 i18n | `specs/2026-07-30-volward-i18n-design.md` | ✅ 已实现 |
+| macOS Debug 签名 / TCC | `specs/2026-07-30-macos-debug-signing-tcc-design.md` | ✅ 已实现（分发未做） |
+| Catalog 当前目录刷新 | `specs/2026-07-31-catalog-backed-current-directory-refresh-design.md` | ✅ 已实现 |
