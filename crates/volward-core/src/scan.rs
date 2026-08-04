@@ -343,27 +343,29 @@ impl<'a> ScanOrchestrator<'a> {
         };
 
         if walk_completed {
-            let mut manifest = ScanManifest {
-                root: root_path.to_string(),
-                scanned_at_ms,
-                snapshot_id: snapshot.snapshot_id.clone(),
-                snapshot_path: None,
-                dir_fingerprints,
-            };
-            match self.snapshot_store.save_snapshot(root_path, &snapshot) {
-                Ok(path) => {
-                    manifest.snapshot_path = Some(path.to_string_lossy().into_owned());
+            {
+                let mut manifest = ScanManifest {
+                    root: root_path.to_string(),
+                    scanned_at_ms,
+                    snapshot_id: snapshot.snapshot_id.clone(),
+                    snapshot_path: None,
+                    dir_fingerprints,
+                };
+                match self.snapshot_store.save_snapshot(root_path, &snapshot) {
+                    Ok(path) => {
+                        manifest.snapshot_path = Some(path.to_string_lossy().into_owned());
+                    }
+                    Err(error) => {
+                        snapshot
+                            .warnings
+                            .push(format!("Failed to save snapshot cache: {error}"));
+                    }
                 }
-                Err(error) => {
+                if let Err(error) = self.manifest_store.save(&manifest) {
                     snapshot
                         .warnings
-                        .push(format!("Failed to save snapshot cache: {error}"));
+                        .push(format!("Failed to save scan manifest: {error}"));
                 }
-            }
-            if let Err(error) = self.manifest_store.save(&manifest) {
-                snapshot
-                    .warnings
-                    .push(format!("Failed to save scan manifest: {error}"));
             }
         }
 
@@ -571,21 +573,23 @@ impl<'a> ScanOrchestrator<'a> {
         );
 
         if walk_completed {
-            let mut manifest = ScanManifest {
-                root: root_path.to_string(),
-                scanned_at_ms,
-                snapshot_id,
-                snapshot_path: None,
-                dir_fingerprints,
-            };
-            match self.snapshot_store.save_index(root_path, &index) {
-                Ok(path) => {
-                    manifest.snapshot_path = Some(path.to_string_lossy().into_owned());
+            {
+                let mut manifest = ScanManifest {
+                    root: root_path.to_string(),
+                    scanned_at_ms,
+                    snapshot_id,
+                    snapshot_path: None,
+                    dir_fingerprints,
+                };
+                match self.snapshot_store.save_index(root_path, &index) {
+                    Ok(path) => {
+                        manifest.snapshot_path = Some(path.to_string_lossy().into_owned());
+                    }
+                    Err(error) => warnings.push(format!("Failed to save index cache: {error}")),
                 }
-                Err(error) => warnings.push(format!("Failed to save index cache: {error}")),
-            }
-            if let Err(error) = self.manifest_store.save(&manifest) {
-                warnings.push(format!("Failed to save scan manifest: {error}"));
+                if let Err(error) = self.manifest_store.save(&manifest) {
+                    warnings.push(format!("Failed to save scan manifest: {error}"));
+                }
             }
         }
 

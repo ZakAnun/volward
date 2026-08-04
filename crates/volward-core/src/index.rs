@@ -159,15 +159,15 @@ pub struct SnapshotIndex {
     deletable_counts: HashMap<String, u64>,
 }
 
-// Custom serde: compact v2 format. Old v1 cache files will fail to parse
-// and the caller falls back to a full rescan (handled by scan.rs / engine.rs).
+// Custom serde: compact v2 wire format (string table + u32 ids).
+// Readers also accept format_version=3 (brief no-op write bump on main).
 impl Serialize for SnapshotIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut st = serializer.serialize_struct("SnapshotIndexSerde", 16)?;
-        st.serialize_field("format_version", &3u32)?;
+        st.serialize_field("format_version", &2u32)?;
         st.serialize_field("snapshot_id", &self.snapshot_id)?;
         st.serialize_field("root_path", &self.root_path)?;
         st.serialize_field("scanned_at_ms", &self.scanned_at_ms)?;
@@ -272,7 +272,7 @@ struct SnapshotIndexSerde {
 impl From<SnapshotIndexSerde> for SnapshotIndex {
     fn from(s: SnapshotIndexSerde) -> Self {
         let table = StringTable::from_strings(s.strings);
-        Self {
+        let mut index = Self {
             snapshot_id: s.snapshot_id,
             root_path: s.root_path,
             scanned_at_ms: s.scanned_at_ms,
@@ -288,7 +288,9 @@ impl From<SnapshotIndexSerde> for SnapshotIndex {
             children_by_id: s.children.into_iter().collect(),
             category_counts: s.category_counts,
             deletable_counts: s.deletable_counts,
-        }
+        };
+        index.compact_storage();
+        index
     }
 }
 
@@ -354,7 +356,7 @@ impl SnapshotIndex {
             &entry_by_id,
         );
 
-        Self {
+        let mut index = Self {
             snapshot_id: snapshot.snapshot_id.clone(),
             root_path,
             scanned_at_ms: snapshot.scanned_at_ms,
@@ -370,7 +372,9 @@ impl SnapshotIndex {
             children_by_id,
             category_counts,
             deletable_counts,
-        }
+        };
+        index.compact_storage();
+        index
     }
 
     // ------------------------------------------------------------------
@@ -412,6 +416,19 @@ impl SnapshotIndex {
 
     pub fn summary_json(&self) -> Result<String, String> {
         serde_json::to_string(&self.summary()).map_err(|e| format!("error:serialize: {e}"))
+    }
+
+    pub(crate) fn compact_storage(&mut self) {
+        self.table.compact();
+        self.directory_by_id.shrink_to_fit();
+        self.entry_by_id.shrink_to_fit();
+        self.entry_id_by_path.shrink_to_fit();
+        for children in self.children_by_id.values_mut() {
+            children.shrink_to_fit();
+        }
+        self.children_by_id.shrink_to_fit();
+        self.category_counts.shrink_to_fit();
+        self.deletable_counts.shrink_to_fit();
     }
 
     pub fn deletable_entries_for_ids(&self, entry_ids: &[String]) -> Vec<SnapshotEntryRecord> {
@@ -818,7 +835,7 @@ impl SnapshotIndexBuilder {
         scan_state: String,
         stats: ScanStats,
     ) -> SnapshotIndex {
-        SnapshotIndex {
+        let mut index = SnapshotIndex {
             snapshot_id,
             root_path: self.root_path,
             scanned_at_ms,
@@ -834,7 +851,9 @@ impl SnapshotIndexBuilder {
             children_by_id: self.children_by_id,
             category_counts: self.category_counts,
             deletable_counts: self.deletable_counts,
-        }
+        };
+        index.compact_storage();
+        index
     }
 
     fn ensure_dir_internal(&mut self, path_id: u32) {

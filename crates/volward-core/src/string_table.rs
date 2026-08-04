@@ -91,7 +91,17 @@ impl StringTable {
             lookup: HashMap::new(),
         };
         table.rebuild_lookup();
+        table.compact();
         table
+    }
+
+    /// Trim excess capacity now that the table is frozen.
+    pub fn compact(&mut self) {
+        self.strings.shrink_to_fit();
+        for bucket in self.lookup.values_mut() {
+            bucket.shrink_to_fit();
+        }
+        self.lookup.shrink_to_fit();
     }
 
     /// Iterate over all interned strings in ID order.
