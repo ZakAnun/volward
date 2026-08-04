@@ -14,6 +14,7 @@ import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
+import 'widgets/volward_logo.dart';
 import 'widgets/scan_column_view.dart';
 import 'widgets/scan_filter_bar.dart';
 import 'scan_tree_navigation.dart';
@@ -1389,6 +1390,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.md),
       child: Row(
         children: [
+          const VolwardLogoMark(size: 20),
+          const SizedBox(width: AppleSpacing.sm),
           Text(
             'Volward',
             style: AppleTypography.navLink.copyWith(
