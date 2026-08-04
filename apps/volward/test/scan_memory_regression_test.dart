@@ -24,11 +24,15 @@ void main() {
     expect(snapshot.filesInSnapshot, 3);
     expect(snapshot.deletableCount, 2);
     expect(snapshot.reclaimableEstimateBytes, 64);
+    expect(snapshot.stats['files_in_snapshot'], 3);
+    expect(snapshot.stats['scan_state'], 'Done');
     expect(snapshot.tree?.path, '/Users/test');
     expect(snapshot.tree?.children, isEmpty);
     expect(snapshot.hasFlatEntries, isFalse);
     expect(snapshot.categoryCounts['Cache'], 2);
     expect(snapshot.deletableCategoryCounts['Cache'], 2);
+    expect(snapshot.extraFields.containsKey('tree'), isFalse);
+    expect(snapshot.extraFields.containsKey('entries'), isFalse);
   });
 
   test('repeated category switches keep snapshot view cache bounded', () {

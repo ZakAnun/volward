@@ -164,6 +164,12 @@ class VolwardSession extends ChangeNotifier {
   SendPort? _workerCancelPort;
   Timer? _scanElapsedTimer;
   DateTime? _scanStartedAt;
+  int _transientFinalizeCount = 0;
+  @visibleForTesting
+  Future<ScanSnapshotState?> Function(
+    String jobId,
+    List<String> roots,
+  )? scanRunnerForTest;
 
   Completer<ScanSnapshotState?>? _activeScanCompleter;
   StreamSubscription<dynamic>? _scanProgressSub;
@@ -250,6 +256,38 @@ class VolwardSession extends ChangeNotifier {
     _snapshotVersion++;
     _invalidatedPrefixes.clear();
     notifyListeners();
+  }
+
+  @visibleForTesting
+  void primeTransientScanStateForTest({
+    Map<String, dynamic>? progress,
+    bool scanning = true,
+    bool openScanPorts = true,
+    String? lastJobId,
+  }) {
+    _scanProgress =
+        progress == null ? null : Map<String, dynamic>.from(progress);
+    _scanning = scanning;
+    _scanStartedAt = scanning ? DateTime.utc(2026, 8, 3) : null;
+    _lastJobId = lastJobId;
+    _workerCancelPort = null;
+    final completer = Completer<ScanSnapshotState?>();
+    completer.future.catchError((Object _) => null);
+    _activeScanCompleter = completer;
+    _scanRunningOnMainEngine = false;
+    _scanCancelRequested = false;
+    _scanChannelsClosed = !openScanPorts;
+    if (openScanPorts) {
+      _scanReceivePort = ReceivePort();
+      _scanCancelInitPort = ReceivePort();
+    } else {
+      _scanReceivePort = null;
+      _scanCancelInitPort = null;
+    }
+    _lastScanActivityAt = null;
+    _savingPhaseStartedAt = null;
+    _lastNativeProgressNotifyAt = null;
+    _lastNativeProgressPhase = null;
   }
 
   @visibleForTesting
@@ -357,6 +395,92 @@ class VolwardSession extends ChangeNotifier {
     _scanStartedAt = null;
     scanElapsedNotifier.value = null;
   }
+
+  bool get _hasScanTransientState =>
+      _scanProgress != null ||
+      _lastJobId != null ||
+      _workerCancelPort != null ||
+      _activeScanCompleter != null ||
+      _scanReceivePort != null ||
+      _scanCancelInitPort != null ||
+      _scanElapsedTimer != null ||
+      _scanStartedAt != null ||
+      _lastScanActivityAt != null ||
+      _savingPhaseStartedAt != null ||
+      _lastNativeProgressNotifyAt != null ||
+      _lastNativeProgressPhase != null ||
+      _scanCancelRequested ||
+      _scanRunningOnMainEngine ||
+      !_scanChannelsClosed ||
+      scanRunnerForTest != null;
+
+  void _clearScanTransientState() {
+    _closeScanChannels();
+    _scanProgress = null;
+    _lastJobId = null;
+    _workerCancelPort = null;
+    _activeScanCompleter = null;
+    _scanRunningOnMainEngine = false;
+    _scanCancelRequested = false;
+    _lastScanActivityAt = null;
+    _savingPhaseStartedAt = null;
+    _lastNativeProgressNotifyAt = null;
+    _lastNativeProgressPhase = null;
+    _lastApplyMergeNotify = null;
+    scanRunnerForTest = null;
+  }
+
+  /// Idempotent: safe if both [cancelScan] and `runScan`/`finally` call it.
+  void _finalizeScanTransientState() {
+    if (!_hasScanTransientState) return;
+    _transientFinalizeCount++;
+    _clearScanTransientState();
+    _stopScanElapsedTimer();
+    _publishScannedFraction();
+  }
+
+  @visibleForTesting
+  int get transientFinalizeCount => _transientFinalizeCount;
+
+  @visibleForTesting
+  void clearTransientScanStateForTest() {
+    _scanning = false;
+    _finalizeScanTransientState();
+  }
+
+  @visibleForTesting
+  Future<void> applyMergeForTest(
+    String targetPath,
+    Map<String, dynamic> subtreeTree,
+    List<Map<String, dynamic>> subtreeEntries, {
+    bool authoritative = false,
+  }) {
+    return _applyMerge(
+      targetPath,
+      subtreeTree,
+      subtreeEntries,
+      authoritative: authoritative,
+    );
+  }
+
+  @visibleForTesting
+  bool get hasTransientScanStateForTest =>
+      _scanning ||
+      _scanStartedAt != null ||
+      _workerCancelPort != null ||
+      _activeScanCompleter != null ||
+      _scanReceivePort != null ||
+      _scanCancelInitPort != null ||
+      _scanElapsedTimer != null ||
+      _scanProgress != null ||
+      _lastScanActivityAt != null ||
+      _savingPhaseStartedAt != null ||
+      _lastNativeProgressNotifyAt != null ||
+      _lastNativeProgressPhase != null ||
+      _scanCancelRequested ||
+      _scanRunningOnMainEngine ||
+      !_scanChannelsClosed ||
+      scanRunnerForTest != null;
 
   void _setScanProgressPhase(String phase, {int? pathsSeen}) {
     _touchScanActivity(phase: phase);
@@ -881,13 +1005,14 @@ class VolwardSession extends ChangeNotifier {
     if (_scanning) {
       throw StateError('A scan is already in progress');
     }
-    if (!hasSnapshotFileApi) {
+    final testRunner = scanRunnerForTest;
+    if (testRunner == null && !hasSnapshotFileApi) {
       throw StateError(
         'Native library is outdated. Run: cd apps/volward/macos && bash build_rust.sh '
         '— then fully restart the app (R).',
       );
     }
-    if (_incrementalScan && !canUseIncrementalScan) {
+    if (testRunner == null && _incrementalScan && !canUseIncrementalScan) {
       throw StateError(
         'Incremental scan requires an updated native library. Run: cd apps/volward/macos && bash build_rust.sh '
         '— then fully restart the app (R).',
@@ -922,6 +1047,26 @@ class VolwardSession extends ChangeNotifier {
     _startScanElapsedTimer();
     _setScanProgressPhase('DiscoveringRoots', pathsSeen: 0);
 
+    if (testRunner != null) {
+      final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
+      _lastJobId = jobId;
+      try {
+        final snapshot = await _awaitScanWithStallGuard(
+          testRunner(jobId, effectiveRoots),
+        );
+        if (scanGeneration == _rootSwitchGeneration) {
+          _lastSnapshot = snapshot;
+          _logSnapshotMemoryState('scan-complete');
+          notifyListeners();
+        }
+        return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
+      } finally {
+        _scanning = false;
+        _finalizeScanTransientState();
+        notifyListeners();
+      }
+    }
+
     if (hasIndexApi) {
       final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
       _lastJobId = jobId;
@@ -945,10 +1090,7 @@ class VolwardSession extends ChangeNotifier {
       } finally {
         _scanRunningOnMainEngine = false;
         _scanning = false;
-        _lastScanActivityAt = null;
-        _savingPhaseStartedAt = null;
-        _stopScanElapsedTimer();
-        _publishScannedFraction(); // hide progress once scanning ends
+        _finalizeScanTransientState();
         notifyListeners();
       }
     }
@@ -1066,13 +1208,8 @@ class VolwardSession extends ChangeNotifier {
       debugPrint('VolwardSession scan failed: $e\n$st');
       rethrow;
     } finally {
-      _activeScanCompleter = null;
-      _workerCancelPort = null;
       _scanning = false;
-      _lastScanActivityAt = null;
-      _savingPhaseStartedAt = null;
-      _stopScanElapsedTimer();
-      _publishScannedFraction(); // hide progress once scanning ends
+      _finalizeScanTransientState();
       notifyListeners();
     }
   }
@@ -1180,15 +1317,17 @@ class VolwardSession extends ChangeNotifier {
     int? readInt(dynamic value) =>
         value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
 
-    final pathsSeen = readInt(stats['paths_seen']) ??
-        readInt(progress?['paths_seen']);
-    final dirsSeen = readInt(stats['dirs_seen']) ?? readInt(progress?['dirs_seen']);
+    final pathsSeen =
+        readInt(stats['paths_seen']) ?? readInt(progress?['paths_seen']);
+    final dirsSeen =
+        readInt(stats['dirs_seen']) ?? readInt(progress?['dirs_seen']);
     final filesSeen =
         readInt(stats['files_seen']) ?? readInt(progress?['files_seen']);
     final filesInSnapshot =
         readInt(stats['files_in_snapshot']) ?? snapshot.entryCount;
-    final scanPhase =
-        stats['scan_state']?.toString() ?? progress?['phase']?.toString() ?? '-';
+    final scanPhase = stats['scan_state']?.toString() ??
+        progress?['phase']?.toString() ??
+        '-';
     final pathsSkipped = readInt(stats['paths_skipped']);
     final truncated = stats['truncated']?.toString();
     final incompleteReason = stats['incomplete_reason']?.toString();
@@ -1394,22 +1533,26 @@ class VolwardSession extends ChangeNotifier {
       _scanCancelRequested = true;
       _workerCancelPort?.send('cancel');
       _workerCancelPort = null;
-      _closeScanChannels();
     }
 
     final completer = _activeScanCompleter;
     if (completer != null && !completer.isCompleted) {
       completer.completeError(ScanCancelledException());
     }
+    _scanning = false;
+    _finalizeScanTransientState();
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _stopScanElapsedTimer();
+    if (_scanning) {
+      cancelScan();
+    } else {
+      _finalizeScanTransientState();
+    }
     scanElapsedNotifier.dispose();
     scannedFractionNotifier.dispose();
-    _closeScanChannels();
     final engine = _engine;
     if (engine != null) {
       VolwardNativeBridge.instance.freeEngine(engine);
