@@ -21,6 +21,7 @@ import 'scan_tree_navigation.dart';
 import 'snapshot_catalog.dart';
 import 'snapshot_query.dart';
 import 'snapshot_view_cache.dart';
+import 'widgets/top_toast.dart';
 
 /// Returns the path that the refresh button should target (Design §6.1).
 ///
@@ -158,12 +159,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted) return;
     final path = MacosSettings.appBundlePath();
     final l10n = context.l10n;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          l10n.permissionCopiedPath(path ?? l10n.permissionUnknownPath),
-        ),
-      ),
+    showTopToast(
+      context,
+      message: l10n.permissionCopiedPath(path ?? l10n.permissionUnknownPath),
+      type: ToastType.success,
     );
   }
 
@@ -443,7 +442,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         liveNode,
         preferTree: _shouldUseTreeChildrenFor(liveNode),
       );
-      return const <SnapshotNodeRecord>[];
+      return _visibleChildrenCache.latestForPath(node.path) ??
+          const <SnapshotNodeRecord>[];
     }
 
     // Fallback: Dart-side tree traversal for older builds without index API.
@@ -456,7 +456,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return direct;
       }
       _scheduleVisibleChildrenQuery(key, liveNode);
-      return const <SnapshotNodeRecord>[];
+      return _visibleChildrenCache.latestForPath(node.path) ??
+          const <SnapshotNodeRecord>[];
     }
     final queried = SnapshotCatalog.queryNode(
       key: key,
@@ -809,20 +810,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
       final failed = report['failed_paths'];
       final failedCount = failed is List ? failed.length : 0;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            failedCount > 0
-                ? l10n.deleteSuccessWithFailures(failedCount, _fmt(freedAfter))
-                : l10n.deleteSuccess(_fmt(freedAfter)),
-          ),
-        ),
+      showTopToast(
+        context,
+        message: failedCount > 0
+            ? l10n.deleteSuccessWithFailures(failedCount, _fmt(freedAfter))
+            : l10n.deleteSuccess(_fmt(freedAfter)),
+        type: failedCount > 0 ? ToastType.error : ToastType.success,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showTopToast(
         context,
-      ).showSnackBar(SnackBar(content: Text(l10n.deleteFailed(e.toString()))));
+        message: l10n.deleteFailed(e.toString()),
+        type: ToastType.error,
+      );
     }
   }
 
@@ -850,15 +851,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       await _s.emptyTrash(rescanAfterEmpty: true);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.trashEmptySuccess)),
+      showTopToast(
+        context,
+        message: l10n.trashEmptySuccess,
+        type: ToastType.success,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showTopToast(
         context,
-      ).showSnackBar(
-          SnackBar(content: Text(l10n.trashEmptyFailed(e.toString()))));
+        message: l10n.trashEmptyFailed(e.toString()),
+        type: ToastType.error,
+      );
     }
   }
 
@@ -1077,7 +1081,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // the appropriate cached query outside the build pass.
     final treeChildrenEmpty = displayTree.children.isEmpty;
     final rootKey = _visibleChildrenKeyFor(displayTree);
-    final cachedRootChildren = _visibleChildrenCache.peek(rootKey);
+    final cachedRootChildren = _visibleChildrenCache.peek(rootKey) ??
+        _visibleChildrenCache.latestForPath(displayTree.path);
     final catalogQueryPending =
         _pendingVisibleChildrenQueries.contains(rootKey);
     if (_s.hasIndexApi && cachedRootChildren == null && !catalogQueryPending) {

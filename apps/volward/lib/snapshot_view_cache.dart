@@ -26,6 +26,16 @@ class SnapshotViewCache<T> {
   /// Returns a cached entry without updating the LRU order.
   T? peek(SnapshotQueryKey key) => _values[key];
 
+  /// Returns the most recently inserted entry whose [SnapshotQueryKey.path]
+  /// matches [path], ignoring version/snapshotId. Useful as a stale fallback
+  /// while an async re-query is in flight (avoids a blank-frame flicker).
+  T? latestForPath(String path) {
+    for (final entry in _values.entries.toList().reversed) {
+      if (entry.key.path == path) return entry.value;
+    }
+    return null;
+  }
+
   void invalidatePath(String path) {
     _values.removeWhere((key, _) {
       final keyPath = key.path;
