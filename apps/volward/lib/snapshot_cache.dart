@@ -30,8 +30,7 @@ abstract final class SnapshotCache {
     required String affectedPrefix,
     required int updateVersion,
   }) {
-    final matchesPrefix =
-        cachedPath == affectedPrefix ||
+    final matchesPrefix = cachedPath == affectedPrefix ||
         cachedPath.startsWith('$affectedPrefix/');
     return matchesPrefix && cachedVersion <= updateVersion;
   }
@@ -73,7 +72,10 @@ abstract final class SnapshotCache {
       }
     }
 
-    return preferredPath ?? bestPath;
+    if (preferred != null) {
+      return preferredPath;
+    }
+    return bestPath;
   }
 
   static Map<String, dynamic>? _readManifest(File file) {
@@ -111,20 +113,63 @@ abstract final class SnapshotCache {
   }
 
   static String? _extractJsonStringField(String jsonHeader, String field) {
-    final pattern = RegExp('"$field"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"');
-    final match = pattern.firstMatch(jsonHeader);
-    if (match == null) return null;
-    try {
-      return jsonDecode('"${match.group(1)}"') as String?;
-    } catch (_) {
-      return match.group(1);
+    final valueStart = _jsonFieldValueStart(jsonHeader, field);
+    if (valueStart == null ||
+        valueStart >= jsonHeader.length ||
+        jsonHeader.codeUnitAt(valueStart) != 0x22) {
+      return null;
     }
+    var escaped = false;
+    for (var index = valueStart + 1; index < jsonHeader.length; index++) {
+      final code = jsonHeader.codeUnitAt(index);
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (code == 0x5c) {
+        escaped = true;
+        continue;
+      }
+      if (code == 0x22) {
+        final raw = jsonHeader.substring(valueStart, index + 1);
+        try {
+          return jsonDecode(raw) as String?;
+        } catch (_) {
+          return raw.substring(1, raw.length - 1);
+        }
+      }
+    }
+    return null;
   }
 
   static int? _extractJsonIntField(String jsonHeader, String field) {
-    final pattern = RegExp('"$field"\\s*:\\s*(\\d+)');
-    final match = pattern.firstMatch(jsonHeader);
-    return int.tryParse(match?.group(1) ?? '');
+    final valueStart = _jsonFieldValueStart(jsonHeader, field);
+    if (valueStart == null) return null;
+    var end = valueStart;
+    while (end < jsonHeader.length) {
+      final code = jsonHeader.codeUnitAt(end);
+      if (code < 0x30 || code > 0x39) break;
+      end++;
+    }
+    if (end == valueStart) return null;
+    return int.tryParse(jsonHeader.substring(valueStart, end));
+  }
+
+  static int? _jsonFieldValueStart(String jsonHeader, String field) {
+    final key = '"$field"';
+    final keyIndex = jsonHeader.indexOf(key);
+    if (keyIndex < 0) return null;
+    final colonIndex = jsonHeader.indexOf(':', keyIndex + key.length);
+    if (colonIndex < 0) return null;
+    var valueStart = colonIndex + 1;
+    while (valueStart < jsonHeader.length) {
+      final code = jsonHeader.codeUnitAt(valueStart);
+      if (code != 0x20 && code != 0x09 && code != 0x0a && code != 0x0d) {
+        break;
+      }
+      valueStart++;
+    }
+    return valueStart;
   }
 
   static String? _resolveSnapshotPath(

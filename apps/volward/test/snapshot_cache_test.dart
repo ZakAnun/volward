@@ -64,6 +64,39 @@ void main() {
   });
 
   test(
+    'latestSnapshotPath does not fall back to another root when preferred root is missing',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('volward-cache-test');
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.delete(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      final manifests = Directory('${temp.path}/manifests')..createSync();
+      final snapshots = Directory('${temp.path}/snapshots')..createSync();
+
+      final snapshotFile = File('${snapshots.path}/old.json')
+        ..writeAsStringSync(jsonEncode({'snapshot_id': 'snap-old', 'entries': []}));
+
+      File('${manifests.path}/old.json').writeAsStringSync(
+        jsonEncode({
+          'root': '/Users/old-root',
+          'scanned_at_ms': 2500,
+          'snapshot_id': 'snap-old',
+          'snapshot_path': snapshotFile.path,
+          'dir_fingerprints': {},
+        }),
+      );
+
+      final path = await SnapshotCache.latestSnapshotPath(
+        preferredRoot: '/Users/new-root',
+      );
+      expect(path, isNull);
+    },
+  );
+
+  test(
     'latestSnapshotPath reads manifest header without full json decode',
     () async {
       final temp = await Directory.systemTemp.createTemp('volward-cache-test');
