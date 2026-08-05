@@ -415,6 +415,50 @@ pub unsafe extern "C" fn volward_load_index_from_path(
     e.load_index_from_path(&path).is_ok()
 }
 
+/// Start loading a persisted index/snapshot on a Rust worker thread.
+/// Returns `ok` on start, `busy:...` while another load is running, or `error:...`.
+#[no_mangle]
+pub unsafe extern "C" fn volward_start_load_index_from_path_async(
+    engine: *mut VolwardEngine,
+    path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let path = match cstr_to_string(path) {
+        Some(p) => p,
+        None => return to_c_string("error:null path".to_string()),
+    };
+    to_c_string(e.start_load_index_from_path_async(path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_is_index_loading(engine: *mut VolwardEngine) -> bool {
+    engine_ref(engine)
+        .map(|e| e.is_index_loading())
+        .unwrap_or(false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_invalidate_index_load(engine: *mut VolwardEngine) {
+    if let Some(e) = engine_ref(engine) {
+        e.invalidate_index_load();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_get_last_index_load_error(
+    engine: *mut VolwardEngine,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    match e.get_last_index_load_error() {
+        Some(error) => to_c_string(error),
+        None => ptr::null_mut(),
+    }
+}
+
 /// Persist the current index to `path`.
 /// Returns the snapshot_id on success, or `error:…` on failure.
 #[no_mangle]

@@ -184,6 +184,8 @@ class VolwardSession extends ChangeNotifier {
   bool _scanCancelRequested = false;
   bool _targetPreviewLoading = false;
   DateTime? _targetPreviewStartedAt;
+  int _cacheRestoreGeneration = 0;
+  Completer<void>? _cacheRestoreCompleter;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -583,11 +585,29 @@ class VolwardSession extends ChangeNotifier {
     if (!_ready || _engine == null || _lastSnapshot != null || _scanning) {
       return;
     }
-    await _restoreCachedSnapshot();
+    final inFlight = _cacheRestoreCompleter;
+    if (inFlight != null) {
+      await inFlight.future;
+      return;
+    }
+
+    final completer = Completer<void>();
+    _cacheRestoreCompleter = completer;
+    try {
+      await _restoreCachedSnapshot();
+    } finally {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+      if (identical(_cacheRestoreCompleter, completer)) {
+        _cacheRestoreCompleter = null;
+      }
+    }
   }
 
   Future<void> _restoreCachedSnapshot() async {
     if (!_ready || _engine == null || _scanning) return;
+    final generation = ++_cacheRestoreGeneration;
 
     final preferredRoot =
         _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
@@ -595,40 +615,39 @@ class VolwardSession extends ChangeNotifier {
       preferredRoot: preferredRoot,
     );
     if (path == null) return;
-    final cacheFile = File(path);
-    try {
-      final size = await cacheFile.length();
-      if (size > _maxAutoRestoreBytes) {
-        debugPrint(
-          'VolwardSession: skip auto-restore for oversized cache '
-          '$path (${size ~/ (1024 * 1024)} MB)',
-        );
-        return;
-      }
-    } catch (_) {
-      return;
-    }
+    if (generation != _cacheRestoreGeneration) return;
 
     _restoringSnapshot = true;
     notifyListeners();
     try {
       ScanSnapshotState? restored;
       if (hasIndexApi) {
-        final loaded = VolwardNativeBridge.instance.loadIndexFromPath(
-          _engine!,
-          path,
-        );
-        if (loaded) {
-          final summary = VolwardNativeBridge.instance.getIndexSummaryJson(
-            _engine!,
-          );
-          if (summary != null && !summary.containsKey('error')) {
-            restored = ScanSnapshotState.fromIndexSummary(summary);
-          }
+        // Always try the Rust catalog loader before applying the Dart JSON
+        // size guard. New dylibs do the load on a Rust worker thread so large
+        // legacy snapshots do not block Flutter's main isolate.
+        restored = await _restoreIndexCache(path, generation);
+        if (generation != _cacheRestoreGeneration) {
+          return;
         }
       }
-      restored ??= await Isolate.run(() => _restoreSnapshotStateFile(path));
+      if (restored == null) {
+        final cacheFile = File(path);
+        try {
+          final size = await cacheFile.length();
+          if (size > _maxAutoRestoreBytes) {
+            debugPrint(
+              'VolwardSession: skip Dart snapshot restore for oversized cache '
+              '$path (${size ~/ (1024 * 1024)} MB)',
+            );
+            return;
+          }
+        } catch (_) {
+          return;
+        }
+        restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
+      }
       if (restored == null) return;
+      if (generation != _cacheRestoreGeneration) return;
       _lastSnapshot = restored;
       _logSnapshotMemoryState('restore');
       debugPrint('VolwardSession: restored cached snapshot from $path');
@@ -637,6 +656,86 @@ class VolwardSession extends ChangeNotifier {
     } finally {
       _restoringSnapshot = false;
       notifyListeners();
+    }
+  }
+
+  Future<ScanSnapshotState?> _restoreIndexCache(
+    String path,
+    int generation,
+  ) async {
+    final engine = _engine;
+    if (engine == null) return null;
+    final bridge = VolwardNativeBridge.instance;
+    final cacheSize = await _fileSizeOrNull(path);
+    if (generation != _cacheRestoreGeneration) return null;
+
+    if (bridge.hasAsyncIndexLoadApi) {
+      while (generation == _cacheRestoreGeneration) {
+        bridge.invalidateIndexLoad(engine);
+        final started = bridge.startLoadIndexFromPathAsync(engine, path);
+        if (started == null || started.startsWith('error:')) {
+          debugPrint(
+            'VolwardSession: async index restore failed to start: $started',
+          );
+          return null;
+        }
+        if (started.startsWith('busy:')) {
+          await _waitForIndexLoadDrain(generation);
+          continue;
+        }
+
+        await _waitForIndexLoadDrain(generation);
+        break;
+      }
+      if (generation != _cacheRestoreGeneration) return null;
+
+      final error = bridge.getLastIndexLoadError(engine);
+      if (error != null && error.isNotEmpty) {
+        debugPrint('VolwardSession: async index restore failed: $error');
+        return null;
+      }
+    } else {
+      if (cacheSize != null && cacheSize > _maxAutoRestoreBytes) {
+        debugPrint(
+          'VolwardSession: skip synchronous index restore for oversized cache '
+          '$path (${cacheSize ~/ (1024 * 1024)} MB). '
+          'Rebuild Rust to enable async cache restore.',
+        );
+        return null;
+      }
+      final loaded = bridge.loadIndexFromPath(engine, path);
+      if (!loaded) return null;
+    }
+
+    final summary = bridge.getIndexSummaryJson(engine);
+    if (summary == null || summary.containsKey('error')) return null;
+    return ScanSnapshotState.fromIndexSummary(summary);
+  }
+
+  Future<int?> _fileSizeOrNull(String path) async {
+    try {
+      return await File(path).length();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _waitForIndexLoadDrain(int generation) async {
+    final engine = _engine;
+    if (engine == null) return;
+    final bridge = VolwardNativeBridge.instance;
+    if (!bridge.hasAsyncIndexLoadApi) return;
+    while (generation == _cacheRestoreGeneration &&
+        bridge.isIndexLoading(engine)) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+  }
+
+  void _invalidateCacheRestore() {
+    _cacheRestoreGeneration++;
+    final engine = _engine;
+    if (engine != null) {
+      VolwardNativeBridge.instance.invalidateIndexLoad(engine);
     }
   }
 
@@ -695,6 +794,7 @@ class VolwardSession extends ChangeNotifier {
     if (_scanning && !keepRunningScan) {
       cancelScan();
     }
+    _invalidateCacheRestore();
 
     _scanRoots = newRoots;
     _currentDirectoryPath = null;
@@ -1027,6 +1127,7 @@ class VolwardSession extends ChangeNotifier {
                 '/',
           ];
 
+    _invalidateCacheRestore();
     _scanning = true;
     final scanGeneration = _rootSwitchGeneration;
     _targetPreviewLoading = false;
@@ -1046,6 +1147,13 @@ class VolwardSession extends ChangeNotifier {
     _peekCompleted.clear();
     _startScanElapsedTimer();
     _setScanProgressPhase('DiscoveringRoots', pathsSeen: 0);
+    await _waitForIndexLoadDrain(_cacheRestoreGeneration);
+    if (scanGeneration != _rootSwitchGeneration) {
+      _scanning = false;
+      _finalizeScanTransientState();
+      notifyListeners();
+      throw ScanCancelledException();
+    }
 
     if (testRunner != null) {
       final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';

@@ -49,6 +49,9 @@ pub struct VolwardEngine {
     /// Authoritative path-keyed index rebuilt whenever a new snapshot is set.
     /// Dart queries this via FFI instead of hydrating the full snapshot.
     last_index: Arc<Mutex<Option<SnapshotIndex>>>,
+    is_index_loading: Arc<AtomicBool>,
+    last_index_load_error: Arc<Mutex<Option<String>>>,
+    index_load_generation: Arc<std::sync::atomic::AtomicU64>,
     /// Monotonic version counter — incremented each time last_index is rebuilt.
     index_version: Arc<std::sync::atomic::AtomicU64>,
     last_progress: Arc<Mutex<Option<ScanProgress>>>,
@@ -70,6 +73,9 @@ impl VolwardEngine {
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: Arc::new(Mutex::new(None)),
             last_index: Arc::new(Mutex::new(None)),
+            is_index_loading: Arc::new(AtomicBool::new(false)),
+            last_index_load_error: Arc::new(Mutex::new(None)),
+            index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_progress: Arc::new(Mutex::new(None)),
             last_checkpoint: Arc::new(Mutex::new(None)),
@@ -143,8 +149,15 @@ impl VolwardEngine {
     /// Load a persisted index file into the engine.
     /// On success the in-memory index is replaced and the version counter bumped.
     pub fn load_index_from_path(&self, path: &str) -> Result<(), String> {
+        self.invalidate_index_load();
+        let index = Self::read_index_or_legacy_snapshot(path)?;
+        self.set_loaded_index(index);
+        Ok(())
+    }
+
+    fn read_index_or_legacy_snapshot(path: &str) -> Result<SnapshotIndex, String> {
         let file = File::open(path).map_err(|e| format!("error:open index: {e}"))?;
-        let index = match serde_json::from_reader::<_, SnapshotIndex>(file) {
+        Ok(match serde_json::from_reader::<_, SnapshotIndex>(file) {
             Ok(index) => index,
             Err(index_error) => {
                 let file = File::open(path).map_err(|e| format!("error:open snapshot: {e}"))?;
@@ -154,7 +167,10 @@ impl VolwardEngine {
                         format!("error:parse index: {index_error}; snapshot: {snapshot_error}")
                     })?
             }
-        };
+        })
+    }
+
+    fn set_loaded_index(&self, index: SnapshotIndex) {
         self.index_version.store(index.version, Ordering::Relaxed);
         if let Ok(mut g) = self.last_index.lock() {
             *g = Some(index);
@@ -162,7 +178,78 @@ impl VolwardEngine {
         if let Ok(mut g) = self.last_snapshot.lock() {
             *g = None;
         }
-        Ok(())
+    }
+
+    /// Load a persisted index/snapshot on a Rust worker thread so Flutter's
+    /// main isolate remains responsive while large legacy caches are migrated.
+    pub fn start_load_index_from_path_async(&self, path: String) -> String {
+        if self
+            .is_index_loading
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return "busy:index load already in progress".to_string();
+        }
+
+        // Supersede any older async restore. The generation check below
+        // prevents older workers from publishing their result after this call
+        // starts; is_index_loading tracks the physical worker so Dart can avoid
+        // running a scan concurrently with a still-parsing large cache file.
+        let load_generation = self.index_load_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut g) = self.last_index_load_error.lock() {
+            *g = None;
+        }
+
+        let last_index = self.last_index.clone();
+        let last_snapshot = self.last_snapshot.clone();
+        let index_version = self.index_version.clone();
+        let is_index_loading = self.is_index_loading.clone();
+        let last_index_load_error = self.last_index_load_error.clone();
+        let index_load_generation = self.index_load_generation.clone();
+
+        std::thread::spawn(move || {
+            match Self::read_index_or_legacy_snapshot(&path) {
+                Ok(index) => {
+                    if index_load_generation.load(Ordering::SeqCst) == load_generation {
+                        index_version.store(index.version, Ordering::Relaxed);
+                        if let Ok(mut g) = last_index.lock() {
+                            *g = Some(index);
+                        }
+                        if let Ok(mut g) = last_snapshot.lock() {
+                            *g = None;
+                        }
+                    }
+                }
+                Err(error) => {
+                    if index_load_generation.load(Ordering::SeqCst) == load_generation {
+                        if let Ok(mut g) = last_index_load_error.lock() {
+                            *g = Some(error);
+                        }
+                    }
+                }
+            }
+            is_index_loading.store(false, Ordering::Release);
+        });
+
+        "ok".to_string()
+    }
+
+    pub fn invalidate_index_load(&self) {
+        self.index_load_generation.fetch_add(1, Ordering::SeqCst);
+        if let Ok(mut g) = self.last_index_load_error.lock() {
+            *g = None;
+        }
+    }
+
+    pub fn is_index_loading(&self) -> bool {
+        self.is_index_loading.load(Ordering::Relaxed)
+    }
+
+    pub fn get_last_index_load_error(&self) -> Option<String> {
+        self.last_index_load_error
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
     }
 
     pub fn get_index_summary_json(&self) -> Result<String, String> {
@@ -224,6 +311,7 @@ impl VolwardEngine {
             return "error:scan already in progress".to_string();
         }
 
+        self.invalidate_index_load();
         self.cancel.store(false, Ordering::Relaxed);
         let classifier = load_classifier(self.platform.as_ref());
         let orchestrator = ScanOrchestrator::new(self.platform.as_ref(), classifier);
@@ -275,6 +363,7 @@ impl VolwardEngine {
 
         // Clear any prior cancel request so a new async scan is not aborted
         // immediately when the shared main engine is reused after cancel.
+        self.invalidate_index_load();
         self.cancel.store(false, Ordering::Relaxed);
 
         let platform = self.platform.clone();
@@ -637,6 +726,112 @@ mod tests {
         assert_eq!(loaded.snapshot_id, expected_id);
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_index_from_path_accepts_legacy_snapshot_json() {
+        let snapshot = minimal_snapshot();
+        let expected_id = snapshot.snapshot_id.clone();
+        let path = std::env::temp_dir().join(format!(
+            "volward-legacy-snapshot-index-{}.json",
+            std::process::id()
+        ));
+
+        let file = File::create(&path).expect("create legacy snapshot");
+        serde_json::to_writer(BufWriter::new(file), &snapshot).expect("write legacy snapshot");
+
+        let engine = VolwardEngine::new();
+        engine
+            .load_index_from_path(&path.to_string_lossy())
+            .expect("legacy snapshot should load as index");
+        let summary_json = engine
+            .get_index_summary_json()
+            .expect("index summary should exist");
+        assert!(summary_json.contains(&expected_id));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn async_load_index_from_path_accepts_legacy_snapshot_json() {
+        let snapshot = minimal_snapshot();
+        let expected_id = snapshot.snapshot_id.clone();
+        let path = std::env::temp_dir().join(format!(
+            "volward-async-legacy-snapshot-index-{}.json",
+            std::process::id()
+        ));
+
+        let file = File::create(&path).expect("create legacy snapshot");
+        serde_json::to_writer(BufWriter::new(file), &snapshot).expect("write legacy snapshot");
+
+        let engine = VolwardEngine::new();
+        assert_eq!(
+            engine.start_load_index_from_path_async(path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        while engine.is_index_loading() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(engine.get_last_index_load_error().is_none());
+        let summary_json = engine
+            .get_index_summary_json()
+            .expect("index summary should exist");
+        assert!(summary_json.contains(&expected_id));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn invalidated_async_index_load_does_not_publish_stale_error() {
+        let engine = VolwardEngine::new();
+        let missing_path = std::env::temp_dir().join(format!(
+            "volward-missing-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+
+        assert_eq!(
+            engine.start_load_index_from_path_async(missing_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        engine.invalidate_index_load();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        assert!(!engine.is_index_loading());
+        assert!(engine.get_last_index_load_error().is_none());
+    }
+
+    #[test]
+    fn repeated_async_index_load_start_is_busy_or_retries_after_prior_load() {
+        let engine = VolwardEngine::new();
+        let first_path = std::env::temp_dir().join(format!(
+            "volward-first-missing-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let second_path = std::env::temp_dir().join(format!(
+            "volward-second-missing-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+
+        assert_eq!(
+            engine.start_load_index_from_path_async(first_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        let second_start =
+            engine.start_load_index_from_path_async(second_path.to_string_lossy().into_owned());
+        assert!(second_start == "ok" || second_start.starts_with("busy:"));
+        while engine.is_index_loading() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            engine.start_load_index_from_path_async(second_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        while engine.is_index_loading() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     #[test]

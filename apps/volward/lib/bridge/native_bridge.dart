@@ -13,84 +13,84 @@ typedef VolwardEngineFree = void Function(Pointer<Void>);
 typedef VolwardFreeStringNative = Void Function(Pointer<Utf8>);
 typedef VolwardFreeString = void Function(Pointer<Utf8>);
 
-typedef VolwardProbeCapabilitiesJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardProbeCapabilitiesJsonNative = Pointer<Utf8> Function(
+    Pointer<Void>);
 typedef VolwardProbeCapabilitiesJson = Pointer<Utf8> Function(Pointer<Void>);
 
 typedef VolwardIsDeepScanReadyNative = Bool Function(Pointer<Void>);
 typedef VolwardIsDeepScanReady = bool Function(Pointer<Void>);
 
-typedef VolwardStartScanNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardStartScan =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartScanNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartScan = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
-typedef VolwardStartScanAsyncNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardStartScanAsync =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartScanAsyncNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartScanAsync = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
-typedef VolwardStartScanAsyncWithOptionsNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
-typedef VolwardStartScanAsyncWithOptions =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
+typedef VolwardStartScanAsyncWithOptionsNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
+typedef VolwardStartScanAsyncWithOptions = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
 
 typedef VolwardIsScanRunningNative = Bool Function(Pointer<Void>);
 typedef VolwardIsScanRunning = bool Function(Pointer<Void>);
 
-typedef VolwardGetLastProgressJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetLastProgressJsonNative = Pointer<Utf8> Function(
+    Pointer<Void>);
 typedef VolwardGetLastProgressJson = Pointer<Utf8> Function(Pointer<Void>);
 
 typedef VolwardCancelScanNative = Void Function(Pointer<Void>);
 typedef VolwardCancelScan = void Function(Pointer<Void>);
 
-typedef VolwardGetLastSnapshotJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetLastSnapshotJsonNative = Pointer<Utf8> Function(
+    Pointer<Void>);
 typedef VolwardGetLastSnapshotJson = Pointer<Utf8> Function(Pointer<Void>);
 
-typedef VolwardSetLastSnapshotJsonNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardSetLastSnapshotJson =
-    bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardSetLastSnapshotJsonNative = Bool Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardSetLastSnapshotJson = bool Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardWriteLastSnapshotToPathNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastSnapshotToPath =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastSnapshotToPathNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastSnapshotToPath = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardLoadLastSnapshotFromPathNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardLoadLastSnapshotFromPath =
-    bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardLoadLastSnapshotFromPathNative = Bool Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardLoadLastSnapshotFromPath = bool Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardWriteLastCheckpointToPathNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastCheckpointToPath =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastCheckpointToPathNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastCheckpointToPath = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardWriteLastSnapshotToPathPbNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastSnapshotToPathPb =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastSnapshotToPathPbNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastSnapshotToPathPb = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardWriteLastCheckpointToPathPbNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastCheckpointToPathPb =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastCheckpointToPathPbNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastCheckpointToPathPb = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardQuickListDirJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardQuickListDirJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardQuickListDirJsonNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardQuickListDirJson = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
 typedef VolwardOpenPermissionSettingsNative = Bool Function(Pointer<Void>);
 typedef VolwardOpenPermissionSettings = bool Function(Pointer<Void>);
 
-typedef VolwardDeleteEntriesJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
-typedef VolwardDeleteEntriesJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
+typedef VolwardDeleteEntriesJsonNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
+typedef VolwardDeleteEntriesJson = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
 
 typedef VolwardEmptyTrashJsonNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardEmptyTrashJson = Pointer<Utf8> Function(Pointer<Void>);
@@ -99,40 +99,52 @@ typedef VolwardEmptyTrashJson = Pointer<Utf8> Function(Pointer<Void>);
 // Catalog index API typedefs (Design §5.3)
 // ---------------------------------------------------------------------------
 
-typedef VolwardQueryDirectoryJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Bool,
-      Pointer<Utf8>,
-    );
-typedef VolwardQueryDirectoryJson =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      bool,
-      Pointer<Utf8>,
-    );
+typedef VolwardQueryDirectoryJsonNative = Pointer<Utf8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Bool,
+  Pointer<Utf8>,
+);
+typedef VolwardQueryDirectoryJson = Pointer<Utf8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  bool,
+  Pointer<Utf8>,
+);
 
-typedef VolwardRefreshDirectoryNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardRefreshDirectory =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardRefreshDirectoryNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardRefreshDirectory = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardLoadIndexFromPathNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardLoadIndexFromPath =
-    bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardLoadIndexFromPathNative = Bool Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardLoadIndexFromPath = bool Function(Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardWriteLastIndexToPathNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastIndexToPath =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardStartLoadIndexFromPathAsyncNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardStartLoadIndexFromPathAsync = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardGetIndexSummaryJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardIsIndexLoadingNative = Bool Function(Pointer<Void>);
+typedef VolwardIsIndexLoading = bool Function(Pointer<Void>);
+
+typedef VolwardInvalidateIndexLoadNative = Void Function(Pointer<Void>);
+typedef VolwardInvalidateIndexLoad = void Function(Pointer<Void>);
+
+typedef VolwardGetLastIndexLoadErrorNative = Pointer<Utf8> Function(
+    Pointer<Void>);
+typedef VolwardGetLastIndexLoadError = Pointer<Utf8> Function(Pointer<Void>);
+
+typedef VolwardWriteLastIndexToPathNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+typedef VolwardWriteLastIndexToPath = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardGetIndexSummaryJsonNative = Pointer<Utf8> Function(
+    Pointer<Void>);
 typedef VolwardGetIndexSummaryJson = Pointer<Utf8> Function(Pointer<Void>);
 
 typedef VolwardIndexVersionNative = Uint64 Function(Pointer<Void>);
@@ -222,6 +234,10 @@ final class VolwardNativeBridge implements VolwardBridge {
     _queryDirectoryJson = _tryLookupQueryDirectoryJson();
     _refreshDirectory = _tryLookupRefreshDirectory();
     _loadIndexFromPath = _tryLookupLoadIndexFromPath();
+    _startLoadIndexFromPathAsync = _tryLookupStartLoadIndexFromPathAsync();
+    _isIndexLoading = _tryLookupIsIndexLoading();
+    _invalidateIndexLoad = _tryLookupInvalidateIndexLoad();
+    _getLastIndexLoadError = _tryLookupGetLastIndexLoadError();
     _writeLastIndexToPath = _tryLookupWriteLastIndexToPath();
     _getIndexSummaryJson = _tryLookupGetIndexSummaryJson();
     _indexVersion = _tryLookupIndexVersion();
@@ -348,6 +364,10 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardQueryDirectoryJson? _queryDirectoryJson;
   late final VolwardRefreshDirectory? _refreshDirectory;
   late final VolwardLoadIndexFromPath? _loadIndexFromPath;
+  late final VolwardStartLoadIndexFromPathAsync? _startLoadIndexFromPathAsync;
+  late final VolwardIsIndexLoading? _isIndexLoading;
+  late final VolwardInvalidateIndexLoad? _invalidateIndexLoad;
+  late final VolwardGetLastIndexLoadError? _getLastIndexLoadError;
   late final VolwardWriteLastIndexToPath? _writeLastIndexToPath;
   late final VolwardGetIndexSummaryJson? _getIndexSummaryJson;
   late final VolwardIndexVersion? _indexVersion;
@@ -387,6 +407,12 @@ final class VolwardNativeBridge implements VolwardBridge {
       _loadIndexFromPath != null &&
       _writeLastIndexToPath != null &&
       _getIndexSummaryJson != null;
+
+  bool get hasAsyncIndexLoadApi =>
+      _startLoadIndexFromPathAsync != null &&
+      _isIndexLoading != null &&
+      _invalidateIndexLoad != null &&
+      _getLastIndexLoadError != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -587,8 +613,7 @@ final class VolwardNativeBridge implements VolwardBridge {
     final lookup = _emptyTrashJson;
     if (lookup == null) {
       return const {
-        'error':
-            'native dylib missing volward_empty_trash_json — rebuild Rust',
+        'error': 'native dylib missing volward_empty_trash_json — rebuild Rust',
       };
     }
     final out = lookup(engine);
@@ -599,6 +624,15 @@ final class VolwardNativeBridge implements VolwardBridge {
     try {
       final raw = ptr.toDartString();
       return jsonDecode(raw) as Map<String, dynamic>;
+    } finally {
+      _freeString(ptr);
+    }
+  }
+
+  String? _decodeStringPtr(Pointer<Utf8> ptr) {
+    if (ptr == nullptr) return null;
+    try {
+      return ptr.toDartString();
     } finally {
       _freeString(ptr);
     }
@@ -669,6 +703,54 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardLoadIndexFromPathNative>>(
             'volward_load_index_from_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardStartLoadIndexFromPathAsync? _tryLookupStartLoadIndexFromPathAsync() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardStartLoadIndexFromPathAsyncNative>>(
+            'volward_start_load_index_from_path_async',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardIsIndexLoading? _tryLookupIsIndexLoading() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardIsIndexLoadingNative>>(
+            'volward_is_index_loading',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardInvalidateIndexLoad? _tryLookupInvalidateIndexLoad() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardInvalidateIndexLoadNative>>(
+            'volward_invalidate_index_load',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardGetLastIndexLoadError? _tryLookupGetLastIndexLoadError() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardGetLastIndexLoadErrorNative>>(
+            'volward_get_last_index_load_error',
           )
           .asFunction();
     } on Object {
@@ -773,6 +855,37 @@ final class VolwardNativeBridge implements VolwardBridge {
     } finally {
       calloc.free(pathPtr);
     }
+  }
+
+  String? startLoadIndexFromPathAsync(Pointer<Void> engine, String path) {
+    final fn = _startLoadIndexFromPathAsync;
+    if (fn == null) return null;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      final out = fn(engine, pathPtr);
+      return _decodeStringPtr(out);
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  bool isIndexLoading(Pointer<Void> engine) {
+    final fn = _isIndexLoading;
+    if (fn == null) return false;
+    return fn(engine);
+  }
+
+  void invalidateIndexLoad(Pointer<Void> engine) {
+    final fn = _invalidateIndexLoad;
+    if (fn == null) return;
+    fn(engine);
+  }
+
+  String? getLastIndexLoadError(Pointer<Void> engine) {
+    final fn = _getLastIndexLoadError;
+    if (fn == null) return null;
+    final out = fn(engine);
+    return _decodeStringPtr(out);
   }
 
   /// Persist the current index to [path]. Returns snapshot_id or `error:…`.
