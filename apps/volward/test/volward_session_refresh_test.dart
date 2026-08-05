@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/volward_session.dart';
 
@@ -54,6 +57,54 @@ void main() {
     test('catalogVersion returns an int', () {
       final session = VolwardSession.test();
       expect(session.catalogVersion, isA<int>());
+    });
+
+    test('loadSessionStateIfNeeded restores persisted scan roots', () async {
+      final session = VolwardSession.test();
+      final file = File(
+        '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      session.sessionStateFileForTest = file;
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode({
+          'scan_roots': ['/Users/test/Downloads'],
+        }),
+      );
+
+      await session.loadSessionStateIfNeeded();
+
+      expect(session.scanRoots, ['/Users/test/Downloads']);
+      await file.delete();
+    });
+
+    test('loadSessionStateIfNeeded ignores empty session state files', () async {
+      final session = VolwardSession.test();
+      final file = File(
+        '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      session.sessionStateFileForTest = file;
+      await file.parent.create(recursive: true);
+      await file.writeAsString('');
+
+      await session.loadSessionStateIfNeeded();
+
+      expect(session.scanRoots, isEmpty);
+      await file.delete();
+    });
+
+    test('switchScanRoot persists the selected root', () async {
+      final session = VolwardSession.test();
+      final file = File(
+        '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      session.sessionStateFileForTest = file;
+
+      await session.switchScanRoot('/Users/test/Downloads');
+
+      final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect(raw['scan_roots'], ['/Users/test/Downloads']);
+      await file.delete();
     });
   });
 }

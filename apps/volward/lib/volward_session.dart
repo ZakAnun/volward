@@ -106,7 +106,9 @@ class VolwardSession extends ChangeNotifier {
     instance = this;
   }
 
-  VolwardSession.test() : _ready = true;
+  VolwardSession.test()
+      : _ready = true,
+        _persistSessionStateEnabled = false;
 
   /// Global reference set when the singleton is constructed.
   /// Used by [SnapshotCatalog.queryNode] to access the catalog fast path
@@ -186,6 +188,10 @@ class VolwardSession extends ChangeNotifier {
   DateTime? _targetPreviewStartedAt;
   int _cacheRestoreGeneration = 0;
   Completer<void>? _cacheRestoreCompleter;
+  bool _sessionStateLoaded = false;
+  bool _persistSessionStateEnabled = true;
+  @visibleForTesting
+  File? sessionStateFileForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -195,6 +201,9 @@ class VolwardSession extends ChangeNotifier {
 
   /// Safety net for runaway scans; normal Home scans should finish well below this.
   static const Duration _scanAbsoluteMax = Duration(hours: 8);
+
+  /// Cap cache restore wait so a bad or huge local cache does not pin the UI.
+  static const Duration _cacheRestoreTimeout = Duration(seconds: 8);
 
   static const Duration _minTargetPreviewLoading = Duration(milliseconds: 180);
 
@@ -607,6 +616,7 @@ class VolwardSession extends ChangeNotifier {
 
   Future<void> _restoreCachedSnapshot() async {
     if (!_ready || _engine == null || _scanning) return;
+    await loadSessionStateIfNeeded();
     final generation = ++_cacheRestoreGeneration;
 
     final preferredRoot =
@@ -670,7 +680,16 @@ class VolwardSession extends ChangeNotifier {
     if (generation != _cacheRestoreGeneration) return null;
 
     if (bridge.hasAsyncIndexLoadApi) {
+      final startedAt = DateTime.now();
       while (generation == _cacheRestoreGeneration) {
+        if (DateTime.now().difference(startedAt) > _cacheRestoreTimeout) {
+          bridge.invalidateIndexLoad(engine);
+          debugPrint(
+            'VolwardSession: cache restore timed out after '
+            '${_cacheRestoreTimeout.inSeconds}s for $path',
+          );
+          return null;
+        }
         bridge.invalidateIndexLoad(engine);
         final started = bridge.startLoadIndexFromPathAsync(engine, path);
         if (started == null || started.startsWith('error:')) {
@@ -684,7 +703,11 @@ class VolwardSession extends ChangeNotifier {
           continue;
         }
 
-        await _waitForIndexLoadDrain(generation);
+        final drained = await _waitForIndexLoadDrain(generation);
+        if (!drained) {
+          bridge.invalidateIndexLoad(engine);
+          return null;
+        }
         break;
       }
       if (generation != _cacheRestoreGeneration) return null;
@@ -720,15 +743,20 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _waitForIndexLoadDrain(int generation) async {
+  Future<bool> _waitForIndexLoadDrain(int generation) async {
     final engine = _engine;
-    if (engine == null) return;
+    if (engine == null) return false;
     final bridge = VolwardNativeBridge.instance;
-    if (!bridge.hasAsyncIndexLoadApi) return;
+    if (!bridge.hasAsyncIndexLoadApi) return true;
+    final startedAt = DateTime.now();
     while (generation == _cacheRestoreGeneration &&
         bridge.isIndexLoading(engine)) {
+      if (DateTime.now().difference(startedAt) > _cacheRestoreTimeout) {
+        return false;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 120));
     }
+    return generation == _cacheRestoreGeneration;
   }
 
   void _invalidateCacheRestore() {
@@ -738,6 +766,58 @@ class VolwardSession extends ChangeNotifier {
       VolwardNativeBridge.instance.invalidateIndexLoad(engine);
     }
   }
+
+  @visibleForTesting
+  Future<void> loadSessionStateIfNeeded() async {
+    if (_sessionStateLoaded) return;
+    _sessionStateLoaded = true;
+
+    if (_scanRoots.isNotEmpty) return;
+    final file = sessionStateFileForTest ?? _sessionStateFile();
+    if (!await file.exists()) return;
+    try {
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final map = Map<String, dynamic>.from(decoded);
+      final roots = map['scan_roots'];
+      if (roots is! List) return;
+      final loadedRoots = roots
+          .map((root) => root.toString())
+          .where((root) => root.isNotEmpty)
+          .map(ScanTreeBuilder.normalizeRoot)
+          .toList(growable: false);
+      if (loadedRoots.isEmpty) return;
+      if (listEquals(_scanRoots, loadedRoots)) return;
+      _scanRoots = loadedRoots;
+      notifyListeners();
+    } catch (_) {
+      // Session state is only a local cache hint. If it is empty, truncated,
+      // or otherwise malformed, treat it as missing and continue booting.
+    }
+  }
+
+  Future<void> _persistSessionState() async {
+    try {
+      final file = sessionStateFileForTest ??
+          (_persistSessionStateEnabled ? _sessionStateFile() : null);
+      if (file == null) return;
+      await file.parent.create(recursive: true);
+      final tmpFile = File('${file.path}.tmp');
+      await tmpFile.writeAsString(
+        jsonEncode(<String, dynamic>{
+          'scan_roots': _scanRoots,
+        }),
+      );
+      await tmpFile.rename(file.path);
+    } catch (e, st) {
+      debugPrint('VolwardSession: persist session state failed: $e\n$st');
+    }
+  }
+
+  static File _sessionStateFile() =>
+      File('${SnapshotCache.cacheDir().path}/session.json');
 
   /// Path the UI is currently browsing — used as the refresh target.
   /// Set by [setCurrentDirectory] from [HomePage] column selection.
@@ -762,25 +842,25 @@ class VolwardSession extends ChangeNotifier {
   void setScanRoots(List<String> roots) {
     _scanRoots = List.from(roots);
     _currentDirectoryPath = null;
+    unawaited(_persistSessionState());
     notifyListeners();
   }
 
   void clearScanRoots() {
     _scanRoots = [];
     _currentDirectoryPath = null;
+    unawaited(_persistSessionState());
     notifyListeners();
   }
 
   /// Switch the active scan root, implementing Plan B:
   ///
-  /// * If a scan is already running **and** [path] is a strict sub-directory of
-  ///   the current scan root, the background scan is left untouched.  A peek
-  ///   scan is triggered immediately so the new subtree fills in quickly, and
-  ///   [_scanRoots] is updated so the UI filters to [path].
+  /// * When the selected root changes, the current scan is cancelled if
+  ///   necessary, the new root is previewed immediately, and a fresh scan is
+  ///   started automatically so the persisted cache follows the new folder.
   ///
-  /// * Otherwise (unrelated root, or no active scan) the current scan is
-  ///   cancelled, the new root is previewed, and a fresh full scan is started
-  ///   automatically.
+  /// * Re-selecting the same root while a scan is already running keeps that
+  ///   scan alive and only refreshes the visible preview.
   Future<void> switchScanRoot(String? path) async {
     final generation = ++_rootSwitchGeneration;
     final newRoots = path != null ? [path] : <String>[];
@@ -788,8 +868,7 @@ class VolwardSession extends ChangeNotifier {
     final currentRoot = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
     );
-    final keepRunningScan = _scanning &&
-        (newRoot == currentRoot || newRoot.startsWith('$currentRoot/'));
+    final keepRunningScan = _scanning && newRoot == currentRoot;
 
     if (_scanning && !keepRunningScan) {
       cancelScan();
@@ -806,6 +885,7 @@ class VolwardSession extends ChangeNotifier {
     _invalidatedPrefixes.clear();
     _peekInFlight.clear();
     _peekCompleted.clear();
+    await _persistSessionState();
     notifyListeners();
 
     unawaited(
@@ -972,25 +1052,23 @@ class VolwardSession extends ChangeNotifier {
   /// reflected without re-scanning the whole root. The root target falls back
   /// to the normal full scan worker so large refreshes stay file-backed rather
   /// than shipping a giant snapshot through the UI isolate.
-  Future<void> refreshCurrentDirectory() async {
+  Future<void> refreshCurrentDirectory([String? path]) async {
     if (!_ready || _engine == null) return;
-    final path = refreshTargetPath;
+    final targetPath = path ?? refreshTargetPath;
     final root = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
     );
-    final target = ScanTreeBuilder.normalizeRoot(path);
+    final target = ScanTreeBuilder.normalizeRoot(targetPath);
     if (target == root) {
       _currentDirectoryPath = null;
     } else {
-      _currentDirectoryPath = path;
+      _currentDirectoryPath = targetPath;
     }
-    _invalidatedPrefixes.add(path);
-    notifyListeners();
     try {
       if (target == root) {
         await runScan();
       } else {
-        await peekScan(path, force: true);
+        await peekScan(targetPath, force: true);
       }
     } catch (e, st) {
       debugPrint('VolwardSession: refreshCurrentDirectory failed: $e\n$st');
@@ -1323,9 +1401,10 @@ class VolwardSession extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> deleteEntries(
-    List<String> entryIds, {
+    List<String> targets, {
     bool dryRun = false,
     bool rescanAfterDelete = false,
+    String? refreshPath,
   }) async {
     if (!_ready || _engine == null) {
       throw StateError(_initError ?? 'Native engine not ready');
@@ -1342,7 +1421,7 @@ class VolwardSession extends ChangeNotifier {
       final report = VolwardNativeBridge.instance.deleteEntries(
         _engine!,
         snapshotId,
-        entryIds,
+        targets,
         dryRun: dryRun,
       );
       if (report.containsKey('error')) {
@@ -1352,7 +1431,7 @@ class VolwardSession extends ChangeNotifier {
         _lastDeleteReport = report;
       }
       if (!dryRun && rescanAfterDelete) {
-        await runScan();
+        await refreshCurrentDirectory(refreshPath);
       }
       return report;
     } catch (e, st) {
@@ -1381,7 +1460,7 @@ class VolwardSession extends ChangeNotifier {
         throw StateError(report['error'].toString());
       }
       if (rescanAfterEmpty && _lastSnapshot != null) {
-        await runScan();
+        await refreshCurrentDirectory();
       }
       return report;
     } catch (e, st) {
@@ -1598,20 +1677,10 @@ class VolwardSession extends ChangeNotifier {
       replacementIsAuthoritative: authoritative,
     );
     // Force every merge to look like "new data" to snapshot_id-keyed UI
-    // caches, even though checkpoints from the same scan job would
-    // otherwise all share the same Rust-side snapshot_id.
-    _lastSnapshot = ScanSnapshotState(
-      snapshotId: 'live-${DateTime.now().microsecondsSinceEpoch}',
-      scannedAtMs: merged.scannedAtMs,
-      stats: merged.stats,
-      reclaimableEstimateBytes: merged.reclaimableEstimateBytes,
-      tree: merged.tree,
-      entryCount: merged.entryCount,
-      categoryCounts: merged.categoryCounts,
-      deletableCategoryCounts: merged.deletableCategoryCounts,
-      deletableCount: merged.deletableCount,
-      extraFields: merged.extraFields,
-    );
+    // Keep the Rust snapshot_id stable so delete/refresh calls continue to
+    // match the native engine, and rely on [_snapshotVersion] / catalogVersion
+    // to invalidate Dart-side caches.
+    _lastSnapshot = merged;
     _snapshotVersion++;
     _invalidatedPrefixes.add(targetPath);
     // Throttle UI notifications: checkpoints can arrive 5-10×/sec.  We always

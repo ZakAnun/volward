@@ -18,14 +18,14 @@ void main() {
           'snapshot_id': 'snap-run',
           'scanned_at_ms': 1,
           'reclaimable_estimate_bytes': 0,
-          'entries': const [],
+          'entries': [],
           'tree': {
             'name': 'root',
             'path': '/root',
             'is_dir': true,
-            'children': const [],
+            'children': [],
           },
-          'stats': const {},
+          'stats': {},
         });
       };
 
@@ -92,32 +92,32 @@ void main() {
         'snapshot_id': 'snap-merge',
         'scanned_at_ms': 1,
         'reclaimable_estimate_bytes': 0,
-        'entries': const [],
+        'entries': [],
         'tree': {
           'name': 'root',
           'path': '/root',
           'is_dir': true,
-          'children': const [
+          'children': [
             {
               'name': 'Library',
               'path': '/root/Library',
               'is_dir': true,
-              'children': const [],
+              'children': [],
             },
           ],
         },
-        'stats': const {},
+        'stats': {},
       });
       final subtreeTree = <String, dynamic>{
         'name': 'root',
         'path': '/root',
         'is_dir': true,
-        'children': const [
+        'children': [
           {
             'name': 'Library',
             'path': '/root/Library',
             'is_dir': true,
-            'children': const [],
+            'children': [],
           },
         ],
       };
@@ -132,7 +132,7 @@ void main() {
         'phase': 'Walking',
         'paths_seen': 1,
       });
-      await session.applyMergeForTest('/root', subtreeTree, const []);
+      await session.applyMergeForTest('/root', subtreeTree, []);
       expect(notifyCount, 1);
 
       session.clearTransientScanStateForTest();
@@ -140,8 +140,64 @@ void main() {
         'phase': 'Walking',
         'paths_seen': 2,
       });
-      await session.applyMergeForTest('/root', subtreeTree, const []);
+      await session.applyMergeForTest('/root', subtreeTree, []);
       expect(notifyCount, 2);
+    });
+
+    test('applyMerge keeps the native snapshot id stable', () async {
+      final session = VolwardSession.test();
+      final snapshot = ScanSnapshotState.fromWire({
+        'snapshot_id': 'snap-native',
+        'scanned_at_ms': 1,
+        'reclaimable_estimate_bytes': 0,
+        'entries': [],
+        'tree': {
+          'name': 'root',
+          'path': '/root',
+          'is_dir': true,
+          'children': [
+            {
+              'name': 'Documents',
+              'path': '/root/Documents',
+              'is_dir': true,
+              'children': [],
+            },
+          ],
+        },
+        'stats': {},
+      });
+      final subtreeTree = <String, dynamic>{
+        'name': 'Documents',
+        'path': '/root/Documents',
+        'is_dir': true,
+        'children': [
+          {
+            'name': 'a.txt',
+            'path': '/root/Documents/a.txt',
+            'is_dir': false,
+            'size_bytes': 1,
+            'entry_id': 'e1',
+            'children': [],
+          },
+        ],
+      };
+
+      session.setSnapshotForTest(snapshot);
+      await session.applyMergeForTest('/root/Documents', subtreeTree, [
+        {
+          'id': 'e1',
+          'display_name': 'a.txt',
+          'path_or_uri': '/root/Documents/a.txt',
+          'size_bytes': 1,
+          'category': 'Other',
+          'risk_level': 'Low',
+          'source_type': 'File',
+          'deletable': true,
+          'reason': 'test',
+        },
+      ]);
+
+      expect(session.lastSnapshot?.snapshotId, 'snap-native');
     });
   });
 }
