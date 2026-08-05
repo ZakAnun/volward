@@ -152,6 +152,8 @@ pub struct SnapshotIndex {
     entry_by_id: HashMap<u32, EntryRecord>,
     /// path-id → entry-id (for O(1) lookup in query_directory)
     entry_id_by_path: HashMap<u32, u32>,
+    /// path-id → file size for files that are not classified StorageEntry rows.
+    file_size_by_path: HashMap<u32, u64>,
     /// dir path-id → child path-ids (dirs and files, in insertion order)
     children_by_id: HashMap<u32, Vec<u32>>,
     /// ≤ 8 keys, kept as String for the public summary() API
@@ -159,15 +161,16 @@ pub struct SnapshotIndex {
     deletable_counts: HashMap<String, u64>,
 }
 
-// Custom serde: compact v2 wire format (string table + u32 ids).
-// Readers also accept format_version=3 (brief no-op write bump on main).
+// Custom serde: compact wire format (string table + u32 ids).
+// format_version=4 adds file_size_by_path for unclassified file sizes.
+// Readers also accept 2/3 (pre-size-map caches) via #[serde(default)].
 impl Serialize for SnapshotIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let mut st = serializer.serialize_struct("SnapshotIndexSerde", 16)?;
-        st.serialize_field("format_version", &2u32)?;
+        let mut st = serializer.serialize_struct("SnapshotIndexSerde", 17)?;
+        st.serialize_field("format_version", &4u32)?;
         st.serialize_field("snapshot_id", &self.snapshot_id)?;
         st.serialize_field("root_path", &self.root_path)?;
         st.serialize_field("scanned_at_ms", &self.scanned_at_ms)?;
@@ -182,9 +185,10 @@ impl Serialize for SnapshotIndex {
         st.serialize_field("root_id", &self.root_id)?;
         st.serialize_field("directories", &TupleMapEntries(&self.directory_by_id))?;
         st.serialize_field("entries", &TupleMapEntries(&self.entry_by_id))?;
+        st.serialize_field("entry_id_by_path", &TupleMapEntries(&self.entry_id_by_path))?;
         st.serialize_field(
-            "entry_id_by_path",
-            &TupleMapEntries(&self.entry_id_by_path),
+            "file_size_by_path",
+            &TupleMapEntries(&self.file_size_by_path),
         )?;
         st.serialize_field("children", &TupleMapEntries(&self.children_by_id))?;
         st.serialize_field("category_counts", &self.category_counts)?;
@@ -200,9 +204,9 @@ impl<'de> Deserialize<'de> for SnapshotIndex {
     {
         use serde::de::Error;
         let s = SnapshotIndexSerde::deserialize(deserializer)?;
-        if s.format_version != 2 && s.format_version != 3 {
+        if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 {
             return Err(D::Error::custom(format!(
-                "unsupported SnapshotIndex format_version {} (expected 2 or 3)",
+                "unsupported SnapshotIndex format_version {} (expected 2, 3, or 4)",
                 s.format_version
             )));
         }
@@ -264,6 +268,8 @@ struct SnapshotIndexSerde {
     directories: Vec<(u32, DirectoryRecord)>,
     entries: Vec<(u32, EntryRecord)>,
     entry_id_by_path: Vec<(u32, u32)>,
+    #[serde(default)]
+    file_size_by_path: Vec<(u32, u64)>,
     children: Vec<(u32, Vec<u32>)>,
     category_counts: HashMap<String, u64>,
     deletable_counts: HashMap<String, u64>,
@@ -285,6 +291,7 @@ impl From<SnapshotIndexSerde> for SnapshotIndex {
             directory_by_id: s.directories.into_iter().collect(),
             entry_by_id: s.entries.into_iter().collect(),
             entry_id_by_path: s.entry_id_by_path.into_iter().collect(),
+            file_size_by_path: s.file_size_by_path.into_iter().collect(),
             children_by_id: s.children.into_iter().collect(),
             category_counts: s.category_counts,
             deletable_counts: s.deletable_counts,
@@ -311,6 +318,7 @@ impl SnapshotIndex {
         let mut directory_by_id: HashMap<u32, DirectoryRecord> = HashMap::new();
         let mut entry_by_id: HashMap<u32, EntryRecord> = HashMap::new();
         let mut entry_id_by_path: HashMap<u32, u32> = HashMap::new();
+        let mut file_size_by_path: HashMap<u32, u64> = HashMap::new();
         let mut children_by_id: HashMap<u32, Vec<u32>> = HashMap::new();
         let mut category_counts: HashMap<String, u64> = HashMap::new();
         let mut deletable_counts: HashMap<String, u64> = HashMap::new();
@@ -354,6 +362,7 @@ impl SnapshotIndex {
             &mut children_by_id,
             &entry_id_by_path,
             &entry_by_id,
+            &mut file_size_by_path,
         );
 
         let mut index = Self {
@@ -369,6 +378,7 @@ impl SnapshotIndex {
             directory_by_id,
             entry_by_id,
             entry_id_by_path,
+            file_size_by_path,
             children_by_id,
             category_counts,
             deletable_counts,
@@ -423,6 +433,7 @@ impl SnapshotIndex {
         self.directory_by_id.shrink_to_fit();
         self.entry_by_id.shrink_to_fit();
         self.entry_id_by_path.shrink_to_fit();
+        self.file_size_by_path.shrink_to_fit();
         for children in self.children_by_id.values_mut() {
             children.shrink_to_fit();
         }
@@ -432,11 +443,19 @@ impl SnapshotIndex {
     }
 
     pub fn deletable_entries_for_ids(&self, entry_ids: &[String]) -> Vec<SnapshotEntryRecord> {
+        self.entries_for_ids(entry_ids)
+            .into_iter()
+            .filter(|entry| entry.deletable)
+            .collect()
+    }
+
+    /// Returns all indexed entries matching the provided ids, regardless of
+    /// their `deletable` classification.
+    pub fn entries_for_ids(&self, entry_ids: &[String]) -> Vec<SnapshotEntryRecord> {
         entry_ids
             .iter()
             .filter_map(|id| self.table.get_id(id))
             .filter_map(|id_id| self.entry_by_id.get(&id_id))
-            .filter(|entry| entry.deletable)
             .map(|entry| self.materialize_entry(entry))
             .collect()
     }
@@ -516,8 +535,7 @@ impl SnapshotIndex {
             if let Some(&entry_id) = self.entry_id_by_path.get(&child_id) {
                 if let Some(entry) = self.entry_by_id.get(&entry_id) {
                     let category_str = self.table.resolve(entry.category);
-                    if !passes_entry_filter(entry, category_str, category_filter, deletable_only)
-                    {
+                    if !passes_entry_filter(entry, category_str, category_filter, deletable_only) {
                         continue;
                     }
                     total_bytes += entry.size_bytes;
@@ -540,6 +558,27 @@ impl SnapshotIndex {
                     });
                     direct_entries.push(self.materialize_entry(entry));
                 }
+            }
+
+            if let Some(size_bytes) = self.file_size_by_path.get(&child_id) {
+                if category_filter.is_some() || deletable_only {
+                    continue;
+                }
+                let path = self.table.resolve(child_id);
+                direct_children.push(SnapshotNodeRecord {
+                    path: path.to_string(),
+                    name: name_of(path),
+                    is_directory: false,
+                    size_bytes: *size_bytes,
+                    entry_id: Some(path.to_string()),
+                    category: Some("Unknown".to_string()),
+                    deletable: false,
+                    scanned: true,
+                    category_mask: category_mask_for_name("Unknown"),
+                    deletable_category_mask: 0,
+                    deletable_file_count: 0,
+                });
+                total_bytes += *size_bytes;
             }
         }
 
@@ -615,6 +654,7 @@ pub struct SnapshotIndexBuilder {
     directory_by_id: HashMap<u32, DirectoryRecord>,
     entry_by_id: HashMap<u32, EntryRecord>,
     entry_id_by_path: HashMap<u32, u32>,
+    file_size_by_path: HashMap<u32, u64>,
     children_by_id: HashMap<u32, Vec<u32>>,
     category_counts: HashMap<String, u64>,
     deletable_counts: HashMap<String, u64>,
@@ -651,6 +691,7 @@ impl SnapshotIndexBuilder {
             directory_by_id,
             entry_by_id: HashMap::new(),
             entry_id_by_path: HashMap::new(),
+            file_size_by_path: HashMap::new(),
             children_by_id,
             category_counts: HashMap::new(),
             deletable_counts: HashMap::new(),
@@ -674,7 +715,10 @@ impl SnapshotIndexBuilder {
         }
         let parent_str = parent_path_of_for_root(&path, &self.root_path);
         let parent_id = self.table.intern(&parent_str);
+        let path_id = self.table.intern(&path);
         self.ensure_dir_internal(parent_id);
+        self.file_size_by_path.insert(path_id, size_bytes);
+        self.add_child_once(parent_id, path_id);
         self.propagate_file_size(parent_id, size_bytes);
     }
 
@@ -703,6 +747,7 @@ impl SnapshotIndexBuilder {
         let category_id = self.table.intern(&category);
 
         self.entry_id_by_path.insert(path_id, id_id);
+        self.file_size_by_path.remove(&path_id);
         self.entry_by_id.insert(
             id_id,
             EntryRecord {
@@ -794,7 +839,10 @@ impl SnapshotIndexBuilder {
                 continue;
             }
             let category_str = source.table.resolve(entry.category).to_string();
-            *self.category_counts.entry(category_str.clone()).or_insert(0) += 1;
+            *self
+                .category_counts
+                .entry(category_str.clone())
+                .or_insert(0) += 1;
             if entry.deletable {
                 *self.deletable_counts.entry(category_str).or_insert(0) += 1;
                 self.reclaimable_estimate_bytes = self
@@ -820,6 +868,15 @@ impl SnapshotIndexBuilder {
                     deletable: entry.deletable,
                 },
             );
+        }
+
+        for (&path_id, &size_bytes) in &source.file_size_by_path {
+            let path = source.table.resolve(path_id);
+            if !path_is_at_or_below(path, &dir_path) {
+                continue;
+            }
+            let our_path_id = self.table.intern(path);
+            self.file_size_by_path.insert(our_path_id, size_bytes);
         }
 
         if let Some(parent_id) = parent_id {
@@ -848,6 +905,7 @@ impl SnapshotIndexBuilder {
             directory_by_id: self.directory_by_id,
             entry_by_id: self.entry_by_id,
             entry_id_by_path: self.entry_id_by_path,
+            file_size_by_path: self.file_size_by_path,
             children_by_id: self.children_by_id,
             category_counts: self.category_counts,
             deletable_counts: self.deletable_counts,
@@ -901,10 +959,7 @@ impl SnapshotIndexBuilder {
     fn propagate_file_size(&mut self, parent_id: u32, size_bytes: u64) {
         let mut current = Some(parent_id);
         while let Some(pid) = current {
-            let next = self
-                .directory_by_id
-                .get(&pid)
-                .and_then(|dir| dir.parent);
+            let next = self.directory_by_id.get(&pid).and_then(|dir| dir.parent);
             if let Some(dir) = self.directory_by_id.get_mut(&pid) {
                 dir.size_bytes = dir.size_bytes.saturating_add(size_bytes);
             }
@@ -915,10 +970,7 @@ impl SnapshotIndexBuilder {
     fn propagate_entry_metadata(&mut self, parent_id: u32, category_mask: u64, deletable: bool) {
         let mut current = Some(parent_id);
         while let Some(pid) = current {
-            let next = self
-                .directory_by_id
-                .get(&pid)
-                .and_then(|dir| dir.parent);
+            let next = self.directory_by_id.get(&pid).and_then(|dir| dir.parent);
             if let Some(dir) = self.directory_by_id.get_mut(&pid) {
                 dir.category_mask |= category_mask;
                 if deletable {
@@ -937,10 +989,7 @@ impl SnapshotIndexBuilder {
     ) {
         let mut current = Some(parent_id);
         while let Some(pid) = current {
-            let next = self
-                .directory_by_id
-                .get(&pid)
-                .and_then(|dir| dir.parent);
+            let next = self.directory_by_id.get(&pid).and_then(|dir| dir.parent);
             if let Some(dir) = self.directory_by_id.get_mut(&pid) {
                 dir.size_bytes = dir.size_bytes.saturating_add(source_dir.size_bytes);
                 dir.category_mask |= source_dir.category_mask;
@@ -1007,16 +1056,14 @@ fn walk_tree(
     children_by_id: &mut HashMap<u32, Vec<u32>>,
     entry_id_by_path: &HashMap<u32, u32>,
     entry_by_id: &HashMap<u32, EntryRecord>,
+    file_size_by_path: &mut HashMap<u32, u64>,
 ) -> (u64, u64, u64) {
     let node_path_id = table.intern(&node.path);
 
     if !node.is_dir {
         // Files are indexed via entry_by_id; just register as child of parent.
         if let Some(p) = parent {
-            children_by_id
-                .entry(p)
-                .or_default()
-                .push(node_path_id);
+            children_by_id.entry(p).or_default().push(node_path_id);
         }
         if let Some(&entry_id) = entry_id_by_path.get(&node_path_id) {
             if let Some(entry) = entry_by_id.get(&entry_id) {
@@ -1028,6 +1075,8 @@ fn walk_tree(
                     if entry.deletable { 1 } else { 0 },
                 );
             }
+        } else {
+            file_size_by_path.insert(node_path_id, node.size_bytes);
         }
         return (0, 0, 0);
     }
@@ -1038,10 +1087,7 @@ fn walk_tree(
     let mut deletable_file_count = 0u64;
 
     if let Some(p) = parent {
-        children_by_id
-            .entry(p)
-            .or_default()
-            .push(node_path_id);
+        children_by_id.entry(p).or_default().push(node_path_id);
     }
     // Initialise an empty children vec for this dir so query_directory always
     // finds an entry even for empty dirs.
@@ -1056,6 +1102,7 @@ fn walk_tree(
             children_by_id,
             entry_id_by_path,
             entry_by_id,
+            file_size_by_path,
         );
         category_mask |= child_mask;
         deletable_category_mask |= child_deletable_mask;
@@ -1267,6 +1314,43 @@ mod tests {
         let catalog = SnapshotIndex::from(&snapshot);
         let result = catalog.query_directory("/root/nonexistent", None, false, "name");
         assert!(result.direct_children.is_empty());
+    }
+
+    #[test]
+    fn query_directory_returns_unclassified_files_as_unknown_nodes() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/fastbuild");
+        builder.record_file_size("/root/fastbuild/index.js", 6_717);
+        builder.record_file_size("/root/fastbuild/content.js", 3_671);
+        let index = builder.finish(
+            "snap-js".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats {
+                paths_seen: 3,
+                dirs_seen: 1,
+                files_seen: 2,
+                files_in_snapshot: 0,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
+        );
+
+        let result = index.query_directory("/root/fastbuild", None, false, "name");
+        assert_eq!(result.direct_children.len(), 2);
+        assert_eq!(result.direct_children[0].path, "/root/fastbuild/content.js");
+        assert_eq!(
+            result.direct_children[0].entry_id.as_deref(),
+            Some("/root/fastbuild/content.js")
+        );
+        assert_eq!(
+            result.direct_children[0].category.as_deref(),
+            Some("Unknown")
+        );
+        assert!(!result.direct_children[0].deletable);
+        assert!(result.direct_entries.is_empty());
     }
 
     #[test]

@@ -8,7 +8,8 @@ use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{
-    DeleteReport, PlatformCapabilities, ScanProgress, StorageSnapshot, TrashEmptyReport,
+    DeleteReport, PlatformCapabilities, ScanProgress, ScanTreeNode, StorageSnapshot,
+    TrashEmptyReport,
 };
 use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
@@ -450,14 +451,24 @@ impl VolwardEngine {
                 if index.snapshot_id != snapshot_id {
                     return Err("Snapshot expired or mismatch".to_string());
                 }
-                let entries = index.deletable_entries_for_ids(&entry_ids);
-                return DeleteOrchestrator::delete_index_entries(
-                    &index.snapshot_id,
-                    &entries,
-                    dry_run,
-                    &*self.platform,
-                )
-                .map_err(|e| e.to_string());
+                let mut paths = Vec::new();
+                for target in &entry_ids {
+                    let resolved_entries = index.entries_for_ids(std::slice::from_ref(target));
+                    if let Some(entry) = resolved_entries.first() {
+                        paths.push((entry.path.clone(), entry.size_bytes));
+                        continue;
+                    }
+                    if let Some(dir) = index.directory_record(target) {
+                        paths.push((dir.path, dir.size_bytes));
+                        continue;
+                    }
+                    if let Some((path, size_bytes)) = index_target_path_size(index, target.as_str())
+                    {
+                        paths.push((path, size_bytes));
+                    }
+                }
+                return DeleteOrchestrator::delete_explicit_paths(paths, dry_run, &*self.platform)
+                    .map_err(|e| e.to_string());
             }
         }
 
@@ -467,7 +478,15 @@ impl VolwardEngine {
         if snapshot.snapshot_id != snapshot_id {
             return Err("Snapshot expired or mismatch".to_string());
         }
-        DeleteOrchestrator::delete_entries(&snapshot, &entry_ids, dry_run, &*self.platform)
+        let mut paths = Vec::new();
+        for target in &entry_ids {
+            if let Some((path, size_bytes)) =
+                snapshot_target_path_size(&snapshot.tree, &snapshot.entries, target)
+            {
+                paths.push((path, size_bytes));
+            }
+        }
+        DeleteOrchestrator::delete_explicit_paths(paths, dry_run, &*self.platform)
             .map_err(|e| e.to_string())
     }
 
@@ -660,6 +679,48 @@ fn write_snapshot_pb_atomic(snapshot: &StorageSnapshot, path: &str) -> Result<St
     Ok(snapshot.snapshot_id.clone())
 }
 
+fn index_target_path_size(index: &SnapshotIndex, target: &str) -> Option<(String, u64)> {
+    let parent = parent_path_of(target)?;
+    let query = index.query_directory(parent, None, false, "name");
+    query
+        .direct_children
+        .into_iter()
+        .find(|node| node.path == target)
+        .map(|node| (node.path, node.size_bytes))
+}
+
+fn snapshot_target_path_size(
+    root: &ScanTreeNode,
+    entries: &[volward_core::model::StorageEntry],
+    target: &str,
+) -> Option<(String, u64)> {
+    if let Some(entry) = entries.iter().find(|entry| entry.id == target) {
+        return Some((entry.path_or_uri.clone(), entry.size_bytes));
+    }
+    find_tree_node(root, target).map(|node| (node.path.clone(), node.size_bytes))
+}
+
+fn find_tree_node<'a>(node: &'a ScanTreeNode, target: &str) -> Option<&'a ScanTreeNode> {
+    if node.path == target {
+        return Some(node);
+    }
+    for child in &node.children {
+        if let Some(found) = find_tree_node(child, target) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn parent_path_of(path: &str) -> Option<&str> {
+    let idx = path.rfind('/')?;
+    if idx == 0 {
+        Some("/")
+    } else {
+        Some(&path[..idx])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -750,6 +811,56 @@ mod tests {
         assert!(summary_json.contains(&expected_id));
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn delete_entries_json_allows_explicit_non_deletable_media_in_index_mode() {
+        let engine = VolwardEngine::new();
+        let mut snapshot = minimal_snapshot();
+        snapshot.entries.push(StorageEntry {
+            id: "e3".to_string(),
+            display_name: "movie.mov".to_string(),
+            path_or_uri: "/Users/x/Movies/movie.mov".to_string(),
+            size_bytes: 120,
+            category: EntryCategory::Media,
+            risk_level: RiskLevel::High,
+            source_type: SourceType::File,
+            deletable: false,
+            reason: "media".to_string(),
+        });
+        engine.set_last_snapshot(snapshot);
+
+        let report = engine.delete_entries_json("test-snap", vec!["e3".to_string()], true);
+        assert!(report.contains(r#""deleted_count":1"#), "{report}");
+        assert!(report.contains(r#""freed_bytes":120"#), "{report}");
+        assert!(!report.contains(r#""error""#), "{report}");
+    }
+
+    #[test]
+    fn delete_entries_json_allows_directory_paths_in_index_mode() {
+        let engine = VolwardEngine::new();
+        let mut snapshot = minimal_snapshot();
+        snapshot.tree.children.push(ScanTreeNode {
+            name: "Users".to_string(),
+            path: "/Users".to_string(),
+            is_dir: true,
+            size_bytes: 40,
+            entry_id: None,
+            children: vec![ScanTreeNode {
+                name: "notes.txt".to_string(),
+                path: "/Users/notes.txt".to_string(),
+                is_dir: false,
+                size_bytes: 40,
+                entry_id: Some("dir-child".to_string()),
+                children: vec![],
+            }],
+        });
+        engine.set_last_snapshot(snapshot);
+
+        let report = engine.delete_entries_json("test-snap", vec!["/Users".to_string()], true);
+        assert!(report.contains(r#""deleted_count":1"#), "{report}");
+        assert!(report.contains(r#""freed_bytes":40"#), "{report}");
+        assert!(!report.contains(r#""error""#), "{report}");
     }
 
     #[test]

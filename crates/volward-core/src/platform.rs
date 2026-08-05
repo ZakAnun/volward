@@ -46,6 +46,10 @@ pub trait PlatformStorage: Send + Sync {
 
     fn trash_paths(&self, paths: &[String]) -> Result<DeleteReport, PlatformError>;
 
+    fn is_path_protected(&self, _path: &str) -> bool {
+        false
+    }
+
     fn empty_trash(&self) -> Result<TrashEmptyReport, PlatformError> {
         Err(PlatformError::Unsupported("empty_trash"))
     }

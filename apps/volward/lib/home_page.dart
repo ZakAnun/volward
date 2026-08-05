@@ -32,6 +32,27 @@ String refreshPathFromFocus({required String rootPath, ScanTreeNode? focused}) {
   return rootPath;
 }
 
+/// Returns the delete target for the currently focused node.
+///
+/// Files keep using their native entry id when available; directories and
+/// id-less leaves fall back to their absolute path so Rust can trash them by
+/// path.
+String? deleteTargetFromFocus(ScanTreeNode? focused) {
+  if (focused == null || focused.category == 'System') return null;
+  if (!focused.isDirectory) {
+    final entryId = focused.entryId;
+    if (entryId != null && entryId.isNotEmpty) return entryId;
+  }
+  return focused.path;
+}
+
+String _parentPathOf(String path) {
+  final normalized = ScanTreeBuilder.normalizeRoot(path);
+  final idx = normalized.lastIndexOf('/');
+  if (idx <= 0) return '/';
+  return normalized.substring(0, idx);
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -340,7 +361,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final currentTree = _resolveResultTree();
     final actualNode =
         _findNodeByPath(currentTree, node.path) ?? node.toScanTreeNode();
-    _setColumnChain(_columnChain.take(columnIndex).toList()..add(actualNode));
+    setState(() {
+      _setColumnChain(_columnChain.take(columnIndex).toList()..add(actualNode));
+      if (!actualNode.isDirectory) {
+        _selected.clear();
+        _selectedSizes.clear();
+        _cachedSelectedBytesKey = null;
+      }
+    });
     // Notify session of the currently browsed path so refreshCurrentDirectory
     // targets the right directory (Design §6.1).
     if (actualNode.isDirectory) {
@@ -397,18 +425,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
 
     // Re-resolve from the live tree so peek-scan merges (which update
-    // tree.children but leave _columnChain nodes stale) are visible to
-    // _shouldUseTreeChildrenFor and SnapshotCatalog.queryNode.
+    // tree.children but leave _columnChain nodes stale) are visible to the
+    // focused branch overlay.
     final liveNode = _shouldUseTreeOverlayForPath(node.path)
         ? (_findNodeByPath(_cachedResolvedTree, node.path) ?? node)
         : node;
 
     if (_s.hasIndexApi && _shouldUseTreeChildrenFor(liveNode)) {
-      final result = SnapshotCatalog.queryNode(
-        key: key,
-        node: liveNode,
-        includeEntryRecords: false,
-      ).directNodes.map(SnapshotNodeRecord.fromTree).toList(growable: false);
+      final result = _visibleChildrenFromTree(liveNode, key);
       _visibleChildrenCache[key] = result;
       return result;
     }
@@ -444,6 +468,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : queried;
     _visibleChildrenCache[key] = result;
     return result;
+  }
+
+  List<SnapshotNodeRecord> _visibleChildrenFromTree(
+    ScanTreeNode node,
+    SnapshotQueryKey key,
+  ) {
+    final children = <SnapshotNodeRecord>[
+      for (final child in node.children)
+        if (child.matchesView(
+          categoryFilter: key.categoryFilter,
+          deletableOnly: key.deletableOnly,
+        ))
+          SnapshotNodeRecord.fromTree(child),
+    ];
+    if (children.length <= 1) {
+      return List.unmodifiable(children);
+    }
+    children.sort((left, right) {
+      if (left.isDirectory != right.isDirectory) {
+        return left.isDirectory ? -1 : 1;
+      }
+      switch (key.sortMode) {
+        case ScanSortMode.sizeDesc:
+          return right.displayBytes.compareTo(left.displayBytes);
+        case ScanSortMode.sizeAsc:
+          return left.displayBytes.compareTo(right.displayBytes);
+        case ScanSortMode.nameAsc:
+          return SnapshotCatalog.compareAsciiCaseInsensitive(
+            left.name,
+            right.name,
+          );
+      }
+    });
+    return List.unmodifiable(children);
   }
 
   bool _isPreparingVisibleChildren(ScanTreeNode node) {
@@ -558,7 +616,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
-    if (!node.deletable) return;
+    if (node.isDirectory || node.category == 'System') return;
     final id = node.entryId;
     if (id == null || id.isEmpty) return;
     setState(() {
@@ -643,6 +701,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return _cachedSelectedBytes;
   }
 
+  ScanTreeNode? _focusedDeleteNode() {
+    if (_showingPreviewSnapshot || _s.targetPreviewLoading) {
+      return null;
+    }
+    final focus = scanColumnFocusNode(_columnChain);
+    if (focus == null || focus.category == 'System') {
+      return null;
+    }
+    return focus;
+  }
+
+  List<String> _deleteTargetStrings() {
+    if (_selected.isNotEmpty) return _selected.toList();
+    final target = deleteTargetFromFocus(_focusedDeleteNode());
+    if (target == null || target.isEmpty) return const [];
+    return [target];
+  }
+
+  int _deleteTargetCount() {
+    if (_selected.isNotEmpty) return _selected.length;
+    return _focusedDeleteNode() == null ? 0 : 1;
+  }
+
+  int _deleteTargetBytes() {
+    if (_selected.isNotEmpty) return _selectedBytes();
+    return _focusedDeleteNode()?.sizeBytes ?? 0;
+  }
+
   Future<void> _pickFolder() async {
     final path = await getDirectoryPath(
       confirmButtonText: context.l10n.folderPickerConfirm,
@@ -675,8 +761,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _confirmDelete() async {
-    if (_selected.isEmpty) return;
-    final preview = await _s.deleteEntries(_selected.toList(), dryRun: true);
+    final targetStrings = _deleteTargetStrings();
+    if (targetStrings.isEmpty) return;
+    final focus = _focusedDeleteNode();
+    final refreshPath = focus == null ? null : _parentPathOf(focus.path);
+    final shouldRetreatFocus = targetStrings.length == 1 && focus != null;
+    final preview = await _s.deleteEntries(targetStrings, dryRun: true);
     if (!mounted) return;
     final l10n = context.l10n;
     final count = (preview['deleted_count'] as num?)?.toInt() ?? 0;
@@ -702,12 +792,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (ok != true || !mounted) return;
     try {
       final report = await _s.deleteEntries(
-        _selected.toList(),
+        targetStrings,
         rescanAfterDelete: true,
+        refreshPath: refreshPath,
       );
       if (!mounted) return;
-      setState(_selected.clear);
-      _selectedSizes.clear();
+      setState(() {
+        _selected.clear();
+        _selectedSizes.clear();
+        _cachedSelectedBytesKey = null;
+      });
+      if (shouldRetreatFocus && _columnChain.isNotEmpty) {
+        // Drop the stale leaf so a second delete cannot target the removed node.
+        _setColumnChain(_columnChain.take(_columnChain.length - 1).toList());
+      }
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
       final failed = report['failed_paths'];
       final failedCount = failed is List ? failed.length : 0;
@@ -1735,7 +1833,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final size = isDir ? focus.displayBytes : focus.sizeBytes;
     final subtreeItems = isDir ? focus.fileCount : 0;
     final category = isDir ? l10n.previewFolderCategory : focus.category;
-    final deletable = focus.deletable;
     final entryId = focus.entryId;
     final marked = entryId != null && _selected.contains(entryId);
     final busy = _s.deleting || _s.scanning;
@@ -1785,7 +1882,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                if (!isDir && deletable && entryId != null)
+                if (!isDir && entryId != null && category != 'System')
                   Checkbox(
                     value: marked,
                     onChanged:
@@ -1809,6 +1906,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildStickyBar(BuildContext context) {
     final busy = _s.deleting || _s.scanning;
+    final deleteTargetCount = _deleteTargetCount();
+    final deleteTargetBytes = _deleteTargetBytes();
     final l10n = context.l10n;
     final String label;
     final String actionLabel;
@@ -1825,8 +1924,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final hasResults = _s.lastSnapshot != null;
       final peekCount = _s.peekInFlight.length;
       if (hasResults) {
-        label = _selected.isNotEmpty
-            ? l10n.stickySelected(_selected.length, _fmt(_selectedBytes()))
+        label = deleteTargetCount > 0
+            ? l10n.stickySelected(deleteTargetCount, _fmt(deleteTargetBytes))
             : peekCount > 0
                 ? l10n.stickyDirectoriesLoading(peekCount)
                 : l10n.stickyBrowseResults;
@@ -1887,7 +1986,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       : l10n.deleteActionMoveToTrash,
                   icon: busy ? null : Icons.delete_outline,
                   onPressed:
-                      _selected.isNotEmpty && !busy ? _confirmDelete : null,
+                      deleteTargetCount > 0 && !busy ? _confirmDelete : null,
                 ),
               ],
             ),

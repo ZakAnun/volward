@@ -59,4 +59,55 @@ void main() {
       );
     });
   });
+
+  group('deleteTargetFromFocus', () {
+    test('returns focused directory path for directory nodes', () {
+      final focused = ScanTreeNode(
+        name: 'Documents',
+        path: '/root/Documents',
+        isDirectory: true,
+        sizeBytes: 100,
+        entryId: null,
+        children: const [],
+      );
+      expect(deleteTargetFromFocus(focused), '/root/Documents');
+    });
+
+    test('returns entry id for selected files when available', () {
+      final focused = ScanTreeNode(
+        name: 'a.txt',
+        path: '/root/a.txt',
+        isDirectory: false,
+        sizeBytes: 40,
+        entryId: 'e1',
+        children: const [],
+      );
+      expect(deleteTargetFromFocus(focused), 'e1');
+    });
+
+    test('falls back to the node path when no entry id exists', () {
+      final focused = ScanTreeNode(
+        name: 'a.txt',
+        path: '/root/a.txt',
+        isDirectory: false,
+        sizeBytes: 40,
+        entryId: null,
+        children: const [],
+      );
+      expect(deleteTargetFromFocus(focused), '/root/a.txt');
+    });
+
+    test('blocks protected system nodes', () {
+      final focused = ScanTreeNode(
+        name: 'System',
+        path: '/System',
+        isDirectory: true,
+        sizeBytes: 0,
+        entryId: null,
+        category: 'System',
+        children: const [],
+      );
+      expect(deleteTargetFromFocus(focused), isNull);
+    });
+  });
 }

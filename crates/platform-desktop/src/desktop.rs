@@ -312,6 +312,10 @@ impl PlatformStorage for DesktopPlatform {
         let mut deleted_count = 0usize;
         let mut failed_paths = Vec::new();
         for p in paths {
+            if is_protected_path(Path::new(p), &self.protected_prefixes) {
+                failed_paths.push(p.clone());
+                continue;
+            }
             match trash::delete(p) {
                 Ok(_) => deleted_count += 1,
                 Err(_) => failed_paths.push(p.clone()),
@@ -322,6 +326,10 @@ impl PlatformStorage for DesktopPlatform {
             failed_paths,
             freed_bytes: 0,
         })
+    }
+
+    fn is_path_protected(&self, path: &str) -> bool {
+        is_protected_path(Path::new(path), &self.protected_prefixes)
     }
 
     fn empty_trash(&self) -> Result<TrashEmptyReport, PlatformError> {

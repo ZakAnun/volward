@@ -21,9 +21,6 @@ impl DeleteOrchestrator {
             let Some(entry) = snapshot.entries.iter().find(|e| e.id == *id) else {
                 continue;
             };
-            if !entry.deletable {
-                continue;
-            }
             paths.push((entry.path_or_uri.clone(), entry.size_bytes));
         }
 
@@ -43,12 +40,17 @@ impl DeleteOrchestrator {
         let mut paths = Vec::new();
 
         for entry in entries {
-            if !entry.deletable {
-                continue;
-            }
             paths.push((entry.path.clone(), entry.size_bytes));
         }
 
+        Self::delete_paths(paths, dry_run, platform)
+    }
+
+    pub fn delete_explicit_paths(
+        paths: Vec<(String, u64)>,
+        dry_run: bool,
+        platform: &dyn PlatformStorage,
+    ) -> Result<DeleteReport, PlatformError> {
         Self::delete_paths(paths, dry_run, platform)
     }
 
@@ -57,40 +59,54 @@ impl DeleteOrchestrator {
         dry_run: bool,
         platform: &dyn PlatformStorage,
     ) -> Result<DeleteReport, PlatformError> {
-        let freed_bytes = paths
+        let mut blocked_paths = Vec::new();
+        let mut safe_paths = Vec::new();
+        for (path, size) in paths {
+            if platform.is_path_protected(&path) {
+                blocked_paths.push(path);
+            } else {
+                safe_paths.push((path, size));
+            }
+        }
+
+        let freed_bytes = safe_paths
             .iter()
             .map(|(_, size)| *size)
             .fold(0u64, u64::saturating_add);
         if dry_run {
             return Ok(DeleteReport {
-                deleted_count: paths.len(),
-                failed_paths: Vec::new(),
+                deleted_count: safe_paths.len(),
+                failed_paths: blocked_paths,
                 freed_bytes,
             });
         }
 
-        if paths.is_empty() {
+        if safe_paths.is_empty() {
             return Ok(DeleteReport {
                 deleted_count: 0,
-                failed_paths: Vec::new(),
+                failed_paths: blocked_paths,
                 freed_bytes: 0,
             });
         }
 
-        let path_only = paths
+        let path_only = safe_paths
             .iter()
             .map(|(path, _)| path.clone())
             .collect::<Vec<_>>();
         let report = platform.trash_paths(&path_only)?;
-        let actual_freed = paths
+        let failed_paths = blocked_paths
+            .into_iter()
+            .chain(report.failed_paths.iter().cloned())
+            .collect::<Vec<_>>();
+        let actual_freed = safe_paths
             .iter()
-            .filter(|(path, _)| !report.failed_paths.contains(path))
+            .filter(|(path, _)| !failed_paths.contains(path))
             .map(|(_, size)| *size)
             .fold(0u64, u64::saturating_add);
 
         Ok(DeleteReport {
             deleted_count: report.deleted_count,
-            failed_paths: report.failed_paths,
+            failed_paths,
             freed_bytes: actual_freed,
         })
     }
@@ -166,6 +182,10 @@ mod tests {
             })
         }
 
+        fn is_path_protected(&self, path: &str) -> bool {
+            path.starts_with("/System")
+        }
+
         fn empty_trash(&self) -> Result<TrashEmptyReport, PlatformError> {
             Ok(TrashEmptyReport {
                 cleared_count: self.trash_cleared_count,
@@ -239,6 +259,17 @@ mod tests {
                     deletable: false,
                     reason: "protected".to_string(),
                 },
+                StorageEntry {
+                    id: "e3".to_string(),
+                    display_name: "movie.mov".to_string(),
+                    path_or_uri: "/Users/x/Movies/movie.mov".to_string(),
+                    size_bytes: 120,
+                    category: EntryCategory::Media,
+                    risk_level: RiskLevel::High,
+                    source_type: SourceType::File,
+                    deletable: false,
+                    reason: "media".to_string(),
+                },
             ],
         }
     }
@@ -271,6 +302,21 @@ mod tests {
         assert_eq!(
             *platform.trashed.lock().unwrap(),
             vec!["/tmp/cache.bin".to_string()]
+        );
+    }
+
+    #[test]
+    fn delete_allows_explicit_non_protected_media() {
+        let platform = MockPlatform::new();
+        let snap = sample_snapshot();
+        let report =
+            DeleteOrchestrator::delete_entries(&snap, &["e3".to_string()], false, &platform)
+                .unwrap();
+        assert_eq!(report.deleted_count, 1);
+        assert_eq!(report.freed_bytes, 120);
+        assert_eq!(
+            *platform.trashed.lock().unwrap(),
+            vec!["/Users/x/Movies/movie.mov".to_string()]
         );
     }
 

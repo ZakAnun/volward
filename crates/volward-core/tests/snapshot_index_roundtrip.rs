@@ -1,6 +1,6 @@
 use volward_core::{
-    CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SnapshotIndex,
-    SourceType, StorageEntry, StorageSnapshot,
+    CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SnapshotIndex, SourceType,
+    StorageEntry, StorageSnapshot,
 };
 
 fn sample_snapshot() -> StorageSnapshot {
@@ -68,24 +68,39 @@ fn sample_snapshot() -> StorageSnapshot {
 }
 
 #[test]
-fn compact_index_roundtrips_and_accepts_format_version_3() {
+fn compact_index_roundtrips_and_accepts_older_format_versions() {
     let snapshot = sample_snapshot();
     let index = SnapshotIndex::from(&snapshot);
 
     let json = serde_json::to_string(&index).expect("serialize index");
     assert!(
-        json.contains("\"format_version\":2"),
-        "writers should emit format_version=2"
+        json.contains("\"format_version\":4"),
+        "writers should emit format_version=4"
     );
+    assert!(json.contains("\"file_size_by_path\""));
     let loaded: SnapshotIndex = serde_json::from_str(&json).expect("deserialize index");
-    assert_eq!(loaded.summary_json().unwrap(), index.summary_json().unwrap());
     assert_eq!(
-        loaded.query_directory("/root", None, false, "name").direct_children.len(),
+        loaded.summary_json().unwrap(),
+        index.summary_json().unwrap()
+    );
+    assert_eq!(
+        loaded
+            .query_directory("/root", None, false, "name")
+            .direct_children
+            .len(),
         2
     );
 
-    // Caches briefly written as v3 (same payload shape) must still load.
-    let v3_json = json.replace("\"format_version\":2", "\"format_version\":3");
+    // Older caches with version 2–3 must still load.
+    let v2_json = json.replace("\"format_version\":4", "\"format_version\":2");
+    let loaded_v2: SnapshotIndex =
+        serde_json::from_str(&v2_json).expect("deserialize format_version=2 index");
+    assert_eq!(
+        loaded_v2.summary_json().unwrap(),
+        index.summary_json().unwrap()
+    );
+
+    let v3_json = json.replace("\"format_version\":4", "\"format_version\":3");
     let loaded_v3: SnapshotIndex =
         serde_json::from_str(&v3_json).expect("deserialize format_version=3 index");
     assert_eq!(
