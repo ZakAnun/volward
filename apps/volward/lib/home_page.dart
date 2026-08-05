@@ -362,7 +362,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _findNodeByPath(currentTree, node.path) ?? node.toScanTreeNode();
     setState(() {
       _setColumnChain(_columnChain.take(columnIndex).toList()..add(actualNode));
-      if (!actualNode.isDirectory) {
+      if (actualNode.isDirectory) {
         _selected.clear();
         _selectedSizes.clear();
         _cachedSelectedBytesKey = null;
