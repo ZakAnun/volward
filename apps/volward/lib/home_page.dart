@@ -75,6 +75,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _sortIndex = ScanSortMode.sizeDesc.index;
   final Set<String> _selected = {};
   final Map<String, int> _selectedSizes = {};
+  final Map<String, String> _selectedPaths = {};
   final List<ScanTreeNode> _columnChain = [];
   final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
   bool _prevScanning = false;
@@ -175,6 +176,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() {
         _selected.clear();
         _selectedSizes.clear();
+        _selectedPaths.clear();
         _scanStatus = null;
         _columnChain.clear();
         _columnNavTick.value++;
@@ -186,6 +188,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() {
         _selected.clear();
         _selectedSizes.clear();
+        _selectedPaths.clear();
         _scanStatus = null;
         _columnChain.clear();
         _columnNavTick.value++;
@@ -204,6 +207,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _columnNavTick.value++;
         _invalidateSnapshotCaches();
         _selectedSizes.clear();
+        _selectedPaths.clear();
         _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
       });
     } else {
@@ -362,11 +366,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _findNodeByPath(currentTree, node.path) ?? node.toScanTreeNode();
     setState(() {
       _setColumnChain(_columnChain.take(columnIndex).toList()..add(actualNode));
-      if (actualNode.isDirectory) {
-        _selected.clear();
-        _selectedSizes.clear();
-        _cachedSelectedBytesKey = null;
-      }
     });
     // Notify session of the currently browsed path so refreshCurrentDirectory
     // targets the right directory (Design §6.1).
@@ -617,17 +616,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _toggleFocusedFileSelection(ScanTreeNode node) {
-    if (node.isDirectory || node.category == 'System') return;
-    final id = node.entryId;
+    if (node.category == 'System') return;
+    final id = node.entryId ?? (node.isDirectory ? node.path : null);
     if (id == null || id.isEmpty) return;
     setState(() {
       if (_selected.contains(id)) {
         _selected.remove(id);
         _selectedSizes.remove(id);
+        _selectedPaths.remove(id);
       } else {
         _selected.add(id);
         _selectedSizes[id] = node.displayBytes;
+        _selectedPaths[id] = node.path;
+        if (node.isDirectory) {
+          final prefix = '${node.path}/';
+          final childIds = _selectedPaths.entries
+              .where((e) => e.key != id && e.value.startsWith(prefix))
+              .map((e) => e.key)
+              .toList();
+          for (final childId in childIds) {
+            _selected.remove(childId);
+            _selectedSizes.remove(childId);
+            _selectedPaths.remove(childId);
+          }
+        }
       }
+      _cachedSelectedBytesKey = null;
     });
   }
 
@@ -801,6 +815,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() {
         _selected.clear();
         _selectedSizes.clear();
+        _selectedPaths.clear();
         _cachedSelectedBytesKey = null;
       });
       if (shouldRetreatFocus && _columnChain.isNotEmpty) {
@@ -1839,7 +1854,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final subtreeItems = isDir ? focus.fileCount : 0;
     final category = isDir ? l10n.previewFolderCategory : focus.category;
     final entryId = focus.entryId;
-    final marked = entryId != null && _selected.contains(entryId);
+    final selectId = entryId ?? (isDir ? focus.path : null);
+    final marked = selectId != null && _selected.contains(selectId);
     final busy = _s.deleting || _s.scanning;
 
     return _pad(
@@ -1887,7 +1903,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                if (!isDir && entryId != null && category != 'System')
+                if (selectId != null && category != 'System')
                   Checkbox(
                     value: marked,
                     onChanged:

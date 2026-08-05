@@ -391,7 +391,8 @@ class _FinderColumn extends StatelessWidget {
                     final isSelected = selected?.path == node.path;
                     final entryId = node.entryId;
                     final marked =
-                        entryId != null && selectedEntryIds.contains(entryId);
+                        (entryId != null && selectedEntryIds.contains(entryId)) ||
+                        selectedEntryIds.contains(node.path);
                     final isDir = node.isDirectory;
                     final subtitle = isDir
                         ? (node.scanned ? formatBytes(node.displayBytes) : '—')
@@ -583,7 +584,8 @@ class _FinderColumnPainter extends CustomPainter {
     final y = _verticalPadding + index * _rowHeight;
     final selected = node.path == selectedPath;
     final entryId = node.entryId;
-    final marked = entryId != null && selectedEntryIds.contains(entryId);
+    final marked = (entryId != null && selectedEntryIds.contains(entryId)) ||
+        selectedEntryIds.contains(node.path);
     final bg = selected
         ? style.selectedBackground
         : marked
