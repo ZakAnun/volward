@@ -1,0 +1,242 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: brew install protobuf
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Build Rust dylib
+        run: cargo build --release -p volward-facade
+
+      - name: Copy dylib for macOS build
+        run: |
+          cd apps/volward/macos && bash build_rust.sh
+        env:
+          CONFIGURATION: Release
+
+      - name: Build macOS app
+        run: flutter build macos --release
+        working-directory: apps/volward
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create macOS archive
+        run: |
+          cd apps/volward/build/macos/Build/Products/Release
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == "arm64" ]]; then
+            zip -r volward-v${{ steps.version.outputs.version }}-macos-arm64.zip volward.app
+            mv volward-v${{ steps.version.outputs.version }}-macos-arm64.zip $GITHUB_WORKSPACE/
+          else
+            zip -r volward-v${{ steps.version.outputs.version }}-macos-x64.zip volward.app
+            mv volward-v${{ steps.version.outputs.version }}-macos-x64.zip $GITHUB_WORKSPACE/
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: volward-*.zip
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: choco install protoc
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Build Rust dylib
+        run: cargo build --release -p volward-facade
+
+      - name: Copy DLL to Flutter build output
+        shell: bash
+        run: |
+          cp target/release/volward_facade.dll apps/volward/windows/
+
+      - name: Build Windows app
+        run: flutter build windows --release
+        working-directory: apps/volward
+
+      - name: Copy DLL to release bundle
+        shell: bash
+        run: |
+          cp target/release/volward_facade.dll apps/volward/build/windows/x64/runner/Release/
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' \r')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Windows archive
+        shell: bash
+        run: |
+          cd apps/volward/build/windows/x64/runner/Release
+          7z a volward-v${{ steps.version.outputs.version }}-windows-x64.zip *
+          mv volward-v${{ steps.version.outputs.version }}-windows-x64.zip $GITHUB_WORKSPACE/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: volward-*.zip
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            protobuf-compiler \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Build Rust dylib
+        run: cargo build --release -p volward-facade
+
+      - name: Build Linux app
+        run: flutter build linux --release
+        working-directory: apps/volward
+
+      - name: Copy .so to bundle/lib
+        run: |
+          mkdir -p apps/volward/build/linux/x64/release/bundle/lib
+          cp target/release/libvolward_facade.so apps/volward/build/linux/x64/release/bundle/lib/
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Linux archive
+        run: |
+          cd apps/volward/build/linux/x64/release
+          tar -czf volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz bundle
+          mv volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz $GITHUB_WORKSPACE/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: volward-*.tar.gz
+
+  create-release:
+    name: Create Release
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/macos-release/*
+            artifacts/windows-release/*
+            artifacts/linux-release/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
