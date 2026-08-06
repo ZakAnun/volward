@@ -123,11 +123,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_onSessionChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await widget.session.restoreCachedSnapshotIfNeeded();
+      // Preview-first startup: lightweight session state + a validated launch
+      // root render immediately, without waiting for the full snapshot/index
+      // restore to complete (that restore continues in the background via
+      // restoreCachedSnapshotIfNeeded).
+      await widget.session.loadSessionStateIfNeeded();
       if (!mounted) return;
-      if (widget.session.lastSnapshot == null) {
+      final launchRoot = await widget.session.resolveStartupRoot();
+      if (!mounted) return;
+      if (launchRoot.isNotEmpty) {
+        if (widget.session.refreshTargetPath != launchRoot) {
+          widget.session.setScanRoots([launchRoot]);
+        }
         await widget.session.previewTarget();
       }
+      if (!mounted) return;
+      // Opportunistic deep hydration — must never gate the first render.
+      await widget.session.restoreCachedSnapshotIfNeeded();
     });
   }
 
@@ -1164,10 +1176,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final snapshotMatchesCurrentRoot = _snapshotMatchesCurrentRoot();
     final loadingTarget =
         _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
-    final hasResults = !restoring &&
-        !loadingTarget &&
-        _s.lastSnapshot != null &&
-        snapshotMatchesCurrentRoot;
+    final hasResults =
+        !loadingTarget && _s.lastSnapshot != null && snapshotMatchesCurrentRoot;
     final displayTree = hasResults ? _resolveResultTree() : null;
     final matchingCount = hasResults ? _matchingEntryCount() : 0;
 
@@ -1177,12 +1187,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         children: [
           _buildTopNav(context),
           Expanded(
-            child: restoring || loadingTarget
-                ? _buildRestoreLoading(
-                    context,
-                    label: restoring
-                        ? context.l10n.resultsRestoringPreviousScan
-                        : context.l10n.scanColumnPreparingFolder,
+            child: (restoring || loadingTarget) && !hasResults
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Keep the startup shell (target picker, scan actions)
+                      // visible instead of swapping the whole page for a
+                      // full-screen skeleton — the folder picker stays usable
+                      // while the browser pane is still loading.
+                      _buildScanSection(context),
+                      Expanded(
+                        child: _buildRestoreLoading(
+                          context,
+                          label: restoring
+                              ? context.l10n.resultsRestoringPreviousScan
+                              : context.l10n.scanColumnPreparingFolder,
+                        ),
+                      ),
+                    ],
                   )
                 : hasResults
                     ? Column(

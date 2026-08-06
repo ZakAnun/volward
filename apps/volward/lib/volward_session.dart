@@ -189,9 +189,12 @@ class VolwardSession extends ChangeNotifier {
   int _cacheRestoreGeneration = 0;
   Completer<void>? _cacheRestoreCompleter;
   bool _sessionStateLoaded = false;
+  Future<void>? _sessionStateLoadFuture;
   bool _persistSessionStateEnabled = true;
   @visibleForTesting
   File? sessionStateFileForTest;
+  @visibleForTesting
+  Future<String> Function(File file)? sessionStateReaderForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -351,11 +354,19 @@ class VolwardSession extends ChangeNotifier {
   }
 
   /// Whether the bundled native library supports file-based snapshot I/O.
-  bool get hasSnapshotFileApi =>
-      VolwardNativeBridge.instance.hasSnapshotFileApi;
+  bool get hasSnapshotFileApi {
+    // Same guard as [hasIndexApi]: in unit tests the engine is null, and
+    // touching the bridge singleton would attempt to dlopen the dylib and
+    // crash in environments without the native library.
+    if (!_ready || _engine == null) return false;
+    return VolwardNativeBridge.instance.hasSnapshotFileApi;
+  }
 
   /// Whether the bundled native library supports incremental scan options.
-  bool get hasScanOptionsApi => VolwardNativeBridge.instance.hasScanOptionsApi;
+  bool get hasScanOptionsApi {
+    if (!_ready || _engine == null) return false;
+    return VolwardNativeBridge.instance.hasScanOptionsApi;
+  }
 
   /// Increment scan requires both snapshot file API and scan options FFI.
   bool get canUseIncrementalScan => hasSnapshotFileApi && hasScanOptionsApi;
@@ -589,6 +600,43 @@ class VolwardSession extends ChangeNotifier {
         '/';
   }
 
+  // Test-injectable probes for the startup-root resolver. Production code
+  // never sets these; they exist so widget/session tests can simulate a
+  // missing home directory or a deleted saved root without touching the real
+  // filesystem layout.
+  /// Overrides [_defaultScanRoot] for tests.
+  String Function()? defaultRootForTest;
+
+  /// Overrides the directory-exists check in [resolveStartupRoot] for tests.
+  bool Function(String path)? rootExistsForTest;
+
+  /// Resolves the root the app should preview on launch.
+  ///
+  /// Priority: the persisted scan root (if it still exists on disk) → the
+  /// default home directory (if that still exists) → an empty string, which
+  /// tells [HomePage] to keep the folder picker visible instead of previewing
+  /// a dead path. Startup must never block on a missing or stale root.
+  Future<String> resolveStartupRoot() async {
+    Future<bool> exists(String path) async {
+      final probe = rootExistsForTest;
+      if (probe != null) return probe(path);
+      return Directory(path).exists();
+    }
+
+    if (_scanRoots.isNotEmpty) {
+      final saved = ScanTreeBuilder.normalizeRoot(_scanRoots.first);
+      if (saved.isNotEmpty && await exists(saved)) return saved;
+    }
+    final home = defaultRootForTest?.call() ?? _defaultScanRoot();
+    if (home.isNotEmpty && await exists(home)) {
+      return ScanTreeBuilder.normalizeRoot(home);
+    }
+    return '';
+  }
+
+  @visibleForTesting
+  Future<String> resolveStartupRootForTest() => resolveStartupRoot();
+
   /// Reload the last on-disk snapshot into memory (after hot reload / restart).
   Future<void> restoreCachedSnapshotIfNeeded() async {
     if (!_ready || _engine == null || _lastSnapshot != null || _scanning) {
@@ -767,16 +815,27 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  @visibleForTesting
-  Future<void> loadSessionStateIfNeeded() async {
-    if (_sessionStateLoaded) return;
-    _sessionStateLoaded = true;
+  Future<void> loadSessionStateIfNeeded() {
+    if (_sessionStateLoaded) return Future<void>.value();
+    final inFlight = _sessionStateLoadFuture;
+    if (inFlight != null) return inFlight;
 
+    final future = _loadSessionState().whenComplete(() {
+      _sessionStateLoaded = true;
+      _sessionStateLoadFuture = null;
+    });
+    _sessionStateLoadFuture = future;
+    return future;
+  }
+
+  Future<void> _loadSessionState() async {
+    final generation = _rootSwitchGeneration;
     if (_scanRoots.isNotEmpty) return;
     final file = sessionStateFileForTest ?? _sessionStateFile();
     if (!await file.exists()) return;
     try {
-      final raw = await file.readAsString();
+      final raw =
+          await (sessionStateReaderForTest?.call(file) ?? file.readAsString());
       if (raw.trim().isEmpty) return;
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return;
@@ -789,6 +848,9 @@ class VolwardSession extends ChangeNotifier {
           .map(ScanTreeBuilder.normalizeRoot)
           .toList(growable: false);
       if (loadedRoots.isEmpty) return;
+      if (generation != _rootSwitchGeneration || _scanRoots.isNotEmpty) {
+        return;
+      }
       if (listEquals(_scanRoots, loadedRoots)) return;
       _scanRoots = loadedRoots;
       notifyListeners();
@@ -840,7 +902,12 @@ class VolwardSession extends ChangeNotifier {
   void setCurrentPathForTest(String path) => _currentDirectoryPath = path;
 
   void setScanRoots(List<String> roots) {
-    _scanRoots = List.from(roots);
+    // Normalize at this public entry point too — loadSessionStateIfNeeded and
+    // resolveStartupRoot both normalize, and refreshTargetPath comparisons in
+    // HomePage rely on all three agreeing on the canonical (no trailing slash)
+    // form.
+    _scanRoots =
+        roots.map(ScanTreeBuilder.normalizeRoot).toList(growable: false);
     _currentDirectoryPath = null;
     unawaited(_persistSessionState());
     notifyListeners();

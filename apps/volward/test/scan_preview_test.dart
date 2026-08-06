@@ -49,5 +49,40 @@ void main() {
       final tree = snapshot['tree'] as Map<String, dynamic>;
       expect(tree['name'], 'test');
     });
+
+    test('preview snapshots keep a root-specific snapshot id', () {
+      final first = buildPreviewSnapshot(
+        rootPath: '/Users/test',
+        quickListEntries: const [],
+      );
+      final second = buildPreviewSnapshot(
+        rootPath: '/Users/test/Documents',
+        quickListEntries: const [],
+      );
+
+      // Distinct roots must produce distinct snapshot ids so UI caches keyed
+      // on snapshot_id invalidate correctly across a root switch.
+      expect(first['snapshot_id'], isNot(second['snapshot_id']));
+    });
+
+    test('preview snapshots only expose direct children at the first level',
+        () {
+      final snapshot = buildPreviewSnapshot(
+        rootPath: '/Users/test',
+        quickListEntries: const [
+          {'path': '/Users/test/Documents', 'is_dir': true},
+          {'path': '/Users/test/notes.txt', 'is_dir': false, 'size_bytes': 42},
+        ],
+      );
+
+      final root = ScanTreeNode.fromSnapshotJson(
+        snapshot['tree'] as Map<String, dynamic>,
+      );
+      expect(root.children, hasLength(2));
+      expect(root.scanned, isFalse);
+      // First level only — the directory child carries no grandchildren.
+      final dir = root.children.firstWhere((c) => c.name == 'Documents');
+      expect(dir.children, isEmpty);
+    });
   });
 }

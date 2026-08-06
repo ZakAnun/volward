@@ -84,5 +84,24 @@ void main() {
       expect(cache.containsKey(makeKey('/a')), isFalse);
       expect(cache.containsKey(makeKey('/b')), isFalse);
     });
+
+    test('root switch invalidates the old root and its descendants', () {
+      // Switching from /root-a to /root-b must flush every cached slice that
+      // belonged to the old root so stale children never bleed across roots.
+      final cache = SnapshotViewCache<List<int>>(capacity: 8);
+      final oldRootKey = makeKey('/root-a').copyWith(path: '/root-a');
+      final childKey = oldRootKey.copyWith(path: '/root-a/Documents');
+      final otherRootKey = makeKey('/root-b');
+      cache[oldRootKey] = [1];
+      cache[childKey] = [2];
+      cache[otherRootKey] = [3];
+
+      cache.invalidatePath('/root-a');
+
+      expect(cache.containsKey(oldRootKey), isFalse);
+      expect(cache.containsKey(childKey), isFalse);
+      expect(cache.containsKey(otherRootKey), isTrue,
+          reason: 'an unrelated root must be preserved');
+    });
   });
 }
