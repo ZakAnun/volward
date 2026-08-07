@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/l10n.dart';
 import '../scan_tree.dart';
@@ -9,8 +10,23 @@ import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'scan_filter_bar.dart';
 
-typedef ScanColumnSelectCallback = void Function(
-    int columnIndex, SnapshotNodeRecord node);
+typedef ScanColumnSelectCallback = void Function(ScanColumnTap tap);
+
+class ScanColumnTap {
+  const ScanColumnTap({
+    required this.columnIndex,
+    required this.node,
+    required this.columnItems,
+    required this.commandPressed,
+    required this.shiftPressed,
+  });
+
+  final int columnIndex;
+  final SnapshotNodeRecord node;
+  final List<SnapshotNodeRecord> columnItems;
+  final bool commandPressed;
+  final bool shiftPressed;
+}
 
 /// macOS Finder-style column browser for [root] scan tree.
 class ScanColumnView extends StatefulWidget {
@@ -180,14 +196,21 @@ class _ScanColumnViewState extends State<ScanColumnView> {
       if (a.isDirectory != b.isDirectory) {
         return a.isDirectory ? -1 : 1;
       }
+      late final int primary;
       switch (widget.sortMode) {
         case ScanSortMode.sizeDesc:
-          return b.displayBytes.compareTo(a.displayBytes);
+          primary = b.displayBytes.compareTo(a.displayBytes);
         case ScanSortMode.sizeAsc:
-          return a.displayBytes.compareTo(b.displayBytes);
+          primary = a.displayBytes.compareTo(b.displayBytes);
         case ScanSortMode.nameAsc:
-          return SnapshotCatalog.compareAsciiCaseInsensitive(a.name, b.name);
+          primary = SnapshotCatalog.compareAsciiCaseInsensitive(a.name, b.name);
       }
+      if (primary != 0) return primary;
+      final nameOrder = SnapshotCatalog.compareAsciiCaseInsensitive(
+        a.name,
+        b.name,
+      );
+      return nameOrder != 0 ? nameOrder : a.path.compareTo(b.path);
     });
     _sortCache[key] = (viewKey, list);
     return list;
@@ -266,7 +289,15 @@ class _ScanColumnViewState extends State<ScanColumnView> {
                       formatBytes: widget.formatBytes,
                       selectedEntryIds: widget.selectedEntryIds,
                       peekInFlight: widget.peekInFlight,
-                      onSelect: (node) => widget.onSelect(columnIndex, node),
+                      onSelect: (tap) => widget.onSelect(
+                        ScanColumnTap(
+                          columnIndex: columnIndex,
+                          node: tap.node,
+                          columnItems: tap.columnItems,
+                          commandPressed: tap.commandPressed,
+                          shiftPressed: tap.shiftPressed,
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -312,12 +343,26 @@ class _FinderColumn extends StatelessWidget {
   final List<SnapshotNodeRecord> items;
   final bool loading;
   final ScanTreeNode? selected;
-  final ValueChanged<SnapshotNodeRecord> onSelect;
+  final ValueChanged<_FinderTap> onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
   final Set<String> peekInFlight;
 
   static const int _paintedColumnThreshold = 240;
+
+  void _handleTap(SnapshotNodeRecord node, TapUpDetails details) {
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    onSelect(
+      _FinderTap(
+        node: node,
+        columnItems: items,
+        commandPressed: keys.contains(LogicalKeyboardKey.metaLeft) ||
+            keys.contains(LogicalKeyboardKey.metaRight),
+        shiftPressed: keys.contains(LogicalKeyboardKey.shiftLeft) ||
+            keys.contains(LogicalKeyboardKey.shiftRight),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -390,8 +435,8 @@ class _FinderColumn extends StatelessWidget {
                     final node = items[index];
                     final isSelected = selected?.path == node.path;
                     final entryId = node.entryId;
-                    final marked =
-                        (entryId != null && selectedEntryIds.contains(entryId)) ||
+                    final marked = (entryId != null &&
+                            selectedEntryIds.contains(entryId)) ||
                         selectedEntryIds.contains(node.path);
                     final isDir = node.isDirectory;
                     final subtitle = isDir
@@ -405,12 +450,26 @@ class _FinderColumn extends StatelessWidget {
                       subtitle: subtitle,
                       style: rowStyle,
                       peekInFlight: peekInFlight.contains(node.path),
-                      onTap: () => onSelect(node),
+                      onTap: (details) => _handleTap(node, details),
                     );
                   },
                 ),
     );
   }
+}
+
+class _FinderTap {
+  const _FinderTap({
+    required this.node,
+    required this.columnItems,
+    required this.commandPressed,
+    required this.shiftPressed,
+  });
+
+  final SnapshotNodeRecord node;
+  final List<SnapshotNodeRecord> columnItems;
+  final bool commandPressed;
+  final bool shiftPressed;
 }
 
 class _FinderRowStyle {
@@ -462,7 +521,7 @@ class _PaintedFinderColumn extends StatefulWidget {
   final double height;
   final List<SnapshotNodeRecord> items;
   final ScanTreeNode? selected;
-  final ValueChanged<SnapshotNodeRecord> onSelect;
+  final ValueChanged<_FinderTap> onSelect;
   final String Function(num? bytes) formatBytes;
   final Set<String> selectedEntryIds;
   final Set<String> peekInFlight;
@@ -488,7 +547,17 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
     final y = details.localPosition.dy - _verticalPadding;
     final index = y ~/ _rowHeight;
     if (index < 0 || index >= widget.items.length) return;
-    widget.onSelect(widget.items[index]);
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    widget.onSelect(
+      _FinderTap(
+        node: widget.items[index],
+        columnItems: widget.items,
+        commandPressed: keys.contains(LogicalKeyboardKey.metaLeft) ||
+            keys.contains(LogicalKeyboardKey.metaRight),
+        shiftPressed: keys.contains(LogicalKeyboardKey.shiftLeft) ||
+            keys.contains(LogicalKeyboardKey.shiftRight),
+      ),
+    );
   }
 
   @override
@@ -787,7 +856,7 @@ class _FinderRow extends StatelessWidget {
   final bool markedForDelete;
   final String subtitle;
   final _FinderRowStyle style;
-  final VoidCallback onTap;
+  final ValueChanged<TapUpDetails> onTap;
 
   /// True when a peek scan is actively running for this node's path.
   final bool peekInFlight;
@@ -807,7 +876,7 @@ class _FinderRow extends StatelessWidget {
       color: _background,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTapUp: onTap,
         child: SizedBox(
           height: 28,
           child: Padding(

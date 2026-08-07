@@ -10,6 +10,48 @@ typedef VolwardScanBridge = VolwardNativeBridge;
 
 VolwardScanBridge _openScanBridge() => VolwardNativeBridge.open();
 
+Future<T> waitForPeekWorkerResult<T>(
+  Future<T> resultFuture, {
+  required Duration timeout,
+  required void Function() cancel,
+}) async {
+  try {
+    return await resultFuture.timeout(timeout);
+  } on TimeoutException {
+    cancel();
+    return resultFuture;
+  }
+}
+
+void stabilizePeekSnapshotEntryIds(Map<String, dynamic> snapshot) {
+  final stableIdByPath = <String, String>{};
+  final entries = snapshot['entries'];
+  if (entries is List) {
+    for (final rawEntry in entries.whereType<Map>()) {
+      final path = rawEntry['path_or_uri']?.toString();
+      if (path == null || path.isEmpty) continue;
+      final stableId = 'path:$path';
+      rawEntry['id'] = stableId;
+      stableIdByPath[path] = stableId;
+    }
+  }
+
+  void visit(dynamic rawNode) {
+    if (rawNode is! Map) return;
+    final path = rawNode['path']?.toString();
+    final stableId = path == null ? null : stableIdByPath[path];
+    if (stableId != null) rawNode['entry_id'] = stableId;
+    final children = rawNode['children'];
+    if (children is List) {
+      for (final child in children) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(snapshot['tree']);
+}
+
 /// Isolate entry:
 /// [SendPort progressPort, List<String> roots, SendPort cancelInitPort, bool incremental].
 ///
@@ -35,7 +77,8 @@ void volwardScanIsolate(List<dynamic> args) {
   } catch (e, st) {
     progressPort.send(<String, dynamic>{
       'type': 'error',
-      'error': 'Native bridge failed to start: $e\n$st\n'
+      'error':
+          'Native bridge failed to start: $e\n$st\n'
           'Rebuild Rust: cd apps/volward/macos && bash build_rust.sh then restart the app (R).',
     });
     return;
@@ -209,7 +252,7 @@ void volwardScanIsolate(List<dynamic> args) {
   }
 }
 
-/// Isolate entry: [SendPort resultPort, String path].
+/// Isolate entry: [SendPort resultPort, String path, SendPort cancelInitPort].
 ///
 /// Runs a small, scoped full scan of exactly [path] using its own native
 /// engine — completely independent from the main background scan's engine
@@ -221,43 +264,110 @@ void volwardScanIsolate(List<dynamic> args) {
 void volwardPeekScanIsolate(List<dynamic> args) {
   final resultPort = args[0] as SendPort;
   final path = args[1] as String;
+  final cancelInitPort = args[2] as SendPort;
+
+  if (!Directory(path).existsSync()) {
+    cancelInitPort.send(null);
+    resultPort.send(<String, dynamic>{
+      'type': 'error',
+      'error': 'error:peek directory does not exist: $path',
+    });
+    return;
+  }
 
   VolwardNativeBridge bridge;
   Pointer<Void> engine;
+  RawReceivePort cancelRecv;
   try {
     bridge = _openScanBridge();
     engine = bridge.createEngine();
+    cancelRecv = RawReceivePort((_) {
+      bridge.cancelScan(engine);
+    });
   } catch (e, st) {
+    cancelInitPort.send(null);
     resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
     return;
   }
 
+  cancelInitPort.send(cancelRecv.sendPort);
+
+  Timer? pollTimer;
+  var finished = false;
+  var snapshotAttempts = 0;
+  String? cancellationError;
+
+  void finish(Map<String, dynamic> message) {
+    if (finished) return;
+    finished = true;
+    pollTimer?.cancel();
+    resultPort.send(message);
+    cancelRecv.close();
+    bridge.freeEngine(engine);
+  }
+
   try {
     final jobId = 'peek-${DateTime.now().millisecondsSinceEpoch}';
-    final result = bridge.startScan(engine, jobId, [path]);
+    final result = bridge.startScanAsync(engine, jobId, [path]);
     if (result.startsWith('error:')) {
-      resultPort.send(<String, dynamic>{'type': 'error', 'error': result});
+      finish(<String, dynamic>{'type': 'error', 'error': result});
       return;
     }
 
-    final snapshot = bridge.getLastSnapshot(engine);
-    if (snapshot == null) {
-      resultPort.send(<String, dynamic>{
-        'type': 'error',
-        'error': 'error:peek scan produced no snapshot',
-      });
-      return;
-    }
-    resultPort.send(<String, dynamic>{
-      'type': 'done',
-      'path': path,
-      'tree': snapshot['tree'],
-      'entries': snapshot['entries'],
+    final waitStartedAt = DateTime.now();
+    pollTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      try {
+        if (bridge.isScanRunning(engine)) {
+          if (cancellationError == null &&
+              DateTime.now().difference(waitStartedAt) >
+                  const Duration(minutes: 2)) {
+            cancellationError =
+                'error:peek scan timed out while waiting for snapshot';
+            bridge.cancelScan(engine);
+          }
+          return;
+        }
+
+        if (cancellationError != null) {
+          finish(<String, dynamic>{
+            'type': 'error',
+            'error': cancellationError,
+          });
+          return;
+        }
+
+        final snapshot = bridge.getLastSnapshot(engine);
+        if (snapshot == null) {
+          snapshotAttempts++;
+          if (snapshotAttempts < 5) return;
+          finish(<String, dynamic>{
+            'type': 'error',
+            'error': 'error:peek scan produced no snapshot',
+          });
+          return;
+        }
+        stabilizePeekSnapshotEntryIds(snapshot);
+        finish(<String, dynamic>{
+          'type': 'done',
+          'path': path,
+          'tree': snapshot['tree'],
+          'entries': snapshot['entries'],
+        });
+      } catch (e, st) {
+        finish(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
+      }
     });
+    cancelRecv.handler = (_) {
+      if (finished || cancellationError != null) return;
+      cancellationError = 'error:peek scan cancelled after timeout';
+      try {
+        bridge.cancelScan(engine);
+      } catch (e, st) {
+        finish(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
+      }
+    };
   } catch (e, st) {
-    resultPort.send(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
-  } finally {
-    bridge.freeEngine(engine);
+    finish(<String, dynamic>{'type': 'error', 'error': '$e\n$st'});
   }
 }
 

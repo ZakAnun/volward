@@ -150,6 +150,11 @@ typedef VolwardGetIndexSummaryJson = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardIndexVersionNative = Uint64 Function(Pointer<Void>);
 typedef VolwardIndexVersion = int Function(Pointer<Void>);
 
+typedef VolwardReplaceDirectoryWithSubtreeNative = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardReplaceDirectoryWithSubtree = Pointer<Utf8> Function(
+    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+
 abstract interface class VolwardBridge {
   bool get hasSnapshotFileApi;
   bool get hasSnapshotFilePbApi;
@@ -241,6 +246,19 @@ final class VolwardNativeBridge implements VolwardBridge {
     _writeLastIndexToPath = _tryLookupWriteLastIndexToPath();
     _getIndexSummaryJson = _tryLookupGetIndexSummaryJson();
     _indexVersion = _tryLookupIndexVersion();
+    _replaceDirectoryWithSubtree = _tryLookupReplaceDirectoryWithSubtree();
+  }
+
+  VolwardReplaceDirectoryWithSubtree? _tryLookupReplaceDirectoryWithSubtree() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardReplaceDirectoryWithSubtreeNative>>(
+            'volward_replace_directory_with_subtree',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
   }
 
   VolwardStartScanAsyncWithOptions? _tryLookupStartScanAsyncWithOptions() {
@@ -371,6 +389,7 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardWriteLastIndexToPath? _writeLastIndexToPath;
   late final VolwardGetIndexSummaryJson? _getIndexSummaryJson;
   late final VolwardIndexVersion? _indexVersion;
+  late final VolwardReplaceDirectoryWithSubtree? _replaceDirectoryWithSubtree;
 
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
   @override
@@ -407,6 +426,10 @@ final class VolwardNativeBridge implements VolwardBridge {
       _loadIndexFromPath != null &&
       _writeLastIndexToPath != null &&
       _getIndexSummaryJson != null;
+
+  /// True when the dylib supports splicing a peek subtree into the catalog
+  /// (volward_replace_directory_with_subtree — added 2026-08-06).
+  bool get hasReplaceSubtreeApi => _replaceDirectoryWithSubtree != null;
 
   bool get hasAsyncIndexLoadApi =>
       _startLoadIndexFromPathAsync != null &&
@@ -854,6 +877,32 @@ final class VolwardNativeBridge implements VolwardBridge {
       return fn(engine, pathPtr);
     } finally {
       calloc.free(pathPtr);
+    }
+  }
+
+  /// Splices a freshly scanned subtree into the catalog index at
+  /// [targetPath], replacing that directory, and bumps the index version.
+  /// [subtreeJson] is `{"tree": …, "entries": […]}` from a peek scan.
+  /// Returns the new index version, or null when the API is unavailable or the
+  /// engine rejected the payload.
+  int? replaceDirectoryWithSubtree(
+    Pointer<Void> engine,
+    String targetPath,
+    String subtreeJson,
+  ) {
+    final fn = _replaceDirectoryWithSubtree;
+    if (fn == null) return null;
+    final pathPtr = targetPath.toNativeUtf8();
+    final jsonPtr = subtreeJson.toNativeUtf8();
+    try {
+      final out = fn(engine, pathPtr, jsonPtr);
+      final raw = _decodeStringPtr(out);
+      if (raw == null) return null;
+      if (raw.startsWith('{')) return null; // {"error": …}
+      return int.tryParse(raw);
+    } finally {
+      calloc.free(pathPtr);
+      calloc.free(jsonPtr);
     }
   }
 

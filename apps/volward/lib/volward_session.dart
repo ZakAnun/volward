@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
 import 'proto/snapshot_pb_decoder.dart';
+import 'scan_entry_record.dart';
 import 'scan_preview.dart';
 import 'scan_tree.dart';
 import 'scan_snapshot_merge.dart';
@@ -132,11 +133,17 @@ class VolwardSession extends ChangeNotifier {
   final Set<String> _selectedEntryIds = {};
   final Set<String> _peekInFlight = {};
   final Set<String> _peekCompleted = {};
+  final Map<String, Completer<void>> _pendingForcedPeeks = {};
+  final Map<String, int> _peekOperationTokens = {};
+  int _nextPeekOperationToken = 0;
   static const int _maxConcurrentPeeks = 2;
   static const int _maxPreviewEntries = 2000;
   static const int _maxAutoRestoreBytes = 128 * 1024 * 1024;
   int _snapshotVersion = 0;
   final Set<String> _invalidatedPrefixes = {};
+  final Map<String, ScanTreeNode> _directoryOverlays = {};
+  final Set<String> _refreshingDirectoryPaths = {};
+  final Map<String, String> _refreshErrors = {};
   // Monotonic token for root switches. If the user picks folders quickly, only
   // the latest preview/scan handoff may update the visible snapshot.
   int _rootSwitchGeneration = 0;
@@ -167,11 +174,19 @@ class VolwardSession extends ChangeNotifier {
   Timer? _scanElapsedTimer;
   DateTime? _scanStartedAt;
   int _transientFinalizeCount = 0;
+  int _notificationBatchDepth = 0;
+  bool _notificationBatchPending = false;
   @visibleForTesting
-  Future<ScanSnapshotState?> Function(
-    String jobId,
-    List<String> roots,
-  )? scanRunnerForTest;
+  Future<ScanSnapshotState?> Function(String jobId, List<String> roots)?
+      scanRunnerForTest;
+  @visibleForTesting
+  Map<String, dynamic> Function(
+    String snapshotId,
+    List<String> targets,
+    bool dryRun,
+  )? deleteRunnerForTest;
+  @visibleForTesting
+  Future<void> Function(String path)? directoryRefreshRunnerForTest;
 
   Completer<ScanSnapshotState?>? _activeScanCompleter;
   StreamSubscription<dynamic>? _scanProgressSub;
@@ -209,6 +224,11 @@ class VolwardSession extends ChangeNotifier {
   static const Duration _cacheRestoreTimeout = Duration(seconds: 8);
 
   static const Duration _minTargetPreviewLoading = Duration(milliseconds: 180);
+
+  /// Maximum time before requesting cancellation of a peek-scan isolate.
+  /// The path remains in-flight until the worker confirms shutdown, preventing
+  /// a timed-out native scan from overlapping a retry of the same subtree.
+  static const Duration _peekScanTimeout = Duration(seconds: 60);
 
   bool get ready => _ready;
   String? get initError => _initError;
@@ -258,18 +278,65 @@ class VolwardSession extends ChangeNotifier {
 
   Set<String> get invalidatedPrefixes => Set.unmodifiable(_invalidatedPrefixes);
 
+  /// Latest authoritative filesystem result for a directory peek. Index-mode
+  /// snapshots intentionally keep only root metadata in Dart, so these local
+  /// overlays are the source of truth for refreshed directories until the
+  /// next full scan replaces the catalog.
+  ScanTreeNode? directoryOverlayForPath(String path) =>
+      _directoryOverlays[ScanTreeBuilder.normalizeRoot(path)];
+
+  Set<String> get refreshingDirectoryPaths =>
+      Set.unmodifiable(_refreshingDirectoryPaths);
+
+  bool isDirectoryRefreshing(String path) => _refreshingDirectoryPaths.contains(
+        ScanTreeBuilder.normalizeRoot(path),
+      );
+
+  String? refreshErrorForPath(String path) =>
+      _refreshErrors[ScanTreeBuilder.normalizeRoot(path)];
+
   Set<String> consumeInvalidatedPrefixes() {
     final prefixes = Set<String>.from(_invalidatedPrefixes);
     _invalidatedPrefixes.clear();
     return prefixes;
   }
 
+  void _notifyListeners() {
+    if (_notificationBatchDepth > 0) {
+      _notificationBatchPending = true;
+      return;
+    }
+    notifyListeners();
+  }
+
+  void _beginNotificationBatch() {
+    _notificationBatchDepth++;
+  }
+
+  void _endNotificationBatch({bool notify = false}) {
+    if (_notificationBatchDepth == 0) return;
+    _notificationBatchDepth--;
+    if (_notificationBatchDepth == 0 && (_notificationBatchPending || notify)) {
+      _notificationBatchPending = false;
+      _notifyListeners();
+    }
+  }
+
+  void _cancelPendingForcedPeeks() {
+    final pending = _pendingForcedPeeks.values.toList(growable: false);
+    _pendingForcedPeeks.clear();
+    for (final completer in pending) {
+      if (!completer.isCompleted) completer.complete();
+    }
+  }
+
   @visibleForTesting
   void setSnapshotForTest(ScanSnapshotState snapshot) {
     _lastSnapshot = snapshot;
+    _directoryOverlays.clear();
     _snapshotVersion++;
     _invalidatedPrefixes.clear();
-    notifyListeners();
+    _notifyListeners();
   }
 
   @visibleForTesting
@@ -310,6 +377,7 @@ class VolwardSession extends ChangeNotifier {
     required String affectedPrefix,
   }) {
     _lastSnapshot = snapshot;
+    _directoryOverlays.clear();
     _snapshotVersion++;
     _invalidatedPrefixes
       ..removeWhere(
@@ -471,7 +539,7 @@ class VolwardSession extends ChangeNotifier {
   }
 
   @visibleForTesting
-  Future<void> applyMergeForTest(
+  Future<bool> applyMergeForTest(
     String targetPath,
     Map<String, dynamic> subtreeTree,
     List<Map<String, dynamic>> subtreeEntries, {
@@ -513,7 +581,7 @@ class VolwardSession extends ChangeNotifier {
         'paths_seen': _scanProgress!['paths_seen'],
     };
     _publishScannedFraction();
-    notifyListeners();
+    _notifyListeners();
   }
 
   void _touchScanActivity({String? phase}) {
@@ -591,7 +659,7 @@ class VolwardSession extends ChangeNotifier {
       _initError = '$e';
       debugPrint('VolwardSession init failed: $e\n$st');
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   String _defaultScanRoot() {
@@ -713,7 +781,7 @@ class VolwardSession extends ChangeNotifier {
       debugPrint('VolwardSession: restore cached snapshot failed: $e\n$st');
     } finally {
       _restoringSnapshot = false;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -853,7 +921,7 @@ class VolwardSession extends ChangeNotifier {
       }
       if (listEquals(_scanRoots, loadedRoots)) return;
       _scanRoots = loadedRoots;
-      notifyListeners();
+      _notifyListeners();
     } catch (_) {
       // Session state is only a local cache hint. If it is empty, truncated,
       // or otherwise malformed, treat it as missing and continue booting.
@@ -868,9 +936,7 @@ class VolwardSession extends ChangeNotifier {
       await file.parent.create(recursive: true);
       final tmpFile = File('${file.path}.tmp');
       await tmpFile.writeAsString(
-        jsonEncode(<String, dynamic>{
-          'scan_roots': _scanRoots,
-        }),
+        jsonEncode(<String, dynamic>{'scan_roots': _scanRoots}),
       );
       await tmpFile.rename(file.path);
     } catch (e, st) {
@@ -891,6 +957,21 @@ class VolwardSession extends ChangeNotifier {
       _currentDirectoryPath ??
       (_scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot());
 
+  /// Whether the refresh action can run for the directory currently shown.
+  ///
+  /// A root refresh starts the file-backed full scan and therefore needs the
+  /// snapshot-file API. A child refresh is a scoped peek and does not need
+  /// that API, so it remains available with an older compatible dylib.
+  bool get canRefreshCurrentDirectory {
+    if (!_ready || _engine == null) return false;
+    final root = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    final target = ScanTreeBuilder.normalizeRoot(refreshTargetPath);
+    return !isDirectoryRefreshing(target) &&
+        (target != root || hasSnapshotFileApi);
+  }
+
   /// Called by [HomePage] whenever the column selection changes.
   void setCurrentDirectory(String? path) {
     if (_currentDirectoryPath == path) return;
@@ -910,7 +991,7 @@ class VolwardSession extends ChangeNotifier {
         roots.map(ScanTreeBuilder.normalizeRoot).toList(growable: false);
     _currentDirectoryPath = null;
     unawaited(_persistSessionState());
-    notifyListeners();
+    _notifyListeners();
   }
 
   void clearScanRoots() {
@@ -946,14 +1027,18 @@ class VolwardSession extends ChangeNotifier {
     _currentDirectoryPath = null;
     _lastSnapshot = null;
     _lastDeleteReport = null;
+    _directoryOverlays.clear();
+    _refreshingDirectoryPaths.clear();
+    _refreshErrors.clear();
     _targetPreviewLoading = true;
     _targetPreviewStartedAt = DateTime.now();
     _snapshotVersion++;
     _invalidatedPrefixes.clear();
     _peekInFlight.clear();
     _peekCompleted.clear();
+    _cancelPendingForcedPeeks();
     await _persistSessionState();
-    notifyListeners();
+    _notifyListeners();
 
     unawaited(
       _previewThenContinueRootSwitch(
@@ -1126,46 +1211,113 @@ class VolwardSession extends ChangeNotifier {
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
     );
     final target = ScanTreeBuilder.normalizeRoot(targetPath);
+    if (_refreshingDirectoryPaths.contains(target)) return;
     if (target == root) {
       _currentDirectoryPath = null;
     } else {
-      _currentDirectoryPath = targetPath;
+      _currentDirectoryPath = target;
     }
+    _refreshingDirectoryPaths.add(target);
+    _refreshErrors.remove(target);
+    _invalidatedPrefixes.add(target);
+    _snapshotVersion++;
+    _notifyListeners();
+    final scopedRefresh = target != root;
+    if (scopedRefresh) _beginNotificationBatch();
     try {
       if (target == root) {
+        final generation = _rootSwitchGeneration;
+        while (_scanning && generation == _rootSwitchGeneration) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        if (generation != _rootSwitchGeneration) return;
         await runScan();
       } else {
-        await peekScan(targetPath, force: true);
+        final refreshed = await peekScan(target, force: true);
+        if (!refreshed) {
+          _refreshErrors[target] =
+              'The directory could not be refreshed. The previous results are still shown.';
+        }
       }
     } catch (e, st) {
+      _refreshErrors[target] = e.toString();
+      _lastError = '$e';
       debugPrint('VolwardSession: refreshCurrentDirectory failed: $e\n$st');
+    } finally {
+      _refreshingDirectoryPaths.remove(target);
+      if (scopedRefresh) {
+        _endNotificationBatch(notify: true);
+      } else {
+        _notifyListeners();
+      }
     }
   }
 
   /// Triggers a small, scoped scan of [path] so its contents/size become
   /// available immediately, without waiting for the background full scan
-  /// to reach it. No-op if a peek for this path is already in flight or
-  /// already completed this session, or if the concurrency limit is hit
-  /// (extra clicks are simply dropped — the background scan will cover the
-  /// path eventually regardless).
-  Future<void> peekScan(String path, {bool force = false}) async {
-    if (!_ready || _engine == null) return;
-    if (_peekInFlight.contains(path)) return;
-    if (!force && _peekCompleted.contains(path)) return;
-    if (_peekInFlight.length >= _maxConcurrentPeeks) return;
+  /// to reach it. Explicit refreshes wait for an existing peek of the same
+  /// path and then run once more, so a click cannot be silently lost.
+  Future<bool> peekScan(String path, {bool force = false}) async {
+    if (!_ready || _engine == null) return false;
+    final normalizedPath = ScanTreeBuilder.normalizeRoot(path);
     final generation = _rootSwitchGeneration;
+    if (_peekInFlight.contains(normalizedPath)) {
+      if (!force) return false;
+      final pending = _pendingForcedPeeks[normalizedPath] ??= Completer<void>();
+      await pending.future;
+      if (generation != _rootSwitchGeneration) return false;
+      return peekScan(normalizedPath, force: true);
+    }
+    if (!force && _peekCompleted.contains(normalizedPath)) return false;
+    if (_peekInFlight.length >= _maxConcurrentPeeks) {
+      if (!force) return false;
+      while (_peekInFlight.length >= _maxConcurrentPeeks &&
+          generation == _rootSwitchGeneration) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+    }
+    if (generation != _rootSwitchGeneration) return false;
 
-    _peekInFlight.add(path);
-    notifyListeners();
+    final operationToken = ++_nextPeekOperationToken;
+    _peekOperationTokens[normalizedPath] = operationToken;
+    _peekInFlight.add(normalizedPath);
+    _notifyListeners();
     ReceivePort? receivePort;
+    ReceivePort? cancelInitPort;
+    var applied = false;
     try {
       receivePort = ReceivePort();
-      await Isolate.spawn(volwardPeekScanIsolate, [receivePort.sendPort, path]);
-      final message = await receivePort.first;
-      if (message is! Map) return;
+      cancelInitPort = ReceivePort();
+      final resultFuture = receivePort.first;
+      final cancelPortFuture = cancelInitPort.first;
+      await Isolate.spawn(volwardPeekScanIsolate, [
+        receivePort.sendPort,
+        normalizedPath,
+        cancelInitPort.sendPort,
+      ]);
+      final readyOrResult = await Future.any<dynamic>([
+        cancelPortFuture,
+        resultFuture.then<dynamic>((_) => null),
+      ]);
+      final cancelPort = readyOrResult is SendPort ? readyOrResult : null;
+      final message = await waitForPeekWorkerResult<dynamic>(
+        resultFuture,
+        timeout: _peekScanTimeout,
+        cancel: () {
+          debugPrint(
+            'VolwardSession: peekScan($normalizedPath) timed out after '
+            '${_peekScanTimeout.inSeconds}s; cancelling worker',
+          );
+          cancelPort?.send(null);
+        },
+      );
+      // The timeout path stays in-flight until the native scan acknowledges
+      // cancellation and the worker releases its engine. Clearing it earlier
+      // would allow a second subtree scan to overlap.
+      if (message is! Map) return false;
       final type = message['type']?.toString();
       if (type == 'done') {
-        if (generation != _rootSwitchGeneration) return;
+        if (generation != _rootSwitchGeneration) return false;
         final tree = message['tree'];
         final entriesRaw = message['entries'];
         if (tree is Map) {
@@ -1179,33 +1331,40 @@ class VolwardSession extends ChangeNotifier {
                   .map((e) => Map<String, dynamic>.from(e))
                   .toList()
               : <Map<String, dynamic>>[];
-          await _applyMerge(
-            path,
+          applied = await _applyMerge(
+            normalizedPath,
             Map<String, dynamic>.from(tree),
             entries,
             authoritative: true,
           );
-          _peekCompleted.add(path);
+          _peekCompleted.add(normalizedPath);
         }
       } else {
         debugPrint(
-          'VolwardSession: peekScan($path) failed: ${message['error']}',
+          'VolwardSession: peekScan($normalizedPath) failed: ${message['error']}',
         );
       }
     } catch (e, st) {
-      debugPrint('VolwardSession: peekScan($path) error: $e\n$st');
+      debugPrint('VolwardSession: peekScan($normalizedPath) error: $e\n$st');
     } finally {
       receivePort?.close();
-      _peekInFlight.remove(path);
-      notifyListeners();
+      cancelInitPort?.close();
+      if (_peekOperationTokens[normalizedPath] == operationToken) {
+        _peekOperationTokens.remove(normalizedPath);
+        _peekInFlight.remove(normalizedPath);
+        final pending = _pendingForcedPeeks.remove(normalizedPath);
+        if (pending != null && !pending.isCompleted) pending.complete();
+        _notifyListeners();
+      }
     }
+    return applied;
   }
 
   void setIncrementalScan(bool incremental) {
     if (incremental && !canUseIncrementalScan) return;
     if (_incrementalScan == incremental) return;
     _incrementalScan = incremental;
-    notifyListeners();
+    _notifyListeners();
   }
 
   void setSelectedEntryIds(Set<String> ids) {
@@ -1290,13 +1449,15 @@ class VolwardSession extends ChangeNotifier {
     _lastNativeProgressPhase = null;
     _peekInFlight.clear();
     _peekCompleted.clear();
+    _directoryOverlays.clear();
+    _cancelPendingForcedPeeks();
     _startScanElapsedTimer();
     _setScanProgressPhase('DiscoveringRoots', pathsSeen: 0);
     await _waitForIndexLoadDrain(_cacheRestoreGeneration);
     if (scanGeneration != _rootSwitchGeneration) {
       _scanning = false;
       _finalizeScanTransientState();
-      notifyListeners();
+      _notifyListeners();
       throw ScanCancelledException();
     }
 
@@ -1310,13 +1471,13 @@ class VolwardSession extends ChangeNotifier {
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
           _logSnapshotMemoryState('scan-complete');
-          notifyListeners();
+          _notifyListeners();
         }
         return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
       } finally {
         _scanning = false;
         _finalizeScanTransientState();
-        notifyListeners();
+        _notifyListeners();
       }
     }
 
@@ -1330,7 +1491,7 @@ class VolwardSession extends ChangeNotifier {
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
           _logSnapshotMemoryState('scan-complete');
-          notifyListeners();
+          _notifyListeners();
         }
         return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
       } on ScanCancelledException catch (e) {
@@ -1344,7 +1505,7 @@ class VolwardSession extends ChangeNotifier {
         _scanRunningOnMainEngine = false;
         _scanning = false;
         _finalizeScanTransientState();
-        notifyListeners();
+        _notifyListeners();
       }
     }
 
@@ -1362,7 +1523,7 @@ class VolwardSession extends ChangeNotifier {
         final phase = m['phase']?.toString();
         _touchScanActivity(phase: phase);
         _scanProgress = Map<String, dynamic>.from(m)..remove('type');
-        notifyListeners();
+        _notifyListeners();
       } else if (type == 'checkpoint') {
         final path = m['snapshot_path']?.toString();
         if (!hasIndexApi && path != null && path.isNotEmpty) {
@@ -1447,7 +1608,7 @@ class VolwardSession extends ChangeNotifier {
       if (scanGeneration == _rootSwitchGeneration) {
         _lastSnapshot = snapshot;
         _logSnapshotMemoryState('scan-complete');
-        notifyListeners();
+        _notifyListeners();
       }
       return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
     } on ScanCancelledException catch (e) {
@@ -1463,7 +1624,7 @@ class VolwardSession extends ChangeNotifier {
     } finally {
       _scanning = false;
       _finalizeScanTransientState();
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -1472,8 +1633,10 @@ class VolwardSession extends ChangeNotifier {
     bool dryRun = false,
     bool rescanAfterDelete = false,
     String? refreshPath,
+    Map<String, String>? targetPathById,
   }) async {
-    if (!_ready || _engine == null) {
+    final testDeleteRunner = deleteRunnerForTest;
+    if (!_ready || (_engine == null && testDeleteRunner == null)) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
     final snapshotId = _lastSnapshot?.snapshotId;
@@ -1483,32 +1646,195 @@ class VolwardSession extends ChangeNotifier {
 
     _deleting = true;
     _lastError = null;
-    notifyListeners();
+    _notifyListeners();
+    final batchRefresh = !dryRun && rescanAfterDelete;
+    // The directory whose listing changes after the delete.
+    final deleteTargetDir =
+        batchRefresh ? (refreshPath ?? refreshTargetPath) : null;
+    late Map<String, dynamic> completedReport;
+    String? pendingRefreshPath;
     try {
-      final report = VolwardNativeBridge.instance.deleteEntries(
-        _engine!,
-        snapshotId,
-        targets,
-        dryRun: dryRun,
-      );
+      final report = testDeleteRunner?.call(snapshotId, targets, dryRun) ??
+          VolwardNativeBridge.instance.deleteEntries(
+            _engine!,
+            snapshotId,
+            targets,
+            dryRun: dryRun,
+          );
       if (report.containsKey('error')) {
         throw StateError(report['error'].toString());
       }
+      completedReport = report;
       if (!dryRun) {
         _lastDeleteReport = report;
       }
-      if (!dryRun && rescanAfterDelete) {
-        await refreshCurrentDirectory(refreshPath);
+      if (!dryRun && rescanAfterDelete && deleteTargetDir != null) {
+        // The OS move has completed, so commit that result immediately instead
+        // of keeping the delete action in Working while a potentially large
+        // parent directory is scanned. The background refresh remains the
+        // authoritative disk reconciliation and atomically replaces this
+        // temporary overlay when it completes.
+        _applySuccessfulDeleteOverlay(
+          deleteTargetDir,
+          targets,
+          report,
+          targetPathById: targetPathById,
+          notify: false,
+        );
+        pendingRefreshPath = deleteTargetDir;
       }
-      return report;
     } catch (e, st) {
       _lastError = '$e';
       debugPrint('VolwardSession delete failed: $e\n$st');
       rethrow;
     } finally {
       _deleting = false;
-      notifyListeners();
+      _notifyListeners();
     }
+    if (pendingRefreshPath != null) {
+      _scheduleDirectoryRefreshAfterDelete(pendingRefreshPath);
+    }
+    return completedReport;
+  }
+
+  void _scheduleDirectoryRefreshAfterDelete(String path) {
+    unawaited(
+      Future<void>.delayed(Duration.zero, () async {
+        try {
+          final testRunner = directoryRefreshRunnerForTest;
+          if (testRunner != null) {
+            await testRunner(path);
+          } else {
+            await refreshCurrentDirectory(path);
+          }
+        } catch (e, st) {
+          _refreshErrors[ScanTreeBuilder.normalizeRoot(path)] = e.toString();
+          debugPrint(
+            'VolwardSession: post-delete directory refresh failed: $e\n$st',
+          );
+          _notifyListeners();
+        }
+      }),
+    );
+  }
+
+  void _applySuccessfulDeleteOverlay(
+    String directoryPath,
+    List<String> targets,
+    Map<String, dynamic> report, {
+    Map<String, String>? targetPathById,
+    bool notify = true,
+  }) {
+    final normalizedPath = ScanTreeBuilder.normalizeRoot(directoryPath);
+    final existing = _directoryOverlays[normalizedPath];
+    final snapshotNode = existing == null
+        ? _findSnapshotDirectory(_lastSnapshot?.tree, normalizedPath)
+        : null;
+    final records = existing != null
+        ? existing.children
+            .map(SnapshotNodeRecord.fromTree)
+            .toList(growable: false)
+        : (queryDirectoryChildrenFromCatalog(normalizedPath) ??
+            snapshotNode?.children
+                .map(SnapshotNodeRecord.fromTree)
+                .toList(growable: false));
+    if (records == null) {
+      // No in-memory listing for this directory (peek did not cover it and the
+      // catalog has no entry). Skipping silently leaves the UI showing a stale
+      // list with no way to know the refresh was dropped — surface it instead.
+      debugPrint(
+        'VolwardSession: delete overlay skipped for $normalizedPath — '
+        'no records available (list may be stale; manual refresh required)',
+      );
+      _refreshErrors[normalizedPath] =
+          'The directory could not be refreshed after delete. '
+          'The previous results are still shown.';
+      return;
+    }
+    final deletedCount = (report['deleted_count'] as num?)?.toInt() ?? 0;
+    if (deletedCount <= 0) {
+      debugPrint(
+        'VolwardSession: delete overlay skipped for $normalizedPath — '
+        'report deleted_count=$deletedCount',
+      );
+      return;
+    }
+
+    final targetIds = targets.toSet();
+    final targetPaths = <String>{
+      for (final target in targets)
+        ScanTreeBuilder.normalizeRoot(targetPathById?[target] ?? target),
+    };
+    final failedPaths = (report['failed_paths'] as List?)
+            ?.whereType<Object>()
+            .map((path) => ScanTreeBuilder.normalizeRoot(path.toString()))
+            .toSet() ??
+        <String>{};
+    final remaining = <ScanTreeNode>[];
+    final removedPaths = <String>{};
+    for (final node in records) {
+      final matchesTarget =
+          (node.entryId != null && targetIds.contains(node.entryId)) ||
+              targetPaths.contains(ScanTreeBuilder.normalizeRoot(node.path));
+      if (!matchesTarget) {
+        remaining.add(node.toScanTreeNode());
+        continue;
+      }
+      final nodePath = ScanTreeBuilder.normalizeRoot(node.path);
+      if (failedPaths.contains(nodePath)) {
+        remaining.add(node.toScanTreeNode());
+      } else {
+        removedPaths.add(nodePath);
+      }
+    }
+
+    final base = existing ?? snapshotNode ?? ScanTreeNode.empty(normalizedPath);
+    _directoryOverlays.removeWhere((path, _) {
+      for (final removedPath in removedPaths) {
+        if (path == removedPath || path.startsWith('$removedPath/')) {
+          return true;
+        }
+      }
+      return false;
+    });
+    _directoryOverlays[normalizedPath] = ScanTreeNode(
+      name: base.name,
+      path: normalizedPath,
+      isDirectory: true,
+      sizeBytes: base.sizeBytes,
+      scanned: true,
+      peekScanned: true,
+      children: remaining,
+    );
+    _snapshotVersion++;
+    _invalidatedPrefixes.add(normalizedPath);
+    if (notify) _notifyListeners();
+  }
+
+  ScanTreeNode? _findSnapshotDirectory(ScanTreeNode? node, String targetPath) {
+    if (node == null) return null;
+    if (node.path == targetPath && node.isDirectory) return node;
+    if (!node.isDirectory) return null;
+    for (final child in node.children) {
+      final found = _findSnapshotDirectory(child, targetPath);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  @visibleForTesting
+  void applySuccessfulDeleteOverlayForTest(
+    String directoryPath,
+    List<String> targets,
+    Map<String, dynamic> report, {
+    Map<String, String>? targetPathById,
+  }) {
+    _applySuccessfulDeleteOverlay(
+      directoryPath,
+      targets,
+      report,
+      targetPathById: targetPathById,
+    );
   }
 
   Future<Map<String, dynamic>> emptyTrash({
@@ -1536,7 +1862,7 @@ class VolwardSession extends ChangeNotifier {
       rethrow;
     } finally {
       _deleting = false;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -1676,7 +2002,7 @@ class VolwardSession extends ChangeNotifier {
         elapsed >= const Duration(seconds: 1)) {
       _lastNativeProgressPhase = phase;
       _lastNativeProgressNotifyAt = now;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -1728,14 +2054,38 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _applyMerge(
+  Future<bool> _applyMerge(
     String targetPath,
     Map<String, dynamic> subtreeTree,
     List<Map<String, dynamic>> subtreeEntries, {
     bool authoritative = false,
   }) async {
     final current = _lastSnapshot;
-    if (current == null) return;
+    if (current == null) return false;
+    if (authoritative) {
+      final entriesById = <String, ScanEntryRecord>{
+        for (final entry in subtreeEntries)
+          if (entry['id'] != null)
+            entry['id'].toString(): ScanEntryRecord.fromWire(entry),
+      };
+      final overlay = ScanTreeNode.fromSnapshotJson(
+        Map<String, dynamic>.from(subtreeTree),
+        entriesById: entriesById,
+      );
+      final normalizedPath = ScanTreeBuilder.normalizeRoot(targetPath);
+      final prefix =
+          normalizedPath.endsWith('/') ? normalizedPath : '$normalizedPath/';
+      _directoryOverlays.removeWhere(
+        (path, _) => path == normalizedPath || path.startsWith(prefix),
+      );
+      _directoryOverlays[normalizedPath] = overlay;
+
+      // Keep the Rust catalog index in sync with this peek result. The UI
+      // reads query_directory from the catalog when the index API is active —
+      // without this splice the catalog stays stale and the refreshed
+      // directory never appears (the "delete/refresh does not update" bug).
+      _spliceSubtreeIntoCatalog(normalizedPath, subtreeTree, subtreeEntries);
+    }
     final merged = mergeSubtreeIntoSnapshotState(
       snapshot: current,
       targetPath: targetPath,
@@ -1762,7 +2112,37 @@ class VolwardSession extends ChangeNotifier {
         now.difference(_lastApplyMergeNotify!) >= _kDisplayNotifyGap;
     if (shouldNotify) {
       _lastApplyMergeNotify = now;
-      notifyListeners();
+      _notifyListeners();
+    }
+    return true;
+  }
+
+  /// Pushes a peek-scan subtree into the Rust catalog index so
+  /// `query_directory` (read by the UI when the index API is active) reflects
+  /// the refreshed directory. Best-effort: a missing index, an unavailable
+  /// FFI symbol (older dylib), or a rejected payload must not fail the merge —
+  /// the Dart overlay write above already guarantees correct rendering via the
+  /// tree fallback path.
+  void _spliceSubtreeIntoCatalog(
+    String normalizedPath,
+    Map<String, dynamic> subtreeTree,
+    List<Map<String, dynamic>> subtreeEntries,
+  ) {
+    final engine = _engine;
+    if (engine == null || !hasIndexApi) return;
+    if (!VolwardNativeBridge.instance.hasReplaceSubtreeApi) return;
+    try {
+      final payload = jsonEncode(<String, dynamic>{
+        'tree': subtreeTree,
+        'entries': subtreeEntries,
+      });
+      VolwardNativeBridge.instance.replaceDirectoryWithSubtree(
+        engine,
+        normalizedPath,
+        payload,
+      );
+    } catch (e, st) {
+      debugPrint('VolwardSession: splice subtree into catalog failed: $e\n$st');
     }
   }
 

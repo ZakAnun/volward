@@ -147,6 +147,38 @@ impl VolwardEngine {
         index.refresh_directory_json(path)
     }
 
+    /// Splices a freshly scanned subtree (from a peek/scoped scan) into the
+    /// catalog index, replacing the directory at `target_path`, and bumps the
+    /// index version so Dart-side caches invalidate.
+    ///
+    /// This is what makes a peek refresh visible to the UI when the index API
+    /// is active: previously the peek result only updated the Dart overlay,
+    /// while `query_directory` kept reading the stale catalog.
+    pub fn replace_directory_with_subtree_json(
+        &self,
+        target_path: &str,
+        subtree_json: &str,
+    ) -> Result<u64, String> {
+        #[derive(serde::Deserialize)]
+        struct SubtreePayload {
+            tree: volward_core::model::ScanTreeNode,
+            #[serde(default)]
+            entries: Vec<volward_core::model::StorageEntry>,
+        }
+        let payload: SubtreePayload =
+            serde_json::from_str(subtree_json).map_err(|e| format!("error:parse subtree: {e}"))?;
+        let mut guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
+        let index = guard
+            .as_mut()
+            .ok_or_else(|| "error:no index loaded".to_string())?;
+        let new_version =
+            index.replace_directory_with_subtree(target_path, &payload.tree, &payload.entries)?;
+        // Keep the engine-level version counter aligned with the index's own
+        // version so Dart's catalogVersion sees the bump.
+        self.index_version.store(new_version, Ordering::Relaxed);
+        Ok(new_version)
+    }
+
     /// Load a persisted index file into the engine.
     /// On success the in-memory index is replaced and the version counter bumped.
     pub fn load_index_from_path(&self, path: &str) -> Result<(), String> {
