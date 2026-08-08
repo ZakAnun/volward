@@ -58,8 +58,9 @@ volward/
 |------|------|----------|
 | macOS (Apple Silicon) | `volward-*-macos-arm64.zip` | 解压后拖入 `/Applications`，首次打开：右键 → 打开 |
 | macOS (Intel) | `volward-*-macos-x64.zip` | 同上 |
-| Windows | `volward-*-windows-x64.zip` | 解压到任意目录，直接运行 `volward.exe` |
-| Linux | `volward-*-linux-x64.tar.gz` | 解压后运行 `bundle/volward` |
+| Windows | `VolwardSetup-*-windows-x64.exe` | 运行安装器，按提示安装后从开始菜单启动 |
+| Linux (recommended) | `Volward-v*-linux-x86_64.AppImage` | `chmod +x` 后双击或直接运行 |
+| Linux (portable) | `volward-*-linux-x64.tar.gz` | 解压后运行 `bundle/volward` |
 
 ### 首次运行绕过系统警告
 
@@ -73,7 +74,7 @@ xattr -cr /Applications/volward.app
 **Windows**（SmartScreen 警告）：
 点击"更多信息"→"仍要运行"
 
-**Linux**：无需额外操作，解压即用。
+**Linux**：AppImage 首次运行前需要授予执行权限；tar.gz 版本解压即用。
 
 ## 环境要求
 

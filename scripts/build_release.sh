@@ -29,13 +29,23 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) CURRENT_OS="windows" ;;
 esac
 
-# Get version from pubspec.yaml
-VERSION=$(grep '^version:' "$APP_DIR/pubspec.yaml" | sed 's/version: //' | tr -d ' ')
-echo "📦 Version: $VERSION"
+# Get version from pubspec.yaml (strip +build for artifact filenames)
+VERSION_RAW=$(grep '^version:' "$APP_DIR/pubspec.yaml" | sed 's/version: //' | tr -d ' ')
+VERSION="${VERSION_RAW%%+*}"
+echo "📦 Version: $VERSION (from $VERSION_RAW)"
 echo ""
 
 # Create build directory
 mkdir -p "$BUILD_DIR"
+
+to_windows_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
 
 # Build Rust dylib first
 build_rust() {
@@ -59,7 +69,7 @@ build_macos() {
   # Clean previous build
   rm -rf build/macos
 
-  # Build .app bundle
+  # Build .app bundle (Xcode Run Script phase invokes macos/build_rust.sh)
   fvm flutter build macos --release
 
   # Copy to build directory
@@ -68,8 +78,16 @@ build_macos() {
     echo "❌ macOS build failed: $APP_BUNDLE not found"
     exit 1
   fi
+  if [[ ! -x "$APP_BUNDLE/Contents/MacOS/volward" ]]; then
+    echo "❌ macOS build failed: executable missing in app bundle"
+    exit 1
+  fi
+  if [[ ! -f "$APP_BUNDLE/Contents/Frameworks/libvolward_facade.dylib" ]]; then
+    echo "❌ macOS build failed: libvolward_facade.dylib missing in Frameworks"
+    exit 1
+  fi
 
-  # Create DMG (simple zip for now, can use create-dmg later)
+  # Create zip archive (DMG can replace this later)
   ARCH=$(uname -m)
   if [[ "$ARCH" == "arm64" ]]; then
     OUTPUT_NAME="volward-v${VERSION}-macos-arm64.zip"
@@ -78,7 +96,8 @@ build_macos() {
   fi
 
   cd "$APP_DIR/build/macos/Build/Products/Release"
-  zip -r "$BUILD_DIR/$OUTPUT_NAME" volward.app
+  # Avoid AppleDouble (._*) junk inside the zip.
+  COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent volward.app "$BUILD_DIR/$OUTPUT_NAME"
 
   echo "✅ macOS build complete: $OUTPUT_NAME"
   echo ""
@@ -107,11 +126,36 @@ build_windows() {
     exit 1
   fi
 
-  OUTPUT_NAME="volward-v${VERSION}-windows-x64.zip"
-  cd "$WIN_BUILD"
-  zip -r "$BUILD_DIR/$OUTPUT_NAME" .
+  if [[ ! -f "$REPO_ROOT/target/release/volward_facade.dll" ]]; then
+    echo "❌ Windows build failed: target/release/volward_facade.dll not found"
+    exit 1
+  fi
 
-  echo "✅ Windows build complete: $OUTPUT_NAME"
+  cp -f "$REPO_ROOT/target/release/volward_facade.dll" "$WIN_BUILD/volward_facade.dll"
+
+  if ! command -v iscc >/dev/null 2>&1; then
+    echo "❌ Windows installer build failed: Inno Setup compiler (iscc) not found"
+    echo "Install Inno Setup, then re-run this script."
+    exit 1
+  fi
+
+  ISCC_SOURCE_DIR="$(to_windows_path "$WIN_BUILD")"
+  ISCC_OUTPUT_DIR="$(to_windows_path "$BUILD_DIR")"
+  ISCC_ICON_FILE="$(to_windows_path "$APP_DIR/windows/runner/resources/app_icon.ico")"
+  ISCC_SCRIPT="$(to_windows_path "$REPO_ROOT/scripts/windows/volward.iss")"
+  iscc \
+    "/DAppVersion=$VERSION" \
+    "/DSourceDir=$ISCC_SOURCE_DIR" \
+    "/DOutputDir=$ISCC_OUTPUT_DIR" \
+    "/DIconFile=$ISCC_ICON_FILE" \
+    "$ISCC_SCRIPT"
+
+  if [[ ! -f "$BUILD_DIR/VolwardSetup-v${VERSION}-windows-x64.exe" ]]; then
+    echo "❌ Windows installer missing: VolwardSetup-v${VERSION}-windows-x64.exe"
+    exit 1
+  fi
+
+  echo "✅ Windows build complete: VolwardSetup-v${VERSION}-windows-x64.exe"
   echo ""
 }
 
@@ -138,11 +182,30 @@ build_linux() {
     exit 1
   fi
 
+  if [[ ! -f "$REPO_ROOT/target/release/libvolward_facade.so" ]]; then
+    echo "❌ Linux build failed: target/release/libvolward_facade.so not found"
+    exit 1
+  fi
+
+  mkdir -p "$LINUX_BUILD/lib"
+  cp -f "$REPO_ROOT/target/release/libvolward_facade.so" "$LINUX_BUILD/lib/libvolward_facade.so"
+
   OUTPUT_NAME="volward-v${VERSION}-linux-x64.tar.gz"
   cd "$(dirname "$LINUX_BUILD")"
   tar -czf "$BUILD_DIR/$OUTPUT_NAME" bundle
 
-  echo "✅ Linux build complete: $OUTPUT_NAME"
+  bash "$REPO_ROOT/scripts/linux/build_appimage.sh" \
+    --bundle-dir "$LINUX_BUILD" \
+    --output-dir "$BUILD_DIR" \
+    --version "$VERSION" \
+    --icon-source "$REPO_ROOT/apps/volward/branding/volward-logo.png"
+
+  if [[ ! -f "$BUILD_DIR/Volward-v${VERSION}-linux-x86_64.AppImage" ]]; then
+    echo "❌ Linux AppImage missing: Volward-v${VERSION}-linux-x86_64.AppImage"
+    exit 1
+  fi
+
+  echo "✅ Linux build complete: $OUTPUT_NAME and Volward-v${VERSION}-linux-x86_64.AppImage"
   echo ""
 }
 
