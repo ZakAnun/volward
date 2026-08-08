@@ -50,6 +50,32 @@ volward/
 └── rules/desktop.yaml       # 桌面端分类规则（Cache/Temp/Media 等）
 ```
 
+## 安装 / 下载
+
+从 [GitHub Releases](https://github.com/ZakAnun/volward/releases) 下载最新版本：
+
+| 平台 | 文件 | 安装方式 |
+|------|------|----------|
+| macOS (Apple Silicon) | `volward-*-macos-arm64.zip` | 解压后拖入 `/Applications`，首次打开：右键 → 打开 |
+| macOS (Intel) | `volward-*-macos-x64.zip` | 同上 |
+| Windows | `VolwardSetup-*-windows-x64.exe` | 运行安装器，按提示安装后从开始菜单启动 |
+| Linux (recommended) | `Volward-v*-linux-x86_64.AppImage` | `chmod +x` 后双击或直接运行 |
+| Linux (portable) | `volward-*-linux-x64.tar.gz` | 解压后运行 `bundle/volward` |
+
+### 首次运行绕过系统警告
+
+**macOS**（未签名应用）：
+```bash
+# 方式一：右键点击 volward.app → 打开（不要双击）
+# 方式二：终端移除隔离标记
+xattr -cr /Applications/volward.app
+```
+
+**Windows**（SmartScreen 警告）：
+点击"更多信息"→"仍要运行"
+
+**Linux**：AppImage 首次运行前需要授予执行权限；tar.gz 版本解压即用。
+
 ## 环境要求
 
 - **macOS** + **Xcode**（App Store），并在 Xcode → Settings → Accounts 登录自己的 Apple ID（用于 Debug 签名）
