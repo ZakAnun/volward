@@ -62,47 +62,51 @@ Widget _shell(VolwardSession session, VolwardThemeSettings themeSettings) {
 }
 
 void main() {
-  testWidgets('HomePage starts the preview before a hanging restore completes',
-      (tester) async {
-    final session = _BlockingSession()
-      ..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-test-no-session.json',
-      )
-      ..defaultRootForTest = (() => '/')
-      ..rootExistsForTest = ((_) => true);
-    final themeSettings = VolwardThemeSettings();
-    addTearDown(themeSettings.dispose);
+  testWidgets(
+    'HomePage starts the preview before a hanging restore completes',
+    (tester) async {
+      final session = _BlockingSession()
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-test-no-session.json',
+        )
+        ..defaultRootForTest = (() => '/')
+        ..rootExistsForTest = ((_) => true);
+      final themeSettings = VolwardThemeSettings();
+      addTearDown(themeSettings.dispose);
 
-    await tester.pumpWidget(_shell(session, themeSettings));
-    await tester.pump();
+      await tester.pumpWidget(_shell(session, themeSettings));
+      await tester.pump();
 
-    expect(session.previewCalls, 1);
-    // The folder action stays reachable during startup loading.
-    expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
-  });
+      expect(session.previewCalls, 1);
+      // The folder action stays reachable during startup loading.
+      expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
+    },
+  );
 
   testWidgets(
-      'HomePage keeps the folder picker visible when no launch root exists',
-      (tester) async {
-    final session = _BlockingSession()
-      ..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-test-no-session.json',
-      )
-      ..defaultRootForTest = (() => '')
-      ..rootExistsForTest = ((_) => false);
-    final themeSettings = VolwardThemeSettings();
-    addTearDown(themeSettings.dispose);
+    'HomePage keeps the folder picker visible when no launch root exists',
+    (tester) async {
+      final session = _BlockingSession()
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-test-no-session.json',
+        )
+        ..defaultRootForTest = (() => '')
+        ..rootExistsForTest = ((_) => false);
+      final themeSettings = VolwardThemeSettings();
+      addTearDown(themeSettings.dispose);
 
-    await tester.pumpWidget(_shell(session, themeSettings));
-    await tester.pump();
+      await tester.pumpWidget(_shell(session, themeSettings));
+      await tester.pump();
 
-    // No valid root → preview is never started, picker stays available.
-    expect(session.previewCalls, 0);
-    expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
-  });
+      // No valid root → preview is never started, picker stays available.
+      expect(session.previewCalls, 0);
+      expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
+    },
+  );
 
-  testWidgets('HomePage shows the preview while cache restore is in flight',
-      (tester) async {
+  testWidgets('HomePage shows the preview while cache restore is in flight', (
+    tester,
+  ) async {
     // Point the session-state loader at a path that does not exist so a real
     // on-disk session.json (from a previous app run on this machine) cannot
     // leak into the test and change _scanRoots mid-startup.

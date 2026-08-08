@@ -47,14 +47,26 @@ void main() {
 
       cache.invalidatePath('/root/Documents');
 
-      expect(cache.containsKey(k1), isTrue,
-          reason: '/root should be preserved');
-      expect(cache.containsKey(k2), isFalse,
-          reason: '/root/Documents should be removed');
-      expect(cache.containsKey(k3), isFalse,
-          reason: '/root/Documents/sub should be removed');
-      expect(cache.containsKey(k4), isTrue,
-          reason: '/root/Downloads should be preserved');
+      expect(
+        cache.containsKey(k1),
+        isTrue,
+        reason: '/root should be preserved',
+      );
+      expect(
+        cache.containsKey(k2),
+        isFalse,
+        reason: '/root/Documents should be removed',
+      );
+      expect(
+        cache.containsKey(k3),
+        isFalse,
+        reason: '/root/Documents/sub should be removed',
+      );
+      expect(
+        cache.containsKey(k4),
+        isTrue,
+        reason: '/root/Downloads should be preserved',
+      );
     });
 
     test('capacity eviction removes oldest entries', () {
@@ -100,8 +112,11 @@ void main() {
 
       expect(cache.containsKey(oldRootKey), isFalse);
       expect(cache.containsKey(childKey), isFalse);
-      expect(cache.containsKey(otherRootKey), isTrue,
-          reason: 'an unrelated root must be preserved');
+      expect(
+        cache.containsKey(otherRootKey),
+        isTrue,
+        reason: 'an unrelated root must be preserved',
+      );
     });
   });
 }

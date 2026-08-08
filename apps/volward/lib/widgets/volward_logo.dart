@@ -69,7 +69,9 @@ class _VolwardLogoPainter extends CustomPainter {
         ..strokeWidth = math.max(1, s * 0.025);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-            rect.deflate(s * 0.012), Radius.circular(s * 0.2)),
+          rect.deflate(s * 0.012),
+          Radius.circular(s * 0.2),
+        ),
         border,
       );
     }

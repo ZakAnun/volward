@@ -217,15 +217,15 @@ void main() {
       );
 
       Widget buildView() => MaterialApp(
-            home: Scaffold(
-              body: ScanColumnView(
-                root: root,
-                selectionChain: const [],
-                onSelect: (_, __) => selected++,
-                formatBytes: (bytes) => '${bytes ?? 0} B',
-              ),
-            ),
-          );
+        home: Scaffold(
+          body: ScanColumnView(
+            root: root,
+            selectionChain: const [],
+            onSelect: (_, __) => selected++,
+            formatBytes: (bytes) => '${bytes ?? 0} B',
+          ),
+        ),
+      );
 
       await tester.pumpWidget(buildView());
       for (var i = 0; i < 10; i++) {

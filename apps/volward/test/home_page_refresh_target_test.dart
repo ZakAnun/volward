@@ -35,10 +35,7 @@ void main() {
     });
 
     test('falls back to rootPath when focused is null', () {
-      expect(
-        refreshPathFromFocus(rootPath: '/root', focused: null),
-        '/root',
-      );
+      expect(refreshPathFromFocus(rootPath: '/root', focused: null), '/root');
     });
 
     test('works with deeply nested directory', () {
@@ -51,10 +48,7 @@ void main() {
         children: const [],
       );
       expect(
-        refreshPathFromFocus(
-          rootPath: '/root',
-          focused: focused,
-        ),
+        refreshPathFromFocus(rootPath: '/root', focused: focused),
         '/root/Library/Application Support/cache',
       );
     });

@@ -87,15 +87,14 @@ class SnapshotCatalog {
         final files = allNodes.where((n) => !n.isDirectory).toList();
         final entries = includeEntryRecords
             ? files
-                .map((n) => n.toEntryRecord())
-                .whereType<ScanEntryRecord>()
-                .toList(growable: false)
+                  .map((n) => n.toEntryRecord())
+                  .whereType<ScanEntryRecord>()
+                  .toList(growable: false)
             : const <ScanEntryRecord>[];
         final totalBytes = files.fold<int>(0, (s, n) => s + n.displayBytes);
-        final reclaimable = files.where((n) => n.deletable).fold<int>(
-              0,
-              (s, n) => s + n.displayBytes,
-            );
+        final reclaimable = files
+            .where((n) => n.deletable)
+            .fold<int>(0, (s, n) => s + n.displayBytes);
         return SnapshotQueryResult(
           directNodes: List.unmodifiable(<ScanTreeNode>[...dirs, ...files]),
           directChildren: List.unmodifiable(dirs),
@@ -131,9 +130,9 @@ class SnapshotCatalog {
     fileNodes.sort((left, right) => _compareNodes(key.sortMode, left, right));
     final sortedEntries = includeEntryRecords
         ? fileNodes
-            .map((node) => node.toEntryRecord())
-            .whereType<ScanEntryRecord>()
-            .toList(growable: false)
+              .map((node) => node.toEntryRecord())
+              .whereType<ScanEntryRecord>()
+              .toList(growable: false)
         : const <ScanEntryRecord>[];
     return SnapshotQueryResult(
       directNodes: List.unmodifiable(<ScanTreeNode>[...children, ...fileNodes]),
