@@ -3,6 +3,41 @@ import 'package:volward/home_page.dart';
 import 'package:volward/scan_tree.dart';
 
 void main() {
+  group('refreshPathForDeleteTargets', () {
+    test('refreshes the parent of a checkbox-selected directory', () {
+      expect(
+        refreshPathForDeleteTargets(
+          fallbackPath: '/root/Downloads/Selected',
+          targetPaths: const ['/root/Downloads/Selected'],
+        ),
+        '/root/Downloads',
+      );
+    });
+
+    test('uses the shared parent for multiple selected entries', () {
+      expect(
+        refreshPathForDeleteTargets(
+          fallbackPath: '/root/Downloads',
+          targetPaths: const [
+            '/root/Downloads/a.txt',
+            '/root/Downloads/b.txt',
+          ],
+        ),
+        '/root/Downloads',
+      );
+    });
+
+    test('falls back when selected paths span directories', () {
+      expect(
+        refreshPathForDeleteTargets(
+          fallbackPath: '/root',
+          targetPaths: const ['/root/a.txt', '/other/b.txt'],
+        ),
+        '/root',
+      );
+    });
+  });
+
   group('refreshPathFromFocus', () {
     test('returns focused directory path when a directory is focused', () {
       final focused = ScanTreeNode(

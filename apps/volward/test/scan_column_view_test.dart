@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/scan_tree.dart';
 import 'package:volward/snapshot_query.dart';
@@ -28,7 +29,7 @@ void main() {
                 ),
               ],
               selectionChain: const [],
-              onSelect: (_, __) {},
+              onSelect: (_) {},
               formatBytes: (b) => '${b ?? 0} B',
             ),
           ),
@@ -61,7 +62,7 @@ void main() {
             child: ScanColumnView(
               root: root,
               selectionChain: const [],
-              onSelect: (_, node) => selected = node,
+              onSelect: (tap) => selected = tap.node,
               formatBytes: (b) => '${b ?? 0} B',
             ),
           ),
@@ -73,6 +74,55 @@ void main() {
     await tester.pump();
 
     expect(selected?.path, '/root/Library');
+  });
+
+  testWidgets('ScanColumnView reports Command and Shift modifiers', (
+    tester,
+  ) async {
+    ScanColumnTap? received;
+    final root = ScanTreeNode(
+      name: 'root',
+      path: '/root',
+      isDirectory: true,
+      children: [
+        ScanTreeNode(name: 'a', path: '/root/a', isDirectory: false),
+        ScanTreeNode(name: 'b', path: '/root/b', isDirectory: false),
+        ScanTreeNode(name: 'c', path: '/root/c', isDirectory: false),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 240,
+            width: 480,
+            child: ScanColumnView(
+              root: root,
+              selectionChain: const [],
+              onSelect: (tap) => received = tap,
+              formatBytes: (b) => '${b ?? 0} B',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.tap(find.text('a'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    expect(received?.commandPressed, isTrue);
+    expect(received?.shiftPressed, isFalse);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tap(find.text('c'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    expect(received?.shiftPressed, isTrue);
+    expect(received?.columnItems.map((item) => item.path).toList(), [
+      '/root/a',
+      '/root/b',
+      '/root/c',
+    ]);
   });
 
   testWidgets('ScanColumnView keeps selected folder highlighted', (
@@ -100,7 +150,7 @@ void main() {
             child: ScanColumnView(
               root: root,
               selectionChain: [root.children.first],
-              onSelect: (_, __) {},
+              onSelect: (_) {},
               formatBytes: (b) => '${b ?? 0} B',
             ),
           ),
@@ -145,7 +195,7 @@ void main() {
               child: ScanColumnView(
                 root: root,
                 selectionChain: const [],
-                onSelect: (_, __) {},
+                onSelect: (_) {},
                 formatBytes: (b) => '${b ?? 0} B',
               ),
             ),
@@ -186,7 +236,7 @@ void main() {
             child: ScanColumnView(
               root: root,
               selectionChain: const [],
-              onSelect: (_, __) {},
+              onSelect: (_) {},
               formatBytes: (b) => '${b ?? 0} B',
               peekInFlight: const {'/root/Pending'},
             ),
@@ -217,15 +267,15 @@ void main() {
       );
 
       Widget buildView() => MaterialApp(
-        home: Scaffold(
-          body: ScanColumnView(
-            root: root,
-            selectionChain: const [],
-            onSelect: (_, __) => selected++,
-            formatBytes: (bytes) => '${bytes ?? 0} B',
-          ),
-        ),
-      );
+            home: Scaffold(
+              body: ScanColumnView(
+                root: root,
+                selectionChain: const [],
+                onSelect: (_) => selected++,
+                formatBytes: (bytes) => '${bytes ?? 0} B',
+              ),
+            ),
+          );
 
       await tester.pumpWidget(buildView());
       for (var i = 0; i < 10; i++) {
@@ -268,7 +318,7 @@ void main() {
               ],
               childrenPreSorted: true,
               selectionChain: const [],
-              onSelect: (_, __) {},
+              onSelect: (_) {},
               formatBytes: (b) => '${b ?? 0} B',
               sortMode: ScanSortMode.sizeDesc,
             ),

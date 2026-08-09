@@ -399,6 +399,31 @@ pub unsafe extern "C" fn volward_refresh_directory(
     }
 }
 
+/// Splices a freshly scanned subtree (peek/scoped scan result) into the
+/// catalog index, replacing the directory at `target_path`, and bumps the
+/// index version. `subtree_json` is `{"tree": ScanTreeNode, "entries": […]}`.
+/// Returns the new version as a JSON number string, or `{"error":"…"}`.
+#[no_mangle]
+pub unsafe extern "C" fn volward_replace_directory_with_subtree(
+    engine: *mut VolwardEngine,
+    target_path: *const c_char,
+    subtree_json: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let Some(target_path) = cstr_to_string(target_path) else {
+        return to_c_string(r#"{"error":"null target_path"}"#.to_string());
+    };
+    let Some(subtree_json) = cstr_to_string(subtree_json) else {
+        return to_c_string(r#"{"error":"null subtree_json"}"#.to_string());
+    };
+    match e.replace_directory_with_subtree_json(&target_path, &subtree_json) {
+        Ok(version) => to_c_string(version.to_string()),
+        Err(msg) => to_c_string(serde_json::json!({"error": msg}).to_string()),
+    }
+}
+
 /// Load a persisted index file into the engine.
 /// Returns true on success.
 #[no_mangle]

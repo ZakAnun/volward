@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
@@ -426,6 +426,226 @@ impl SnapshotIndex {
 
     pub fn summary_json(&self) -> Result<String, String> {
         serde_json::to_string(&self.summary()).map_err(|e| format!("error:serialize: {e}"))
+    }
+
+    /// Replaces the directory subtree at `target_path` with a freshly scanned
+    /// subtree (from a peek/scoped scan), and bumps the index version.
+    ///
+    /// This is the Rust-side counterpart of a peek-scan merge: the peek engine
+    /// produces a small `StorageSnapshot` rooted at `target_path`, and instead
+    /// of only updating the Dart overlay we splice that authoritative listing
+    /// into the catalog so `query_directory` (which the UI reads when the
+    /// index API is active) reflects the on-disk truth.
+    ///
+    /// Returns the new version on success, or an error string when the target
+    /// is not at-or-below the index root.
+    pub fn replace_directory_with_subtree(
+        &mut self,
+        target_path: &str,
+        subtree: &crate::model::ScanTreeNode,
+        subtree_entries: &[crate::model::StorageEntry],
+    ) -> Result<u64, String> {
+        let normalized = normalize_index_path(target_path);
+        if !path_is_at_or_below(&normalized, &self.root_path) {
+            return Err(format!(
+                "error:target {normalized} is outside index root {}",
+                self.root_path
+            ));
+        }
+        if !subtree.is_dir || normalize_index_path(&subtree.path) != normalized {
+            return Err(format!(
+                "error:subtree root {} does not match target {normalized}",
+                subtree.path
+            ));
+        }
+        if let Some(entry) = subtree_entries
+            .iter()
+            .find(|entry| !path_is_at_or_below(&entry.path_or_uri, &normalized))
+        {
+            return Err(format!(
+                "error:entry {} is outside target {normalized}",
+                entry.path_or_uri
+            ));
+        }
+
+        let target_id = self.table.intern(&normalized);
+        let parent_id_opt = if normalized == self.root_path {
+            None
+        } else {
+            self.directory_by_id
+                .get(&target_id)
+                .and_then(|dir| dir.parent)
+                .or_else(|| {
+                    let parent_str = parent_path_of_for_root(&normalized, &self.root_path);
+                    self.table.get_id(&parent_str)
+                })
+        };
+
+        let mut old_directory_ids = HashSet::new();
+        let mut old_leaf_path_ids = HashSet::new();
+        let mut pending_directories = vec![target_id];
+        while let Some(directory_id) = pending_directories.pop() {
+            if !old_directory_ids.insert(directory_id) {
+                continue;
+            }
+            if let Some(children) = self.children_by_id.get(&directory_id) {
+                for child_id in children {
+                    if self.directory_by_id.contains_key(child_id) {
+                        pending_directories.push(*child_id);
+                    } else {
+                        old_leaf_path_ids.insert(*child_id);
+                    }
+                }
+            }
+        }
+        let old_entry_ids: Vec<(u32, u32)> = old_leaf_path_ids
+            .iter()
+            .filter_map(|path_id| {
+                self.entry_id_by_path
+                    .get(path_id)
+                    .copied()
+                    .map(|entry_id| (entry_id, *path_id))
+            })
+            .collect();
+        let old_file_path_ids: HashSet<u32> = old_leaf_path_ids
+            .iter()
+            .copied()
+            .filter(|path_id| self.file_size_by_path.contains_key(path_id))
+            .collect();
+        let removed_child_ids: HashSet<u32> = old_directory_ids
+            .iter()
+            .copied()
+            .chain(old_entry_ids.iter().map(|(_, path_id)| *path_id))
+            .chain(old_file_path_ids.iter().copied())
+            .collect();
+
+        for directory_id in &old_directory_ids {
+            self.directory_by_id.remove(directory_id);
+            self.children_by_id.remove(directory_id);
+        }
+        for (entry_id, path_id) in &old_entry_ids {
+            if let Some(entry) = self.entry_by_id.remove(entry_id) {
+                let category = self.table.resolve(entry.category).to_string();
+                decrement_count(&mut self.category_counts, &category);
+                if entry.deletable {
+                    decrement_count(&mut self.deletable_counts, &category);
+                    self.reclaimable_estimate_bytes = self
+                        .reclaimable_estimate_bytes
+                        .saturating_sub(entry.size_bytes);
+                }
+            }
+            self.entry_id_by_path.remove(path_id);
+        }
+        for path_id in &old_file_path_ids {
+            self.file_size_by_path.remove(path_id);
+        }
+        for children in self.children_by_id.values_mut() {
+            children.retain(|child_id| !removed_child_ids.contains(child_id));
+        }
+
+        // Index the subtree's classified entries first so walk_tree can resolve
+        // entry metadata (category/deletable) for file leaves by path.
+        for entry in subtree_entries {
+            let cat = format!("{:?}", entry.category);
+            *self.category_counts.entry(cat.clone()).or_insert(0) += 1;
+            if entry.deletable {
+                *self.deletable_counts.entry(cat.clone()).or_insert(0) += 1;
+                self.reclaimable_estimate_bytes = self
+                    .reclaimable_estimate_bytes
+                    .saturating_add(entry.size_bytes);
+            }
+            let parent_str = parent_path_of(&entry.path_or_uri);
+            let stable_entry_id = stable_scoped_entry_id(&entry.path_or_uri);
+            let id_id = self.table.intern(&stable_entry_id);
+            let path_id = self.table.intern(&entry.path_or_uri);
+            let parent_id = self.table.intern(&parent_str);
+            let display_name_id = self.table.intern(&entry.display_name);
+            let category_id = self.table.intern(&cat);
+            self.entry_id_by_path.insert(path_id, id_id);
+            self.entry_by_id.insert(
+                id_id,
+                EntryRecord {
+                    id: id_id,
+                    path: path_id,
+                    parent_path: parent_id,
+                    display_name: display_name_id,
+                    size_bytes: entry.size_bytes,
+                    category: category_id,
+                    deletable: entry.deletable,
+                },
+            );
+        }
+
+        let mut canonical_subtree = subtree.clone();
+        canonical_subtree.path = normalized.clone();
+        walk_tree(
+            &canonical_subtree,
+            parent_id_opt,
+            &mut self.table,
+            &mut self.directory_by_id,
+            &mut self.children_by_id,
+            &self.entry_id_by_path,
+            &self.entry_by_id,
+            &mut self.file_size_by_path,
+        );
+
+        // Mark the replaced directory as authoritative (peek-scanned) so it is
+        // not regressed by a later, less-complete checkpoint view.
+        if let Some(dir) = self.directory_by_id.get_mut(&target_id) {
+            dir.scanned = true;
+            dir.peek_scanned = true;
+        }
+
+        self.stats.files_in_snapshot = self.entry_by_id.len().min(u64::MAX as usize) as u64;
+        self.recompute_ancestor_aggregates(parent_id_opt);
+
+        self.version += 1;
+        Ok(self.version)
+    }
+
+    fn recompute_ancestor_aggregates(&mut self, mut directory_id: Option<u32>) {
+        while let Some(current_id) = directory_id {
+            let next = self
+                .directory_by_id
+                .get(&current_id)
+                .and_then(|directory| directory.parent);
+            let mut size_bytes = 0u64;
+            let mut category_mask = 0u64;
+            let mut deletable_category_mask = 0u64;
+            let mut deletable_file_count = 0u64;
+
+            if let Some(children) = self.children_by_id.get(&current_id) {
+                for child_id in children {
+                    if let Some(directory) = self.directory_by_id.get(child_id) {
+                        size_bytes = size_bytes.saturating_add(directory.size_bytes);
+                        category_mask |= directory.category_mask;
+                        deletable_category_mask |= directory.deletable_category_mask;
+                        deletable_file_count =
+                            deletable_file_count.saturating_add(directory.deletable_file_count);
+                    } else if let Some(entry_id) = self.entry_id_by_path.get(child_id) {
+                        if let Some(entry) = self.entry_by_id.get(entry_id) {
+                            size_bytes = size_bytes.saturating_add(entry.size_bytes);
+                            let mask = category_mask_for_name(self.table.resolve(entry.category));
+                            category_mask |= mask;
+                            if entry.deletable {
+                                deletable_category_mask |= mask;
+                                deletable_file_count = deletable_file_count.saturating_add(1);
+                            }
+                        }
+                    } else if let Some(file_size) = self.file_size_by_path.get(child_id) {
+                        size_bytes = size_bytes.saturating_add(*file_size);
+                    }
+                }
+            }
+
+            if let Some(directory) = self.directory_by_id.get_mut(&current_id) {
+                directory.size_bytes = size_bytes;
+                directory.category_mask = category_mask;
+                directory.deletable_category_mask = deletable_category_mask;
+                directory.deletable_file_count = deletable_file_count;
+            }
+            directory_id = next;
+        }
     }
 
     pub(crate) fn compact_storage(&mut self) {
@@ -1042,6 +1262,19 @@ fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
         .unwrap_or_else(|| root_path.to_string())
 }
 
+fn stable_scoped_entry_id(path: &str) -> String {
+    format!("path:{path}")
+}
+
+fn decrement_count(counts: &mut HashMap<String, u64>, category: &str) {
+    if let Some(count) = counts.get_mut(category) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            counts.remove(category);
+        }
+    }
+}
+
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
     path == root
         || (path.starts_with(root)
@@ -1125,6 +1358,16 @@ fn walk_tree(
     (category_mask, deletable_category_mask, deletable_file_count)
 }
 
+/// Normalises an index path: strips a single trailing slash (except for the
+/// filesystem root "/") so catalog keys agree on the canonical form.
+fn normalize_index_path(path: &str) -> String {
+    if path.len() > 1 && path.ends_with('/') {
+        path[..path.len() - 1].to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 fn passes_entry_filter(
     entry: &EntryRecord,
     category_str: &str,
@@ -1145,7 +1388,7 @@ fn passes_entry_filter(
 fn apply_sort(nodes: &mut Vec<SnapshotNodeRecord>, sort_mode: &str) {
     // Dirs always before files.
     nodes.sort_by(|a, b| {
-        match (a.is_directory, b.is_directory) {
+        let primary = match (a.is_directory, b.is_directory) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => match sort_mode {
@@ -1153,18 +1396,32 @@ fn apply_sort(nodes: &mut Vec<SnapshotNodeRecord>, sort_mode: &str) {
                 "size_asc" => a.size_bytes.cmp(&b.size_bytes),
                 _ => b.size_bytes.cmp(&a.size_bytes), // size_desc default
             },
-        }
+        };
+        primary.then_with(|| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then_with(|| a.path.cmp(&b.path))
+        })
     });
 }
 
 fn apply_entry_sort(entries: &mut Vec<SnapshotEntryRecord>, sort_mode: &str) {
-    entries.sort_by(|a, b| match sort_mode {
-        "name" | "name_asc" => a
-            .display_name
-            .to_lowercase()
-            .cmp(&b.display_name.to_lowercase()),
-        "size_asc" => a.size_bytes.cmp(&b.size_bytes),
-        _ => b.size_bytes.cmp(&a.size_bytes),
+    entries.sort_by(|a, b| {
+        let primary = match sort_mode {
+            "name" | "name_asc" => a
+                .display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase()),
+            "size_asc" => a.size_bytes.cmp(&b.size_bytes),
+            _ => b.size_bytes.cmp(&a.size_bytes),
+        };
+        primary.then_with(|| {
+            a.display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase())
+                .then_with(|| a.path.cmp(&b.path))
+        })
     });
 }
 
@@ -1214,7 +1471,7 @@ mod tests {
             capability: CapabilityLevel::FullPath,
             volume_total_bytes: 0,
             volume_used_bytes: 0,
-            reclaimable_estimate_bytes: 100,
+            reclaimable_estimate_bytes: 40,
             tree: ScanTreeNode {
                 name: "root".to_string(),
                 path: "/root".to_string(),
@@ -1271,6 +1528,44 @@ mod tests {
         }
     }
 
+    fn replacement_tree(name: &str, size_bytes: u64) -> ScanTreeNode {
+        ScanTreeNode {
+            name: "Documents".to_string(),
+            path: "/root/Documents".to_string(),
+            is_dir: true,
+            size_bytes,
+            entry_id: None,
+            children: vec![ScanTreeNode {
+                name: name.to_string(),
+                path: format!("/root/Documents/{name}"),
+                is_dir: false,
+                size_bytes,
+                entry_id: Some(format!("peek:{name}")),
+                children: vec![],
+            }],
+        }
+    }
+
+    fn replacement_entry(
+        id: &str,
+        name: &str,
+        size_bytes: u64,
+        category: EntryCategory,
+        deletable: bool,
+    ) -> StorageEntry {
+        StorageEntry {
+            id: id.to_string(),
+            display_name: name.to_string(),
+            path_or_uri: format!("/root/Documents/{name}"),
+            size_bytes,
+            category,
+            risk_level: RiskLevel::Low,
+            source_type: SourceType::File,
+            deletable,
+            reason: "replacement".to_string(),
+        }
+    }
+
     #[test]
     fn query_directory_returns_only_direct_children_and_correct_counts() {
         let snapshot = build_test_snapshot();
@@ -1290,7 +1585,7 @@ mod tests {
             catalog.category_counts().contains_key("Cache"),
             "Cache count missing"
         );
-        assert_eq!(catalog.reclaimable_estimate_bytes(), 100);
+        assert_eq!(catalog.reclaimable_estimate_bytes(), 40);
     }
 
     #[test]
@@ -1306,6 +1601,152 @@ mod tests {
             .collect();
         assert!(names.contains(&"Documents"));
         assert!(names.contains(&"Downloads"));
+    }
+
+    #[test]
+    fn replacing_subtree_removes_old_records_and_rebuilds_summaries() {
+        let mut catalog = SnapshotIndex::from(&build_test_snapshot());
+        let tree = replacement_tree("b.tmp", 25);
+        let entry = replacement_entry("peek-1", "b.tmp", 25, EntryCategory::Temp, false);
+
+        catalog
+            .replace_directory_with_subtree("/root/Documents", &tree, &[entry])
+            .unwrap();
+
+        let documents = catalog.query_directory("/root/Documents", None, false, "name");
+        assert_eq!(documents.direct_children.len(), 1);
+        assert_eq!(documents.direct_children[0].name, "b.tmp");
+        assert!(catalog.entries_for_ids(&["e1".to_string()]).is_empty());
+        assert_eq!(catalog.entry_by_id.len(), 1);
+        assert_eq!(catalog.category_counts.get("Cache"), None);
+        assert_eq!(catalog.category_counts.get("Temp"), Some(&1));
+        assert!(catalog.deletable_counts.is_empty());
+        assert_eq!(catalog.reclaimable_estimate_bytes, 0);
+        assert_eq!(catalog.stats.files_in_snapshot, 1);
+        assert_eq!(
+            catalog.directory_record("/root").unwrap().size_bytes,
+            25,
+            "ancestor size must reflect the fresh subtree"
+        );
+    }
+
+    #[test]
+    fn repeated_subtree_replacement_is_idempotent_and_uses_stable_entry_ids() {
+        let mut catalog = SnapshotIndex::from(&build_test_snapshot());
+        let tree = replacement_tree("b.tmp", 25);
+
+        catalog
+            .replace_directory_with_subtree(
+                "/root/Documents",
+                &tree,
+                &[replacement_entry(
+                    "peek-1",
+                    "b.tmp",
+                    25,
+                    EntryCategory::Temp,
+                    true,
+                )],
+            )
+            .unwrap();
+        let first = catalog.query_directory("/root/Documents", None, false, "name");
+        let first_entry_id = first.direct_children[0].entry_id.clone();
+        assert_eq!(
+            first_entry_id.as_deref(),
+            Some("path:/root/Documents/b.tmp")
+        );
+        let first_string_count = catalog.table.len();
+
+        catalog
+            .replace_directory_with_subtree(
+                "/root/Documents",
+                &tree,
+                &[replacement_entry(
+                    "peek-2",
+                    "b.tmp",
+                    25,
+                    EntryCategory::Temp,
+                    true,
+                )],
+            )
+            .unwrap();
+        let second = catalog.query_directory("/root/Documents", None, false, "name");
+
+        assert_eq!(second.direct_children.len(), 1);
+        assert_eq!(second.direct_entries.len(), 1);
+        assert_eq!(second.direct_children[0].entry_id, first_entry_id);
+        assert_eq!(catalog.entry_by_id.len(), 1);
+        assert_eq!(catalog.category_counts.get("Temp"), Some(&1));
+        assert_eq!(catalog.deletable_counts.get("Temp"), Some(&1));
+        assert_eq!(catalog.reclaimable_estimate_bytes, 25);
+        assert_eq!(catalog.table.len(), first_string_count);
+    }
+
+    #[test]
+    fn subtree_replacement_does_not_duplicate_unknown_and_classified_files() {
+        let mut catalog = SnapshotIndex::from(&build_test_snapshot());
+        let tree = replacement_tree("index.js", 10);
+
+        catalog
+            .replace_directory_with_subtree("/root/Documents", &tree, &[])
+            .unwrap();
+        let unknown = catalog.query_directory("/root/Documents", None, false, "name");
+        assert_eq!(unknown.direct_children.len(), 1);
+        assert_eq!(
+            unknown.direct_children[0].category.as_deref(),
+            Some("Unknown")
+        );
+
+        catalog
+            .replace_directory_with_subtree(
+                "/root/Documents",
+                &tree,
+                &[replacement_entry(
+                    "peek-classified",
+                    "index.js",
+                    10,
+                    EntryCategory::AppData,
+                    false,
+                )],
+            )
+            .unwrap();
+        let classified = catalog.query_directory("/root/Documents", None, false, "name");
+        assert_eq!(classified.direct_children.len(), 1);
+        assert_eq!(classified.direct_entries.len(), 1);
+        assert_eq!(
+            classified.direct_children[0].category.as_deref(),
+            Some("AppData")
+        );
+        assert!(catalog.file_size_by_path.is_empty());
+    }
+
+    #[test]
+    fn size_sort_uses_name_as_a_stable_tie_breaker() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/zeta");
+        builder.ensure_dir("/root/alpha");
+        let index = builder.finish(
+            "snap-ties".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats {
+                paths_seen: 3,
+                dirs_seen: 2,
+                files_seen: 0,
+                files_in_snapshot: 0,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
+        );
+
+        let result = index.query_directory("/root", None, false, "size_desc");
+        let names: Vec<_> = result
+            .direct_children
+            .iter()
+            .map(|node| node.name.as_str())
+            .collect();
+        assert_eq!(names, ["alpha", "zeta"]);
     }
 
     #[test]
