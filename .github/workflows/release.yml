@@ -1,0 +1,331 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+            artifact: macos-release-x64
+          - runner: macos-15
+            arch: arm64
+            artifact: macos-release-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: brew install protobuf
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Build Rust dylib
+        run: cargo build --release -p volward-facade
+
+      - name: Copy dylib for macOS build
+        run: |
+          cd apps/volward/macos && bash build_rust.sh
+        env:
+          CONFIGURATION: Release
+
+      - name: Build macOS app
+        run: flutter build macos --release
+        working-directory: apps/volward
+
+      - name: Verify macOS bundle
+        run: |
+          test -d apps/volward/build/macos/Build/Products/Release/volward.app
+          test -x apps/volward/build/macos/Build/Products/Release/volward.app/Contents/MacOS/volward
+          test -f apps/volward/build/macos/Build/Products/Release/volward.app/Contents/Frameworks/libvolward_facade.dylib
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION_RAW=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION="${VERSION_RAW%%+*}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_raw=$VERSION_RAW" >> $GITHUB_OUTPUT
+
+      - name: Create macOS archive
+        run: |
+          cd apps/volward/build/macos/Build/Products/Release
+          COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent volward.app volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip
+          mv volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip $GITHUB_WORKSPACE/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: volward-*.zip
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: choco install protoc -y --no-progress
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Build Rust dylib
+        run: cargo build --release -p volward-facade
+
+      - name: Copy DLL to Flutter build output
+        shell: bash
+        run: |
+          cp target/release/volward_facade.dll apps/volward/windows/
+
+      - name: Build Windows app
+        run: flutter build windows --release
+        working-directory: apps/volward
+
+      - name: Copy DLL to release bundle
+        shell: bash
+        run: |
+          cp target/release/volward_facade.dll apps/volward/build/windows/x64/runner/Release/
+
+      - name: Verify Windows bundle
+        shell: pwsh
+        run: |
+          $bundle = "$env:GITHUB_WORKSPACE\apps\volward\build\windows\x64\runner\Release"
+          foreach ($path in @(
+            "$bundle\volward.exe",
+            "$bundle\volward_facade.dll",
+            "$bundle\flutter_windows.dll",
+            "$bundle\data\icudtl.dat",
+            "$bundle\data\flutter_assets"
+          )) {
+            if (!(Test-Path $path)) {
+              throw "Missing Windows release file: $path"
+            }
+          }
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          VERSION_RAW=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' \r')
+          VERSION="${VERSION_RAW%%+*}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $appVersion = "${{ steps.version.outputs.version }}"
+          iscc `
+            /DAppVersion="$appVersion" `
+            /DSourceDir="$env:GITHUB_WORKSPACE\apps\volward\build\windows\x64\runner\Release" `
+            /DOutputDir="$env:GITHUB_WORKSPACE" `
+            /DIconFile="$env:GITHUB_WORKSPACE\apps\volward\windows\runner\resources\app_icon.ico" `
+            "$env:GITHUB_WORKSPACE\scripts\windows\volward.iss"
+          if (!(Test-Path "VolwardSetup-v$appVersion-windows-x64.exe")) {
+            throw "Windows installer missing: VolwardSetup-v$appVersion-windows-x64.exe"
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: VolwardSetup-*.exe
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            protobuf-compiler \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev \
+            libfuse2
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Build Rust dylib
+        run: cargo build --release -p volward-facade
+
+      - name: Build Linux app
+        run: flutter build linux --release
+        working-directory: apps/volward
+
+      - name: Copy .so to bundle/lib
+        run: |
+          mkdir -p apps/volward/build/linux/x64/release/bundle/lib
+          cp target/release/libvolward_facade.so apps/volward/build/linux/x64/release/bundle/lib/
+
+      - name: Verify Linux bundle
+        run: |
+          test -x apps/volward/build/linux/x64/release/bundle/volward
+          test -f apps/volward/build/linux/x64/release/bundle/lib/libvolward_facade.so
+          test -f apps/volward/build/linux/x64/release/bundle/data/icudtl.dat
+          test -d apps/volward/build/linux/x64/release/bundle/data/flutter_assets
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION_RAW=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION="${VERSION_RAW%%+*}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Linux archive
+        run: |
+          cd apps/volward/build/linux/x64/release
+          tar -czf volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz bundle
+          mv volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz $GITHUB_WORKSPACE/
+
+      - name: Download appimagetool
+        run: |
+          mkdir -p tools
+          curl -LfsS \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -o tools/appimagetool-x86_64.AppImage
+          chmod +x tools/appimagetool-x86_64.AppImage
+
+      - name: Build Linux AppImage
+        env:
+          APPIMAGETOOL_BIN: ${{ github.workspace }}/tools/appimagetool-x86_64.AppImage
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          bash scripts/linux/build_appimage.sh \
+            --bundle-dir apps/volward/build/linux/x64/release/bundle \
+            --output-dir "$GITHUB_WORKSPACE" \
+            --version "${{ steps.version.outputs.version }}" \
+            --icon-source apps/volward/branding/volward-logo.png
+
+      - name: Verify Linux AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          APPIMAGE=$(ls Volward-v*-linux-x86_64.AppImage | head -n 1)
+          test -f "$APPIMAGE"
+          "$APPIMAGE" --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          test -f squashfs-root/volward
+          test -f squashfs-root/lib/libvolward_facade.so
+          test -f squashfs-root/volward-logo.png
+          rm -rf squashfs-root
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: volward-*.tar.gz
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: Volward-v*-linux-x86_64.AppImage
+
+  create-release:
+    name: Create Release
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/macos-release-arm64/*
+            artifacts/macos-release-x64/*
+            artifacts/windows-release/*
+            artifacts/linux-release/*
+            artifacts/linux-appimage/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -184,10 +184,10 @@ void main() {
     );
 
     session.deleteRunnerForTest = (_, __, ___) => {
-          'deleted_count': 1,
-          'freed_bytes': 12,
-          'failed_paths': const <String>[],
-        };
+      'deleted_count': 1,
+      'freed_bytes': 12,
+      'failed_paths': const <String>[],
+    };
     final refreshStarted = Completer<void>();
     final finishRefresh = Completer<void>();
     session.directoryRefreshRunnerForTest = (path) async {
@@ -201,8 +201,7 @@ void main() {
       rescanAfterDelete: true,
       refreshPath: '/root/Downloads',
       targetPathById: const {
-        'path:/root/Downloads/deleted.txt':
-            '/root/Downloads/deleted.txt',
+        'path:/root/Downloads/deleted.txt': '/root/Downloads/deleted.txt',
       },
     );
 

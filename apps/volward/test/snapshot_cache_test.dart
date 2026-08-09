@@ -77,7 +77,9 @@ void main() {
       final snapshots = Directory('${temp.path}/snapshots')..createSync();
 
       final snapshotFile = File('${snapshots.path}/old.json')
-        ..writeAsStringSync(jsonEncode({'snapshot_id': 'snap-old', 'entries': []}));
+        ..writeAsStringSync(
+          jsonEncode({'snapshot_id': 'snap-old', 'entries': []}),
+        );
 
       File('${manifests.path}/old.json').writeAsStringSync(
         jsonEncode({

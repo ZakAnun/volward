@@ -55,7 +55,8 @@ class _VolwardAppState extends State<VolwardApp> {
           builder: (context, _) {
             final accent = _themeSettings.accentColor;
             return MaterialApp(
-              onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+              onGenerateTitle: (context) =>
+                  AppLocalizations.of(context).appTitle,
               locale: _themeSettings.localeOverride,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
