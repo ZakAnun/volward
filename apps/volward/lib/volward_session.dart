@@ -176,13 +176,14 @@ class VolwardSession extends ChangeNotifier {
   bool _notificationBatchPending = false;
   @visibleForTesting
   Future<ScanSnapshotState?> Function(String jobId, List<String> roots)?
-      scanRunnerForTest;
+  scanRunnerForTest;
   @visibleForTesting
   Map<String, dynamic> Function(
     String snapshotId,
     List<String> targets,
     bool dryRun,
-  )? deleteRunnerForTest;
+  )?
+  deleteRunnerForTest;
   @visibleForTesting
   Future<void> Function(String path)? directoryRefreshRunnerForTest;
 
@@ -286,9 +287,8 @@ class VolwardSession extends ChangeNotifier {
   Set<String> get refreshingDirectoryPaths =>
       Set.unmodifiable(_refreshingDirectoryPaths);
 
-  bool isDirectoryRefreshing(String path) => _refreshingDirectoryPaths.contains(
-        ScanTreeBuilder.normalizeRoot(path),
-      );
+  bool isDirectoryRefreshing(String path) =>
+      _refreshingDirectoryPaths.contains(ScanTreeBuilder.normalizeRoot(path));
 
   String? refreshErrorForPath(String path) =>
       _refreshErrors[ScanTreeBuilder.normalizeRoot(path)];
@@ -1653,12 +1653,14 @@ class VolwardSession extends ChangeNotifier {
     _notifyListeners();
     final batchRefresh = !dryRun && rescanAfterDelete;
     // The directory whose listing changes after the delete.
-    final deleteTargetDir =
-        batchRefresh ? (refreshPath ?? refreshTargetPath) : null;
+    final deleteTargetDir = batchRefresh
+        ? (refreshPath ?? refreshTargetPath)
+        : null;
     late Map<String, dynamic> completedReport;
     String? pendingRefreshPath;
     try {
-      final report = testDeleteRunner?.call(snapshotId, targets, dryRun) ??
+      final report =
+          testDeleteRunner?.call(snapshotId, targets, dryRun) ??
           VolwardNativeBridge.instance.deleteEntries(
             _engine!,
             snapshotId,
@@ -1736,12 +1738,12 @@ class VolwardSession extends ChangeNotifier {
         : null;
     final records = existing != null
         ? existing.children
-            .map(SnapshotNodeRecord.fromTree)
-            .toList(growable: false)
+              .map(SnapshotNodeRecord.fromTree)
+              .toList(growable: false)
         : (queryDirectoryChildrenFromCatalog(normalizedPath) ??
-            snapshotNode?.children
-                .map(SnapshotNodeRecord.fromTree)
-                .toList(growable: false));
+              snapshotNode?.children
+                  .map(SnapshotNodeRecord.fromTree)
+                  .toList(growable: false));
     if (records == null) {
       // No in-memory listing for this directory (peek did not cover it and the
       // catalog has no entry). Skipping silently leaves the UI showing a stale
@@ -1769,7 +1771,8 @@ class VolwardSession extends ChangeNotifier {
       for (final target in targets)
         ScanTreeBuilder.normalizeRoot(targetPathById?[target] ?? target),
     };
-    final failedPaths = (report['failed_paths'] as List?)
+    final failedPaths =
+        (report['failed_paths'] as List?)
             ?.whereType<Object>()
             .map((path) => ScanTreeBuilder.normalizeRoot(path.toString()))
             .toSet() ??
@@ -1779,7 +1782,7 @@ class VolwardSession extends ChangeNotifier {
     for (final node in records) {
       final matchesTarget =
           (node.entryId != null && targetIds.contains(node.entryId)) ||
-              targetPaths.contains(ScanTreeBuilder.normalizeRoot(node.path));
+          targetPaths.contains(ScanTreeBuilder.normalizeRoot(node.path));
       if (!matchesTarget) {
         remaining.add(node.toScanTreeNode());
         continue;
@@ -2078,8 +2081,9 @@ class VolwardSession extends ChangeNotifier {
         entriesById: entriesById,
       );
       final normalizedPath = ScanTreeBuilder.normalizeRoot(targetPath);
-      final prefix =
-          normalizedPath.endsWith('/') ? normalizedPath : '$normalizedPath/';
+      final prefix = normalizedPath.endsWith('/')
+          ? normalizedPath
+          : '$normalizedPath/';
       _directoryOverlays.removeWhere(
         (path, _) => path == normalizedPath || path.startsWith(prefix),
       );

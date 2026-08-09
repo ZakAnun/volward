@@ -18,10 +18,7 @@ void main() {
       expect(
         refreshPathForDeleteTargets(
           fallbackPath: '/root/Downloads',
-          targetPaths: const [
-            '/root/Downloads/a.txt',
-            '/root/Downloads/b.txt',
-          ],
+          targetPaths: const ['/root/Downloads/a.txt', '/root/Downloads/b.txt'],
         ),
         '/root/Downloads',
       );

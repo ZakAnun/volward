@@ -152,10 +152,10 @@ typedef VolwardGetIndexSummaryJson = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardIndexVersionNative = Uint64 Function(Pointer<Void>);
 typedef VolwardIndexVersion = int Function(Pointer<Void>);
 
-typedef VolwardReplaceDirectoryWithSubtreeNative = Pointer<Utf8> Function(
-    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardReplaceDirectoryWithSubtree = Pointer<Utf8> Function(
-    Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardReplaceDirectoryWithSubtreeNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardReplaceDirectoryWithSubtree =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
 abstract interface class VolwardBridge {
   bool get hasSnapshotFileApi;

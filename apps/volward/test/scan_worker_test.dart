@@ -54,24 +54,24 @@ void main() {
     expect(child['entry_id'], entry['id']);
   });
 
-  test('missing peek directory fails before starting a native engine', () async {
-    final resultPort = ReceivePort();
-    final cancelInitPort = ReceivePort();
-    final isolate = await Isolate.spawn(
-      volwardPeekScanIsolate,
-      [
+  test(
+    'missing peek directory fails before starting a native engine',
+    () async {
+      final resultPort = ReceivePort();
+      final cancelInitPort = ReceivePort();
+      final isolate = await Isolate.spawn(volwardPeekScanIsolate, [
         resultPort.sendPort,
         '/definitely/missing/volward-peek-directory',
         cancelInitPort.sendPort,
-      ],
-    );
+      ]);
 
-    final result = await resultPort.first as Map;
-    expect(result['type'], 'error');
-    expect(result['error'].toString(), contains('does not exist'));
+      final result = await resultPort.first as Map;
+      expect(result['type'], 'error');
+      expect(result['error'].toString(), contains('does not exist'));
 
-    resultPort.close();
-    cancelInitPort.close();
-    isolate.kill(priority: Isolate.immediate);
-  });
+      resultPort.close();
+      cancelInitPort.close();
+      isolate.kill(priority: Isolate.immediate);
+    },
+  );
 }

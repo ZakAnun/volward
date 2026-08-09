@@ -58,8 +58,10 @@ String refreshPathForDeleteTargets({
   required String fallbackPath,
   required Iterable<String> targetPaths,
 }) {
-  final parentPaths =
-      targetPaths.where((path) => path.isNotEmpty).map(_parentPathOf).toSet();
+  final parentPaths = targetPaths
+      .where((path) => path.isNotEmpty)
+      .map(_parentPathOf)
+      .toSet();
   if (parentPaths.length == 1) return parentPaths.single;
   return ScanTreeBuilder.normalizeRoot(fallbackPath);
 }
@@ -274,7 +276,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             // visible-children cache invalidation above is sufficient.
             if (!_s.hasIndexApi) {
               final refreshed = refreshColumnChain(tree, _columnChain);
-              final chainChanged = refreshed.length != _columnChain.length ||
+              final chainChanged =
+                  refreshed.length != _columnChain.length ||
                   !Iterable.generate(
                     refreshed.length,
                   ).every((i) => refreshed[i].path == _columnChain[i].path);
@@ -423,7 +426,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (range.isNotEmpty) {
           setState(() {
             for (final record in range) {
-              final rangeNode = _findNodeByPath(currentTree, record.path) ??
+              final rangeNode =
+                  _findNodeByPath(currentTree, record.path) ??
                   record.toScanTreeNode();
               _addNodeSelection(rangeNode);
             }
@@ -446,7 +450,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (anchorRecord != null) {
               final anchorNode =
                   _findNodeByPath(currentTree, anchorRecord.path) ??
-                      anchorRecord.toScanTreeNode();
+                  anchorRecord.toScanTreeNode();
               _addNodeSelection(anchorNode);
             }
           }
@@ -480,7 +484,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _setColumnChain(nextChain);
     });
     _s.setCurrentDirectory(browsedDirectoryPath(nextChain));
-    final remainsSelected = nextChain.length > columnIndex &&
+    final remainsSelected =
+        nextChain.length > columnIndex &&
         nextChain[columnIndex].path == node.path;
     if (remainsSelected && actualNode.isDirectory && !actualNode.scanned) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -540,7 +545,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Re-resolve from the live tree so peek-scan merges (which update
     // tree.children but leave _columnChain nodes stale) are visible to the
     // focused branch overlay.
-    final liveNode = _s.directoryOverlayForPath(node.path) ??
+    final liveNode =
+        _s.directoryOverlayForPath(node.path) ??
         (_shouldUseTreeOverlayForPath(node.path)
             ? (_findNodeByPath(_cachedResolvedTree, node.path) ?? node)
             : node);
@@ -2123,8 +2129,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         label = deleteTargetCount > 0
             ? l10n.stickySelected(deleteTargetCount, _fmt(deleteTargetBytes))
             : peekCount > 0
-                ? l10n.stickyDirectoriesLoading(peekCount)
-                : l10n.stickyBrowseResults;
+            ? l10n.stickyDirectoriesLoading(peekCount)
+            : l10n.stickyBrowseResults;
         // Refresh button targets the currently focused directory. The root uses
         // a full scan; a child directory uses a scoped peek scan.
         actionLabel = busy ? '' : l10n.scanActionRescan;
@@ -2182,8 +2188,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? l10n.deleteActionWorking
                       : l10n.deleteActionMoveToTrash,
                   icon: _s.deleting ? null : Icons.delete_outline,
-                  onPressed:
-                      deleteTargetCount > 0 && !busy ? _confirmDelete : null,
+                  onPressed: deleteTargetCount > 0 && !busy
+                      ? _confirmDelete
+                      : null,
                 ),
               ],
             ),
