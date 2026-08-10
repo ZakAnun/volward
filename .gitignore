@@ -39,6 +39,7 @@ apps/volward/android/local.properties
 **/*.p12
 **/*.keystore
 **/credentials.json
+apps/volward/aptabase.json
 
 # Local Xcode signing overrides (Team ID, etc.)
 **/*.local.xcconfig

@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'analytics/analytics.dart';
+import 'analytics/analytics_events.dart';
 import 'home_page.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'theme/volward_theme.dart';
 import 'theme/volward_theme_settings.dart';
 import 'volward_session.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Analytics.bootstrap();
+  unawaited(Analytics.instance.track(AnalyticsEvents.appOpen));
   runApp(const VolwardApp());
 }
 
@@ -55,7 +61,8 @@ class _VolwardAppState extends State<VolwardApp> {
           builder: (context, _) {
             final accent = _themeSettings.accentColor;
             return MaterialApp(
-              onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+              onGenerateTitle: (context) =>
+                  AppLocalizations.of(context).appTitle,
               locale: _themeSettings.localeOverride,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
