@@ -56,8 +56,18 @@ jobs:
           CONFIGURATION: Release
 
       - name: Build macOS app
-        run: flutter build macos --release
         working-directory: apps/volward
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+        run: |
+          if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
+            echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
+            exit 1
+          fi
+          flutter build macos --release \
+            --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
+            --dart-define="APTABASE_HOST=$APTABASE_HOST"
 
       - name: Verify macOS bundle
         run: |
@@ -128,8 +138,19 @@ jobs:
           cp target/release/volward_facade.dll apps/volward/windows/
 
       - name: Build Windows app
-        run: flutter build windows --release
         working-directory: apps/volward
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+        shell: bash
+        run: |
+          if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
+            echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
+            exit 1
+          fi
+          flutter build windows --release \
+            --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
+            --dart-define="APTABASE_HOST=$APTABASE_HOST"
 
       - name: Copy DLL to release bundle
         shell: bash
@@ -225,8 +246,18 @@ jobs:
         run: cargo build --release -p volward-facade
 
       - name: Build Linux app
-        run: flutter build linux --release
         working-directory: apps/volward
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+        run: |
+          if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
+            echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
+            exit 1
+          fi
+          flutter build linux --release \
+            --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
+            --dart-define="APTABASE_HOST=$APTABASE_HOST"
 
       - name: Copy .so to bundle/lib
         run: |
