@@ -36,6 +36,11 @@ copy_dylib() {
   mkdir -p "${dest_dir}"
   cp -f "${DYLIB_SRC}" "${dest_dir}/libvolward_facade.dylib"
   install_name_tool -id "@rpath/libvolward_facade.dylib" "${dest_dir}/libvolward_facade.dylib" 2>/dev/null || true
+  # install_name_tool invalidates any code signature. Ad-hoc sign so Xcode can
+  # embed the dylib (CI Intel runners fail CodeSign on unsigned nested binaries).
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --timestamp=none --sign - "${dest_dir}/libvolward_facade.dylib"
+  fi
   echo "Volward Rust: copied ${DYLIB_SRC} -> ${dest_dir}/libvolward_facade.dylib"
 }
 

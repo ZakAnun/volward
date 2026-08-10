@@ -65,15 +65,22 @@ jobs:
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
+          # CI runners have no Apple Development cert; force ad-hoc signing via xcodebuild.
           flutter build macos --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            -- \
+            CODE_SIGN_IDENTITY=-
 
       - name: Verify macOS bundle
         run: |
-          test -d apps/volward/build/macos/Build/Products/Release/volward.app
-          test -x apps/volward/build/macos/Build/Products/Release/volward.app/Contents/MacOS/volward
-          test -f apps/volward/build/macos/Build/Products/Release/volward.app/Contents/Frameworks/libvolward_facade.dylib
+          APP=apps/volward/build/macos/Build/Products/Release/volward.app
+          DYLIB="$APP/Contents/Frameworks/libvolward_facade.dylib"
+          test -d "$APP"
+          test -x "$APP/Contents/MacOS/volward"
+          test -f "$DYLIB"
+          codesign --verify --verbose=2 "$DYLIB"
+          codesign --verify --verbose=2 "$APP"
 
       - name: Get version
         id: version
@@ -215,14 +222,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            protobuf-compiler \
             clang \
             cmake \
             ninja-build \
             pkg-config \
             libgtk-3-dev \
             liblzma-dev \
-            libfuse2
+            libfuse2 \
+            unzip
+
+      # Ubuntu 22.04 apt protobuf (3.12) rejects proto3 optional fields.
+      # Install a modern official protoc binary instead of protobuf-compiler.
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=27.1
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local bin/protoc
+          sudo unzip -o /tmp/protoc.zip -d /usr/local 'include/*'
+          protoc --version
 
       - name: Cache cargo
         uses: actions/cache@v4
