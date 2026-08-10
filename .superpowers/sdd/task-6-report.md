@@ -8,7 +8,7 @@ PASS
 
 - Added `AppUpdater` as a `ChangeNotifier`-backed state machine.
 - Implemented check transitions for available, up-to-date, no matching asset, unsupported runtime, and network failures.
-- Silent checks return to idle on fetch errors; manual checks expose a network error.
+- Silent checks return to idle on all failures; manual checks expose typed errors.
 - Implemented download progress, installing transition, and download/install failure classification.
 - Implemented session-only prompt dismissal.
 - Implemented release-page opening with the required fallback:
@@ -60,3 +60,21 @@ Covered:
 ## Concerns
 
 None.
+
+## Spec/quality review fix
+
+Addressed the review findings:
+
+- Silent checks now return to `idle` for missing assets and unsupported
+  runtimes; manual checks continue to expose typed errors.
+- `downloadAndInstall()` now rejects every phase except `available`.
+- `dismissAvailable()` always records dismissal, but only changes state from
+  `available` to `idle`.
+
+TDD regression evidence:
+
+- RED: 4 failures covering silent missing assets, silent unsupported runtime,
+  repeated install from `installing`, and dismissal outside `available`.
+- GREEN: `flutter test test/updater/app_updater_test.dart` — PASS, 12 tests.
+- `flutter analyze lib/updater/app_updater.dart
+  test/updater/app_updater_test.dart` — PASS, no issues.

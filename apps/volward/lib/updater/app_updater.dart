@@ -53,7 +53,9 @@ class AppUpdater extends ChangeNotifier {
 
   void dismissAvailable() {
     _dismissedThisSession = true;
-    _setStatus(UpdateStatus.idle);
+    if (_status.phase == UpdatePhase.available) {
+      _setStatus(UpdateStatus.idle);
+    }
   }
 
   Future<void> check({required bool userInitiated}) async {
@@ -73,6 +75,10 @@ class AppUpdater extends ChangeNotifier {
         version: release.version,
       );
       if (asset == null) {
+        if (!userInitiated) {
+          _setStatus(UpdateStatus.idle);
+          return;
+        }
         _setStatus(
           UpdateStatus(
             phase: UpdatePhase.error,
@@ -84,6 +90,10 @@ class AppUpdater extends ChangeNotifier {
         return;
       }
       if (!_installer.canAutoInstall) {
+        if (!userInitiated) {
+          _setStatus(UpdateStatus.idle);
+          return;
+        }
         _setStatus(
           UpdateStatus(
             phase: UpdatePhase.error,
@@ -120,6 +130,11 @@ class AppUpdater extends ChangeNotifier {
   }
 
   Future<void> downloadAndInstall() async {
+    if (_status.phase != UpdatePhase.available) {
+      throw StateError(
+        'Cannot install update while phase is ${_status.phase.name}',
+      );
+    }
     final release = _status.release;
     final asset = _status.matchedAsset;
     if (release == null || asset == null) {
