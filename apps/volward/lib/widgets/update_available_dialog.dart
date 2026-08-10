@@ -13,6 +13,34 @@ String summarizeReleaseNotes(String? body, {int maxChars = 400}) {
   return '${text.substring(0, maxChars).trimRight()}…';
 }
 
+Future<void> showUpdateFailureDialog({
+  required BuildContext context,
+  required AppUpdater updater,
+}) async {
+  final l10n = context.l10n;
+  final openDownloadPage = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.settingsUpdateError(updater.status.errorMessage ?? '')),
+      actions: [
+        AppleButton(
+          label: l10n.settingsUpdateLater,
+          variant: AppleButtonVariant.pearl,
+          onPressed: () => Navigator.pop(ctx, false),
+        ),
+        AppleButton(
+          label: l10n.settingsOpenDownloadPage,
+          onPressed: () => Navigator.pop(ctx, true),
+        ),
+      ],
+    ),
+  );
+  if (openDownloadPage == true) {
+    await updater.openDownloadPage();
+  }
+  updater.dismissErrorPrompt();
+}
+
 Future<void> showUpdateAvailableDialog({
   required BuildContext context,
   required AppUpdater updater,
@@ -26,7 +54,9 @@ Future<void> showUpdateAvailableDialog({
     builder: (ctx) => AlertDialog(
       title: Text(l10n.updateAvailableTitle(release.version)),
       content: Text(
-        notes.isEmpty ? l10n.updateNotesUnavailable : l10n.updateAvailableMessage(notes),
+        notes.isEmpty
+            ? l10n.updateNotesUnavailable
+            : l10n.updateAvailableMessage(notes),
       ),
       actions: [
         AppleButton(
@@ -44,7 +74,7 @@ Future<void> showUpdateAvailableDialog({
   if (result == true) {
     await updater.downloadAndInstall();
     if (updater.status.phase == UpdatePhase.error && context.mounted) {
-      // Caller may also listen; keep dialog path simple.
+      await showUpdateFailureDialog(context: context, updater: updater);
     }
   } else {
     updater.dismissAvailable();

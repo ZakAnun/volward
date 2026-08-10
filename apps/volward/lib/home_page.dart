@@ -13,6 +13,7 @@ import 'settings_page.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
 import 'updater/app_updater.dart';
+import 'updater/update_models.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
 import 'widgets/volward_logo.dart';
@@ -168,8 +169,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _maybeCheckForUpdates() async {
     await widget.updater.check(userInitiated: false);
-    if (!mounted || !widget.updater.shouldPromptOnStartup) return;
-    await showUpdateAvailableDialog(context: context, updater: widget.updater);
+    if (!mounted) return;
+    if (widget.updater.shouldPromptOnStartup) {
+      await showUpdateAvailableDialog(
+        context: context,
+        updater: widget.updater,
+      );
+      return;
+    }
+    final status = widget.updater.status;
+    if (status.phase == UpdatePhase.error &&
+        (status.failureKind == UpdateFailureKind.noMatchingAsset ||
+            status.failureKind == UpdateFailureKind.unsupportedRuntime)) {
+      await showUpdateFailureDialog(context: context, updater: widget.updater);
+    }
   }
 
   @override

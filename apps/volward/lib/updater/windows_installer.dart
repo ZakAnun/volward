@@ -3,17 +3,35 @@ import 'dart:io';
 import 'platform_installer.dart';
 import 'update_models.dart';
 
+typedef WindowsProcessStarter =
+    Future<void> Function(
+      String executable,
+      List<String> arguments, {
+      ProcessStartMode mode,
+    });
+
+Future<void> _startWindowsProcess(
+  String executable,
+  List<String> arguments, {
+  ProcessStartMode mode = ProcessStartMode.normal,
+}) async {
+  await Process.start(executable, arguments, mode: mode);
+}
+
 class WindowsInstaller implements PlatformInstaller {
   WindowsInstaller({
     String? resolvedExecutable,
     Future<ProcessResult> Function(String, List<String>)? run,
+    WindowsProcessStarter? start,
     void Function(int code)? exitProcess,
   }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
        _run = run ?? Process.run,
+       _start = start ?? _startWindowsProcess,
        _exitProcess = exitProcess ?? exit;
 
   final String _resolvedExecutable;
   final Future<ProcessResult> Function(String, List<String>) _run;
+  final WindowsProcessStarter _start;
   final void Function(int code) _exitProcess;
 
   @override
@@ -41,18 +59,12 @@ class WindowsInstaller implements PlatformInstaller {
     if (localAppData != null) {
       final exe = File('$localAppData\\Programs\\Volward\\volward.exe');
       if (await exe.exists()) {
-        final relaunch = await _run(exe.path, []);
-        if (relaunch.exitCode != 0) {
-          throw StateError('Relaunch failed: ${relaunch.stderr}');
-        }
+        await _start(exe.path, [], mode: ProcessStartMode.detached);
         _exitProcess(0);
         return;
       }
     }
-    final relaunch = await _run(_resolvedExecutable, []);
-    if (relaunch.exitCode != 0) {
-      throw StateError('Relaunch failed: ${relaunch.stderr}');
-    }
+    await _start(_resolvedExecutable, [], mode: ProcessStartMode.detached);
     _exitProcess(0);
   }
 }

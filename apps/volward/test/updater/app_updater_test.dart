@@ -186,12 +186,13 @@ void main() {
     expect(urls.opened.single, contains('releases/tag/v0.0.2'));
   });
 
-  test('silent check with no matching asset returns to idle', () async {
+  test('silent check with no matching asset surfaces fallback error', () async {
     final updater = buildUpdater(
       source: _FakeSource(_release(assets: const [])),
     );
     await updater.check(userInitiated: false);
-    expect(updater.status.phase, UpdatePhase.idle);
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.noMatchingAsset);
   });
 
   test(
@@ -206,9 +207,20 @@ void main() {
     },
   );
 
-  test('silent check with unsupported runtime returns to idle', () async {
+  test(
+    'silent check with unsupported runtime surfaces fallback error',
+    () async {
+      final updater = buildUpdater(installer: const UnsupportedInstaller());
+      await updater.check(userInitiated: false);
+      expect(updater.status.phase, UpdatePhase.error);
+      expect(updater.status.failureKind, UpdateFailureKind.unsupportedRuntime);
+    },
+  );
+
+  test('dismissErrorPrompt clears an error for the session', () async {
     final updater = buildUpdater(installer: const UnsupportedInstaller());
     await updater.check(userInitiated: false);
+    updater.dismissErrorPrompt();
     expect(updater.status.phase, UpdatePhase.idle);
   });
 }

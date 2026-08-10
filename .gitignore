@@ -53,6 +53,7 @@ coverage/
 
 # Local docs (AI reviews, design specs — local reference only)
 .doc/
+.superpowers/
 docs/
 
 # Git worktrees (local)

@@ -72,6 +72,13 @@ class AppUpdater extends ChangeNotifier {
     }
   }
 
+  void dismissErrorPrompt() {
+    _dismissedThisSession = true;
+    if (_status.phase == UpdatePhase.error) {
+      _setStatus(UpdateStatus.idle);
+    }
+  }
+
   Future<void> check({required bool userInitiated}) async {
     _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
     try {
@@ -89,10 +96,6 @@ class AppUpdater extends ChangeNotifier {
         version: release.version,
       );
       if (asset == null) {
-        if (!userInitiated) {
-          _setStatus(UpdateStatus.idle);
-          return;
-        }
         _setStatus(
           UpdateStatus(
             phase: UpdatePhase.error,
@@ -104,10 +107,6 @@ class AppUpdater extends ChangeNotifier {
         return;
       }
       if (!_installer.canAutoInstall) {
-        if (!userInitiated) {
-          _setStatus(UpdateStatus.idle);
-          return;
-        }
         _setStatus(
           UpdateStatus(
             phase: UpdatePhase.error,

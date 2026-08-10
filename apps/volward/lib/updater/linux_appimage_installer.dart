@@ -3,20 +3,38 @@ import 'dart:io';
 import 'platform_installer.dart';
 import 'update_models.dart';
 
+typedef LinuxProcessStarter =
+    Future<void> Function(
+      String executable,
+      List<String> arguments, {
+      ProcessStartMode mode,
+    });
+
+Future<void> _startLinuxProcess(
+  String executable,
+  List<String> arguments, {
+  ProcessStartMode mode = ProcessStartMode.normal,
+}) async {
+  await Process.start(executable, arguments, mode: mode);
+}
+
 class LinuxAppImageInstaller implements PlatformInstaller {
   LinuxAppImageInstaller({
     String? resolvedExecutable,
     Map<String, String>? environment,
     Future<ProcessResult> Function(String, List<String>)? run,
+    LinuxProcessStarter? start,
     void Function(int code)? exitProcess,
   }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
        _environment = environment ?? Platform.environment,
        _run = run ?? Process.run,
+       _start = start ?? _startLinuxProcess,
        _exitProcess = exitProcess ?? exit;
 
   final String _resolvedExecutable;
   final Map<String, String> _environment;
   final Future<ProcessResult> Function(String, List<String>) _run;
+  final LinuxProcessStarter _start;
   final void Function(int code) _exitProcess;
 
   static bool isAppImageRuntime({
@@ -50,10 +68,7 @@ class LinuxAppImageInstaller implements PlatformInstaller {
       throw StateError('chmod failed');
     }
     await staging.rename(target.path);
-    final relaunch = await _run(target.path, []);
-    if (relaunch.exitCode != 0) {
-      throw StateError('Relaunch failed: ${relaunch.stderr}');
-    }
+    await _start(target.path, [], mode: ProcessStartMode.detached);
     _exitProcess(0);
   }
 }
