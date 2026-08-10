@@ -38,6 +38,36 @@ echo ""
 # Create build directory
 mkdir -p "$BUILD_DIR"
 
+# Aptabase compile-time defines for release builds.
+# Priority: env APTABASE_APP_KEY + APTABASE_HOST → apps/volward/aptabase.json
+# Missing both → Analytics stays Noop in the shipped binary.
+APTABASE_DEFINE_ARGS=()
+resolve_aptabase_defines() {
+  local key="${APTABASE_APP_KEY:-}"
+  local host="${APTABASE_HOST:-}"
+  local json="$APP_DIR/aptabase.json"
+
+  if [[ -n "$key" && -n "$host" ]]; then
+    APTABASE_DEFINE_ARGS=(
+      --dart-define="APTABASE_APP_KEY=$key"
+      --dart-define="APTABASE_HOST=$host"
+    )
+    echo "📊 Aptabase: using env APTABASE_APP_KEY / APTABASE_HOST"
+    return
+  fi
+
+  if [[ -f "$json" ]]; then
+    APTABASE_DEFINE_ARGS=(--dart-define-from-file="$json")
+    echo "📊 Aptabase: using $json"
+    return
+  fi
+
+  echo "⚠️  Aptabase: no env defines and no aptabase.json — release build will use Noop analytics" >&2
+}
+
+resolve_aptabase_defines
+echo ""
+
 to_windows_path() {
   local path="$1"
   if command -v cygpath >/dev/null 2>&1; then
@@ -70,7 +100,7 @@ build_macos() {
   rm -rf build/macos
 
   # Build .app bundle (Xcode Run Script phase invokes macos/build_rust.sh)
-  fvm flutter build macos --release
+  fvm flutter build macos --release "${APTABASE_DEFINE_ARGS[@]}"
 
   # Copy to build directory
   APP_BUNDLE="$APP_DIR/build/macos/Build/Products/Release/volward.app"
@@ -117,7 +147,7 @@ build_windows() {
   rm -rf build/windows
 
   # Build
-  flutter build windows --release
+  flutter build windows --release "${APTABASE_DEFINE_ARGS[@]}"
 
   # Copy to build directory
   WIN_BUILD="$APP_DIR/build/windows/x64/runner/Release"
@@ -173,7 +203,7 @@ build_linux() {
   rm -rf build/linux
 
   # Build
-  flutter build linux --release
+  flutter build linux --release "${APTABASE_DEFINE_ARGS[@]}"
 
   # Create tarball
   LINUX_BUILD="$APP_DIR/build/linux/x64/release/bundle"
