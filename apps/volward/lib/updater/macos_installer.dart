@@ -54,23 +54,59 @@ class MacosInstaller implements PlatformInstaller {
       throw StateError('volward.app not found in zip');
     }
     final backup = '$currentApp.bak-${DateTime.now().millisecondsSinceEpoch}';
-    await _run('mv', [currentApp, backup]);
+    final backupMove = await _run('mv', [currentApp, backup]);
+    if (backupMove.exitCode != 0) {
+      throw StateError('Failed to back up current app: ${backupMove.stderr}');
+    }
+
+    Object? replacementError;
     try {
       final move = await _run('mv', [newApp.path, currentApp]);
       if (move.exitCode != 0) {
-        throw StateError('Failed to move new app into place');
+        replacementError = StateError(
+          'Failed to move new app into place: ${move.stderr}',
+        );
       }
-    } catch (_) {
-      await _run('mv', [backup, currentApp]);
-      rethrow;
+    } catch (error) {
+      replacementError = error;
     }
+    if (replacementError != null) {
+      await _restoreBackup(currentApp: currentApp, backup: backup);
+      throw StateError('Failed to replace current app: $replacementError');
+    }
+
     await _run('xattr', ['-cr', currentApp]);
-    final open = await _run('open', [currentApp]);
-    if (open.exitCode != 0) {
-      throw StateError('open failed: ${open.stderr}');
+    Object? openError;
+    try {
+      final open = await _run('open', [currentApp]);
+      if (open.exitCode != 0) {
+        openError = StateError('open failed: ${open.stderr}');
+      }
+    } catch (error) {
+      openError = error;
+    }
+    if (openError != null) {
+      await _restoreBackup(currentApp: currentApp, backup: backup);
+      throw StateError('open failed: $openError');
     }
     await _run('rm', ['-rf', backup]);
     _exitProcess(0);
+  }
+
+  Future<void> _restoreBackup({
+    required String currentApp,
+    required String backup,
+  }) async {
+    final remove = await _run('rm', ['-rf', currentApp]);
+    if (remove.exitCode != 0) {
+      throw StateError(
+        'Failed to remove replacement app during rollback: ${remove.stderr}',
+      );
+    }
+    final restore = await _run('mv', [backup, currentApp]);
+    if (restore.exitCode != 0) {
+      throw StateError('Failed to restore app backup: ${restore.stderr}');
+    }
   }
 
   Future<Directory?> _findAppBundle(Directory root) async {

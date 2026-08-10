@@ -50,7 +50,10 @@ class LinuxAppImageInstaller implements PlatformInstaller {
       throw StateError('chmod failed');
     }
     await staging.rename(target.path);
-    await _run(target.path, []);
+    final relaunch = await _run(target.path, []);
+    if (relaunch.exitCode != 0) {
+      throw StateError('Relaunch failed: ${relaunch.stderr}');
+    }
     _exitProcess(0);
   }
 }

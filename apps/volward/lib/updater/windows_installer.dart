@@ -41,12 +41,18 @@ class WindowsInstaller implements PlatformInstaller {
     if (localAppData != null) {
       final exe = File('$localAppData\\Programs\\Volward\\volward.exe');
       if (await exe.exists()) {
-        await _run(exe.path, []);
+        final relaunch = await _run(exe.path, []);
+        if (relaunch.exitCode != 0) {
+          throw StateError('Relaunch failed: ${relaunch.stderr}');
+        }
         _exitProcess(0);
         return;
       }
     }
-    await _run(_resolvedExecutable, []);
+    final relaunch = await _run(_resolvedExecutable, []);
+    if (relaunch.exitCode != 0) {
+      throw StateError('Relaunch failed: ${relaunch.stderr}');
+    }
     _exitProcess(0);
   }
 }
