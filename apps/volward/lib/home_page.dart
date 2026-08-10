@@ -23,6 +23,7 @@ import 'snapshot_catalog.dart';
 import 'snapshot_query.dart';
 import 'snapshot_view_cache.dart';
 import 'widgets/top_toast.dart';
+import 'widgets/update_available_dialog.dart';
 
 /// Returns the path that the refresh button should target (Design §6.1).
 ///
@@ -160,6 +161,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // Opportunistic deep hydration — must never gate the first render.
       await widget.session.restoreCachedSnapshotIfNeeded();
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_maybeCheckForUpdates());
+    });
+  }
+
+  Future<void> _maybeCheckForUpdates() async {
+    await widget.updater.check(userInitiated: false);
+    if (!mounted || !widget.updater.shouldPromptOnStartup) return;
+    await showUpdateAvailableDialog(context: context, updater: widget.updater);
   }
 
   @override
