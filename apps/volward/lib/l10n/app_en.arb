@@ -215,5 +215,52 @@
   },
   "stickyBrowseResults": "Select items to move to Trash",
   "stickyReadyToScan": "Ready to scan",
-  "stickyLoadingEngine": "Loading engine…"
+  "stickyLoadingEngine": "Loading engine…",
+  "settingsAboutSection": "About",
+  "settingsCurrentVersion": "Version {version}",
+  "@settingsCurrentVersion": {
+    "placeholders": {
+      "version": {}
+    }
+  },
+  "settingsCheckForUpdates": "Check for updates",
+  "settingsCheckingForUpdates": "Checking…",
+  "settingsUpToDate": "You're up to date.",
+  "settingsUpdateAvailable": "Update available: {version}",
+  "@settingsUpdateAvailable": {
+    "placeholders": {
+      "version": {}
+    }
+  },
+  "settingsUpdateNow": "Update now",
+  "settingsUpdateLater": "Later",
+  "settingsDownloadingUpdate": "Downloading update… {percent}%",
+  "@settingsDownloadingUpdate": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsInstallingUpdate": "Installing update…",
+  "settingsUpdateError": "Update check failed: {error}",
+  "@settingsUpdateError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "settingsOpenDownloadPage": "Open download page",
+  "updateAvailableTitle": "Update available — {version}",
+  "@updateAvailableTitle": {
+    "placeholders": {
+      "version": {}
+    }
+  },
+  "updateAvailableMessage": "{notes}",
+  "@updateAvailableMessage": {
+    "placeholders": {
+      "notes": {}
+    }
+  },
+  "updateNotesUnavailable": "A newer Volward release is ready to install."
 }

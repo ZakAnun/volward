@@ -703,6 +703,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading engine…'**
   String get stickyLoadingEngine;
+
+  /// No description provided for @settingsAboutSection.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get settingsAboutSection;
+
+  /// No description provided for @settingsCurrentVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version}'**
+  String settingsCurrentVersion(Object version);
+
+  /// No description provided for @settingsCheckForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get settingsCheckForUpdates;
+
+  /// No description provided for @settingsCheckingForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get settingsCheckingForUpdates;
+
+  /// No description provided for @settingsUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re up to date.'**
+  String get settingsUpToDate;
+
+  /// No description provided for @settingsUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Update available: {version}'**
+  String settingsUpdateAvailable(Object version);
+
+  /// No description provided for @settingsUpdateNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Update now'**
+  String get settingsUpdateNow;
+
+  /// No description provided for @settingsUpdateLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get settingsUpdateLater;
+
+  /// No description provided for @settingsDownloadingUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading update… {percent}%'**
+  String settingsDownloadingUpdate(int percent);
+
+  /// No description provided for @settingsInstallingUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Installing update…'**
+  String get settingsInstallingUpdate;
+
+  /// No description provided for @settingsUpdateError.
+  ///
+  /// In en, this message translates to:
+  /// **'Update check failed: {error}'**
+  String settingsUpdateError(Object error);
+
+  /// No description provided for @settingsOpenDownloadPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open download page'**
+  String get settingsOpenDownloadPage;
+
+  /// No description provided for @updateAvailableTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Update available — {version}'**
+  String updateAvailableTitle(Object version);
+
+  /// No description provided for @updateAvailableMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'{notes}'**
+  String updateAvailableMessage(Object notes);
+
+  /// No description provided for @updateNotesUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A newer Volward release is ready to install.'**
+  String get updateNotesUnavailable;
 }
 
 class _AppLocalizationsDelegate

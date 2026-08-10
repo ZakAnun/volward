@@ -351,4 +351,61 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get stickyLoadingEngine => '正在加载引擎…';
+
+  @override
+  String get settingsAboutSection => '关于';
+
+  @override
+  String settingsCurrentVersion(Object version) {
+    return '版本 $version';
+  }
+
+  @override
+  String get settingsCheckForUpdates => '检查更新';
+
+  @override
+  String get settingsCheckingForUpdates => '正在检查…';
+
+  @override
+  String get settingsUpToDate => '已是最新版本。';
+
+  @override
+  String settingsUpdateAvailable(Object version) {
+    return '发现新版本：$version';
+  }
+
+  @override
+  String get settingsUpdateNow => '立即更新';
+
+  @override
+  String get settingsUpdateLater => '稍后';
+
+  @override
+  String settingsDownloadingUpdate(int percent) {
+    return '正在下载更新… $percent%';
+  }
+
+  @override
+  String get settingsInstallingUpdate => '正在安装更新…';
+
+  @override
+  String settingsUpdateError(Object error) {
+    return '检查更新失败：$error';
+  }
+
+  @override
+  String get settingsOpenDownloadPage => '打开下载页';
+
+  @override
+  String updateAvailableTitle(Object version) {
+    return '发现新版本 — $version';
+  }
+
+  @override
+  String updateAvailableMessage(Object notes) {
+    return '$notes';
+  }
+
+  @override
+  String get updateNotesUnavailable => '有新的 Volward 版本可以安装。';
 }

@@ -375,4 +375,62 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get stickyLoadingEngine => 'Loading engine…';
+
+  @override
+  String get settingsAboutSection => 'About';
+
+  @override
+  String settingsCurrentVersion(Object version) {
+    return 'Version $version';
+  }
+
+  @override
+  String get settingsCheckForUpdates => 'Check for updates';
+
+  @override
+  String get settingsCheckingForUpdates => 'Checking…';
+
+  @override
+  String get settingsUpToDate => 'You\'re up to date.';
+
+  @override
+  String settingsUpdateAvailable(Object version) {
+    return 'Update available: $version';
+  }
+
+  @override
+  String get settingsUpdateNow => 'Update now';
+
+  @override
+  String get settingsUpdateLater => 'Later';
+
+  @override
+  String settingsDownloadingUpdate(int percent) {
+    return 'Downloading update… $percent%';
+  }
+
+  @override
+  String get settingsInstallingUpdate => 'Installing update…';
+
+  @override
+  String settingsUpdateError(Object error) {
+    return 'Update check failed: $error';
+  }
+
+  @override
+  String get settingsOpenDownloadPage => 'Open download page';
+
+  @override
+  String updateAvailableTitle(Object version) {
+    return 'Update available — $version';
+  }
+
+  @override
+  String updateAvailableMessage(Object notes) {
+    return '$notes';
+  }
+
+  @override
+  String get updateNotesUnavailable =>
+      'A newer Volward release is ready to install.';
 }
