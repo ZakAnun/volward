@@ -1,0 +1,33 @@
+/// Returns `MAJOR.MINOR.PATCH` or null if not a stable release tag.
+String? normalizeReleaseTag(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  final withoutV = trimmed.startsWith(RegExp(r'[vV]'))
+      ? trimmed.substring(1)
+      : trimmed;
+  final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)$').firstMatch(withoutV);
+  if (match == null) return null;
+  return '${match[1]}.${match[2]}.${match[3]}';
+}
+
+int compareSemver(String a, String b) {
+  List<int> parts(String v) =>
+      v.split('.').map(int.parse).toList(growable: false);
+  final pa = parts(a);
+  final pb = parts(b);
+  for (var i = 0; i < 3; i++) {
+    final c = pa[i].compareTo(pb[i]);
+    if (c != 0) return c;
+  }
+  return 0;
+}
+
+bool isRemoteNewer({
+  required String remoteTag,
+  required String localVersion,
+}) {
+  final remote = normalizeReleaseTag(remoteTag);
+  final local = normalizeReleaseTag(localVersion);
+  if (remote == null || local == null) return false;
+  return compareSemver(remote, local) > 0;
+}
