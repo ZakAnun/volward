@@ -35,8 +35,9 @@ class ScanSnapshotState {
       scanned: true,
     );
     final categoryCounts = _stringCountMap(summary['category_counts']);
-    final deletableCategoryCounts =
-        _stringCountMap(summary['deletable_counts']);
+    final deletableCategoryCounts = _stringCountMap(
+      summary['deletable_counts'],
+    );
     final stats = summary['stats'] is Map
         ? Map<String, dynamic>.from(summary['stats'] as Map)
         : <String, dynamic>{};
@@ -44,7 +45,8 @@ class ScanSnapshotState {
         (stats['files_in_snapshot'] as num?)?.toInt() ??
         (summary['entry_count'] as num?)?.toInt() ??
         0;
-    stats['scan_state'] = stats['scan_state']?.toString() ??
+    stats['scan_state'] =
+        stats['scan_state']?.toString() ??
         summary['scan_state']?.toString() ??
         'Done';
     final extraFields = Map<String, dynamic>.from(summary)

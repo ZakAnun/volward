@@ -65,24 +65,30 @@ void main() {
       expect(first['snapshot_id'], isNot(second['snapshot_id']));
     });
 
-    test('preview snapshots only expose direct children at the first level',
-        () {
-      final snapshot = buildPreviewSnapshot(
-        rootPath: '/Users/test',
-        quickListEntries: const [
-          {'path': '/Users/test/Documents', 'is_dir': true},
-          {'path': '/Users/test/notes.txt', 'is_dir': false, 'size_bytes': 42},
-        ],
-      );
+    test(
+      'preview snapshots only expose direct children at the first level',
+      () {
+        final snapshot = buildPreviewSnapshot(
+          rootPath: '/Users/test',
+          quickListEntries: const [
+            {'path': '/Users/test/Documents', 'is_dir': true},
+            {
+              'path': '/Users/test/notes.txt',
+              'is_dir': false,
+              'size_bytes': 42,
+            },
+          ],
+        );
 
-      final root = ScanTreeNode.fromSnapshotJson(
-        snapshot['tree'] as Map<String, dynamic>,
-      );
-      expect(root.children, hasLength(2));
-      expect(root.scanned, isFalse);
-      // First level only — the directory child carries no grandchildren.
-      final dir = root.children.firstWhere((c) => c.name == 'Documents');
-      expect(dir.children, isEmpty);
-    });
+        final root = ScanTreeNode.fromSnapshotJson(
+          snapshot['tree'] as Map<String, dynamic>,
+        );
+        expect(root.children, hasLength(2));
+        expect(root.scanned, isFalse);
+        // First level only — the directory child carries no grandchildren.
+        final dir = root.children.firstWhere((c) => c.name == 'Documents');
+        expect(dir.children, isEmpty);
+      },
+    );
   });
 }

@@ -7,10 +7,10 @@ void main() {
     test('runScan clears transient scan state at completion', () async {
       final session = VolwardSession.test();
       session.setScanRoots(['/root']);
-      session.primeTransientScanStateForTest(progress: {
-        'phase': 'Walking',
-        'paths_seen': 12,
-      }, scanning: false);
+      session.primeTransientScanStateForTest(
+        progress: {'phase': 'Walking', 'paths_seen': 12},
+        scanning: false,
+      );
       session.scanRunnerForTest = (jobId, roots) async {
         expect(jobId, startsWith('job-'));
         expect(roots, ['/root']);
@@ -46,12 +46,15 @@ void main() {
       final session = VolwardSession.test();
       session.setScanRoots(['/root']);
       session.setCurrentPathForTest('/root/Documents');
-      session.primeTransientScanStateForTest(progress: {
-        'phase': 'Walking',
-        'paths_seen': 42,
-        'dirs_seen': 10,
-        'files_seen': 32,
-      }, lastJobId: 'job-cancel-test');
+      session.primeTransientScanStateForTest(
+        progress: {
+          'phase': 'Walking',
+          'paths_seen': 42,
+          'dirs_seen': 10,
+          'files_seen': 32,
+        },
+        lastJobId: 'job-cancel-test',
+      );
       session.scanElapsedNotifier.value = '12s';
       session.scannedFractionNotifier.value = 0.42;
 
@@ -72,10 +75,10 @@ void main() {
       final session = VolwardSession.test();
       session.setScanRoots(['/root']);
       session.setCurrentPathForTest('/root/Documents');
-      session.primeTransientScanStateForTest(progress: {
-        'phase': 'SavingResults',
-        'paths_seen': 10,
-      }, lastJobId: 'job-dispose-test');
+      session.primeTransientScanStateForTest(
+        progress: {'phase': 'SavingResults', 'paths_seen': 10},
+        lastJobId: 'job-dispose-test',
+      );
 
       session.dispose();
 
@@ -128,18 +131,16 @@ void main() {
         notifyCount++;
       });
 
-      session.primeTransientScanStateForTest(progress: {
-        'phase': 'Walking',
-        'paths_seen': 1,
-      });
+      session.primeTransientScanStateForTest(
+        progress: {'phase': 'Walking', 'paths_seen': 1},
+      );
       await session.applyMergeForTest('/root', subtreeTree, []);
       expect(notifyCount, 1);
 
       session.clearTransientScanStateForTest();
-      session.primeTransientScanStateForTest(progress: {
-        'phase': 'Walking',
-        'paths_seen': 2,
-      });
+      session.primeTransientScanStateForTest(
+        progress: {'phase': 'Walking', 'paths_seen': 2},
+      );
       await session.applyMergeForTest('/root', subtreeTree, []);
       expect(notifyCount, 2);
     });
