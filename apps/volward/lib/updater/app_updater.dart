@@ -30,6 +30,20 @@ class AppUpdater extends ChangeNotifier {
        _urlOpener = urlOpener,
        _tempDirectoryBuilder = tempDirectoryBuilder;
 
+  @visibleForTesting
+  factory AppUpdater.test({String localVersion = '0.0.0'}) {
+    return AppUpdater(
+      localVersionReader: _TestLocalVersionReader(localVersion),
+      versionSource: _TestVersionSource(localVersion),
+      downloader: const _TestDownloader(),
+      installer: const UnsupportedInstaller(),
+      urlOpener: const _TestUrlOpener(),
+      os: 'test',
+      abi: Abi.current(),
+      tempDirectoryBuilder: () => Directory.systemTemp,
+    );
+  }
+
   final LocalVersionReader _localVersionReader;
   final VersionSource _versionSource;
   final Downloader _downloader;
@@ -206,4 +220,48 @@ class AppUpdater extends ChangeNotifier {
     _status = next;
     notifyListeners();
   }
+}
+
+class _TestLocalVersionReader implements LocalVersionReader {
+  const _TestLocalVersionReader(this.version);
+
+  final String version;
+
+  @override
+  Future<String> currentVersion() async => version;
+}
+
+class _TestVersionSource implements VersionSource {
+  const _TestVersionSource(this.version);
+
+  final String version;
+
+  @override
+  Future<ReleaseInfo> fetchLatest() async => ReleaseInfo(
+    tagName: 'v$version',
+    version: version,
+    htmlUrl: 'https://example.invalid/releases/latest',
+    body: '',
+    assets: const [],
+  );
+}
+
+class _TestDownloader implements Downloader {
+  const _TestDownloader();
+
+  @override
+  Future<File> download(
+    ReleaseAsset asset, {
+    required Directory directory,
+    DownloadProgress? onProgress,
+  }) {
+    throw UnsupportedError('Downloads are disabled in AppUpdater.test');
+  }
+}
+
+class _TestUrlOpener implements UrlOpener {
+  const _TestUrlOpener();
+
+  @override
+  Future<bool> open(String url) async => true;
 }

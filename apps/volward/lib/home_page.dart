@@ -12,6 +12,7 @@ import 'theme/apple_tokens.dart';
 import 'settings_page.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
+import 'updater/app_updater.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
 import 'widgets/volward_logo.dart';
@@ -71,9 +72,11 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.session,
     required this.themeSettings,
+    required this.updater,
   });
   final VolwardSession session;
   final VolwardThemeSettings themeSettings;
+  final AppUpdater updater;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -1720,6 +1723,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         _resetColumnNav();
                       });
                     },
+                    updater: widget.updater,
                   ),
                 ),
               );

@@ -9,6 +9,7 @@ import 'package:volward/scan_preview.dart';
 import 'package:volward/scan_snapshot_state.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/theme/volward_theme_settings.dart';
+import 'package:volward/updater/app_updater.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 
@@ -52,12 +53,20 @@ class _BlockingSession extends VolwardSession {
   }
 }
 
-Widget _shell(VolwardSession session, VolwardThemeSettings themeSettings) {
+Widget _shell(
+  VolwardSession session,
+  VolwardThemeSettings themeSettings,
+  AppUpdater updater,
+) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
     theme: buildVolwardTheme(brightness: Brightness.light),
-    home: HomePage(session: session, themeSettings: themeSettings),
+    home: HomePage(
+      session: session,
+      themeSettings: themeSettings,
+      updater: updater,
+    ),
   );
 }
 
@@ -72,9 +81,11 @@ void main() {
         ..defaultRootForTest = (() => '/')
         ..rootExistsForTest = ((_) => true);
       final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
       addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
 
-      await tester.pumpWidget(_shell(session, themeSettings));
+      await tester.pumpWidget(_shell(session, themeSettings, updater));
       await tester.pump();
 
       expect(session.previewCalls, 1);
@@ -93,9 +104,11 @@ void main() {
         ..defaultRootForTest = (() => '')
         ..rootExistsForTest = ((_) => false);
       final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
       addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
 
-      await tester.pumpWidget(_shell(session, themeSettings));
+      await tester.pumpWidget(_shell(session, themeSettings, updater));
       await tester.pump();
 
       // No valid root → preview is never started, picker stays available.
@@ -116,9 +129,11 @@ void main() {
       )
       ..rootExistsForTest = ((_) => true);
     final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
 
-    await tester.pumpWidget(_shell(session, themeSettings));
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
 
     expect(session.previewCalls, 1);
