@@ -65,12 +65,12 @@ jobs:
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
-          # CI runners have no Apple Development cert; force ad-hoc signing via xcodebuild.
+          # Nested Rust dylib is ad-hoc signed in macos/build_rust.sh (required on
+          # Intel CI). Do not pass xcodebuild args after "--": flutter treats them
+          # as Dart entrypoints ("Target file CODE_SIGN_IDENTITY=- not found").
           flutter build macos --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
-            -- \
-            CODE_SIGN_IDENTITY=-
+            --dart-define="APTABASE_HOST=$APTABASE_HOST"
 
       - name: Verify macOS bundle
         run: |
@@ -327,7 +327,8 @@ jobs:
         run: |
           APPIMAGE=$(ls Volward-v*-linux-x86_64.AppImage | head -n 1)
           test -f "$APPIMAGE"
-          "$APPIMAGE" --appimage-extract >/dev/null
+          # Relative filenames are not on PATH; require ./ prefix.
+          "./$APPIMAGE" --appimage-extract >/dev/null
           test -x squashfs-root/AppRun
           test -f squashfs-root/volward
           test -f squashfs-root/lib/libvolward_facade.so
