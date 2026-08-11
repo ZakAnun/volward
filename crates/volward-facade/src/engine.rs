@@ -746,6 +746,11 @@ fn find_tree_node<'a>(node: &'a ScanTreeNode, target: &str) -> Option<&'a ScanTr
 
 fn parent_path_of(path: &str) -> Option<String> {
     let normalized = normalize_facade_path(path);
+    if let Some(share) = unc_share_root(&normalized) {
+        if share.eq_ignore_ascii_case(&normalized) {
+            return Some(share);
+        }
+    }
     match normalized.rfind('/') {
         Some(2) if has_windows_drive_prefix(&normalized) => Some(normalized[..3].to_string()),
         Some(0) => Some("/".to_string()),
@@ -782,6 +787,16 @@ fn is_unc_path(path: &str) -> bool {
     }
     let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
     parts.next().is_some() && parts.next().is_some()
+}
+
+fn unc_share_root(path: &str) -> Option<String> {
+    if !is_unc_path(path) {
+        return None;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    let server = parts.next()?;
+    let share = parts.next()?;
+    Some(format!("//{server}/{share}"))
 }
 
 fn has_windows_drive_prefix(path: &str) -> bool {
@@ -1042,6 +1057,10 @@ mod tests {
         assert_eq!(
             parent_path_of("//server/share/a/b.txt").as_deref(),
             Some("//server/share/a")
+        );
+        assert_eq!(
+            parent_path_of("//server/share").as_deref(),
+            Some("//server/share")
         );
     }
 }

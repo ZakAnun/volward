@@ -75,11 +75,56 @@ String lastPathSegment(String path) {
 bool isUnderFsRoot(String path, String rootPath) {
   final normalizedPath = normalizeFsPath(path);
   final normalizedRoot = normalizeFsPath(rootPath);
+  if (normalizedRoot.isEmpty) return false;
+  final windowsStyle = _hasWindowsDrivePrefix(normalizedPath) ||
+      _hasWindowsDrivePrefix(normalizedRoot) ||
+      normalizedPath.startsWith('//') ||
+      normalizedRoot.startsWith('//');
+  if (windowsStyle) {
+    if (_equalsIgnoreAsciiCase(normalizedPath, normalizedRoot)) return true;
+    if (normalizedPath.length <= normalizedRoot.length) return false;
+    if (!_regionEqualsIgnoreAsciiCase(
+      normalizedPath,
+      0,
+      normalizedRoot,
+      0,
+      normalizedRoot.length,
+    )) {
+      return false;
+    }
+    if (normalizedRoot == '/' || _isWindowsDriveRoot(normalizedRoot)) {
+      return true;
+    }
+    return normalizedPath.codeUnitAt(normalizedRoot.length) == 47;
+  }
   if (normalizedPath == normalizedRoot) return true;
   if (!normalizedPath.startsWith(normalizedRoot)) return false;
   if (normalizedRoot == '/' || _isWindowsDriveRoot(normalizedRoot)) return true;
   return normalizedPath.length > normalizedRoot.length &&
       normalizedPath.codeUnitAt(normalizedRoot.length) == 47;
+}
+
+bool _equalsIgnoreAsciiCase(String left, String right) {
+  if (left.length != right.length) return false;
+  return _regionEqualsIgnoreAsciiCase(left, 0, right, 0, left.length);
+}
+
+bool _regionEqualsIgnoreAsciiCase(
+  String left,
+  int leftStart,
+  String right,
+  int rightStart,
+  int length,
+) {
+  for (var i = 0; i < length; i++) {
+    final a = left.codeUnitAt(leftStart + i);
+    final b = right.codeUnitAt(rightStart + i);
+    if (a == b) continue;
+    final la = (a >= 65 && a <= 90) ? a + 32 : a;
+    final lb = (b >= 65 && b <= 90) ? b + 32 : b;
+    if (la != lb) return false;
+  }
+  return true;
 }
 
 bool _isWindowsDriveRoot(String path) {

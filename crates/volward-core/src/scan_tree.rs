@@ -303,11 +303,25 @@ fn parent_path(path: &str, root_path: &str) -> String {
 fn is_under_root(path: &str, root_path: &str) -> bool {
     let path = normalize_path(path);
     let root_path = normalize_path(root_path);
-    path == root_path
-        || (path.starts_with(&root_path)
-            && (root_path == "/"
-                || is_windows_drive_root(&root_path)
-                || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+    if root_path.is_empty() {
+        return false;
+    }
+    let windows_style = has_windows_drive_prefix(&path)
+        || has_windows_drive_prefix(&root_path)
+        || path.starts_with("//")
+        || root_path.starts_with("//");
+    if windows_style {
+        path.eq_ignore_ascii_case(&root_path)
+            || (path.len() > root_path.len()
+                && path.as_bytes()[..root_path.len()].eq_ignore_ascii_case(root_path.as_bytes())
+                && (root_path == "/"
+                    || is_windows_drive_root(&root_path)
+                    || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+    } else {
+        path == root_path
+            || (path.starts_with(&root_path)
+                && (root_path == "/" || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+    }
 }
 
 fn relative_path(root_path: &str, path: &str) -> String {
@@ -343,6 +357,11 @@ fn join_path(base: &str, segment: &str) -> String {
     } else {
         format!("{base}/{segment}")
     }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn is_windows_drive_root(path: &str) -> bool {
@@ -525,6 +544,16 @@ mod tests {
             parent_path("//server/shareextra/foo", "//server/share"),
             "//server/share"
         );
+    }
+
+    #[test]
+    fn under_root_is_case_insensitive_for_windows_paths() {
+        assert!(is_under_root("c:/Users/me/a.txt", "C:/Users/me"));
+        assert!(is_under_root(
+            "//SERVER/Share/folder/a.txt",
+            "//server/share"
+        ));
+        assert!(!is_under_root("c:/Users/media", "C:/Users/me"));
     }
 
     #[test]

@@ -311,7 +311,7 @@ impl SnapshotIndex {
     }
 
     pub fn from_snapshot_with_version(snapshot: &StorageSnapshot, version: u64) -> Self {
-        let root_path = snapshot.tree.path.clone();
+        let root_path = normalize_path(&snapshot.tree.path);
         let mut table = StringTable::default();
         let root_id = table.intern(&root_path);
 
@@ -330,9 +330,10 @@ impl SnapshotIndex {
             if entry.deletable {
                 *deletable_counts.entry(cat.clone()).or_insert(0) += 1;
             }
-            let parent_str = parent_path_of(&entry.path_or_uri);
+            let path = normalize_path(&entry.path_or_uri);
+            let parent_str = parent_path_of(&path);
             let id_id = table.intern(&entry.id);
-            let path_id = table.intern(&entry.path_or_uri);
+            let path_id = table.intern(&path);
             let parent_id = table.intern(&parent_str);
             let display_name_id = table.intern(&entry.display_name);
             let category_id = table.intern(&cat);
@@ -554,10 +555,11 @@ impl SnapshotIndex {
                     .reclaimable_estimate_bytes
                     .saturating_add(entry.size_bytes);
             }
-            let parent_str = parent_path_of(&entry.path_or_uri);
-            let stable_entry_id = stable_scoped_entry_id(&entry.path_or_uri);
+            let path = normalize_path(&entry.path_or_uri);
+            let parent_str = parent_path_of(&path);
+            let stable_entry_id = stable_scoped_entry_id(&path);
             let id_id = self.table.intern(&stable_entry_id);
-            let path_id = self.table.intern(&entry.path_or_uri);
+            let path_id = self.table.intern(&path);
             let parent_id = self.table.intern(&parent_str);
             let display_name_id = self.table.intern(&entry.display_name);
             let category_id = self.table.intern(&cat);
@@ -943,10 +945,11 @@ impl SnapshotIndexBuilder {
     }
 
     pub fn insert_entry(&mut self, entry: StorageEntry) {
-        if !path_is_at_or_below(&entry.path_or_uri, &self.root_path) {
+        let path = normalize_path(&entry.path_or_uri);
+        if !path_is_at_or_below(&path, &self.root_path) {
             return;
         }
-        let parent_str = parent_path_of_for_root(&entry.path_or_uri, &self.root_path);
+        let parent_str = parent_path_of_for_root(&path, &self.root_path);
         let parent_id = self.table.intern(&parent_str);
         self.ensure_dir_internal(parent_id);
 
@@ -961,7 +964,7 @@ impl SnapshotIndexBuilder {
         }
 
         let id_id = self.table.intern(&entry.id);
-        let path_id = self.table.intern(&entry.path_or_uri);
+        let path_id = self.table.intern(&path);
         let parent_path_id = self.table.intern(&parent_str);
         let display_name_id = self.table.intern(&entry.display_name);
         let category_id = self.table.intern(&category);
@@ -1276,6 +1279,11 @@ fn name_of(path: &str) -> String {
 
 fn parent_path_of(path: &str) -> String {
     let path = normalize_path(path);
+    if let Some(share) = unc_share_root(&path) {
+        if paths_equal(&share, &path) {
+            return share;
+        }
+    }
     match path.rfind('/') {
         Some(2) if has_windows_drive_prefix(&path) => path[..3].to_string(),
         Some(i) if i > 0 => path[..i].to_string(),
@@ -1292,7 +1300,7 @@ fn parent_path_of(path: &str) -> String {
 fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
     let path = normalize_path(path);
     let root_path = normalize_path(root_path);
-    if path == root_path {
+    if paths_equal(&path, &root_path) {
         return root_path;
     }
     if is_windows_drive_root(&root_path) {
@@ -1300,7 +1308,7 @@ fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
             .rfind('/')
             .map(|idx| {
                 let parent = &path[..idx];
-                if parent == &root_path[..root_path.len() - 1] {
+                if paths_equal(parent, &root_path[..root_path.len() - 1]) {
                     root_path.clone()
                 } else {
                     parent.to_string()
@@ -1340,14 +1348,37 @@ fn decrement_count(counts: &mut HashMap<String, u64>, category: &str) {
     }
 }
 
+fn is_windows_style_path(path: &str) -> bool {
+    has_windows_drive_prefix(path) || path.starts_with("//")
+}
+
+fn paths_equal(left: &str, right: &str) -> bool {
+    if is_windows_style_path(left) || is_windows_style_path(right) {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
     let path = normalize_path(path);
     let root = normalize_path(root);
-    path == root
-        || (path.starts_with(&root)
-            && (root == "/"
-                || is_windows_drive_root(&root)
-                || path.as_bytes().get(root.len()) == Some(&b'/')))
+    if root.is_empty() {
+        return false;
+    }
+    let windows_style = is_windows_style_path(&path) || is_windows_style_path(&root);
+    if windows_style {
+        path.eq_ignore_ascii_case(&root)
+            || (path.len() > root.len()
+                && path.as_bytes()[..root.len()].eq_ignore_ascii_case(root.as_bytes())
+                && (root == "/"
+                    || is_windows_drive_root(&root)
+                    || path.as_bytes().get(root.len()) == Some(&b'/')))
+    } else {
+        path == root
+            || (path.starts_with(&root)
+                && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+    }
 }
 
 fn walk_tree(
@@ -1360,7 +1391,8 @@ fn walk_tree(
     entry_by_id: &HashMap<u32, EntryRecord>,
     file_size_by_path: &mut HashMap<u32, u64>,
 ) -> (u64, u64, u64) {
-    let node_path_id = table.intern(&node.path);
+    let node_path = normalize_path(&node.path);
+    let node_path_id = table.intern(&node_path);
 
     if !node.is_dir {
         // Files are indexed via entry_by_id; just register as child of parent.
@@ -1994,6 +2026,7 @@ mod tests {
             "//server/share/a"
         );
         assert_eq!(parent_path_of("//server/share/a"), "//server/share");
+        assert_eq!(parent_path_of("//server/share"), "//server/share");
     }
 
     #[test]
@@ -2007,5 +2040,49 @@ mod tests {
             parent_path_of_for_root("//server/shareextra/foo", "//server/share"),
             "//server/share"
         );
+    }
+
+    #[test]
+    fn path_is_at_or_below_is_case_insensitive_for_windows_paths() {
+        assert!(path_is_at_or_below("c:/Users/me/a.txt", "C:/Users/me"));
+        assert!(path_is_at_or_below(
+            "//SERVER/Share/folder/a.txt",
+            "//server/share"
+        ));
+        assert!(!path_is_at_or_below("c:/Users/media", "C:/Users/me"));
+    }
+
+    #[test]
+    fn insert_entry_normalizes_path_before_intern() {
+        let mut builder = SnapshotIndexBuilder::new(r"C:\Users\me");
+        builder.insert_entry(StorageEntry {
+            id: "e1".to_string(),
+            display_name: "a.txt".to_string(),
+            path_or_uri: r"C:\Users\me\docs\a.txt".to_string(),
+            size_bytes: 10,
+            category: EntryCategory::Cache,
+            risk_level: RiskLevel::Low,
+            source_type: SourceType::File,
+            deletable: true,
+            reason: "cache".to_string(),
+        });
+        let index = builder.finish(
+            "snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats {
+                paths_seen: 1,
+                dirs_seen: 1,
+                files_seen: 1,
+                files_in_snapshot: 1,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
+        );
+        let result = index.query_directory("C:/Users/me/docs", None, false, "size_desc");
+        assert_eq!(result.direct_entries.len(), 1);
+        assert_eq!(result.direct_entries[0].path, "C:/Users/me/docs/a.txt");
     }
 }

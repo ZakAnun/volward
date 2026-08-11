@@ -608,11 +608,25 @@ impl<'a> ScanOrchestrator<'a> {
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
     let path = normalize_scan_path(path);
     let root = normalize_scan_path(root);
-    path == root
-        || (path.starts_with(&root)
-            && (root == "/"
-                || is_windows_drive_root(&root)
-                || path.as_bytes().get(root.len()) == Some(&b'/')))
+    if root.is_empty() {
+        return false;
+    }
+    let windows_style = has_windows_drive_prefix(&path)
+        || has_windows_drive_prefix(&root)
+        || path.starts_with("//")
+        || root.starts_with("//");
+    if windows_style {
+        path.eq_ignore_ascii_case(&root)
+            || (path.len() > root.len()
+                && path.as_bytes()[..root.len()].eq_ignore_ascii_case(root.as_bytes())
+                && (root == "/"
+                    || is_windows_drive_root(&root)
+                    || path.as_bytes().get(root.len()) == Some(&b'/')))
+    } else {
+        path == root
+            || (path.starts_with(&root)
+                && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+    }
 }
 
 fn normalize_scan_path(path: &str) -> String {
@@ -637,6 +651,11 @@ fn is_unc_path(path: &str) -> bool {
     }
     let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
     parts.next().is_some() && parts.next().is_some()
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn is_windows_drive_root(path: &str) -> bool {
@@ -866,6 +885,11 @@ mod tests {
         ));
         assert!(!path_is_at_or_below(
             "//server/shareextra/folder",
+            "//server/share"
+        ));
+        assert!(path_is_at_or_below("c:/Users/me/a.txt", "C:/Users/me"));
+        assert!(path_is_at_or_below(
+            "//SERVER/Share/folder/a.txt",
             "//server/share"
         ));
     }

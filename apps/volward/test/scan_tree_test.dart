@@ -345,6 +345,15 @@ void main() {
       expect(isUnderFsRoot('//server/shareextra/a', '//server/share'), isFalse);
       expect(isUnderFsRoot('//server/share/a', '//server/share'), isTrue);
     });
+
+    test('windows under-root checks are case insensitive', () {
+      expect(isUnderFsRoot('c:/Users/me/a.txt', 'C:/Users/me'), isTrue);
+      expect(
+        isUnderFsRoot('//SERVER/Share/folder/a.txt', '//server/share'),
+        isTrue,
+      );
+      expect(isUnderFsRoot('c:/Users/media', 'C:/Users/me'), isFalse);
+    });
   });
 
   group('flattenVisible', () {
