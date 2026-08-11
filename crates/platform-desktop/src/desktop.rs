@@ -104,19 +104,46 @@ impl Default for DesktopPlatform {
 
 impl DesktopPlatform {
     pub fn new() -> Self {
-        let mut protected = vec![
-            "/System".to_string(),
-            "/private/var/db".to_string(),
-            "/private/var/vm".to_string(),
-            "/usr".to_string(),
-            "/bin".to_string(),
-            "/sbin".to_string(),
-            "/dev".to_string(),
-            "/cores".to_string(),
-        ];
-        if let Some(home) = dirs::home_dir() {
-            protected.push(home.join(".ssh").to_string_lossy().to_string());
+        let mut protected = Vec::new();
+        #[cfg(target_os = "macos")]
+        {
+            protected.extend([
+                "/System".to_string(),
+                "/private/var/db".to_string(),
+                "/private/var/vm".to_string(),
+                "/usr".to_string(),
+                "/bin".to_string(),
+                "/sbin".to_string(),
+                "/dev".to_string(),
+                "/cores".to_string(),
+            ]);
         }
+        #[cfg(target_os = "linux")]
+        {
+            protected.extend([
+                "/proc".to_string(),
+                "/sys".to_string(),
+                "/dev".to_string(),
+                "/run".to_string(),
+            ]);
+        }
+        #[cfg(windows)]
+        {
+            protected.extend([
+                "C:/Windows".to_string(),
+                "C:/Program Files".to_string(),
+                "C:/Program Files (x86)".to_string(),
+            ]);
+        }
+        if let Some(home) = dirs::home_dir() {
+            protected.push(normalize_path_string(
+                &home.join(".ssh").to_string_lossy(),
+            ));
+        }
+        protected = protected
+            .into_iter()
+            .map(|p| normalize_path_string(&p))
+            .collect();
         Self {
             protected_prefixes: protected,
         }
@@ -482,6 +509,25 @@ mod tests {
     use super::*;
     use volward_core::platform::{PlatformStorage, WalkOptions};
     use volward_core::{Classifier, ScanOrchestrator};
+
+    #[test]
+    fn protected_prefixes_include_platform_defaults() {
+        let p = DesktopPlatform::new();
+        let prefixes = p.protected_prefixes();
+        #[cfg(windows)]
+        {
+            assert!(prefixes.iter().any(|x| x == "C:/Windows" || x.ends_with("/Windows")));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert!(prefixes.iter().any(|x| x == "/proc"));
+            assert!(prefixes.iter().any(|x| x == "/sys"));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert!(prefixes.iter().any(|x| x == "/System"));
+        }
+    }
 
     #[test]
     fn discovers_home_when_empty_selection() {
