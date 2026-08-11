@@ -260,10 +260,7 @@ fn normalize_path(path: &str) -> String {
         }
         return trimmed.trim_end_matches('/').to_string();
     }
-    if normalized.len() > 1
-        && normalized.ends_with('/')
-        && !is_windows_drive_root(&normalized)
-    {
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
         normalized[..normalized.len() - 1].to_string()
     } else {
         normalized
@@ -327,10 +324,6 @@ fn relative_path(root_path: &str, path: &str) -> String {
     }
     if is_windows_drive_root(&root_path) {
         path.strip_prefix(&root_path).unwrap_or("").to_string()
-    } else if unc_share_root(&root_path).is_some() {
-        path.strip_prefix(&format!("{root_path}/"))
-            .unwrap_or("")
-            .to_string()
     } else {
         path.strip_prefix(&format!("{root_path}/"))
             .unwrap_or("")
@@ -354,10 +347,7 @@ fn join_path(base: &str, segment: &str) -> String {
 
 fn is_windows_drive_root(path: &str) -> bool {
     let bytes = path.as_bytes();
-    bytes.len() == 3
-        && bytes[1] == b':'
-        && bytes[2] == b'/'
-        && bytes[0].is_ascii_alphabetic()
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn aggregate_sizes(node: &mut ScanTreeNode) {

@@ -769,10 +769,7 @@ fn normalize_facade_path(path: &str) -> String {
         }
         return trimmed.to_string();
     }
-    if normalized.len() > 1
-        && normalized.ends_with('/')
-        && !is_windows_drive_root(&normalized)
-    {
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
         normalized[..normalized.len() - 1].to_string()
     } else {
         normalized
@@ -789,10 +786,7 @@ fn is_unc_path(path: &str) -> bool {
 
 fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
-    bytes.len() >= 3
-        && bytes[1] == b':'
-        && bytes[2] == b'/'
-        && bytes[0].is_ascii_alphabetic()
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn is_windows_drive_root(path: &str) -> bool {
@@ -1037,8 +1031,14 @@ mod tests {
     #[test]
     fn parent_path_of_handles_windows_drive_root_children() {
         assert_eq!(parent_path_of("C:/pagefile.sys").as_deref(), Some("C:/"));
-        assert_eq!(parent_path_of(r"C:\Users\me\a.txt").as_deref(), Some("C:/Users/me"));
-        assert_eq!(parent_path_of("/Users/x/a.txt").as_deref(), Some("/Users/x"));
+        assert_eq!(
+            parent_path_of(r"C:\Users\me\a.txt").as_deref(),
+            Some("C:/Users/me")
+        );
+        assert_eq!(
+            parent_path_of("/Users/x/a.txt").as_deref(),
+            Some("/Users/x")
+        );
         assert_eq!(
             parent_path_of("//server/share/a/b.txt").as_deref(),
             Some("//server/share/a")

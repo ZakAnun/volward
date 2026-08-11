@@ -181,11 +181,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get permissionNativeOutdatedDescription =>
-      'Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).';
+      'Rebuild the native Rust library for this platform and fully restart the app.';
 
   @override
-  String get permissionDeepScanReady =>
-      'Full Disk Access enabled — deep scan on.';
+  String get permissionDeepScanReady => 'Deep scan is available.';
 
   @override
   String get permissionFullDiskRecommended =>

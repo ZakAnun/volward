@@ -55,16 +55,9 @@ impl Classifier {
     }
 
     pub fn from_rules(rules: &DesktopRules, extra_protected: &[String]) -> Self {
-        let mut protected_prefixes: Vec<String> = extra_protected
-            .iter()
-            .map(|p| normalize_path(p))
-            .collect();
-        protected_prefixes.extend(
-            rules
-                .protected_prefixes
-                .iter()
-                .map(|p| normalize_path(p)),
-        );
+        let mut protected_prefixes: Vec<String> =
+            extra_protected.iter().map(|p| normalize_path(p)).collect();
+        protected_prefixes.extend(rules.protected_prefixes.iter().map(|p| normalize_path(p)));
 
         let cache_res = rules
             .cache_patterns
@@ -97,7 +90,7 @@ impl Classifier {
     fn path_might_match_rules(&self, path: &str) -> bool {
         let path = normalize_path(path);
         for prefix in &self.protected_prefixes {
-            if path.starts_with(prefix) {
+            if path_is_at_or_below(&path, prefix) {
                 return true;
             }
         }
@@ -159,7 +152,7 @@ impl Classifier {
             .to_string();
 
         for prefix in &self.protected_prefixes {
-            if path.starts_with(prefix) {
+            if path_is_at_or_below(&path, prefix) {
                 return Some(entry(
                     entry_id_seed,
                     &path,
@@ -234,12 +227,36 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+fn path_is_at_or_below(path: &str, root: &str) -> bool {
+    if root.is_empty() {
+        return false;
+    }
+    let windows_style = has_windows_drive_prefix(path)
+        || has_windows_drive_prefix(root)
+        || path.starts_with("//")
+        || root.starts_with("//");
+    if windows_style {
+        path.eq_ignore_ascii_case(root)
+            || (path.len() > root.len()
+                && path.as_bytes()[..root.len()].eq_ignore_ascii_case(root.as_bytes())
+                && (root == "/"
+                    || is_windows_drive_root(root)
+                    || path.as_bytes().get(root.len()) == Some(&b'/')))
+    } else {
+        path == root
+            || (path.starts_with(root)
+                && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+    }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
 fn is_windows_drive_root(path: &str) -> bool {
     let bytes = path.as_bytes();
-    bytes.len() == 3
-        && bytes[1] == b':'
-        && bytes[2] == b'/'
-        && bytes[0].is_ascii_alphabetic()
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn entry(
@@ -304,9 +321,12 @@ mod tests {
     fn protected_prefix_matches_after_backslash_normalize() {
         let c = Classifier::new(vec![r"C:\Windows".to_string()]);
         let e = c
-            .classify_path(r"C:\Windows\System32\x.dll", 1, false, "t")
+            .classify_path(r"c:\windows\System32\x.dll", 1, false, "t")
             .expect("classified");
         assert_eq!(e.category, EntryCategory::System);
+        assert!(c
+            .classify_path(r"C:\Windows.old\x.dll", 1, false, "t")
+            .is_none());
     }
 
     #[test]

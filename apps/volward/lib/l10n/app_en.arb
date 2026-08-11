@@ -83,8 +83,8 @@
     }
   },
   "permissionNativeOutdatedTitle": "Native library outdated",
-  "permissionNativeOutdatedDescription": "Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).",
-  "permissionDeepScanReady": "Full Disk Access enabled — deep scan on.",
+  "permissionNativeOutdatedDescription": "Rebuild the native Rust library for this platform and fully restart the app.",
+  "permissionDeepScanReady": "Deep scan is available.",
   "permissionFullDiskRecommended": "Full Disk Access recommended for ~/Library cache scan.",
   "permissionFullDiskRecommendedTitle": "Full Disk Access recommended",
   "permissionFullDiskInstructions": "System Settings → Privacy & Security → Full Disk Access → enable Volward. Debug builds: tap +, Cmd+Shift+G, select volward.app.",

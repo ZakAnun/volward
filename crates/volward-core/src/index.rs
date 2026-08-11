@@ -1257,10 +1257,7 @@ fn normalize_path(path: &str) -> String {
         }
         return trimmed.trim_end_matches('/').to_string();
     }
-    if normalized.len() > 1
-        && normalized.ends_with('/')
-        && !is_windows_drive_root(&normalized)
-    {
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
         normalized[..normalized.len() - 1].to_string()
     } else if path.is_empty() {
         "/".to_string()
@@ -1434,10 +1431,7 @@ fn walk_tree(
 /// filesystem root "/") so catalog keys agree on the canonical form.
 fn normalize_index_path(path: &str) -> String {
     let normalized = normalize_path(path);
-    if normalized.len() > 1
-        && normalized.ends_with('/')
-        && !is_windows_drive_root(&normalized)
-    {
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
         normalized[..normalized.len() - 1].to_string()
     } else {
         normalized
@@ -1446,18 +1440,12 @@ fn normalize_index_path(path: &str) -> String {
 
 fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
-    bytes.len() >= 3
-        && bytes[1] == b':'
-        && bytes[2] == b'/'
-        && bytes[0].is_ascii_alphabetic()
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn is_windows_drive_root(path: &str) -> bool {
     let bytes = path.as_bytes();
-    bytes.len() == 3
-        && bytes[1] == b':'
-        && bytes[2] == b'/'
-        && bytes[0].is_ascii_alphabetic()
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn passes_entry_filter(
@@ -2001,13 +1989,19 @@ mod tests {
         assert_eq!(normalize_path(r"\\server\share\a\b"), "//server/share/a/b");
         assert_eq!(normalize_path("//server/share/"), "//server/share");
         assert_eq!(normalize_path("//server/share///"), "//server/share");
-        assert_eq!(parent_path_of(r"\\server\share\a\b.txt"), "//server/share/a");
+        assert_eq!(
+            parent_path_of(r"\\server\share\a\b.txt"),
+            "//server/share/a"
+        );
         assert_eq!(parent_path_of("//server/share/a"), "//server/share");
     }
 
     #[test]
     fn path_is_at_or_below_rejects_unc_false_prefix() {
-        assert!(!path_is_at_or_below("//server/shareextra", "//server/share"));
+        assert!(!path_is_at_or_below(
+            "//server/shareextra",
+            "//server/share"
+        ));
         assert!(path_is_at_or_below("//server/share/a", "//server/share"));
         assert_eq!(
             parent_path_of_for_root("//server/shareextra/foo", "//server/share"),
