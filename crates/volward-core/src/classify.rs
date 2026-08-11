@@ -32,6 +32,10 @@ impl Classifier {
     }
 
     pub fn new(protected_prefixes: Vec<String>) -> Self {
+        let protected_prefixes = protected_prefixes
+            .into_iter()
+            .map(|p| normalize_path(&p))
+            .collect();
         Self {
             cache_res: vec![Regex::new(r"(?i)(/Caches/|/cache/|\.cache/)").expect("cache regex")],
             temp_res: vec![Regex::new(r"(?i)(/tmp/|/temp/|\.tmp$)").expect("temp regex")],
@@ -51,8 +55,9 @@ impl Classifier {
     }
 
     pub fn from_rules(rules: &DesktopRules, extra_protected: &[String]) -> Self {
-        let mut protected_prefixes: Vec<String> = extra_protected.to_vec();
-        protected_prefixes.extend(rules.protected_prefixes.clone());
+        let mut protected_prefixes: Vec<String> =
+            extra_protected.iter().map(|p| normalize_path(p)).collect();
+        protected_prefixes.extend(rules.protected_prefixes.iter().map(|p| normalize_path(p)));
 
         let cache_res = rules
             .cache_patterns
@@ -83,8 +88,9 @@ impl Classifier {
 
     /// Cheap pre-check before regex / StorageEntry allocation.
     fn path_might_match_rules(&self, path: &str) -> bool {
+        let path = normalize_path(path);
         for prefix in &self.protected_prefixes {
-            if path.starts_with(prefix) {
+            if path_is_at_or_below(&path, prefix) {
                 return true;
             }
         }
@@ -133,7 +139,8 @@ impl Classifier {
         is_dir: bool,
         entry_id_seed: &str,
     ) -> Option<StorageEntry> {
-        if !self.path_might_match_rules(path) {
+        let path = normalize_path(path);
+        if !self.path_might_match_rules(&path) {
             return None;
         }
 
@@ -141,14 +148,14 @@ impl Classifier {
             .rsplit('/')
             .next()
             .filter(|s| !s.is_empty())
-            .unwrap_or(path)
+            .unwrap_or(&path)
             .to_string();
 
         for prefix in &self.protected_prefixes {
-            if path.starts_with(prefix) {
+            if path_is_at_or_below(&path, prefix) {
                 return Some(entry(
                     entry_id_seed,
-                    path,
+                    &path,
                     name,
                     size_bytes,
                     is_dir,
@@ -160,10 +167,10 @@ impl Classifier {
             }
         }
 
-        if self.cache_res.iter().any(|re| re.is_match(path)) {
+        if self.cache_res.iter().any(|re| re.is_match(&path)) {
             return Some(entry(
                 entry_id_seed,
-                path,
+                &path,
                 name,
                 size_bytes,
                 is_dir,
@@ -174,10 +181,10 @@ impl Classifier {
             ));
         }
 
-        if self.temp_res.iter().any(|re| re.is_match(path)) {
+        if self.temp_res.iter().any(|re| re.is_match(&path)) {
             return Some(entry(
                 entry_id_seed,
-                path,
+                &path,
                 name,
                 size_bytes,
                 is_dir,
@@ -196,7 +203,7 @@ impl Classifier {
         }) {
             return Some(entry(
                 entry_id_seed,
-                path,
+                &path,
                 name,
                 size_bytes,
                 is_dir,
@@ -209,6 +216,47 @@ impl Classifier {
 
         None
     }
+}
+
+fn normalize_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn path_is_at_or_below(path: &str, root: &str) -> bool {
+    if root.is_empty() {
+        return false;
+    }
+    let windows_style = has_windows_drive_prefix(path)
+        || has_windows_drive_prefix(root)
+        || path.starts_with("//")
+        || root.starts_with("//");
+    if windows_style {
+        path.eq_ignore_ascii_case(root)
+            || (path.len() > root.len()
+                && path.as_bytes()[..root.len()].eq_ignore_ascii_case(root.as_bytes())
+                && (root == "/"
+                    || is_windows_drive_root(root)
+                    || path.as_bytes().get(root.len()) == Some(&b'/')))
+    } else {
+        path == root
+            || (path.starts_with(root)
+                && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+    }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn entry(
@@ -267,6 +315,18 @@ mod tests {
         let e = c.classify_path("/System/Library", 10, true, "t").unwrap();
         assert_eq!(e.category, EntryCategory::System);
         assert!(!e.deletable);
+    }
+
+    #[test]
+    fn protected_prefix_matches_after_backslash_normalize() {
+        let c = Classifier::new(vec![r"C:\Windows".to_string()]);
+        let e = c
+            .classify_path(r"c:\windows\System32\x.dll", 1, false, "t")
+            .expect("classified");
+        assert_eq!(e.category, EntryCategory::System);
+        assert!(c
+            .classify_path(r"C:\Windows.old\x.dll", 1, false, "t")
+            .is_none());
     }
 
     #[test]

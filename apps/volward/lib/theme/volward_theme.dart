@@ -1,8 +1,17 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'apple_tokens.dart';
 import 'volward_tokens.dart';
+
+List<String> _volwardFontFamilyFallback() {
+  if (Platform.isMacOS) {
+    return ['.AppleSystemUIFont', ...AppleTypography.fontFamilyFallback];
+  }
+  return AppleTypography.fontFamilyFallback;
+}
 
 ThemeData buildVolwardTheme({
   required Brightness brightness,
@@ -23,13 +32,19 @@ ThemeData buildVolwardTheme({
     surfaceContainerHighest: tokens.canvas,
   );
 
-  TextStyle inkStyle(TextStyle base) => base.copyWith(color: tokens.ink);
-  TextStyle mutedStyle(TextStyle base) =>
-      base.copyWith(color: tokens.inkMuted80);
+  TextStyle inkStyle(TextStyle base) => base.copyWith(
+    color: tokens.ink,
+    fontFamilyFallback: _volwardFontFamilyFallback(),
+  );
+  TextStyle mutedStyle(TextStyle base) => base.copyWith(
+    color: tokens.inkMuted80,
+    fontFamilyFallback: _volwardFontFamilyFallback(),
+  );
 
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    visualDensity: VisualDensity.adaptivePlatformDensity,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: tokens.canvasParchment,
     dividerColor: tokens.hairline,
@@ -57,6 +72,7 @@ ThemeData buildVolwardTheme({
       toolbarHeight: 44,
       titleTextStyle: AppleTypography.navLink.copyWith(
         color: tokens.bodyOnDark,
+        fontFamilyFallback: _volwardFontFamilyFallback(),
       ),
       iconTheme: IconThemeData(color: tokens.bodyMuted),
       actionsIconTheme: IconThemeData(color: tokens.bodyMuted),
@@ -89,6 +105,7 @@ ThemeData buildVolwardTheme({
       backgroundColor: tokens.ink,
       contentTextStyle: AppleTypography.caption.copyWith(
         color: tokens.bodyOnDark,
+        fontFamilyFallback: _volwardFontFamilyFallback(),
       ),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(

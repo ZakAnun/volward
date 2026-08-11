@@ -10,7 +10,7 @@ class AptabaseAnalytics implements Analytics {
   @override
   Future<void> track(String name, [Map<String, Object?>? props]) async {
     try {
-      final filtered = filterAnalyticsProps(props);
+      final filtered = filterAnalyticsProps(withAnalyticsPlatform(props));
       await Aptabase.instance.trackEvent(
         name,
         filtered.isEmpty ? null : filtered,

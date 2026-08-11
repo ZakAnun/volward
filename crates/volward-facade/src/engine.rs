@@ -712,12 +712,13 @@ fn write_snapshot_pb_atomic(snapshot: &StorageSnapshot, path: &str) -> Result<St
 }
 
 fn index_target_path_size(index: &SnapshotIndex, target: &str) -> Option<(String, u64)> {
-    let parent = parent_path_of(target)?;
-    let query = index.query_directory(parent, None, false, "name");
+    let target = normalize_facade_path(target);
+    let parent = parent_path_of(&target)?;
+    let query = index.query_directory(&parent, None, false, "name");
     query
         .direct_children
         .into_iter()
-        .find(|node| node.path == target)
+        .find(|node| facade_paths_equal(&node.path, &target))
         .map(|node| (node.path, node.size_bytes))
 }
 
@@ -733,24 +734,92 @@ fn snapshot_target_path_size(
 }
 
 fn find_tree_node<'a>(node: &'a ScanTreeNode, target: &str) -> Option<&'a ScanTreeNode> {
-    if node.path == target {
+    let target = normalize_facade_path(target);
+    if facade_paths_equal(&normalize_facade_path(&node.path), &target) {
         return Some(node);
     }
     for child in &node.children {
-        if let Some(found) = find_tree_node(child, target) {
+        if let Some(found) = find_tree_node(child, &target) {
             return Some(found);
         }
     }
     None
 }
 
-fn parent_path_of(path: &str) -> Option<&str> {
-    let idx = path.rfind('/')?;
-    if idx == 0 {
-        Some("/")
-    } else {
-        Some(&path[..idx])
+fn parent_path_of(path: &str) -> Option<String> {
+    let normalized = normalize_facade_path(path);
+    if let Some(share) = unc_share_root(&normalized) {
+        if share.eq_ignore_ascii_case(&normalized) {
+            return Some(share);
+        }
     }
+    match normalized.rfind('/') {
+        Some(2) if has_windows_drive_prefix(&normalized) => Some(normalized[..3].to_string()),
+        Some(0) => Some("/".to_string()),
+        Some(i) if i > 0 => Some(normalized[..i].to_string()),
+        _ => {
+            if is_windows_drive_root(&normalized) {
+                Some(normalized)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn normalize_facade_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if is_unc_path(&normalized) {
+        let trimmed = normalized.trim_end_matches('/');
+        if trimmed.is_empty() || trimmed == "/" {
+            return normalized;
+        }
+        return trimmed.to_string();
+    }
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn is_unc_path(path: &str) -> bool {
+    if !path.starts_with("//") {
+        return false;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    parts.next().is_some() && parts.next().is_some()
+}
+
+fn unc_share_root(path: &str) -> Option<String> {
+    if !is_unc_path(path) {
+        return None;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    let server = parts.next()?;
+    let share = parts.next()?;
+    Some(format!("//{server}/{share}"))
+}
+
+fn facade_paths_equal(left: &str, right: &str) -> bool {
+    let windows_style = has_windows_drive_prefix(left)
+        || has_windows_drive_prefix(right)
+        || left.starts_with("//")
+        || right.starts_with("//");
+    if windows_style {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    has_windows_drive_prefix(path) && path.len() == 3
 }
 
 #[cfg(test)]
@@ -986,5 +1055,26 @@ mod tests {
         // error path end-to-end through the JSON encoding.
         let json = engine.quick_list_dir_json("/definitely/does/not/exist/volward-test");
         assert!(json.contains("error"));
+    }
+
+    #[test]
+    fn parent_path_of_handles_windows_drive_root_children() {
+        assert_eq!(parent_path_of("C:/pagefile.sys").as_deref(), Some("C:/"));
+        assert_eq!(
+            parent_path_of(r"C:\Users\me\a.txt").as_deref(),
+            Some("C:/Users/me")
+        );
+        assert_eq!(
+            parent_path_of("/Users/x/a.txt").as_deref(),
+            Some("/Users/x")
+        );
+        assert_eq!(
+            parent_path_of("//server/share/a/b.txt").as_deref(),
+            Some("//server/share/a")
+        );
+        assert_eq!(
+            parent_path_of("//server/share").as_deref(),
+            Some("//server/share")
+        );
     }
 }

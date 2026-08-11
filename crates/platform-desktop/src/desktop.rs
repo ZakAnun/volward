@@ -27,6 +27,77 @@ fn system_time_secs(time: SystemTime) -> i64 {
     }
 }
 
+fn normalize_path_string(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+fn normalize_protected_prefixes(prefixes: Vec<String>) -> Vec<String> {
+    prefixes
+        .into_iter()
+        .map(|p| normalize_path_string(&p))
+        .filter(|p| !p.is_empty())
+        .fold(Vec::<String>::new(), |mut acc, p| {
+            if !acc
+                .iter()
+                .any(|existing| protected_prefixes_equal(existing, &p))
+            {
+                acc.push(p);
+            }
+            acc
+        })
+}
+
+fn protected_prefixes_equal(left: &str, right: &str) -> bool {
+    let windows_style = has_windows_drive_prefix(left)
+        || has_windows_drive_prefix(right)
+        || left.starts_with("//")
+        || right.starts_with("//");
+    if windows_style {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+#[cfg(any(windows, test))]
+fn windows_protected_prefixes_from_env(get_env: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let mut protected = Vec::new();
+    for key in ["SystemRoot", "WINDIR", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(value) = get_env(key) {
+            protected.push(value);
+        }
+    }
+    for fallback in ["C:/Windows", "C:/Program Files", "C:/Program Files (x86)"] {
+        if !protected
+            .iter()
+            .any(|path| protected_prefixes_equal(&normalize_path_string(path), fallback))
+        {
+            protected.push(fallback.to_string());
+        }
+    }
+    normalize_protected_prefixes(protected)
+}
+
+#[cfg(windows)]
+fn windows_protected_prefixes() -> Vec<String> {
+    windows_protected_prefixes_from_env(|key| std::env::var(key).ok())
+}
+
 fn dir_fingerprint_from_read_dir(
     path: &Path,
     children: &[Result<DirEntry<((), ())>, Error>],
@@ -87,19 +158,37 @@ impl Default for DesktopPlatform {
 
 impl DesktopPlatform {
     pub fn new() -> Self {
-        let mut protected = vec![
-            "/System".to_string(),
-            "/private/var/db".to_string(),
-            "/private/var/vm".to_string(),
-            "/usr".to_string(),
-            "/bin".to_string(),
-            "/sbin".to_string(),
-            "/dev".to_string(),
-            "/cores".to_string(),
-        ];
-        if let Some(home) = dirs::home_dir() {
-            protected.push(home.join(".ssh").to_string_lossy().to_string());
+        let mut protected = Vec::new();
+        #[cfg(target_os = "macos")]
+        {
+            protected.extend([
+                "/System".to_string(),
+                "/private/var/db".to_string(),
+                "/private/var/vm".to_string(),
+                "/usr".to_string(),
+                "/bin".to_string(),
+                "/sbin".to_string(),
+                "/dev".to_string(),
+                "/cores".to_string(),
+            ]);
         }
+        #[cfg(target_os = "linux")]
+        {
+            protected.extend([
+                "/proc".to_string(),
+                "/sys".to_string(),
+                "/dev".to_string(),
+                "/run".to_string(),
+            ]);
+        }
+        #[cfg(windows)]
+        {
+            protected.extend(windows_protected_prefixes());
+        }
+        if let Some(home) = dirs::home_dir() {
+            protected.push(normalize_path_string(&home.join(".ssh").to_string_lossy()));
+        }
+        protected = normalize_protected_prefixes(protected);
         Self {
             protected_prefixes: protected,
         }
@@ -149,28 +238,48 @@ impl DesktopPlatform {
             .iter()
             .any(|probe| Self::can_read_probe(probe))
     }
+
+    #[cfg(target_os = "macos")]
+    fn deep_scan_ready() -> bool {
+        Self::has_full_disk_access()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn deep_scan_ready() -> bool {
+        true
+    }
+
+    #[cfg(target_os = "macos")]
+    fn permission_hints(deep_scan_ready: bool) -> Vec<String> {
+        if deep_scan_ready {
+            Vec::new()
+        } else {
+            vec![
+                "Enable Full Disk Access for Volward in System Settings → Privacy & Security → Full Disk Access to scan ~/Library caches and app data."
+                    .to_string(),
+            ]
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn permission_hints(_deep_scan_ready: bool) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 impl PlatformStorage for DesktopPlatform {
     fn probe_capabilities(&self) -> PlatformCapabilities {
-        let fda = Self::has_full_disk_access();
-        let mut hints = Vec::new();
-        if !fda {
-            hints.push(
-                "Enable Full Disk Access for Volward in System Settings → Privacy & Security → Full Disk Access to scan ~/Library caches and app data."
-                    .to_string(),
-            );
-        }
+        let deep_scan_ready = Self::deep_scan_ready();
         PlatformCapabilities {
             level: CapabilityLevel::FullPath,
             can_delete: true,
-            can_traverse_system_paths: fda,
-            permission_hints: hints,
+            can_traverse_system_paths: deep_scan_ready,
+            permission_hints: Self::permission_hints(deep_scan_ready),
         }
     }
 
     fn is_deep_scan_ready(&self) -> bool {
-        Self::has_full_disk_access()
+        Self::deep_scan_ready()
     }
 
     fn discover_roots(&self, user_selected: &[String]) -> Result<Vec<ScanRoot>, PlatformError> {
@@ -179,7 +288,7 @@ impl PlatformStorage for DesktopPlatform {
             let path = PathBuf::from(p);
             if path.exists() {
                 roots.push(ScanRoot {
-                    path: path.to_string_lossy().to_string(),
+                    path: normalize_path_string(&path.to_string_lossy()),
                     label: path
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -190,7 +299,7 @@ impl PlatformStorage for DesktopPlatform {
         if roots.is_empty() {
             if let Some(home) = dirs::home_dir() {
                 roots.push(ScanRoot {
-                    path: home.to_string_lossy().to_string(),
+                    path: normalize_path_string(&home.to_string_lossy()),
                     label: "Home".to_string(),
                 });
             }
@@ -259,7 +368,7 @@ impl PlatformStorage for DesktopPlatform {
                     }
                 };
                 let path = entry.path();
-                let path_str = path.to_string_lossy().to_string();
+                let path_str = normalize_path_string(&path.to_string_lossy());
                 if is_protected_path(&path, &self.protected_prefixes) {
                     continue;
                 }
@@ -415,7 +524,7 @@ impl PlatformStorage for DesktopPlatform {
             };
             let is_dir = metadata.is_dir();
             out.push(RawFsEntry {
-                path: entry_path.to_string_lossy().to_string(),
+                path: normalize_path_string(&entry_path.to_string_lossy()),
                 is_dir,
                 size_bytes: if is_dir { 0 } else { metadata.len() },
                 dir_fingerprint: None,
@@ -453,6 +562,30 @@ impl PlatformStorage for DesktopPlatform {
                 available = stat.f_bavail as u64 * bsize;
             }
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+            let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+            wide.push(0);
+            let mut free_available = 0u64;
+            let mut total_bytes = 0u64;
+            let mut total_free = 0u64;
+            let ok = unsafe {
+                GetDiskFreeSpaceExW(
+                    wide.as_ptr(),
+                    &mut free_available,
+                    &mut total_bytes,
+                    &mut total_free,
+                )
+            };
+            if ok == 0 {
+                return Err(PlatformError::Io(std::io::Error::last_os_error()));
+            }
+            total = total_bytes;
+            available = free_available;
+        }
         Ok(VolumeStats {
             total_bytes: total,
             available_bytes: available,
@@ -465,6 +598,82 @@ mod tests {
     use super::*;
     use volward_core::platform::{PlatformStorage, WalkOptions};
     use volward_core::{Classifier, ScanOrchestrator};
+
+    #[test]
+    fn protected_prefixes_include_platform_defaults() {
+        let p = DesktopPlatform::new();
+        let prefixes = p.protected_prefixes();
+        #[cfg(windows)]
+        {
+            assert!(prefixes
+                .iter()
+                .any(|x| x == "C:/Windows" || x.ends_with("/Windows")));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert!(prefixes.iter().any(|x| x == "/proc"));
+            assert!(prefixes.iter().any(|x| x == "/sys"));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert!(prefixes.iter().any(|x| x == "/System"));
+        }
+    }
+
+    #[test]
+    fn windows_protected_prefixes_use_environment_roots() {
+        let prefixes = windows_protected_prefixes_from_env(|key| match key {
+            "SystemRoot" => Some(r"D:\Windows".to_string()),
+            "ProgramFiles" => Some(r"D:\Apps\Program Files".to_string()),
+            "ProgramFiles(x86)" => Some(r"D:\Apps\Program Files (x86)".to_string()),
+            _ => None,
+        });
+
+        assert!(prefixes.iter().any(|path| path == "D:/Windows"));
+        assert!(prefixes.iter().any(|path| path == "D:/Apps/Program Files"));
+        assert!(prefixes
+            .iter()
+            .any(|path| path == "D:/Apps/Program Files (x86)"));
+        assert!(prefixes.iter().any(|path| path == "C:/Windows"));
+        assert!(prefixes.iter().any(|path| path == "C:/Program Files"));
+        assert!(prefixes.iter().any(|path| path == "C:/Program Files (x86)"));
+    }
+
+    #[test]
+    fn protected_prefix_normalization_deduplicates_windows_case() {
+        let prefixes = normalize_protected_prefixes(vec![
+            r"C:\Windows".to_string(),
+            "c:/windows".to_string(),
+            "/System".to_string(),
+            "/System".to_string(),
+        ]);
+
+        assert_eq!(
+            prefixes
+                .iter()
+                .filter(|path| path.eq_ignore_ascii_case("C:/Windows"))
+                .count(),
+            1
+        );
+        assert_eq!(prefixes.iter().filter(|path| *path == "/System").count(), 1);
+    }
+
+    #[test]
+    fn deep_scan_capability_is_platform_specific() {
+        let p = DesktopPlatform::new();
+        let caps = p.probe_capabilities();
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(caps.can_traverse_system_paths, p.is_deep_scan_ready());
+            assert_eq!(caps.permission_hints.is_empty(), p.is_deep_scan_ready(),);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(p.is_deep_scan_ready());
+            assert!(caps.can_traverse_system_paths);
+            assert!(caps.permission_hints.is_empty());
+        }
+    }
 
     #[test]
     fn discovers_home_when_empty_selection() {

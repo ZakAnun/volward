@@ -38,7 +38,7 @@ impl ScanTreeBuilder {
     }
 
     pub fn ensure_dir(&mut self, path: &str) {
-        let path = normalize_path(path);
+        let path = canonicalize_under_root(path, &self.root_path);
         if !is_under_root(&path, &self.root_path) {
             return;
         }
@@ -46,7 +46,7 @@ impl ScanTreeBuilder {
     }
 
     pub fn insert_file(&mut self, path: &str, entry_id: Option<&str>, size: u64) {
-        let path = normalize_path(path);
+        let path = canonicalize_under_root(path, &self.root_path);
         if !is_under_root(&path, &self.root_path) {
             return;
         }
@@ -74,8 +74,8 @@ impl ScanTreeBuilder {
 
     /// Replace the children of `dir_path` with a cloned cached subtree.
     pub fn graft_subtree(&mut self, dir_path: &str, source: &ScanTreeNode) {
-        let dir_path = normalize_path(dir_path);
-        if !source.is_dir || normalize_path(&source.path) != dir_path {
+        let dir_path = canonicalize_under_root(dir_path, &self.root_path);
+        if !source.is_dir || !paths_equal(&normalize_path(&source.path), &dir_path) {
             return;
         }
         self.ensure_dir_internal(&dir_path);
@@ -108,13 +108,12 @@ impl ScanTreeBuilder {
     }
 
     fn ensure_dir_internal(&mut self, path: &str) {
-        if self.dir_paths.contains_key(path) {
+        if self.dir_paths.contains_key(path) || paths_equal(path, &self.root_path) {
             return;
         }
 
         let relative = relative_path(&self.root_path, path);
         if relative.is_empty() {
-            self.dir_paths.insert(path.to_string(), ());
             return;
         }
 
@@ -124,7 +123,7 @@ impl ScanTreeBuilder {
 
         for segment in segments {
             let parent_path_for_index = current_path.clone();
-            current_path = format!("{current_path}/{segment}");
+            current_path = join_path(&current_path, segment);
             if self.dir_paths.contains_key(&current_path) {
                 current = Self::find_dir_child_mut(
                     &self.dir_child_index,
@@ -155,7 +154,7 @@ impl ScanTreeBuilder {
     }
 
     fn find_dir_mut(&mut self, path: &str) -> &mut ScanTreeNode {
-        if path == self.root_path {
+        if paths_equal(path, &self.root_path) {
             return &mut self.root;
         }
 
@@ -166,7 +165,7 @@ impl ScanTreeBuilder {
 
         for segment in segments {
             let parent_path = current_path.clone();
-            current_path = format!("{current_path}/{segment}");
+            current_path = join_path(&current_path, segment);
             current =
                 Self::find_dir_child_mut(&self.dir_child_index, &parent_path, current, segment)
                     .expect("directory path must exist before inserting file");
@@ -201,7 +200,7 @@ impl ScanTreeBuilder {
 /// Find a directory subtree by its normalized absolute path.
 pub fn find_subtree<'a>(root: &'a ScanTreeNode, path: &str) -> Option<&'a ScanTreeNode> {
     let path = normalize_path(path);
-    if normalize_path(&root.path) == path {
+    if paths_equal(&normalize_path(&root.path), &path) {
         return Some(root);
     }
     root.children
@@ -230,46 +229,169 @@ fn collect_dir_indexes(
     }
 }
 
+fn is_unc_path(path: &str) -> bool {
+    if !path.starts_with("//") {
+        return false;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    parts.next().is_some() && parts.next().is_some()
+}
+
+fn unc_share_root(path: &str) -> Option<String> {
+    if !is_unc_path(path) {
+        return None;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    let server = parts.next()?;
+    let share = parts.next()?;
+    Some(format!("//{server}/{share}"))
+}
+
 fn normalize_path(path: &str) -> String {
-    if path.len() > 1 && path.ends_with('/') {
-        path[..path.len() - 1].to_string()
+    let normalized = path.replace('\\', "/");
+    if is_unc_path(&normalized) {
+        let trimmed = normalized.trim_end_matches('/');
+        if trimmed == "/" || trimmed.is_empty() {
+            return normalized;
+        }
+        if unc_share_root(trimmed).as_deref() == Some(trimmed) {
+            return trimmed.to_string();
+        }
+        return trimmed.trim_end_matches('/').to_string();
+    }
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
     } else {
-        path.to_string()
+        normalized
     }
 }
 
 fn parent_path(path: &str, root_path: &str) -> String {
-    if path == root_path {
-        return root_path.to_string();
+    let path = normalize_path(path);
+    let root_path = normalize_path(root_path);
+    if paths_equal(&path, &root_path) {
+        return root_path;
     }
-    path.rfind('/')
-        .map(|idx| path[..idx].to_string())
-        .unwrap_or_else(|| root_path.to_string())
+    if is_windows_drive_root(&root_path) {
+        path.rfind('/')
+            .map(|idx| {
+                let parent = &path[..idx];
+                if paths_equal(parent, &root_path[..root_path.len() - 1]) {
+                    root_path.clone()
+                } else {
+                    canonicalize_under_root(parent, &root_path)
+                }
+            })
+            .unwrap_or_else(|| root_path)
+    } else if unc_share_root(&root_path).is_some() {
+        path.rfind('/')
+            .map(|idx| {
+                let parent = &path[..idx];
+                if paths_equal(parent, &root_path) {
+                    root_path.clone()
+                } else if is_under_root(parent, &root_path) {
+                    canonicalize_under_root(parent, &root_path)
+                } else {
+                    root_path.clone()
+                }
+            })
+            .unwrap_or_else(|| root_path)
+    } else {
+        path.rfind('/')
+            .map(|idx| path[..idx].to_string())
+            .filter(|parent| is_under_root(parent, &root_path))
+            .unwrap_or(root_path)
+    }
 }
 
 fn is_under_root(path: &str, root_path: &str) -> bool {
     let path = normalize_path(path);
     let root_path = normalize_path(root_path);
-    path == root_path
-        || (path.starts_with(&root_path)
-            && (root_path == "/" || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+    if root_path.is_empty() {
+        return false;
+    }
+    let windows_style = has_windows_drive_prefix(&path)
+        || has_windows_drive_prefix(&root_path)
+        || path.starts_with("//")
+        || root_path.starts_with("//");
+    if windows_style {
+        path.eq_ignore_ascii_case(&root_path)
+            || (path.len() > root_path.len()
+                && path.as_bytes()[..root_path.len()].eq_ignore_ascii_case(root_path.as_bytes())
+                && (root_path == "/"
+                    || is_windows_drive_root(&root_path)
+                    || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+    } else {
+        path == root_path
+            || (path.starts_with(&root_path)
+                && (root_path == "/" || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+    }
+}
+
+fn paths_equal(left: &str, right: &str) -> bool {
+    let windows_style = has_windows_drive_prefix(left)
+        || has_windows_drive_prefix(right)
+        || left.starts_with("//")
+        || right.starts_with("//");
+    if windows_style {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
+fn canonicalize_under_root(path: &str, root_path: &str) -> String {
+    let path = normalize_path(path);
+    let root_path = normalize_path(root_path);
+    if !is_under_root(&path, &root_path) {
+        return path;
+    }
+    if path.len() == root_path.len() {
+        return root_path;
+    }
+    format!("{root_path}{}", &path[root_path.len()..])
 }
 
 fn relative_path(root_path: &str, path: &str) -> String {
     let path = normalize_path(path);
     let root_path = normalize_path(root_path);
-    if path == root_path {
-        return String::new();
-    }
     if !is_under_root(&path, &root_path) {
         return String::new();
     }
-    if root_path == "/" {
-        return path.strip_prefix('/').unwrap_or(&path).to_string();
+    if path.len() == root_path.len() {
+        return String::new();
     }
-    path.strip_prefix(&format!("{root_path}/"))
-        .unwrap_or("")
-        .to_string()
+    if root_path == "/" {
+        return path[1..].to_string();
+    }
+    if is_windows_drive_root(&root_path) {
+        return path[root_path.len()..].to_string();
+    }
+    path[root_path.len() + 1..].to_string()
+}
+
+fn join_path(base: &str, segment: &str) -> String {
+    if base == "/" {
+        format!("/{segment}")
+    } else if is_windows_drive_root(base) || is_unc_path(base) || base.ends_with('/') {
+        if base.ends_with('/') {
+            format!("{base}{segment}")
+        } else {
+            format!("{base}/{segment}")
+        }
+    } else {
+        format!("{base}/{segment}")
+    }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
 fn aggregate_sizes(node: &mut ScanTreeNode) {
@@ -388,6 +510,90 @@ mod tests {
     fn relative_path_handles_root_volume() {
         assert_eq!(relative_path("/", "/Users/foo"), "Users/foo");
         assert_eq!(relative_path("/", "/"), "");
+    }
+
+    #[test]
+    fn insert_file_handles_windows_paths() {
+        let mut b = ScanTreeBuilder::new("C:/Users/me");
+        b.insert_file("C:\\Users\\me\\Documents\\a.txt", Some("id"), 1);
+        let root = b.finalize();
+        let docs = find_subtree(&root, "C:/Users/me/Documents").expect("docs");
+        assert_eq!(docs.children.len(), 1);
+        assert_eq!(docs.children[0].name, "a.txt");
+    }
+
+    #[test]
+    fn normalize_and_parent_handle_unc_paths() {
+        assert_eq!(normalize_path(r"\\server\share\a\b"), "//server/share/a/b");
+        assert_eq!(normalize_path("//server/share/"), "//server/share");
+        assert_eq!(
+            parent_path("//server/share/a/b", "//server/share"),
+            "//server/share/a"
+        );
+        assert_eq!(
+            parent_path("//server/share/a", "//server/share"),
+            "//server/share"
+        );
+        assert_eq!(join_path("//server/share", "a"), "//server/share/a");
+        assert!(is_under_root("//server/share/a", "//server/share"));
+    }
+
+    #[test]
+    fn insert_file_handles_unc_paths() {
+        let mut b = ScanTreeBuilder::new(r"\\server\share");
+        b.insert_file(r"\\server\share\docs\a.txt", Some("id"), 1);
+        let root = b.finalize();
+        let docs = find_subtree(&root, "//server/share/docs").expect("docs");
+        assert_eq!(docs.children.len(), 1);
+        assert_eq!(docs.children[0].name, "a.txt");
+    }
+
+    #[test]
+    fn path_matrix_posix_linux_macos() {
+        assert_eq!(normalize_path("/home/me/a/"), "/home/me/a");
+        assert_eq!(parent_path("/home/me/a", "/home/me"), "/home/me");
+        assert_eq!(relative_path("/Users/me", "/Users/me/docs/a"), "docs/a");
+        assert_eq!(join_path("/home/me", "docs"), "/home/me/docs");
+        assert!(is_under_root("/home/me/a", "/home/me"));
+        assert!(!is_under_root("/home/me2", "/home/me"));
+    }
+
+    #[test]
+    fn unc_paths_reject_false_prefixes() {
+        assert!(!is_under_root("//server/shareextra", "//server/share"));
+        assert!(!is_under_root(
+            "//server/share/subdirextra",
+            "//server/share/subdir"
+        ));
+        assert_eq!(
+            parent_path("//server/shareextra/foo", "//server/share"),
+            "//server/share"
+        );
+    }
+
+    #[test]
+    fn under_root_is_case_insensitive_for_windows_paths() {
+        assert!(is_under_root("c:/Users/me/a.txt", "C:/Users/me"));
+        assert!(is_under_root(
+            "//SERVER/Share/folder/a.txt",
+            "//server/share"
+        ));
+        assert!(!is_under_root("c:/Users/media", "C:/Users/me"));
+    }
+
+    #[test]
+    fn insert_file_canonicalizes_windows_root_casing() {
+        let mut builder = ScanTreeBuilder::new("C:/Users/me");
+        builder.insert_file("c:/Users/me/docs/a.txt", Some("e1"), 1);
+        let root = builder.finalize();
+        assert_eq!(root.path, "C:/Users/me");
+        assert_eq!(root.children.len(), 1);
+        assert_eq!(root.children[0].path, "C:/Users/me/docs");
+        assert_eq!(root.children[0].children[0].path, "C:/Users/me/docs/a.txt");
+        assert_eq!(
+            relative_path("C:/Users/me", "c:/Users/me/docs/a.txt"),
+            "docs/a.txt"
+        );
     }
 
     #[test]

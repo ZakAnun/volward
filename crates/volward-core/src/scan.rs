@@ -606,28 +606,138 @@ impl<'a> ScanOrchestrator<'a> {
 }
 
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
-    path == root
-        || (path.starts_with(root)
-            && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+    let path = normalize_scan_path(path);
+    let root = normalize_scan_path(root);
+    if root.is_empty() {
+        return false;
+    }
+    let windows_style = has_windows_drive_prefix(&path)
+        || has_windows_drive_prefix(&root)
+        || path.starts_with("//")
+        || root.starts_with("//");
+    if windows_style {
+        path.eq_ignore_ascii_case(&root)
+            || (path.len() > root.len()
+                && path.as_bytes()[..root.len()].eq_ignore_ascii_case(root.as_bytes())
+                && (root == "/"
+                    || is_windows_drive_root(&root)
+                    || path.as_bytes().get(root.len()) == Some(&b'/')))
+    } else {
+        path == root
+            || (path.starts_with(&root)
+                && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+    }
+}
+
+fn normalize_scan_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if is_unc_path(&normalized) {
+        let trimmed = normalized.trim_end_matches('/');
+        if trimmed.is_empty() || trimmed == "/" {
+            return normalized;
+        }
+        return trimmed.to_string();
+    }
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn is_unc_path(path: &str) -> bool {
+    if !path.starts_with("//") {
+        return false;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    parts.next().is_some() && parts.next().is_some()
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)] // Variants are constructed per-target via cfg; unit tests cover all arms.
+enum CachePlatform {
+    Macos,
+    Windows,
+    Linux,
+    Other,
+}
+
+#[cfg(target_os = "macos")]
+fn cache_platform() -> CachePlatform {
+    CachePlatform::Macos
+}
+
+#[cfg(windows)]
+fn cache_platform() -> CachePlatform {
+    CachePlatform::Windows
+}
+
+#[cfg(target_os = "linux")]
+fn cache_platform() -> CachePlatform {
+    CachePlatform::Linux
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+fn cache_platform() -> CachePlatform {
+    CachePlatform::Other
+}
+
+fn default_cache_dir_from_env(
+    platform: CachePlatform,
+    get_env: impl Fn(&str) -> Option<PathBuf>,
+    temp_dir: PathBuf,
+) -> PathBuf {
+    if let Some(dir) = get_env("VOLWARD_CACHE_DIR") {
+        return dir;
+    }
+
+    match platform {
+        CachePlatform::Macos => {
+            if let Some(home) = get_env("HOME") {
+                return home.join("Library/Application Support/Volward");
+            }
+        }
+        CachePlatform::Windows => {
+            if let Some(app_data) = get_env("APPDATA") {
+                return app_data.join("Volward");
+            }
+            if let Some(local_app_data) = get_env("LOCALAPPDATA") {
+                return local_app_data.join("Volward");
+            }
+            if let Some(profile) = get_env("USERPROFILE") {
+                return profile.join("AppData").join("Roaming").join("Volward");
+            }
+        }
+        CachePlatform::Linux => {
+            if let Some(xdg_data_home) = get_env("XDG_DATA_HOME") {
+                return xdg_data_home.join("volward");
+            }
+            if let Some(home) = get_env("HOME") {
+                return home.join(".local/share/volward");
+            }
+        }
+        CachePlatform::Other => {}
+    }
+
+    temp_dir.join("volward")
 }
 
 fn default_cache_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("VOLWARD_CACHE_DIR") {
-        return PathBuf::from(dir);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join("Library/Application Support/Volward");
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(".volward");
-        }
-    }
-    std::env::temp_dir().join("volward")
+    default_cache_dir_from_env(
+        cache_platform(),
+        |key| std::env::var_os(key).map(PathBuf::from),
+        std::env::temp_dir(),
+    )
 }
 
 fn unix_ms() -> i64 {
@@ -763,6 +873,72 @@ mod tests {
         };
 
         (temp, platform)
+    }
+
+    #[test]
+    fn path_is_at_or_below_handles_windows_roots_and_unc_boundaries() {
+        assert!(path_is_at_or_below(r"C:\Users\me\a.txt", "C:/Users/me"));
+        assert!(path_is_at_or_below("C:/Users/me/a.txt", "C:/"));
+        assert!(!path_is_at_or_below("C:/Users/media", "C:/Users/me"));
+        assert!(path_is_at_or_below(
+            r"\\server\share\folder\a.txt",
+            "//server/share"
+        ));
+        assert!(!path_is_at_or_below(
+            "//server/shareextra/folder",
+            "//server/share"
+        ));
+        assert!(path_is_at_or_below("c:/Users/me/a.txt", "C:/Users/me"));
+        assert!(path_is_at_or_below(
+            "//SERVER/Share/folder/a.txt",
+            "//server/share"
+        ));
+    }
+
+    #[test]
+    fn default_cache_dir_from_env_matches_platform_conventions() {
+        let env = |values: &[(&str, &str)], key: &str| {
+            values
+                .iter()
+                .find(|(candidate, _)| *candidate == key)
+                .map(|(_, value)| PathBuf::from(value))
+        };
+        assert_eq!(
+            default_cache_dir_from_env(
+                CachePlatform::Macos,
+                |key| env(&[("HOME", "/Users/me")], key),
+                PathBuf::from("/tmp")
+            ),
+            PathBuf::from("/Users/me").join("Library/Application Support/Volward")
+        );
+        assert_eq!(
+            default_cache_dir_from_env(
+                CachePlatform::Windows,
+                |key| env(&[("APPDATA", r"C:\Users\me\AppData\Roaming")], key),
+                PathBuf::from(r"C:\Temp")
+            ),
+            PathBuf::from(r"C:\Users\me\AppData\Roaming").join("Volward")
+        );
+        assert_eq!(
+            default_cache_dir_from_env(
+                CachePlatform::Linux,
+                |key| env(&[("XDG_DATA_HOME", "/home/me/.local/state")], key),
+                PathBuf::from("/tmp")
+            ),
+            PathBuf::from("/home/me/.local/state").join("volward")
+        );
+        assert_eq!(
+            default_cache_dir_from_env(
+                CachePlatform::Linux,
+                |key| env(&[("HOME", "/home/me")], key),
+                PathBuf::from("/tmp")
+            ),
+            PathBuf::from("/home/me").join(".local/share/volward")
+        );
+        assert_eq!(
+            default_cache_dir_from_env(CachePlatform::Other, |_| None, PathBuf::from("/tmp")),
+            PathBuf::from("/tmp").join("volward")
+        );
     }
 
     #[test]

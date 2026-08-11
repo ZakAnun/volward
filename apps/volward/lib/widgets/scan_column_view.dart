@@ -263,6 +263,7 @@ class _ScanColumnViewState extends State<ScanColumnView> {
                 child: ListView.separated(
                   controller: _hScroll,
                   primary: false,
+                  clipBehavior: Clip.hardEdge,
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.zero,
                   itemCount: columns.length,
@@ -423,6 +424,7 @@ class _FinderColumn extends StatelessWidget {
             )
           : ListView.builder(
               primary: false,
+              clipBehavior: Clip.hardEdge,
               itemExtent: 28,
               // 500px = ~18 rows pre-rendered above/below viewport.
               // The old value (112px = 4 rows) caused frame drops on fast
@@ -575,6 +577,7 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
       child: SingleChildScrollView(
         controller: _scrollController,
         primary: false,
+        clipBehavior: Clip.hardEdge,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: _handleTap,

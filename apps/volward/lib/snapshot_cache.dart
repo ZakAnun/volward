@@ -13,15 +13,68 @@ abstract final class SnapshotCache {
 
   static Directory cacheDir() {
     if (cacheDirForTest != null) return cacheDirForTest!;
-    final override = Platform.environment['VOLWARD_CACHE_DIR'];
+    return cacheDirForPlatform(
+      environment: Platform.environment,
+      isMacOS: Platform.isMacOS,
+      isWindows: Platform.isWindows,
+      isLinux: Platform.isLinux,
+      systemTempPath: Directory.systemTemp.path,
+    );
+  }
+
+  @visibleForTesting
+  static Directory cacheDirForPlatform({
+    required Map<String, String> environment,
+    required bool isMacOS,
+    required bool isWindows,
+    required bool isLinux,
+    required String systemTempPath,
+  }) {
+    final override = environment['VOLWARD_CACHE_DIR'];
     if (override != null && override.isNotEmpty) {
       return Directory(override);
     }
-    final home = Platform.environment['HOME'];
-    if (home != null && home.isNotEmpty) {
-      return Directory('$home/Library/Application Support/Volward');
+    if (isMacOS) {
+      final home = environment['HOME'];
+      if (home != null && home.isNotEmpty) {
+        return Directory(
+          _joinPath(home, 'Library/Application Support/Volward'),
+        );
+      }
     }
-    return Directory('${Directory.systemTemp.path}/volward');
+    if (isWindows) {
+      final appData = environment['APPDATA'];
+      if (appData != null && appData.isNotEmpty) {
+        return Directory(_joinPath(appData, 'Volward', windows: true));
+      }
+      final localAppData = environment['LOCALAPPDATA'];
+      if (localAppData != null && localAppData.isNotEmpty) {
+        return Directory(_joinPath(localAppData, 'Volward', windows: true));
+      }
+      final profile = environment['USERPROFILE'];
+      if (profile != null && profile.isNotEmpty) {
+        return Directory(
+          _joinPath(profile, r'AppData\Roaming\Volward', windows: true),
+        );
+      }
+    }
+    if (isLinux) {
+      final xdgDataHome = environment['XDG_DATA_HOME'];
+      if (xdgDataHome != null && xdgDataHome.isNotEmpty) {
+        return Directory(_joinPath(xdgDataHome, 'volward'));
+      }
+      final home = environment['HOME'];
+      if (home != null && home.isNotEmpty) {
+        return Directory(_joinPath(home, '.local/share/volward'));
+      }
+    }
+    return Directory(_joinPath(systemTempPath, 'volward', windows: isWindows));
+  }
+
+  static String _joinPath(String base, String child, {bool windows = false}) {
+    final separator = windows ? r'\' : '/';
+    if (base.endsWith('/') || base.endsWith(r'\')) return '$base$child';
+    return '$base$separator$child';
   }
 
   static bool invalidatesPrefix({

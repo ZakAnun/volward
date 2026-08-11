@@ -46,12 +46,10 @@ fi
 
 cd "$APP_DIR"
 
-# Inject Aptabase defines when a local (gitignored) config is present.
-# Missing file or empty APP_KEY → Analytics stays on Noop.
-DEFINE_ARGS=()
-APTABASE_JSON="$APP_DIR/aptabase.json"
-if [[ -f "$APTABASE_JSON" ]]; then
-  DEFINE_ARGS+=(--dart-define-from-file="$APTABASE_JSON")
-fi
+# Inject Aptabase defines when env / local aptabase.json is present.
+# Missing config → Analytics stays on Noop (same contract as Linux/Windows debug).
+# shellcheck source=resolve_aptabase_defines.sh
+source "$SCRIPT_DIR/resolve_aptabase_defines.sh"
+resolve_aptabase_defines
 
-fvm flutter run -d macos "${DEFINE_ARGS[@]}" "$@"
+fvm flutter run -d macos "${APTABASE_DEFINE_ARGS[@]}" "$@"

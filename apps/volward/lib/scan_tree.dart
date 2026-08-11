@@ -1,5 +1,179 @@
 import 'scan_entry_record.dart';
 
+bool _isUncPath(String path) {
+  if (!path.startsWith('//')) return false;
+  final parts = path
+      .substring(2)
+      .split('/')
+      .where((p) => p.isNotEmpty)
+      .toList();
+  return parts.length >= 2;
+}
+
+String? _uncShareRoot(String path) {
+  if (!_isUncPath(path)) return null;
+  final parts = path
+      .substring(2)
+      .split('/')
+      .where((p) => p.isNotEmpty)
+      .toList();
+  return '//${parts[0]}/${parts[1]}';
+}
+
+String normalizeFsPath(String path) {
+  final normalized = path.replaceAll('\\', '/');
+  if (_isUncPath(normalized)) {
+    var trimmed = normalized;
+    while (trimmed.length > 1 && trimmed.endsWith('/')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
+    if (trimmed == '/' || trimmed.isEmpty) {
+      return normalized;
+    }
+    final shareRoot = _uncShareRoot(trimmed);
+    if (shareRoot != null && shareRoot == trimmed) {
+      return trimmed;
+    }
+    return trimmed;
+  }
+  if (normalized.length > 1 &&
+      normalized.endsWith('/') &&
+      !_isWindowsDriveRoot(normalized)) {
+    return normalized.substring(0, normalized.length - 1);
+  }
+  return normalized;
+}
+
+String joinFsPath(String base, String segment) {
+  if (base == '/') return '/$segment';
+  if (_isWindowsDriveRoot(base) || _isUncPath(base) || base.endsWith('/')) {
+    if (base.endsWith('/')) return '$base$segment';
+    return '$base/$segment';
+  }
+  return '$base/$segment';
+}
+
+String parentFsPath(String path) {
+  final normalized = normalizeFsPath(path);
+  if (normalized == '/' || normalized.isEmpty) return '/';
+  final shareRoot = _uncShareRoot(normalized);
+  if (shareRoot != null && normalized == shareRoot) {
+    return shareRoot;
+  }
+  final idx = normalized.lastIndexOf('/');
+  if (idx <= 0) return _isWindowsDriveRoot(normalized) ? normalized : '/';
+  if (idx == 2 && _hasWindowsDrivePrefix(normalized)) {
+    return normalized.substring(0, 3);
+  }
+  return normalized.substring(0, idx);
+}
+
+String lastPathSegment(String path) {
+  final normalized = normalizeFsPath(path);
+  final idx = normalized.lastIndexOf('/');
+  if (idx == -1) return normalized;
+  if (idx == normalized.length - 1) {
+    return normalized.isEmpty
+        ? normalized
+        : normalized.substring(0, normalized.length - 1);
+  }
+  return normalized.substring(idx + 1);
+}
+
+bool isUnderFsRoot(String path, String rootPath) {
+  final normalizedPath = normalizeFsPath(path);
+  final normalizedRoot = normalizeFsPath(rootPath);
+  if (normalizedRoot.isEmpty) return false;
+  final windowsStyle =
+      _hasWindowsDrivePrefix(normalizedPath) ||
+      _hasWindowsDrivePrefix(normalizedRoot) ||
+      normalizedPath.startsWith('//') ||
+      normalizedRoot.startsWith('//');
+  if (windowsStyle) {
+    if (_equalsIgnoreAsciiCase(normalizedPath, normalizedRoot)) return true;
+    if (normalizedPath.length <= normalizedRoot.length) return false;
+    if (!_regionEqualsIgnoreAsciiCase(
+      normalizedPath,
+      0,
+      normalizedRoot,
+      0,
+      normalizedRoot.length,
+    )) {
+      return false;
+    }
+    if (normalizedRoot == '/' || _isWindowsDriveRoot(normalizedRoot)) {
+      return true;
+    }
+    return normalizedPath.codeUnitAt(normalizedRoot.length) == 47;
+  }
+  if (normalizedPath == normalizedRoot) return true;
+  if (!normalizedPath.startsWith(normalizedRoot)) return false;
+  if (normalizedRoot == '/' || _isWindowsDriveRoot(normalizedRoot)) return true;
+  return normalizedPath.length > normalizedRoot.length &&
+      normalizedPath.codeUnitAt(normalizedRoot.length) == 47;
+}
+
+bool _equalsIgnoreAsciiCase(String left, String right) {
+  if (left.length != right.length) return false;
+  return _regionEqualsIgnoreAsciiCase(left, 0, right, 0, left.length);
+}
+
+bool _regionEqualsIgnoreAsciiCase(
+  String left,
+  int leftStart,
+  String right,
+  int rightStart,
+  int length,
+) {
+  for (var i = 0; i < length; i++) {
+    final a = left.codeUnitAt(leftStart + i);
+    final b = right.codeUnitAt(rightStart + i);
+    if (a == b) continue;
+    final la = (a >= 65 && a <= 90) ? a + 32 : a;
+    final lb = (b >= 65 && b <= 90) ? b + 32 : b;
+    if (la != lb) return false;
+  }
+  return true;
+}
+
+bool _isWindowsDriveRoot(String path) {
+  return _hasWindowsDrivePrefix(path) &&
+      path.length == 3 &&
+      path.codeUnitAt(1) == 58 &&
+      path.codeUnitAt(2) == 47 &&
+      ((path.codeUnitAt(0) >= 65 && path.codeUnitAt(0) <= 90) ||
+          (path.codeUnitAt(0) >= 97 && path.codeUnitAt(0) <= 122));
+}
+
+bool _hasWindowsDrivePrefix(String path) {
+  return path.length >= 3 &&
+      path.codeUnitAt(1) == 58 &&
+      path.codeUnitAt(2) == 47 &&
+      ((path.codeUnitAt(0) >= 65 && path.codeUnitAt(0) <= 90) ||
+          (path.codeUnitAt(0) >= 97 && path.codeUnitAt(0) <= 122));
+}
+
+String defaultScanRootPath({
+  required Map<String, String> environment,
+  required bool Function() isWindows,
+}) {
+  if (isWindows()) {
+    final profile = environment['USERPROFILE'];
+    if (profile != null && profile.isNotEmpty) {
+      return normalizeFsPath(profile);
+    }
+  }
+  final home = environment['HOME'];
+  if (home != null && home.isNotEmpty) {
+    return normalizeFsPath(home);
+  }
+  final profile = environment['USERPROFILE'];
+  if (profile != null && profile.isNotEmpty) {
+    return normalizeFsPath(profile);
+  }
+  return isWindows() ? 'C:/' : '/';
+}
+
 /// One node in the scan results tree (directory or file leaf).
 class ScanTreeNode {
   ScanTreeNode({
@@ -240,8 +414,8 @@ class ScanTreeNode {
           ? entry.displayName
           : fallbackName,
       path: !isDir && entry != null && entry.pathOrUri.isNotEmpty
-          ? entry.pathOrUri
-          : fallbackPath,
+          ? normalizeFsPath(entry.pathOrUri)
+          : normalizeFsPath(fallbackPath),
       isDirectory: isDir,
       sizeBytes: sizeBytes,
       entryId: entryId,
@@ -314,10 +488,7 @@ class ScanTreeNode {
 /// Builds a Finder-like directory tree from flat scan entries (file paths only).
 abstract final class ScanTreeBuilder {
   static String normalizeRoot(String root) {
-    if (root.length > 1 && root.endsWith('/')) {
-      return root.substring(0, root.length - 1);
-    }
-    return root;
+    return normalizeFsPath(root);
   }
 
   static ScanTreeNode build({
@@ -345,20 +516,23 @@ abstract final class ScanTreeBuilder {
     String filePath,
     ScanEntryRecord entry,
   ) {
-    if (!filePath.startsWith(rootPath)) return;
+    final normalizedRootPath = normalizeFsPath(rootPath);
+    final normalizedFilePath = normalizeFsPath(filePath);
+    if (!isUnderFsRoot(normalizedFilePath, normalizedRootPath)) return;
+    if (normalizedFilePath == normalizedRootPath) return;
 
-    var relative = filePath.substring(rootPath.length);
+    var relative = normalizedFilePath.substring(normalizedRootPath.length);
     if (relative.startsWith('/')) relative = relative.substring(1);
     if (relative.isEmpty) return;
 
     final segments = relative.split('/');
     var current = root;
-    var currentPath = rootPath;
+    var currentPath = normalizedRootPath;
 
     for (var i = 0; i < segments.length; i++) {
       final segment = segments[i];
       final isLast = i == segments.length - 1;
-      currentPath = '$currentPath/$segment';
+      currentPath = joinFsPath(currentPath, segment);
 
       if (isLast) {
         current.children.add(

@@ -650,8 +650,8 @@ class VolwardSession extends ChangeNotifier {
       _deepScanReady = bridge.isDeepScanReady(_engine!);
       if (!bridge.hasSnapshotFileApi) {
         debugPrint(
-          'Volward: bundled libvolward_facade.dylib is outdated (missing snapshot file FFI). '
-          'Run: cd apps/volward/macos && bash build_rust.sh — then fully restart the app (R).',
+          'Volward: bundled native library is outdated (missing snapshot file FFI). '
+          'Rebuild the Rust library for this platform, then fully restart the app.',
         );
       }
       _ready = true;
@@ -664,9 +664,10 @@ class VolwardSession extends ChangeNotifier {
   }
 
   String _defaultScanRoot() {
-    return Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        '/';
+    return defaultScanRootPath(
+      environment: Platform.environment,
+      isWindows: () => Platform.isWindows,
+    );
   }
 
   // Test-injectable probes for the startup-root resolver. Production code
@@ -1195,7 +1196,7 @@ class VolwardSession extends ChangeNotifier {
     try {
       final result = VolwardNativeBridge.instance.queryDirectoryJson(
         _engine!,
-        path,
+        normalizeFsPath(path),
         categoryFilter: categoryFilter,
         deletableOnly: deletableOnly,
         sortMode: sortMode,
@@ -1427,24 +1428,20 @@ class VolwardSession extends ChangeNotifier {
     final testRunner = scanRunnerForTest;
     if (testRunner == null && !hasSnapshotFileApi) {
       throw StateError(
-        'Native library is outdated. Run: cd apps/volward/macos && bash build_rust.sh '
-        '— then fully restart the app (R).',
+        'Native library is outdated. Rebuild the Rust library for this platform, '
+        'then fully restart the app.',
       );
     }
     if (testRunner == null && _incrementalScan && !canUseIncrementalScan) {
       throw StateError(
-        'Incremental scan requires an updated native library. Run: cd apps/volward/macos && bash build_rust.sh '
-        '— then fully restart the app (R).',
+        'Incremental scan requires an updated native library. Rebuild the Rust library '
+        'for this platform, then fully restart the app.',
       );
     }
 
     final effectiveRoots = _scanRoots.isNotEmpty
         ? _scanRoots
-        : [
-            Platform.environment['HOME'] ??
-                Platform.environment['USERPROFILE'] ??
-                '/',
-          ];
+        : [_defaultScanRoot()];
 
     _invalidateCacheRestore();
     _scanning = true;

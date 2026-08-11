@@ -79,7 +79,7 @@ void volwardScanIsolate(List<dynamic> args) {
       'type': 'error',
       'error':
           'Native bridge failed to start: $e\n$st\n'
-          'Rebuild Rust: cd apps/volward/macos && bash build_rust.sh then restart the app (R).',
+          'Rebuild the native Rust library for this platform, then fully restart the app.',
     });
     return;
   }

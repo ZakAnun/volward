@@ -413,13 +413,13 @@ abstract class AppLocalizations {
   /// No description provided for @permissionNativeOutdatedDescription.
   ///
   /// In en, this message translates to:
-  /// **'Rebuild Rust (apps/volward/macos/build_rust.sh) and fully restart (R).'**
+  /// **'Rebuild the native Rust library for this platform and fully restart the app.'**
   String get permissionNativeOutdatedDescription;
 
   /// No description provided for @permissionDeepScanReady.
   ///
   /// In en, this message translates to:
-  /// **'Full Disk Access enabled — deep scan on.'**
+  /// **'Deep scan is available.'**
   String get permissionDeepScanReady;
 
   /// No description provided for @permissionFullDiskRecommended.

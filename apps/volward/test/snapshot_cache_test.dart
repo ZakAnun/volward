@@ -5,6 +5,83 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/snapshot_cache.dart';
 
 void main() {
+  group('cacheDirForPlatform', () {
+    test('uses override before platform defaults', () {
+      final dir = SnapshotCache.cacheDirForPlatform(
+        environment: {
+          'VOLWARD_CACHE_DIR': '/custom/cache',
+          'HOME': '/Users/me',
+        },
+        isMacOS: true,
+        isWindows: false,
+        isLinux: false,
+        systemTempPath: '/tmp',
+      );
+
+      expect(dir.path, '/custom/cache');
+    });
+
+    test('uses macOS Application Support', () {
+      final dir = SnapshotCache.cacheDirForPlatform(
+        environment: {'HOME': '/Users/me'},
+        isMacOS: true,
+        isWindows: false,
+        isLinux: false,
+        systemTempPath: '/tmp',
+      );
+
+      expect(dir.path, '/Users/me/Library/Application Support/Volward');
+    });
+
+    test('uses Windows roaming app data', () {
+      final dir = SnapshotCache.cacheDirForPlatform(
+        environment: {'APPDATA': r'C:\Users\me\AppData\Roaming'},
+        isMacOS: false,
+        isWindows: true,
+        isLinux: false,
+        systemTempPath: r'C:\Temp',
+      );
+
+      expect(dir.path, r'C:\Users\me\AppData\Roaming\Volward');
+    });
+
+    test('uses Windows profile fallback', () {
+      final dir = SnapshotCache.cacheDirForPlatform(
+        environment: {'USERPROFILE': r'D:\Users\me'},
+        isMacOS: false,
+        isWindows: true,
+        isLinux: false,
+        systemTempPath: r'C:\Temp',
+      );
+
+      expect(dir.path, r'D:\Users\me\AppData\Roaming\Volward');
+    });
+
+    test('uses Linux XDG data home', () {
+      final dir = SnapshotCache.cacheDirForPlatform(
+        environment: {'XDG_DATA_HOME': '/home/me/.local/state'},
+        isMacOS: false,
+        isWindows: false,
+        isLinux: true,
+        systemTempPath: '/tmp',
+      );
+
+      expect(dir.path, '/home/me/.local/state/volward');
+    });
+
+    test('uses Linux home fallback', () {
+      final dir = SnapshotCache.cacheDirForPlatform(
+        environment: {'HOME': '/home/me'},
+        isMacOS: false,
+        isWindows: false,
+        isLinux: true,
+        systemTempPath: '/tmp',
+      );
+
+      expect(dir.path, '/home/me/.local/share/volward');
+    });
+  });
+
   test('latestSnapshotPath resolves snapshot_path from manifest', () async {
     final temp = await Directory.systemTemp.createTemp('volward-cache-test');
     addTearDown(() {

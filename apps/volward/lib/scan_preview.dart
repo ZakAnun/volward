@@ -1,3 +1,5 @@
+import 'scan_tree.dart';
+
 /// Builds a lightweight, snapshot-shaped map from a `quick_list_dir` result
 /// so the UI can render it through the same [ScanTreeNode.fromSnapshotJson]
 /// path used for real scan results, before any deep scan has started.
@@ -5,12 +7,12 @@ Map<String, dynamic> buildPreviewSnapshot({
   required String rootPath,
   required List<Map<String, dynamic>> quickListEntries,
 }) {
-  final normalizedRoot = _normalizeRoot(rootPath);
+  final normalizedRoot = ScanTreeBuilder.normalizeRoot(rootPath);
   final children = quickListEntries.map((entry) {
     final isDir = entry['is_dir'] == true;
     return <String, dynamic>{
-      'name': _lastPathSegment(entry['path']?.toString() ?? ''),
-      'path': entry['path']?.toString() ?? '',
+      'name': lastPathSegment(entry['path']?.toString() ?? ''),
+      'path': normalizeFsPath(entry['path']?.toString() ?? ''),
       'is_dir': isDir,
       'size_bytes': isDir ? 0 : ((entry['size_bytes'] as num?)?.toInt() ?? 0),
       'entry_id': null,
@@ -30,7 +32,7 @@ Map<String, dynamic> buildPreviewSnapshot({
     'reclaimable_estimate_bytes': 0,
     'entries': const <Map<String, dynamic>>[],
     'tree': {
-      'name': _lastPathSegment(normalizedRoot),
+      'name': lastPathSegment(normalizedRoot),
       'path': normalizedRoot,
       'is_dir': true,
       'size_bytes': 0,
@@ -48,18 +50,4 @@ Map<String, dynamic> buildPreviewSnapshot({
     },
     'warnings': const <String>[],
   };
-}
-
-String _normalizeRoot(String path) {
-  if (path.length > 1 && path.endsWith('/')) {
-    return path.substring(0, path.length - 1);
-  }
-  return path;
-}
-
-String _lastPathSegment(String path) {
-  final normalized = _normalizeRoot(path);
-  final idx = normalized.lastIndexOf('/');
-  if (idx == -1 || idx == normalized.length - 1) return normalized;
-  return normalized.substring(idx + 1);
 }

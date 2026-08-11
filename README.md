@@ -51,7 +51,7 @@ Volward 是一个跨平台桌面存储管家，帮你更快找出占空间的文
 
 ### 应用内更新
 
-- 从 **v0.0.2** 起支持应用内更新（更早的 v0.0.1 需先手动安装一次新版本）。
+- 从 **v0.0.2** 起支持应用内更新（更早的 v0.0.1 需先手动安装一次新版本）；**v0.0.3** 起各桌面平台正式包均带 Aptabase 埋点。
 - 启动后会静默检查 GitHub Releases；有新版本时可选择立即更新或稍后。
 - Settings → About 可查看当前版本、手动检查更新、下载安装，失败时可打开下载页。
 - 发现可用更新时会展示 release notes 摘要（启动弹窗）。
@@ -90,7 +90,7 @@ volward/
 
 ## 安装 / 下载
 
-从 [GitHub Releases](https://github.com/ZakAnun/volward/releases/latest) 下载最新版本（当前为 **v0.0.2**）：
+从 [GitHub Releases](https://github.com/ZakAnun/volward/releases/latest) 下载最新版本（当前为 **v0.0.3**）：
 
 | 平台 | 文件 | 安装方式 |
 |------|------|----------|

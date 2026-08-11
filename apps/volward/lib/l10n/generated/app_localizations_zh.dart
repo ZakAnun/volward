@@ -179,10 +179,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get permissionNativeOutdatedDescription =>
-      '请重新构建 Rust（apps/volward/macos/build_rust.sh），并完整重启应用（R）。';
+      '请为当前平台重新构建原生 Rust 库，并完整重启应用。';
 
   @override
-  String get permissionDeepScanReady => '已启用完全磁盘访问，可以进行深度扫描。';
+  String get permissionDeepScanReady => '深度扫描可用。';
 
   @override
   String get permissionFullDiskRecommended => '建议开启完全磁盘访问，以扫描 ~/Library 缓存。';

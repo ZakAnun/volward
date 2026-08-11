@@ -198,6 +198,37 @@ void main() {
         expect(tree.fileCount, 2);
       },
     );
+
+    test('rejects false path prefixes when inserting flat entries', () {
+      expect(isUnderFsRoot('/home/me2/x.txt', '/home/me'), isFalse);
+      expect(isUnderFsRoot('//server/shareextra/a', '//server/share'), isFalse);
+      expect(isUnderFsRoot('/home/me/docs/a.txt', '/home/me'), isTrue);
+
+      final entries = [
+        const ScanEntryRecord(
+          id: 'ok',
+          displayName: 'a.txt',
+          pathOrUri: '/home/me/docs/a.txt',
+          sizeBytes: 1,
+          category: 'Unknown',
+          deletable: false,
+        ),
+        const ScanEntryRecord(
+          id: 'bad',
+          displayName: 'x.txt',
+          pathOrUri: '/home/me2/x.txt',
+          sizeBytes: 2,
+          category: 'Unknown',
+          deletable: false,
+        ),
+      ];
+      final tree = ScanTreeBuilder.build(
+        entries: entries,
+        rootPath: '/home/me',
+      );
+      expect(tree.fileCount, 1);
+      expect(tree.children.any((child) => child.path.contains('me2')), isFalse);
+    });
   });
 
   group('ScanTreeNode.withAggregatedCounts', () {
@@ -270,6 +301,56 @@ void main() {
         expect(annotated.children.single.displayBytes, 30);
       },
     );
+  });
+
+  group('defaultScanRootPath', () {
+    test('defaultScanRootPath uses USERPROFILE on Windows', () {
+      expect(
+        defaultScanRootPath(
+          environment: {'USERPROFILE': r'C:\Users\me', 'HOME': '/Users/me'},
+          isWindows: () => true,
+        ),
+        'C:/Users/me',
+      );
+      expect(
+        defaultScanRootPath(
+          environment: {'HOME': '/home/me'},
+          isWindows: () => false,
+        ),
+        '/home/me',
+      );
+    });
+  });
+
+  group('path helpers', () {
+    test('normalize and parent handle windows and unc', () {
+      expect(normalizeFsPath(r'C:\Users\me\a'), 'C:/Users/me/a');
+      expect(normalizeFsPath('C:/'), 'C:/');
+      expect(parentFsPath('C:/Users'), 'C:/');
+      expect(parentFsPath('C:/file.txt'), 'C:/');
+      expect(normalizeFsPath(r'\\server\share\a\b'), '//server/share/a/b');
+      expect(parentFsPath('//server/share/a/b'), '//server/share/a');
+      expect(joinFsPath('//server/share', 'a'), '//server/share/a');
+      expect(normalizeFsPath('/home/me/a/'), '/home/me/a');
+      expect(parentFsPath('/home/me/a'), '/home/me');
+      expect(joinFsPath('/home/me', 'docs'), '/home/me/docs');
+    });
+
+    test('unc rejects false prefixes for parent floor semantics', () {
+      expect(parentFsPath('//server/share/a'), '//server/share');
+      expect(normalizeFsPath('//server/share/'), '//server/share');
+      expect(isUnderFsRoot('//server/shareextra/a', '//server/share'), isFalse);
+      expect(isUnderFsRoot('//server/share/a', '//server/share'), isTrue);
+    });
+
+    test('windows under-root checks are case insensitive', () {
+      expect(isUnderFsRoot('c:/Users/me/a.txt', 'C:/Users/me'), isTrue);
+      expect(
+        isUnderFsRoot('//SERVER/Share/folder/a.txt', '//server/share'),
+        isTrue,
+      );
+      expect(isUnderFsRoot('c:/Users/media', 'C:/Users/me'), isFalse);
+    });
   });
 
   group('flattenVisible', () {
