@@ -79,17 +79,20 @@ jobs:
           APP=apps/volward/build/macos/Build/Products/Release/volward.app
           DYLIB="$APP/Contents/Frameworks/libvolward_facade.dylib"
           BIN="$APP/Contents/MacOS/volward"
+          # Dart AOT snapshot lives in App.framework, not the runner executable.
+          APP_SNAPSHOT="$APP/Contents/Frameworks/App.framework/Versions/Current/App"
           test -d "$APP"
           test -x "$BIN"
           test -f "$DYLIB"
+          test -f "$APP_SNAPSHOT"
           codesign --verify --verbose=2 "$DYLIB"
           codesign --verify --verbose=2 "$APP"
-          # Ensure Aptabase key was compiled into the release binary (not Noop).
-          if ! strings "$BIN" | grep -Fq "$APTABASE_APP_KEY"; then
-            echo "Aptabase key not found in macOS binary — dart-define may be missing"
+          # Ensure Aptabase key was compiled into the Dart snapshot (not Noop).
+          if ! strings "$APP_SNAPSHOT" | grep -Fq "$APTABASE_APP_KEY"; then
+            echo "Aptabase key not found in macOS App.framework — dart-define may be missing"
             exit 1
           fi
-          echo "Aptabase key present in macOS binary"
+          echo "Aptabase key present in macOS App.framework"
 
       - name: Get version
         id: version
@@ -197,14 +200,17 @@ jobs:
               throw "Missing Windows release file: $path"
             }
           }
-          # Ensure Aptabase key was compiled into the release binary (not Noop).
-          $exe = Join-Path $bundle "volward.exe"
-          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          # Dart AOT snapshot lives in data/app.so, not the runner .exe.
+          $appSo = Join-Path $bundle "data\app.so"
+          if (!(Test-Path $appSo)) {
+            throw "Missing Windows Dart snapshot: $appSo"
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($appSo)
           $text = [System.Text.Encoding]::UTF8.GetString($bytes)
           if ($text -notlike "*$env:APTABASE_APP_KEY*") {
-            throw "Aptabase key not found in Windows binary — dart-define may be missing"
+            throw "Aptabase key not found in Windows data/app.so — dart-define may be missing"
           }
-          Write-Host "Aptabase key present in Windows binary"
+          Write-Host "Aptabase key present in Windows data/app.so"
 
       - name: Get version
         id: version
@@ -323,16 +329,19 @@ jobs:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: |
           BIN=apps/volward/build/linux/x64/release/bundle/volward
+          # Dart AOT snapshot lives in lib/libapp.so, not the runner executable.
+          APP_SO=apps/volward/build/linux/x64/release/bundle/lib/libapp.so
           test -x "$BIN"
           test -f apps/volward/build/linux/x64/release/bundle/lib/libvolward_facade.so
+          test -f "$APP_SO"
           test -f apps/volward/build/linux/x64/release/bundle/data/icudtl.dat
           test -d apps/volward/build/linux/x64/release/bundle/data/flutter_assets
-          # Ensure Aptabase key was compiled into the release binary (not Noop).
-          if ! strings "$BIN" | grep -Fq "$APTABASE_APP_KEY"; then
-            echo "Aptabase key not found in Linux binary — dart-define may be missing"
+          # Ensure Aptabase key was compiled into the Dart snapshot (not Noop).
+          if ! strings "$APP_SO" | grep -Fq "$APTABASE_APP_KEY"; then
+            echo "Aptabase key not found in Linux libapp.so — dart-define may be missing"
             exit 1
           fi
-          echo "Aptabase key present in Linux binary"
+          echo "Aptabase key present in Linux libapp.so"
 
       - name: Get version
         id: version
