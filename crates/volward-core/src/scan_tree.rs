@@ -285,17 +285,17 @@ fn parent_path(path: &str, root_path: &str) -> String {
                 }
             })
             .unwrap_or_else(|| root_path.to_string())
-    } else if let Some(share_root) = unc_share_root(root_path) {
+    } else if unc_share_root(root_path).is_some() {
         path.rfind('/')
             .map(|idx| {
                 let parent = &path[..idx];
-                if parent == share_root.as_str() || parent.len() < share_root.len() {
-                    share_root.clone()
-                } else {
+                if is_under_root(parent, root_path) {
                     parent.to_string()
+                } else {
+                    root_path.to_string()
                 }
             })
-            .unwrap_or(share_root)
+            .unwrap_or_else(|| root_path.to_string())
     } else {
         path.rfind('/')
             .map(|idx| path[..idx].to_string())
@@ -310,7 +310,6 @@ fn is_under_root(path: &str, root_path: &str) -> bool {
         || (path.starts_with(&root_path)
             && (root_path == "/"
                 || is_windows_drive_root(&root_path)
-                || unc_share_root(&root_path).is_some()
                 || path.as_bytes().get(root_path.len()) == Some(&b'/')))
 }
 
@@ -513,6 +512,19 @@ mod tests {
         let docs = find_subtree(&root, "//server/share/docs").expect("docs");
         assert_eq!(docs.children.len(), 1);
         assert_eq!(docs.children[0].name, "a.txt");
+    }
+
+    #[test]
+    fn unc_paths_reject_false_prefixes() {
+        assert!(!is_under_root("//server/shareextra", "//server/share"));
+        assert!(!is_under_root(
+            "//server/share/subdirextra",
+            "//server/share/subdir"
+        ));
+        assert_eq!(
+            parent_path("//server/shareextra/foo", "//server/share"),
+            "//server/share"
+        );
     }
 
     #[test]
