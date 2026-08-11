@@ -330,8 +330,8 @@ impl SnapshotIndex {
             if entry.deletable {
                 *deletable_counts.entry(cat.clone()).or_insert(0) += 1;
             }
-            let path = normalize_path(&entry.path_or_uri);
-            let parent_str = parent_path_of(&path);
+            let path = canonicalize_under_root(&entry.path_or_uri, &root_path);
+            let parent_str = parent_path_of_for_root(&path, &root_path);
             let id_id = table.intern(&entry.id);
             let path_id = table.intern(&path);
             let parent_id = table.intern(&parent_str);
@@ -358,6 +358,7 @@ impl SnapshotIndex {
         walk_tree(
             &snapshot.tree,
             None,
+            &root_path,
             &mut table,
             &mut directory_by_id,
             &mut children_by_id,
@@ -453,12 +454,15 @@ impl SnapshotIndex {
                 self.root_path
             ));
         }
-        if !subtree.is_dir || normalize_index_path(&subtree.path) != normalized {
+        if !subtree.is_dir
+            || !paths_equal(&normalize_index_path(&subtree.path), &normalized)
+        {
             return Err(format!(
                 "error:subtree root {} does not match target {normalized}",
                 subtree.path
             ));
         }
+        let normalized = canonicalize_under_root(&normalized, &self.root_path);
         if let Some(entry) = subtree_entries
             .iter()
             .find(|entry| !path_is_at_or_below(&entry.path_or_uri, &normalized))
@@ -470,7 +474,7 @@ impl SnapshotIndex {
         }
 
         let target_id = self.table.intern(&normalized);
-        let parent_id_opt = if normalized == self.root_path {
+        let parent_id_opt = if paths_equal(&normalized, &self.root_path) {
             None
         } else {
             self.directory_by_id
@@ -555,8 +559,8 @@ impl SnapshotIndex {
                     .reclaimable_estimate_bytes
                     .saturating_add(entry.size_bytes);
             }
-            let path = normalize_path(&entry.path_or_uri);
-            let parent_str = parent_path_of(&path);
+            let path = canonicalize_under_root(&entry.path_or_uri, &self.root_path);
+            let parent_str = parent_path_of_for_root(&path, &self.root_path);
             let stable_entry_id = stable_scoped_entry_id(&path);
             let id_id = self.table.intern(&stable_entry_id);
             let path_id = self.table.intern(&path);
@@ -583,6 +587,7 @@ impl SnapshotIndex {
         walk_tree(
             &canonical_subtree,
             parent_id_opt,
+            &self.root_path,
             &mut self.table,
             &mut self.directory_by_id,
             &mut self.children_by_id,
@@ -683,11 +688,11 @@ impl SnapshotIndex {
     }
 
     pub fn directory_record(&self, path: &str) -> Option<SnapshotDirectoryRecord> {
-        let path_id = self.table.get_id(path)?;
+        let path_id = self.resolve_path_id(path)?;
         self.directory_by_id
             .get(&path_id)
             .map(|r| SnapshotDirectoryRecord {
-                path: path.to_string(),
+                path: self.table.resolve(path_id).to_string(),
                 parent_path: r.parent.map(|p| self.table.resolve(p).to_string()),
                 name: self.table.resolve(r.name).to_string(),
                 size_bytes: r.size_bytes,
@@ -719,13 +724,18 @@ impl SnapshotIndex {
             reclaimable_bytes: 0,
         };
 
-        let path_id = match self.table.get_id(path) {
+        let canonical_path = if path_is_at_or_below(path, &self.root_path) {
+            canonicalize_under_root(path, &self.root_path)
+        } else {
+            normalize_path(path)
+        };
+        let path_id = match self.table.get_id(&canonical_path) {
             Some(id) => id,
-            None => return empty_result(path),
+            None => return empty_result(&canonical_path),
         };
         let child_ids = match self.children_by_id.get(&path_id) {
             Some(v) => v,
-            None => return empty_result(path),
+            None => return empty_result(&canonical_path),
         };
 
         let mut direct_children: Vec<SnapshotNodeRecord> = Vec::new();
@@ -811,7 +821,7 @@ impl SnapshotIndex {
         SnapshotQueryResult {
             snapshot_id: self.snapshot_id.clone(),
             version: self.version,
-            path: path.to_string(),
+            path: canonical_path,
             direct_children,
             direct_entries,
             total_bytes,
@@ -841,6 +851,15 @@ impl SnapshotIndex {
     pub fn refresh_directory_json(&self, path: &str) -> Result<String, String> {
         let result = self.refresh_directory(path);
         serde_json::to_string(&result).map_err(|e| format!("error:serialize: {e}"))
+    }
+
+    fn resolve_path_id(&self, path: &str) -> Option<u32> {
+        let canonical = if path_is_at_or_below(path, &self.root_path) {
+            canonicalize_under_root(path, &self.root_path)
+        } else {
+            normalize_path(path)
+        };
+        self.table.get_id(&canonical)
     }
 
     /// Convert an internal u32-keyed EntryRecord to the FFI-facing
@@ -922,7 +941,7 @@ impl SnapshotIndexBuilder {
     }
 
     pub fn ensure_dir(&mut self, path: &str) {
-        let path = normalize_path(path);
+        let path = canonicalize_under_root(path, &self.root_path);
         if !path_is_at_or_below(&path, &self.root_path) {
             return;
         }
@@ -931,7 +950,7 @@ impl SnapshotIndexBuilder {
     }
 
     pub fn record_file_size(&mut self, path: &str, size_bytes: u64) {
-        let path = normalize_path(path);
+        let path = canonicalize_under_root(path, &self.root_path);
         if !path_is_at_or_below(&path, &self.root_path) {
             return;
         }
@@ -945,7 +964,7 @@ impl SnapshotIndexBuilder {
     }
 
     pub fn insert_entry(&mut self, entry: StorageEntry) {
-        let path = normalize_path(&entry.path_or_uri);
+        let path = canonicalize_under_root(&entry.path_or_uri, &self.root_path);
         if !path_is_at_or_below(&path, &self.root_path) {
             return;
         }
@@ -988,11 +1007,11 @@ impl SnapshotIndexBuilder {
     }
 
     pub fn graft_directory_from_index(&mut self, source: &SnapshotIndex, dir_path: &str) {
-        let dir_path = normalize_path(dir_path);
+        let dir_path = canonicalize_under_root(dir_path, &self.root_path);
         if !path_is_at_or_below(&dir_path, &self.root_path) {
             return;
         }
-        let Some(source_dir_id) = source.table.get_id(&dir_path) else {
+        let Some(source_dir_id) = source.resolve_path_id(&dir_path) else {
             return;
         };
         let Some(source_dir) = source.directory_by_id.get(&source_dir_id).cloned() else {
@@ -1000,7 +1019,7 @@ impl SnapshotIndexBuilder {
         };
 
         let dir_path_id = self.table.intern(&dir_path);
-        let parent_id = if dir_path == self.root_path {
+        let parent_id = if paths_equal(&dir_path, &self.root_path) {
             None
         } else {
             let parent_str = parent_path_of_for_root(&dir_path, &self.root_path);
@@ -1146,6 +1165,9 @@ impl SnapshotIndexBuilder {
         }
 
         let path_str = self.table.resolve(path_id).to_string();
+        if paths_equal(&path_str, &self.root_path) {
+            return;
+        }
         let parent_str = parent_path_of_for_root(&path_str, &self.root_path);
         let parent_id = self.table.intern(&parent_str);
         self.ensure_dir_internal(parent_id);
@@ -1298,7 +1320,7 @@ fn parent_path_of(path: &str) -> String {
 }
 
 fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
-    let path = normalize_path(path);
+    let path = canonicalize_under_root(path, root_path);
     let root_path = normalize_path(root_path);
     if paths_equal(&path, &root_path) {
         return root_path;
@@ -1311,7 +1333,7 @@ fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
                 if paths_equal(parent, &root_path[..root_path.len() - 1]) {
                     root_path.clone()
                 } else {
-                    parent.to_string()
+                    canonicalize_under_root(parent, &root_path)
                 }
             })
             .unwrap_or(root_path);
@@ -1321,8 +1343,10 @@ fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
             .rfind('/')
             .map(|idx| {
                 let parent = &path[..idx];
-                if path_is_at_or_below(parent, &root_path) {
-                    parent.to_string()
+                if paths_equal(parent, &root_path) {
+                    root_path.clone()
+                } else if path_is_at_or_below(parent, &root_path) {
+                    canonicalize_under_root(parent, &root_path)
                 } else {
                     root_path.clone()
                 }
@@ -1333,6 +1357,18 @@ fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
         .map(|idx| path[..idx].to_string())
         .filter(|parent| path_is_at_or_below(parent, &root_path))
         .unwrap_or(root_path)
+}
+
+fn canonicalize_under_root(path: &str, root_path: &str) -> String {
+    let path = normalize_path(path);
+    let root_path = normalize_path(root_path);
+    if !path_is_at_or_below(&path, &root_path) {
+        return path;
+    }
+    if path.len() == root_path.len() {
+        return root_path;
+    }
+    format!("{root_path}{}", &path[root_path.len()..])
 }
 
 fn stable_scoped_entry_id(path: &str) -> String {
@@ -1384,6 +1420,7 @@ fn path_is_at_or_below(path: &str, root: &str) -> bool {
 fn walk_tree(
     node: &crate::model::ScanTreeNode,
     parent: Option<u32>,
+    root_path: &str,
     table: &mut StringTable,
     directory_by_id: &mut HashMap<u32, DirectoryRecord>,
     children_by_id: &mut HashMap<u32, Vec<u32>>,
@@ -1391,7 +1428,7 @@ fn walk_tree(
     entry_by_id: &HashMap<u32, EntryRecord>,
     file_size_by_path: &mut HashMap<u32, u64>,
 ) -> (u64, u64, u64) {
-    let node_path = normalize_path(&node.path);
+    let node_path = canonicalize_under_root(&node.path, root_path);
     let node_path_id = table.intern(&node_path);
 
     if !node.is_dir {
@@ -1431,6 +1468,7 @@ fn walk_tree(
         let (child_mask, child_deletable_mask, child_deletable_count) = walk_tree(
             child,
             Some(node_path_id),
+            root_path,
             table,
             directory_by_id,
             children_by_id,
@@ -2084,5 +2122,49 @@ mod tests {
         let result = index.query_directory("C:/Users/me/docs", None, false, "size_desc");
         assert_eq!(result.direct_entries.len(), 1);
         assert_eq!(result.direct_entries[0].path, "C:/Users/me/docs/a.txt");
+    }
+
+    #[test]
+    fn insert_entry_canonicalizes_windows_casing_without_shadow_dirs() {
+        let mut builder = SnapshotIndexBuilder::new("C:/Users/me");
+        builder.insert_entry(StorageEntry {
+            id: "e1".to_string(),
+            display_name: "a.txt".to_string(),
+            path_or_uri: "c:/Users/me/docs/a.txt".to_string(),
+            size_bytes: 10,
+            category: EntryCategory::Cache,
+            risk_level: RiskLevel::Low,
+            source_type: SourceType::File,
+            deletable: true,
+            reason: "cache".to_string(),
+        });
+        let index = builder.finish(
+            "snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats {
+                paths_seen: 1,
+                dirs_seen: 1,
+                files_seen: 1,
+                files_in_snapshot: 1,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
+        );
+        let root = index.query_directory("c:/Users/me", None, false, "name");
+        assert_eq!(root.path, "C:/Users/me");
+        assert!(root
+            .direct_children
+            .iter()
+            .all(|child| !child.path.eq_ignore_ascii_case("c:/Users/me")));
+        assert!(root
+            .direct_children
+            .iter()
+            .any(|child| child.path == "C:/Users/me/docs"));
+        let docs = index.query_directory("c:/Users/me/docs", None, false, "name");
+        assert_eq!(docs.direct_entries.len(), 1);
+        assert_eq!(docs.direct_entries[0].path, "C:/Users/me/docs/a.txt");
     }
 }

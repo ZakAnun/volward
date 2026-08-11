@@ -733,11 +733,12 @@ fn snapshot_target_path_size(
 }
 
 fn find_tree_node<'a>(node: &'a ScanTreeNode, target: &str) -> Option<&'a ScanTreeNode> {
-    if node.path == target {
+    let target = normalize_facade_path(target);
+    if facade_paths_equal(&normalize_facade_path(&node.path), &target) {
         return Some(node);
     }
     for child in &node.children {
-        if let Some(found) = find_tree_node(child, target) {
+        if let Some(found) = find_tree_node(child, &target) {
             return Some(found);
         }
     }
@@ -797,6 +798,18 @@ fn unc_share_root(path: &str) -> Option<String> {
     let server = parts.next()?;
     let share = parts.next()?;
     Some(format!("//{server}/{share}"))
+}
+
+fn facade_paths_equal(left: &str, right: &str) -> bool {
+    let windows_style = has_windows_drive_prefix(left)
+        || has_windows_drive_prefix(right)
+        || left.starts_with("//")
+        || right.starts_with("//");
+    if windows_style {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
 }
 
 fn has_windows_drive_prefix(path: &str) -> bool {
