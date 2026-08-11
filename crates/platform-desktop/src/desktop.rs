@@ -74,6 +74,7 @@ fn has_windows_drive_prefix(path: &str) -> bool {
     bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
+#[cfg(any(windows, test))]
 fn windows_protected_prefixes_from_env(get_env: impl Fn(&str) -> Option<String>) -> Vec<String> {
     let mut protected = Vec::new();
     for key in ["SystemRoot", "WINDIR", "ProgramFiles", "ProgramFiles(x86)"] {

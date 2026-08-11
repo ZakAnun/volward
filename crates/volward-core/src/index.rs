@@ -1297,6 +1297,7 @@ fn name_of(path: &str) -> String {
         .to_string()
 }
 
+#[cfg(test)]
 fn parent_path_of(path: &str) -> String {
     let path = normalize_path(path);
     if let Some(share) = unc_share_root(&path) {

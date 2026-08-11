@@ -664,6 +664,7 @@ fn is_windows_drive_root(path: &str) -> bool {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)] // Variants are constructed per-target via cfg; unit tests cover all arms.
 enum CachePlatform {
     Macos,
     Windows,
