@@ -392,14 +392,9 @@ String? _inferRootPath(
 }
 
 String _parentDir(String path) {
-  final normalized = path.endsWith('/') && path.length > 1
-      ? path.substring(0, path.length - 1)
-      : path;
-  final idx = normalized.lastIndexOf('/');
-  if (idx <= 0) return normalized;
-  return normalized.substring(0, idx);
+  return parentFsPath(path);
 }
 
 List<String> _pathSegments(String path) {
-  return path.split('/').where((part) => part.isNotEmpty).toList();
+  return normalizeFsPath(path).split('/').where((part) => part.isNotEmpty).toList();
 }

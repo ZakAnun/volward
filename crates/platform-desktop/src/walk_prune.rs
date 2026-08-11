@@ -45,10 +45,27 @@ pub fn is_skippable_dir_name(name: &OsStr) -> bool {
 }
 
 pub fn is_protected_path(path: &Path, protected_prefixes: &[String]) -> bool {
-    let path_str = path.to_string_lossy();
+    let path_str = normalize_path_str(&path.to_string_lossy());
     protected_prefixes
         .iter()
-        .any(|pfx| path_str.starts_with(pfx.as_str()))
+        .any(|pfx| path_str.starts_with(&normalize_path_str(pfx)))
+}
+
+fn normalize_path_str(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3
+        && bytes[1] == b':'
+        && bytes[2] == b'/'
+        && bytes[0].is_ascii_alphabetic()
 }
 
 /// Prevent jwalk from descending into protected or dev/build directories.

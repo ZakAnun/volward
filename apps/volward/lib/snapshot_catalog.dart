@@ -28,6 +28,7 @@ class SnapshotCatalog {
   }
 
   ScanTreeNode? _directoryForPath(String path) {
+    path = normalizeFsPath(path);
     final cached = _directories[path];
     if (cached != null) return cached;
 
@@ -44,6 +45,7 @@ class SnapshotCatalog {
   }
 
   ScanTreeNode? _findDirectory(ScanTreeNode node, String path) {
+    path = normalizeFsPath(path);
     if (node.path == path) return node;
     if (!node.isDirectory) return null;
 

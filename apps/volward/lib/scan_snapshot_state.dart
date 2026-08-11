@@ -23,7 +23,7 @@ class ScanSnapshotState {
 
   factory ScanSnapshotState.fromIndexSummary(Map<String, dynamic> summary) {
     final snapshotId = summary['snapshot_id']?.toString() ?? '';
-    final rootPath = summary['root_path']?.toString() ?? '';
+    final rootPath = normalizeFsPath(summary['root_path']?.toString() ?? '');
     final rootParts = rootPath.split('/').where((s) => s.isNotEmpty).toList();
     final root = ScanTreeNode(
       name: rootParts.isEmpty
