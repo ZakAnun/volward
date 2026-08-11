@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
-import '../theme/apple_tokens.dart';
 import '../updater/app_updater.dart';
 import '../updater/update_models.dart';
 import 'apple_widgets.dart';

@@ -35,4 +35,39 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
+  test('tagFromReleasePageUrl reads tag from release page URL', () {
+    expect(
+      tagFromReleasePageUrl(
+        Uri.parse('https://github.com/ZakAnun/volward/releases/tag/v0.0.1'),
+      ),
+      'v0.0.1',
+    );
+    expect(
+      tagFromReleasePageUrl(Uri.parse('https://github.com/ZakAnun/volward')),
+      isNull,
+    );
+  });
+
+  test('conventionReleaseAssets builds CI download URLs', () {
+    final assets = conventionReleaseAssets(
+      owner: 'ZakAnun',
+      repo: 'volward',
+      tagName: 'v0.0.2',
+      version: '0.0.2',
+    );
+    expect(assets, hasLength(4));
+    expect(
+      assets.map((a) => a.name),
+      containsAll([
+        'volward-v0.0.2-macos-arm64.zip',
+        'VolwardSetup-v0.0.2-windows-x64.exe',
+        'Volward-v0.0.2-linux-x86_64.AppImage',
+      ]),
+    );
+    expect(
+      assets.first.downloadUrl,
+      'https://github.com/ZakAnun/volward/releases/download/v0.0.2/volward-v0.0.2-macos-arm64.zip',
+    );
+  });
 }
