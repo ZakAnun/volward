@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'update_models.dart';
@@ -85,27 +86,47 @@ class GitHubVersionSource implements VersionSource {
     // is easily rate-limited (60 req/hour/IP) and returns HTTP 403.
     try {
       return await _fetchLatestViaReleasePage();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint(
+        'GitHubVersionSource: release-page lookup failed, falling back to API: '
+        '$error\n$stackTrace',
+      );
       return _fetchLatestViaApi();
     }
   }
 
   Future<ReleaseInfo> _fetchLatestViaReleasePage() async {
     final uri = Uri.https('github.com', '/$owner/$repo/releases/latest');
-    final response = await _client.get(
-      uri,
-      headers: const {'User-Agent': 'Volward-Updater'},
-    );
-    if (response.statusCode != 200) {
+    // Do not auto-follow: we need the Location header that points at /tag/vX.Y.Z.
+    final request = http.Request('GET', uri)
+      ..followRedirects = false
+      ..headers['User-Agent'] = 'Volward-Updater'
+      ..headers['Accept'] = 'text/html';
+    final streamed = await _client.send(request);
+    await streamed.stream.drain<void>();
+
+    final location = streamed.headers['location'];
+    final redirected = (location == null || location.isEmpty)
+        ? null
+        : uri.resolve(location);
+    final tagUrl = redirected ?? streamed.request?.url ?? uri;
+    // Some environments still land on 200 with the final URL after a proxy.
+    if (streamed.statusCode != 302 &&
+        streamed.statusCode != 301 &&
+        streamed.statusCode != 303 &&
+        streamed.statusCode != 307 &&
+        streamed.statusCode != 308 &&
+        streamed.statusCode != 200) {
       throw GitHubHttpException(
-        'GitHub release page failed: HTTP ${response.statusCode}',
+        'GitHub release page failed: HTTP ${streamed.statusCode}',
       );
     }
-    final finalUrl = response.request?.url ?? uri;
-    final tag = tagFromReleasePageUrl(finalUrl);
+
+    final tag = tagFromReleasePageUrl(tagUrl);
     if (tag == null) {
       throw GitHubHttpException(
-        'Could not resolve latest release tag from $finalUrl',
+        'Could not resolve latest release tag from $tagUrl '
+        '(status=${streamed.statusCode}, location=$location)',
       );
     }
     final version = normalizeReleaseTag(tag);

@@ -44,6 +44,14 @@ void main() {
       'v0.0.1',
     );
     expect(
+      tagFromReleasePageUrl(
+        Uri.parse(
+          'https://github.com/ZakAnun/volward/releases/tag/v0.0.1?foo=1',
+        ),
+      ),
+      'v0.0.1',
+    );
+    expect(
       tagFromReleasePageUrl(Uri.parse('https://github.com/ZakAnun/volward')),
       isNull,
     );
