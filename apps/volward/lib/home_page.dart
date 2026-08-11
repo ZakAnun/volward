@@ -61,10 +61,8 @@ String refreshPathForDeleteTargets({
   required String fallbackPath,
   required Iterable<String> targetPaths,
 }) {
-  final parentPaths = targetPaths
-      .where((path) => path.isNotEmpty)
-      .map(_parentPathOf)
-      .toSet();
+  final parentPaths =
+      targetPaths.where((path) => path.isNotEmpty).map(_parentPathOf).toSet();
   if (parentPaths.length == 1) return parentPaths.single;
   return ScanTreeBuilder.normalizeRoot(fallbackPath);
 }
@@ -180,6 +178,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final status = widget.updater.status;
     if (status.phase == UpdatePhase.error &&
         (status.failureKind == UpdateFailureKind.noMatchingAsset ||
+            status.failureKind == UpdateFailureKind.integrity ||
             status.failureKind == UpdateFailureKind.unsupportedRuntime)) {
       await showUpdateFailureDialog(context: context, updater: widget.updater);
     }
@@ -263,9 +262,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // Scan completed (possibly auto-started by switchScanRoot) — show stats.
       final count = _s.lastSnapshot?.filesInSnapshot ?? 0;
       final l10n = context.l10n;
-      final label = _s.incrementalScan
-          ? l10n.scanStatusIncremental
-          : l10n.scanStatusFull;
+      final label =
+          _s.incrementalScan ? l10n.scanStatusIncremental : l10n.scanStatusFull;
       setState(() {
         _scanStatus = l10n.scanStatusFiles(label, count);
         _columnChain.clear();
@@ -302,8 +300,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             // visible-children cache invalidation above is sufficient.
             if (!_s.hasIndexApi) {
               final refreshed = refreshColumnChain(tree, _columnChain);
-              final chainChanged =
-                  refreshed.length != _columnChain.length ||
+              final chainChanged = refreshed.length != _columnChain.length ||
                   !Iterable.generate(
                     refreshed.length,
                   ).every((i) => refreshed[i].path == _columnChain[i].path);
@@ -452,8 +449,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (range.isNotEmpty) {
           setState(() {
             for (final record in range) {
-              final rangeNode =
-                  _findNodeByPath(currentTree, record.path) ??
+              final rangeNode = _findNodeByPath(currentTree, record.path) ??
                   record.toScanTreeNode();
               _addNodeSelection(rangeNode);
             }
@@ -476,7 +472,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (anchorRecord != null) {
               final anchorNode =
                   _findNodeByPath(currentTree, anchorRecord.path) ??
-                  anchorRecord.toScanTreeNode();
+                      anchorRecord.toScanTreeNode();
               _addNodeSelection(anchorNode);
             }
           }
@@ -510,8 +506,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _setColumnChain(nextChain);
     });
     _s.setCurrentDirectory(browsedDirectoryPath(nextChain));
-    final remainsSelected =
-        nextChain.length > columnIndex &&
+    final remainsSelected = nextChain.length > columnIndex &&
         nextChain[columnIndex].path == node.path;
     if (remainsSelected && actualNode.isDirectory && !actualNode.scanned) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -571,8 +566,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Re-resolve from the live tree so peek-scan merges (which update
     // tree.children but leave _columnChain nodes stale) are visible to the
     // focused branch overlay.
-    final liveNode =
-        _s.directoryOverlayForPath(node.path) ??
+    final liveNode = _s.directoryOverlayForPath(node.path) ??
         (_shouldUseTreeOverlayForPath(node.path)
             ? (_findNodeByPath(_cachedResolvedTree, node.path) ?? node)
             : node);
@@ -874,9 +868,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// after selection or snapshot changes.
   int _selectedBytes() {
     if (_selected.isEmpty) return 0;
-    final selectedKey = _selected.isEmpty
-        ? ''
-        : (_selected.toList()..sort()).join(',');
+    final selectedKey =
+        _selected.isEmpty ? '' : (_selected.toList()..sort()).join(',');
     final compositeKey = '${_s.lastSnapshot?.snapshotId ?? ''}|$selectedKey';
     if (compositeKey == _cachedSelectedBytesKey) return _cachedSelectedBytes;
     _cachedSelectedBytes = _selected.fold<int>(
@@ -932,9 +925,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final snapshot = _s.lastSnapshot;
       final count = snapshot?.filesInSnapshot ?? 0;
       final l10n = context.l10n;
-      final label = incremental
-          ? l10n.scanStatusIncremental
-          : l10n.scanStatusFull;
+      final label =
+          incremental ? l10n.scanStatusIncremental : l10n.scanStatusFull;
       setState(() {
         _scanStatus = '${l10n.scanStatusFiles(label, count)} · $id';
       });
@@ -1077,8 +1069,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 880),
         child: Padding(
-          padding:
-              padding ??
+          padding: padding ??
               const EdgeInsets.fromLTRB(
                 AppleSpacing.lg,
                 AppleSpacing.sm,
@@ -1269,8 +1260,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _s.scanning
                 ? context.l10n.resultsUpdating
                 : matchingCount == 0
-                ? context.l10n.resultsNoFilterMatches
-                : context.l10n.resultsNoFilterMatchesWithCount(matchingCount),
+                    ? context.l10n.resultsNoFilterMatches
+                    : context.l10n
+                        .resultsNoFilterMatchesWithCount(matchingCount),
             style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
@@ -1285,8 +1277,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // the appropriate cached query outside the build pass.
     final treeChildrenEmpty = displayTree.children.isEmpty;
     final rootKey = _visibleChildrenKeyFor(displayTree);
-    final cachedRootChildren =
-        _visibleChildrenCache.peek(rootKey) ??
+    final cachedRootChildren = _visibleChildrenCache.peek(rootKey) ??
         _visibleChildrenCache.latestForPath(displayTree.path);
     final catalogQueryPending = _pendingVisibleChildrenQueries.contains(
       rootKey,
@@ -1301,8 +1292,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Only skip the empty-state when the catalog API is present and the root is
     // either already cached, still pending, or still scanning.  For old builds
     // or genuinely empty directories, the friendly empty-state is still shown.
-    final catalogMayHaveChildren =
-        _s.hasIndexApi &&
+    final catalogMayHaveChildren = _s.hasIndexApi &&
         (catalogQueryPending ||
             cachedRootChildren?.isNotEmpty == true ||
             _s.scanning);
@@ -1334,8 +1324,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         for (final node in _columnChain)
           if (_isPreparingVisibleChildren(node)) node.path,
       },
-      childrenPreSorted:
-          _s.hasIndexApi &&
+      childrenPreSorted: _s.hasIndexApi &&
           !_showingPreviewSnapshot &&
           _categoryFilter == null &&
           !_deletableOnly,
@@ -1389,51 +1378,52 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ],
                   )
                 : hasResults
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildCompactResultsChrome(
-                        context,
-                        matchingCount: matchingCount,
-                        displayTree: displayTree,
-                      ),
-                      Expanded(
-                        child: ListenableBuilder(
-                          listenable: _columnNavTick,
-                          builder: (context, _) {
-                            final focus = scanColumnFocusNode(_columnChain);
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: _padExpanded(
-                                    _buildResultsBrowser(
-                                      context,
-                                      displayTree,
-                                      matchingCount,
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildCompactResultsChrome(
+                            context,
+                            matchingCount: matchingCount,
+                            displayTree: displayTree,
+                          ),
+                          Expanded(
+                            child: ListenableBuilder(
+                              listenable: _columnNavTick,
+                              builder: (context, _) {
+                                final focus = scanColumnFocusNode(_columnChain);
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(
+                                      child: _padExpanded(
+                                        _buildResultsBrowser(
+                                          context,
+                                          displayTree,
+                                          matchingCount,
+                                        ),
+                                        padding: const EdgeInsets.fromLTRB(
+                                          AppleSpacing.lg,
+                                          0,
+                                          AppleSpacing.lg,
+                                          AppleSpacing.xxs,
+                                        ),
+                                      ),
                                     ),
-                                    padding: const EdgeInsets.fromLTRB(
-                                      AppleSpacing.lg,
-                                      0,
-                                      AppleSpacing.lg,
-                                      AppleSpacing.xxs,
-                                    ),
-                                  ),
-                                ),
-                                _buildItemPreview(context, focus),
-                              ],
-                            );
-                          },
-                        ),
+                                    _buildItemPreview(context, focus),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      )
+                    : CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(child: _buildScanSection(context)),
+                          const SliverToBoxAdapter(child: SizedBox(height: 72)),
+                        ],
                       ),
-                    ],
-                  )
-                : CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(child: _buildScanSection(context)),
-                      const SliverToBoxAdapter(child: SizedBox(height: 72)),
-                    ],
-                  ),
           ),
           _buildStickyBar(context),
         ],
@@ -1603,19 +1593,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           builder: (context, constraints) {
             final browserHeight =
                 constraints.maxHeight.isFinite && constraints.maxHeight > 0
-                ? constraints.maxHeight
-                : 360.0;
+                    ? constraints.maxHeight
+                    : 360.0;
 
             int rowsFor(int target) {
               const rowHeight = 20.0;
               const chromeHeight =
                   AppleSpacing.sm * 2 + 12 + AppleSpacing.sm + 16;
               final available = browserHeight - chromeHeight;
-              final maxRows =
-                  ((available + AppleSpacing.sm) /
-                          (rowHeight + AppleSpacing.sm))
-                      .floor()
-                      .clamp(3, 8);
+              final maxRows = ((available + AppleSpacing.sm) /
+                      (rowHeight + AppleSpacing.sm))
+                  .floor()
+                  .clamp(3, 8);
               return target < maxRows ? target : maxRows;
             }
 
@@ -2112,9 +2101,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 if (selectId != null && category != 'System')
                   Checkbox(
                     value: marked,
-                    onChanged: busy
-                        ? null
-                        : (_) => _toggleFocusedFileSelection(focus),
+                    onChanged:
+                        busy ? null : (_) => _toggleFocusedFileSelection(focus),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
@@ -2156,8 +2144,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         label = deleteTargetCount > 0
             ? l10n.stickySelected(deleteTargetCount, _fmt(deleteTargetBytes))
             : peekCount > 0
-            ? l10n.stickyDirectoriesLoading(peekCount)
-            : l10n.stickyBrowseResults;
+                ? l10n.stickyDirectoriesLoading(peekCount)
+                : l10n.stickyBrowseResults;
         // Refresh button targets the currently focused directory. The root uses
         // a full scan; a child directory uses a scoped peek scan.
         actionLabel = busy ? '' : l10n.scanActionRescan;
@@ -2169,9 +2157,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         label = _s.ready ? l10n.stickyReadyToScan : l10n.stickyLoadingEngine;
         actionLabel = l10n.scanActionStart;
         actionIcon = Icons.search;
-        actionPressed = (_s.ready && !busy && _s.hasSnapshotFileApi)
-            ? _startScan
-            : null;
+        actionPressed =
+            (_s.ready && !busy && _s.hasSnapshotFileApi) ? _startScan : null;
       }
     }
 
@@ -2215,9 +2202,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? l10n.deleteActionWorking
                       : l10n.deleteActionMoveToTrash,
                   icon: _s.deleting ? null : Icons.delete_outline,
-                  onPressed: deleteTargetCount > 0 && !busy
-                      ? _confirmDelete
-                      : null,
+                  onPressed:
+                      deleteTargetCount > 0 && !busy ? _confirmDelete : null,
                 ),
               ],
             ),

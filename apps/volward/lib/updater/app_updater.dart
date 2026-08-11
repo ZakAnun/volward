@@ -23,14 +23,13 @@ class AppUpdater extends ChangeNotifier {
     required this.os,
     required this.abi,
     required Directory Function() tempDirectoryBuilder,
-  }) : _localVersionReader = localVersionReader,
-       _versionSource = versionSource,
-       _downloader = downloader,
-       _installer = installer,
-       _urlOpener = urlOpener,
-       _tempDirectoryBuilder = tempDirectoryBuilder;
+  })  : _localVersionReader = localVersionReader,
+        _versionSource = versionSource,
+        _downloader = downloader,
+        _installer = installer,
+        _urlOpener = urlOpener,
+        _tempDirectoryBuilder = tempDirectoryBuilder;
 
-  @visibleForTesting
   factory AppUpdater.test({String localVersion = '0.0.0'}) {
     return AppUpdater(
       localVersionReader: _TestLocalVersionReader(localVersion),
@@ -106,6 +105,8 @@ class AppUpdater extends ChangeNotifier {
         );
         return;
       }
+      // Prefer runtime capability over integrity so non-AppImage / non-bundle
+      // installs get unsupportedRuntime instead of a misleading checksum error.
       if (!_installer.canAutoInstall) {
         _setStatus(
           UpdateStatus(
@@ -118,12 +119,43 @@ class AppUpdater extends ChangeNotifier {
         );
         return;
       }
+      // Convention asset URLs always include a `.sha256` sidecar path, but older
+      // releases may not have uploaded that file. Probe reachability before
+      // advertising an installable update.
+      final expectedSha256 = await _downloader.resolveExpectedSha256(asset);
+      if (expectedSha256 == null) {
+        _setStatus(
+          UpdateStatus(
+            phase: UpdatePhase.error,
+            release: release,
+            matchedAsset: asset,
+            failureKind: UpdateFailureKind.integrity,
+            errorMessage: 'Missing SHA-256 checksum for ${asset.name}',
+          ),
+        );
+        return;
+      }
+      // Page/Atom paths synthesize download URLs; confirm the binary exists too.
+      final reachable = await _downloader.isDownloadReachable(asset);
+      if (!reachable) {
+        _setStatus(
+          UpdateStatus(
+            phase: UpdatePhase.error,
+            release: release,
+            matchedAsset: asset,
+            failureKind: UpdateFailureKind.noMatchingAsset,
+            errorMessage: 'Asset not reachable: ${asset.name}',
+          ),
+        );
+        return;
+      }
+      final verifiedAsset = asset.copyWith(sha256: expectedSha256);
 
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.available,
           release: release,
-          matchedAsset: asset,
+          matchedAsset: verifiedAsset,
         ),
       );
     } catch (error, stackTrace) {
@@ -189,11 +221,7 @@ class AppUpdater extends ChangeNotifier {
       await _installer.installAndRelaunch(downloaded: file, release: release);
     } catch (error, stackTrace) {
       debugPrint('AppUpdater.downloadAndInstall failed: $error\n$stackTrace');
-      final failureKind = error is UnsupportedError
-          ? UpdateFailureKind.unsupportedRuntime
-          : (_status.phase == UpdatePhase.downloading
-                ? UpdateFailureKind.download
-                : UpdateFailureKind.install);
+      final failureKind = _failureKindForInstallError(error);
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.error,
@@ -204,6 +232,15 @@ class AppUpdater extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  UpdateFailureKind _failureKindForInstallError(Object error) {
+    if (error is UnsupportedError) return UpdateFailureKind.unsupportedRuntime;
+    if (error is UpdateIntegrityException) return UpdateFailureKind.integrity;
+    if (_status.phase == UpdatePhase.downloading) {
+      return UpdateFailureKind.download;
+    }
+    return UpdateFailureKind.install;
   }
 
   Future<void> openDownloadPage() async {
@@ -237,16 +274,22 @@ class _TestVersionSource implements VersionSource {
 
   @override
   Future<ReleaseInfo> fetchLatest() async => ReleaseInfo(
-    tagName: 'v$version',
-    version: version,
-    htmlUrl: 'https://example.invalid/releases/latest',
-    body: '',
-    assets: const [],
-  );
+        tagName: 'v$version',
+        version: version,
+        htmlUrl: 'https://example.invalid/releases/latest',
+        body: '',
+        assets: const [],
+      );
 }
 
 class _TestDownloader implements Downloader {
   const _TestDownloader();
+
+  @override
+  Future<String?> resolveExpectedSha256(ReleaseAsset asset) async => null;
+
+  @override
+  Future<bool> isDownloadReachable(ReleaseAsset asset) async => false;
 
   @override
   Future<File> download(

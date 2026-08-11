@@ -3,12 +3,11 @@ import 'dart:io';
 import 'platform_installer.dart';
 import 'update_models.dart';
 
-typedef LinuxProcessStarter =
-    Future<void> Function(
-      String executable,
-      List<String> arguments, {
-      ProcessStartMode mode,
-    });
+typedef LinuxProcessStarter = Future<void> Function(
+  String executable,
+  List<String> arguments, {
+  ProcessStartMode mode,
+});
 
 Future<void> _startLinuxProcess(
   String executable,
@@ -25,11 +24,11 @@ class LinuxAppImageInstaller implements PlatformInstaller {
     Future<ProcessResult> Function(String, List<String>)? run,
     LinuxProcessStarter? start,
     void Function(int code)? exitProcess,
-  }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
-       _environment = environment ?? Platform.environment,
-       _run = run ?? Process.run,
-       _start = start ?? _startLinuxProcess,
-       _exitProcess = exitProcess ?? exit;
+  })  : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
+        _environment = environment ?? Platform.environment,
+        _run = run ?? Process.run,
+        _start = start ?? _startLinuxProcess,
+        _exitProcess = exitProcess ?? exit;
 
   final String _resolvedExecutable;
   final Map<String, String> _environment;
@@ -63,6 +62,7 @@ class LinuxAppImageInstaller implements PlatformInstaller {
     final target = File(targetPath);
     final staging = File('$targetPath.new');
     final previous = File('$targetPath.old');
+    var targetMovedToPrevious = false;
 
     if (await staging.exists()) {
       await staging.delete();
@@ -77,19 +77,52 @@ class LinuxAppImageInstaller implements PlatformInstaller {
     if (await previous.exists()) {
       await previous.delete();
     }
-    if (await target.exists()) {
-      await target.rename(previous.path);
-    }
-    await staging.rename(target.path);
     try {
-      if (await previous.exists()) {
-        await previous.delete();
+      if (await target.exists()) {
+        await target.rename(previous.path);
+        targetMovedToPrevious = true;
+      }
+      await staging.rename(target.path);
+      await _start(target.path, [], mode: ProcessStartMode.detached);
+      try {
+        if (await previous.exists()) {
+          await previous.delete();
+        }
+      } catch (_) {
+        // Best-effort cleanup; leaving *.old is recoverable.
       }
     } catch (_) {
-      // Best-effort cleanup; leaving *.old is recoverable.
+      await _restorePrevious(
+        target: target,
+        staging: staging,
+        previous: previous,
+        targetMovedToPrevious: targetMovedToPrevious,
+      );
+      rethrow;
     }
 
-    await _start(target.path, [], mode: ProcessStartMode.detached);
     _exitProcess(0);
+  }
+
+  Future<void> _restorePrevious({
+    required File target,
+    required File staging,
+    required File previous,
+    required bool targetMovedToPrevious,
+  }) async {
+    try {
+      if (await staging.exists()) {
+        await staging.delete();
+      }
+      if (targetMovedToPrevious && await previous.exists()) {
+        if (await target.exists()) {
+          await target.delete();
+        }
+        await previous.rename(target.path);
+      }
+    } catch (_) {
+      // The original error is more useful; best-effort rollback can fail if the
+      // filesystem is already in a bad state.
+    }
   }
 }

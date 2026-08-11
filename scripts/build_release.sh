@@ -38,6 +38,22 @@ echo ""
 # Create build directory
 mkdir -p "$BUILD_DIR"
 
+write_sha256() {
+  local file="$1"
+  local dir
+  local name
+  dir="$(dirname "$file")"
+  name="$(basename "$file")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$dir" && sha256sum "$name" > "$name.sha256")
+  elif command -v shasum >/dev/null 2>&1; then
+    (cd "$dir" && shasum -a 256 "$name" > "$name.sha256")
+  else
+    echo "❌ SHA-256 checksum tool not found" >&2
+    exit 1
+  fi
+}
+
 # Aptabase compile-time defines for release builds.
 # Priority: env APTABASE_APP_KEY + APTABASE_HOST → apps/volward/aptabase.json
 # Missing both → Analytics stays Noop in the shipped binary.
@@ -128,6 +144,7 @@ build_macos() {
   cd "$APP_DIR/build/macos/Build/Products/Release"
   # Avoid AppleDouble (._*) junk inside the zip.
   COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent volward.app "$BUILD_DIR/$OUTPUT_NAME"
+  write_sha256 "$BUILD_DIR/$OUTPUT_NAME"
 
   echo "✅ macOS build complete: $OUTPUT_NAME"
   echo ""
@@ -184,6 +201,7 @@ build_windows() {
     echo "❌ Windows installer missing: VolwardSetup-v${VERSION}-windows-x64.exe"
     exit 1
   fi
+  write_sha256 "$BUILD_DIR/VolwardSetup-v${VERSION}-windows-x64.exe"
 
   echo "✅ Windows build complete: VolwardSetup-v${VERSION}-windows-x64.exe"
   echo ""
@@ -223,6 +241,7 @@ build_linux() {
   OUTPUT_NAME="volward-v${VERSION}-linux-x64.tar.gz"
   cd "$(dirname "$LINUX_BUILD")"
   tar -czf "$BUILD_DIR/$OUTPUT_NAME" bundle
+  write_sha256 "$BUILD_DIR/$OUTPUT_NAME"
 
   bash "$REPO_ROOT/scripts/linux/build_appimage.sh" \
     --bundle-dir "$LINUX_BUILD" \
@@ -234,6 +253,7 @@ build_linux() {
     echo "❌ Linux AppImage missing: Volward-v${VERSION}-linux-x86_64.AppImage"
     exit 1
   fi
+  write_sha256 "$BUILD_DIR/Volward-v${VERSION}-linux-x86_64.AppImage"
 
   echo "✅ Linux build complete: $OUTPUT_NAME and Volward-v${VERSION}-linux-x86_64.AppImage"
   echo ""

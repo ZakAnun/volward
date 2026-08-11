@@ -87,8 +87,13 @@ endlocal
       ),
     );
 
-    // Detach the update script, then exit so the installer can replace files.
-    await _start(batchFile.path, [], mode: ProcessStartMode.detached);
+    // Detach the update script via cmd.exe — Process.start on a .cmd path is
+    // unreliable across Windows shells/associations.
+    await _start(
+      'cmd.exe',
+      ['/c', batchFile.path],
+      mode: ProcessStartMode.detached,
+    );
     _exitProcess(0);
   }
 }

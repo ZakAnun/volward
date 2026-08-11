@@ -249,6 +249,12 @@
       "error": {}
     }
   },
+  "settingsUpdateActionError": "Update failed: {error}",
+  "@settingsUpdateActionError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "settingsOpenDownloadPage": "Open download page",
   "updateAvailableTitle": "Update available — {version}",
   "@updateAvailableTitle": {

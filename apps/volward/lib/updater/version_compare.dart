@@ -2,12 +2,14 @@
 String? normalizeReleaseTag(String raw) {
   final trimmed = raw.trim();
   if (trimmed.isEmpty) return null;
-  final withoutV = trimmed.startsWith(RegExp(r'[vV]'))
+  final withoutV = trimmed.startsWith('v') || trimmed.startsWith('V')
       ? trimmed.substring(1)
       : trimmed;
-  final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)$').firstMatch(withoutV);
-  if (match == null) return null;
-  return '${match[1]}.${match[2]}.${match[3]}';
+  final parts = withoutV.split('.');
+  if (parts.length != 3 || parts.any((part) => !_isDigits(part))) {
+    return null;
+  }
+  return parts.join('.');
 }
 
 int compareSemver(String a, String b) {
@@ -30,4 +32,13 @@ bool isRemoteNewer({
   final local = normalizeReleaseTag(localVersion);
   if (remote == null || local == null) return false;
   return compareSemver(remote, local) > 0;
+}
+
+bool _isDigits(String value) {
+  if (value.isEmpty) return false;
+  for (var i = 0; i < value.length; i++) {
+    final code = value.codeUnitAt(i);
+    if (code < 0x30 || code > 0x39) return false;
+  }
+  return true;
 }

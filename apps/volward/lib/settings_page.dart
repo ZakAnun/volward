@@ -5,6 +5,7 @@ import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
 import 'updater/app_updater.dart';
+import 'updater/update_error_message.dart';
 import 'updater/update_models.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
@@ -63,7 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (status.phase == UpdatePhase.error) {
       showTopToast(
         context,
-        message: l10n.settingsUpdateError(status.errorMessage ?? ''),
+        message: formatUpdateStatusError(l10n, status),
         type: ToastType.error,
       );
     }
@@ -279,9 +280,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               )
                             else if (status.phase == UpdatePhase.error)
                               Text(
-                                l10n.settingsUpdateError(
-                                  status.errorMessage ?? '',
-                                ),
+                                formatUpdateStatusError(l10n, status),
                                 style: context.vwFinePrint,
                               ),
                             const SizedBox(height: AppleSpacing.sm),
@@ -309,6 +308,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                 if (status.phase == UpdatePhase.error ||
                                     status.failureKind ==
                                         UpdateFailureKind.noMatchingAsset ||
+                                    status.failureKind ==
+                                        UpdateFailureKind.integrity ||
                                     status.failureKind ==
                                         UpdateFailureKind.unsupportedRuntime)
                                   AppleButton(

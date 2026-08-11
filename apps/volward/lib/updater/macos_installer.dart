@@ -8,16 +8,17 @@ class MacosInstaller implements PlatformInstaller {
     String? resolvedExecutable,
     Future<ProcessResult> Function(String, List<String>)? run,
     void Function(int code)? exitProcess,
-  }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
-       _run = run ?? Process.run,
-       _exitProcess = exitProcess ?? exit;
+  })  : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
+        _run = run ?? Process.run,
+        _exitProcess = exitProcess ?? exit;
 
   final String _resolvedExecutable;
   final Future<ProcessResult> Function(String, List<String>) _run;
   final void Function(int code) _exitProcess;
 
   @override
-  bool get canAutoInstall => true;
+  bool get canAutoInstall =>
+      appBundlePathFromExecutable(_resolvedExecutable) != null;
 
   /// `.../Volward.app/Contents/MacOS/volward` → `.../Volward.app`
   static String? appBundlePathFromExecutable(String executable) {

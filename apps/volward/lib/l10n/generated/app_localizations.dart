@@ -770,6 +770,12 @@ abstract class AppLocalizations {
   /// **'Update check failed: {error}'**
   String settingsUpdateError(Object error);
 
+  /// No description provided for @settingsUpdateActionError.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed: {error}'**
+  String settingsUpdateActionError(Object error);
+
   /// No description provided for @settingsOpenDownloadPage.
   ///
   /// In en, this message translates to:

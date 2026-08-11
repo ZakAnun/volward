@@ -79,4 +79,43 @@ void main() {
     expect(exited, isTrue);
     expect(await target.readAsString(), 'new');
   });
+
+  test('restores previous AppImage when relaunch fails', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'volward_linux_installer_rollback_test_',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final target = File('${directory.path}/Volward.AppImage');
+    final downloaded = File('${directory.path}/downloaded.AppImage');
+    await target.writeAsString('old');
+    await downloaded.writeAsString('new');
+    var exited = false;
+    final installer = LinuxAppImageInstaller(
+      resolvedExecutable: target.path,
+      environment: {'APPIMAGE': target.path},
+      run: (command, arguments) async => ProcessResult(1, 0, '', ''),
+      start: (executable, arguments, {mode = ProcessStartMode.normal}) async {
+        throw StateError('relaunch failed');
+      },
+      exitProcess: (_) => exited = true,
+    );
+
+    await expectLater(
+      installer.installAndRelaunch(
+        downloaded: downloaded,
+        release: const ReleaseInfo(
+          tagName: 'v1.0.0',
+          version: '1.0.0',
+          htmlUrl: '',
+          body: '',
+          assets: [],
+        ),
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(exited, isFalse);
+    expect(await target.readAsString(), 'old');
+    expect(await File('${target.path}.old').exists(), isFalse);
+  });
 }

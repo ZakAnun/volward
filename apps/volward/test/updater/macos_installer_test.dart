@@ -57,6 +57,34 @@ void main() {
         isNull,
       );
     });
+
+    test('canAutoInstall only when running from an app bundle', () {
+      expect(
+        MacosInstaller(
+          resolvedExecutable: [
+            '',
+            'Applications',
+            'Volward.app',
+            'Contents',
+            'MacOS',
+            'volward',
+          ].join(Platform.pathSeparator),
+        ).canAutoInstall,
+        isTrue,
+      );
+      expect(
+        MacosInstaller(
+          resolvedExecutable: [
+            '',
+            'usr',
+            'local',
+            'bin',
+            'volward',
+          ].join(Platform.pathSeparator),
+        ).canAutoInstall,
+        isFalse,
+      );
+    });
   });
 
   group('MacosInstaller failure rollback', () {

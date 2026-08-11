@@ -11,9 +11,19 @@ enum UpdatePhase {
 enum UpdateFailureKind {
   network,
   noMatchingAsset,
+  integrity,
   download,
   install,
   unsupportedRuntime,
+}
+
+class UpdateIntegrityException implements Exception {
+  const UpdateIntegrityException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class ReleaseAsset {
@@ -21,11 +31,29 @@ class ReleaseAsset {
     required this.name,
     required this.downloadUrl,
     required this.sizeBytes,
+    this.sha256,
+    this.checksumUrl,
   });
 
   final String name;
   final String downloadUrl;
   final int sizeBytes;
+  final String? sha256;
+  final String? checksumUrl;
+
+  bool get hasIntegrityMetadata =>
+      (sha256 != null && sha256!.isNotEmpty) ||
+      (checksumUrl != null && checksumUrl!.isNotEmpty);
+
+  ReleaseAsset copyWith({String? sha256, String? checksumUrl}) {
+    return ReleaseAsset(
+      name: name,
+      downloadUrl: downloadUrl,
+      sizeBytes: sizeBytes,
+      sha256: sha256 ?? this.sha256,
+      checksumUrl: checksumUrl ?? this.checksumUrl,
+    );
+  }
 }
 
 class ReleaseInfo {

@@ -33,6 +33,23 @@ class _FakeSource implements VersionSource {
 
 class _FakeDownloader implements Downloader {
   File? lastFile;
+  Object? error;
+  Future<String?> Function(ReleaseAsset asset)? resolveSha256;
+  Future<bool> Function(ReleaseAsset asset)? downloadReachable;
+
+  @override
+  Future<String?> resolveExpectedSha256(ReleaseAsset asset) async {
+    if (resolveSha256 != null) return resolveSha256!(asset);
+    final sha = asset.sha256;
+    if (sha != null && sha.isNotEmpty) return sha;
+    return null;
+  }
+
+  @override
+  Future<bool> isDownloadReachable(ReleaseAsset asset) async {
+    if (downloadReachable != null) return downloadReachable!(asset);
+    return true;
+  }
 
   @override
   Future<File> download(
@@ -40,6 +57,7 @@ class _FakeDownloader implements Downloader {
     required Directory directory,
     DownloadProgress? onProgress,
   }) async {
+    if (error != null) throw error!;
     onProgress?.call(0.5);
     await directory.create(recursive: true);
     final file = File('${directory.path}/${asset.name}');
@@ -81,13 +99,14 @@ ReleaseInfo _release({String tag = 'v0.0.2', List<ReleaseAsset>? assets}) {
     version: '0.0.2',
     htmlUrl: 'https://github.com/ZakAnun/volward/releases/tag/$tag',
     body: 'Release notes line 1\nline 2',
-    assets:
-        assets ??
+    assets: assets ??
         const [
           ReleaseAsset(
             name: 'volward-v0.0.2-macos-arm64.zip',
             downloadUrl: 'https://example.com/a.zip',
             sizeBytes: 3,
+            sha256:
+                '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
           ),
         ],
   );
@@ -160,6 +179,102 @@ void main() {
 
     expect(updater.status.phase, UpdatePhase.installing);
     expect(updater.downloadAndInstall(), throwsStateError);
+  });
+
+  test('check rejects update assets without checksum metadata', () async {
+    final updater = buildUpdater(
+      source: _FakeSource(
+        _release(
+          assets: const [
+            ReleaseAsset(
+              name: 'volward-v0.0.2-macos-arm64.zip',
+              downloadUrl: 'https://example.com/a.zip',
+              sizeBytes: 3,
+            ),
+          ],
+        ),
+      ),
+    );
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.integrity);
+  });
+
+  test('check rejects assets whose checksum sidecar is unreachable', () async {
+    final downloader = _FakeDownloader()
+      ..resolveSha256 = (_) async => null;
+    final updater = buildUpdater(
+      downloader: downloader,
+      source: _FakeSource(
+        _release(
+          assets: const [
+            ReleaseAsset(
+              name: 'volward-v0.0.2-macos-arm64.zip',
+              downloadUrl: 'https://example.com/a.zip',
+              sizeBytes: 3,
+              checksumUrl: 'https://example.com/a.zip.sha256',
+            ),
+          ],
+        ),
+      ),
+    );
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.integrity);
+  });
+
+  test('check prefers unsupportedRuntime over missing checksum', () async {
+    final updater = buildUpdater(
+      installer: const UnsupportedInstaller(),
+      source: _FakeSource(
+        _release(
+          assets: const [
+            ReleaseAsset(
+              name: 'volward-v0.0.2-macos-arm64.zip',
+              downloadUrl: 'https://example.com/a.zip',
+              sizeBytes: 3,
+            ),
+          ],
+        ),
+      ),
+    );
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.unsupportedRuntime);
+  });
+
+  test('check rejects assets whose download URL is unreachable', () async {
+    final downloader = _FakeDownloader()
+      ..downloadReachable = (_) async => false;
+    final updater = buildUpdater(downloader: downloader);
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.noMatchingAsset);
+  });
+
+  test('check attaches resolved sha256 onto matchedAsset', () async {
+    final updater = buildUpdater();
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.available);
+    expect(
+      updater.status.matchedAsset?.sha256,
+      '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+    );
+  });
+
+  test('downloadAndInstall classifies checksum failures as integrity',
+      () async {
+    final installer = _FakeInstaller();
+    final downloader = _FakeDownloader()
+      ..error = const UpdateIntegrityException('bad checksum');
+    final updater = buildUpdater(installer: installer, downloader: downloader);
+
+    await updater.check(userInitiated: true);
+    await updater.downloadAndInstall();
+
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.integrity);
+    expect(installer.installed, isFalse);
   });
 
   test('dismissAvailable suppresses startup prompt flag', () async {

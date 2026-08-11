@@ -394,6 +394,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String settingsUpdateActionError(Object error) {
+    return '更新失败：$error';
+  }
+
+  @override
   String get settingsOpenDownloadPage => '打开下载页';
 
   @override

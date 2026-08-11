@@ -30,6 +30,7 @@ void main() {
     await installerFile.writeAsBytes(const [0]);
 
     String? started;
+    List<String>? startedArgs;
     ProcessStartMode? capturedMode;
     var exited = false;
     final installer = WindowsInstaller(
@@ -37,6 +38,7 @@ void main() {
       localAppData: r'C:\Users\me\AppData\Local',
       start: (executable, arguments, {mode = ProcessStartMode.normal}) async {
         started = executable;
+        startedArgs = arguments;
         capturedMode = mode;
       },
       exitProcess: (code) {
@@ -56,10 +58,13 @@ void main() {
       ),
     );
 
-    expect(started, endsWith('volward_update.cmd'));
+    expect(started, 'cmd.exe');
+    expect(startedArgs, isNotNull);
+    expect(startedArgs![0], '/c');
+    expect(startedArgs![1], endsWith('volward_update.cmd'));
     expect(capturedMode, ProcessStartMode.detached);
     expect(exited, isTrue);
-    final batch = await File(started!).readAsString();
+    final batch = await File(startedArgs![1]).readAsString();
     expect(batch, contains(installerFile.path));
     expect(
       batch,

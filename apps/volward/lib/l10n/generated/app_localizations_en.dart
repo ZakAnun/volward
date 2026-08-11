@@ -418,6 +418,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String settingsUpdateActionError(Object error) {
+    return 'Update failed: $error';
+  }
+
+  @override
   String get settingsOpenDownloadPage => 'Open download page';
 
   @override

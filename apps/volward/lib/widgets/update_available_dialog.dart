@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
 import '../updater/app_updater.dart';
+import '../updater/update_error_message.dart';
 import '../updater/update_models.dart';
 import 'apple_widgets.dart';
 
@@ -20,7 +21,7 @@ Future<void> showUpdateFailureDialog({
   final openDownloadPage = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text(l10n.settingsUpdateError(updater.status.errorMessage ?? '')),
+      title: Text(formatUpdateStatusError(l10n, updater.status)),
       actions: [
         AppleButton(
           label: l10n.settingsUpdateLater,

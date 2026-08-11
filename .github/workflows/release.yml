@@ -96,11 +96,18 @@ jobs:
           COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent volward.app volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip
           mv volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip $GITHUB_WORKSPACE/
 
+      - name: Create macOS checksum
+        run: |
+          cd $GITHUB_WORKSPACE
+          shasum -a 256 volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip > volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip.sha256
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: volward-*.zip
+          path: |
+            volward-*.zip
+            volward-*.zip.sha256
 
   build-windows:
     name: Build Windows
@@ -202,11 +209,21 @@ jobs:
             throw "Windows installer missing: VolwardSetup-v$appVersion-windows-x64.exe"
           }
 
+      - name: Create Windows checksum
+        shell: pwsh
+        run: |
+          $appVersion = "${{ steps.version.outputs.version }}"
+          $file = "VolwardSetup-v$appVersion-windows-x64.exe"
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$file.sha256" -Value "$hash  $file"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: VolwardSetup-*.exe
+          path: |
+            VolwardSetup-*.exe
+            VolwardSetup-*.exe.sha256
 
   build-linux:
     name: Build Linux
@@ -302,6 +319,11 @@ jobs:
           tar -czf volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz bundle
           mv volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz $GITHUB_WORKSPACE/
 
+      - name: Create Linux archive checksum
+        run: |
+          cd $GITHUB_WORKSPACE
+          sha256sum volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz > volward-v${{ steps.version.outputs.version }}-linux-x64.tar.gz.sha256
+
       - name: Download appimagetool
         run: |
           mkdir -p tools
@@ -335,17 +357,26 @@ jobs:
           test -f squashfs-root/volward-logo.png
           rm -rf squashfs-root
 
+      - name: Create Linux AppImage checksum
+        run: |
+          cd $GITHUB_WORKSPACE
+          sha256sum Volward-v${{ steps.version.outputs.version }}-linux-x86_64.AppImage > Volward-v${{ steps.version.outputs.version }}-linux-x86_64.AppImage.sha256
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-release
-          path: volward-*.tar.gz
+          path: |
+            volward-*.tar.gz
+            volward-*.tar.gz.sha256
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: Volward-v*-linux-x86_64.AppImage
+          path: |
+            Volward-v*-linux-x86_64.AppImage
+            Volward-v*-linux-x86_64.AppImage.sha256
 
   create-release:
     name: Create Release

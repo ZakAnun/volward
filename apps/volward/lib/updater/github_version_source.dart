@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'checksum.dart';
 import 'update_models.dart';
 import 'version_compare.dart';
 import 'version_source.dart';
@@ -23,16 +24,37 @@ ReleaseInfo parseGitHubLatestRelease(Map<String, dynamic> json) {
     final name = map['name'] as String? ?? '';
     final url = map['browser_download_url'] as String? ?? '';
     final size = (map['size'] as num?)?.toInt() ?? 0;
+    final digest = map['digest'];
     if (name.isEmpty || url.isEmpty) continue;
-    assets.add(ReleaseAsset(name: name, downloadUrl: url, sizeBytes: size));
+    assets.add(
+      ReleaseAsset(
+        name: name,
+        downloadUrl: url,
+        sizeBytes: size,
+        sha256: digest is String ? normalizeSha256(digest) : null,
+      ),
+    );
   }
   return ReleaseInfo(
     tagName: tag,
     version: version,
     htmlUrl: json['html_url'] as String? ?? '',
     body: json['body'] as String? ?? '',
-    assets: assets,
+    assets: attachChecksumAssets(assets),
   );
+}
+
+List<ReleaseAsset> attachChecksumAssets(List<ReleaseAsset> assets) {
+  final byName = {for (final asset in assets) asset.name: asset};
+  return [
+    for (final asset in assets)
+      if (!asset.name.endsWith('.sha256'))
+        asset.hasIntegrityMetadata
+            ? asset
+            : asset.copyWith(
+                checksumUrl: byName['${asset.name}.sha256']?.downloadUrl,
+              ),
+  ];
 }
 
 /// Extracts `v0.0.1` from `https://github.com/o/r/releases/tag/v0.0.1`.
@@ -65,6 +87,8 @@ List<ReleaseAsset> conventionReleaseAssets({
         downloadUrl:
             'https://github.com/$owner/$repo/releases/download/$tagName/$name',
         sizeBytes: 0,
+        checksumUrl:
+            'https://github.com/$owner/$repo/releases/download/$tagName/$name.sha256',
       ),
   ];
 }
@@ -132,22 +156,17 @@ class GitHubVersionSource implements VersionSource {
 
   /// Parses the first entry title/link from GitHub's public Atom feed.
   static String? tagFromReleasesAtom(String atomXml) {
-    final entryMatch = RegExp(
-      r'<entry\b[^>]*>([\s\S]*?)</entry>',
-      caseSensitive: false,
-    ).firstMatch(atomXml);
-    if (entryMatch == null) return null;
-    final entry = entryMatch.group(1)!;
-    final linkMatch = RegExp(
-      r'releases/tag/([^"?\s<]+)',
-      caseSensitive: false,
-    ).firstMatch(entry);
-    if (linkMatch != null) return linkMatch.group(1);
-    final titleMatch = RegExp(
-      r'<title[^>]*>([^<]+)</title>',
-      caseSensitive: false,
-    ).firstMatch(entry);
-    return titleMatch?.group(1)?.trim();
+    final lower = atomXml.toLowerCase();
+    final entryOpen = lower.indexOf('<entry');
+    if (entryOpen < 0) return null;
+    final entryContentStart = lower.indexOf('>', entryOpen);
+    if (entryContentStart < 0) return null;
+    final entryClose = lower.indexOf('</entry>', entryContentStart + 1);
+    if (entryClose < 0) return null;
+    final entry = atomXml.substring(entryContentStart + 1, entryClose);
+    final linkTag = _tagFromReleaseLink(entry);
+    if (linkTag != null) return linkTag;
+    return _tagFromTitle(entry);
   }
 
   Future<ReleaseInfo> _fetchLatestViaAtom() async {
@@ -166,7 +185,8 @@ class GitHubVersionSource implements VersionSource {
     }
     final tag = tagFromReleasesAtom(response.body);
     if (tag == null) {
-      throw GitHubHttpException('Could not parse latest tag from releases.atom');
+      throw GitHubHttpException(
+          'Could not parse latest tag from releases.atom');
     }
     return _releaseFromTag(tag);
   }
@@ -182,9 +202,8 @@ class GitHubVersionSource implements VersionSource {
     await streamed.stream.drain<void>();
 
     final location = streamed.headers['location'];
-    final redirected = (location == null || location.isEmpty)
-        ? null
-        : uri.resolve(location);
+    final redirected =
+        (location == null || location.isEmpty) ? null : uri.resolve(location);
     final tagUrl = redirected ?? streamed.request?.url ?? uri;
     // Some environments still land on 200 with the final URL after a proxy.
     if (streamed.statusCode != 302 &&
@@ -238,4 +257,33 @@ class GitHubHttpException implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+String? _tagFromReleaseLink(String entry) {
+  const marker = 'releases/tag/';
+  final lower = entry.toLowerCase();
+  final markerIndex = lower.indexOf(marker);
+  if (markerIndex < 0) return null;
+  final start = markerIndex + marker.length;
+  var end = start;
+  while (end < entry.length) {
+    final char = entry.codeUnitAt(end);
+    if (char == 0x22 || char == 0x27 || char == 0x3c || char == 0x3f) {
+      break;
+    }
+    end++;
+  }
+  return end > start ? entry.substring(start, end).trim() : null;
+}
+
+String? _tagFromTitle(String entry) {
+  final lower = entry.toLowerCase();
+  final titleOpen = lower.indexOf('<title');
+  if (titleOpen < 0) return null;
+  final titleContentStart = lower.indexOf('>', titleOpen);
+  if (titleContentStart < 0) return null;
+  final titleClose = lower.indexOf('</title>', titleContentStart + 1);
+  if (titleClose < 0) return null;
+  final title = entry.substring(titleContentStart + 1, titleClose).trim();
+  return title.isEmpty ? null : title;
 }

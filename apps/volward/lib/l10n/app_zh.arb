@@ -249,6 +249,12 @@
       "error": {}
     }
   },
+  "settingsUpdateActionError": "更新失败：{error}",
+  "@settingsUpdateActionError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "settingsOpenDownloadPage": "打开下载页",
   "updateAvailableTitle": "发现新版本 — {version}",
   "@updateAvailableTitle": {

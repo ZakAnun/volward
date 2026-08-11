@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:async';
 import 'dart:io';
 
@@ -10,6 +11,11 @@ import 'package:volward/scan_snapshot_state.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/theme/volward_theme_settings.dart';
 import 'package:volward/updater/app_updater.dart';
+import 'package:volward/updater/downloader.dart';
+import 'package:volward/updater/platform_installer.dart';
+import 'package:volward/updater/update_models.dart';
+import 'package:volward/updater/url_opener.dart';
+import 'package:volward/updater/version_source.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 
@@ -51,6 +57,89 @@ class _BlockingSession extends VolwardSession {
     // test's teardown check for pending timers stays green.
     return _restoreGate.future;
   }
+}
+
+class _LocalVersionReader implements LocalVersionReader {
+  _LocalVersionReader(this.version);
+
+  final String version;
+
+  @override
+  Future<String> currentVersion() async => version;
+}
+
+class _ReleaseSource implements VersionSource {
+  _ReleaseSource(this.release);
+
+  final ReleaseInfo release;
+
+  @override
+  Future<ReleaseInfo> fetchLatest() async => release;
+}
+
+class _NoopDownloader implements Downloader {
+  @override
+  Future<String?> resolveExpectedSha256(ReleaseAsset asset) async {
+    final sha = asset.sha256;
+    if (sha != null && sha.isNotEmpty) return sha;
+    return null;
+  }
+
+  @override
+  Future<bool> isDownloadReachable(ReleaseAsset asset) async => true;
+
+  @override
+  Future<File> download(
+    ReleaseAsset asset, {
+    required Directory directory,
+    DownloadProgress? onProgress,
+  }) {
+    throw UnsupportedError('unused');
+  }
+}
+
+class _NoopUrls implements UrlOpener {
+  @override
+  Future<bool> open(String url) async => true;
+}
+
+class _AutoInstallInstaller implements PlatformInstaller {
+  @override
+  bool get canAutoInstall => true;
+
+  @override
+  Future<void> installAndRelaunch({
+    required File downloaded,
+    required ReleaseInfo release,
+  }) async {}
+}
+
+AppUpdater _integrityFailureUpdater() {
+  return AppUpdater(
+    localVersionReader: _LocalVersionReader('0.0.1'),
+    versionSource: _ReleaseSource(
+      const ReleaseInfo(
+        tagName: 'v0.0.2',
+        version: '0.0.2',
+        htmlUrl: 'https://example.invalid/releases/tag/v0.0.2',
+        body: '',
+        assets: [
+          ReleaseAsset(
+            name: 'volward-v0.0.2-macos-arm64.zip',
+            downloadUrl: 'https://example.invalid/a.zip',
+            sizeBytes: 1,
+          ),
+        ],
+      ),
+    ),
+    downloader: _NoopDownloader(),
+    installer: _AutoInstallInstaller(),
+    urlOpener: _NoopUrls(),
+    os: 'macos',
+    abi: Abi.macosArm64,
+    tempDirectoryBuilder: () =>
+        Directory.systemTemp.createTempSync('volward_home_integrity_test_'),
+  );
 }
 
 Widget _shell(
@@ -138,5 +227,26 @@ void main() {
 
     expect(session.previewCalls, 1);
     expect(find.byType(ScanColumnView), findsOneWidget);
+  });
+
+  testWidgets('HomePage surfaces integrity failures on startup', (
+    tester,
+  ) async {
+    final session = _BlockingSession()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-startup-test-no-session.json',
+      )
+      ..defaultRootForTest = (() => '/')
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = _integrityFailureUpdater();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('Missing SHA-256 checksum'), findsOneWidget);
   });
 }

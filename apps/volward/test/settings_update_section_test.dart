@@ -31,6 +31,16 @@ class _Source implements VersionSource {
 
 class _NoopDownloader implements Downloader {
   @override
+  Future<String?> resolveExpectedSha256(ReleaseAsset asset) async {
+    final sha = asset.sha256;
+    if (sha != null && sha.isNotEmpty) return sha;
+    return null;
+  }
+
+  @override
+  Future<bool> isDownloadReachable(ReleaseAsset asset) async => true;
+
+  @override
   Future<File> download(
     ReleaseAsset asset, {
     required Directory directory,
@@ -46,7 +56,9 @@ class _NoopUrls implements UrlOpener {
 }
 
 AppUpdater _updater({required String local, required String remoteTag}) {
-  final version = remoteTag.replaceFirst(RegExp(r'^[vV]'), '');
+  final version = remoteTag.startsWith('v') || remoteTag.startsWith('V')
+      ? remoteTag.substring(1)
+      : remoteTag;
   return AppUpdater(
     localVersionReader: _Local(local),
     versionSource: _Source(
@@ -60,6 +72,8 @@ AppUpdater _updater({required String local, required String remoteTag}) {
             name: 'volward-v$version-macos-arm64.zip',
             downloadUrl: 'https://example.invalid/a.zip',
             sizeBytes: 1,
+            sha256:
+                '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
           ),
         ],
       ),
