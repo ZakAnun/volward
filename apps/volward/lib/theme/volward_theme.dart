@@ -44,6 +44,7 @@ ThemeData buildVolwardTheme({
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    visualDensity: VisualDensity.adaptivePlatformDensity,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: tokens.canvasParchment,
     dividerColor: tokens.hairline,

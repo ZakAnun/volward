@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'analytics/analytics.dart';
@@ -57,6 +58,7 @@ class _VolwardAppState extends State<VolwardApp> {
         if (snapshot.connectionState != ConnectionState.done) {
           return MaterialApp(
             theme: buildVolwardTheme(brightness: Brightness.light),
+            scrollBehavior: const _VolwardScrollBehavior(),
             home: const _ThemeBootstrapPlaceholder(),
           );
         }
@@ -80,6 +82,7 @@ class _VolwardAppState extends State<VolwardApp> {
                 accent: accent,
               ),
               themeMode: _themeSettings.themeMode,
+              scrollBehavior: const _VolwardScrollBehavior(),
               home: HomePage(
                 session: _session,
                 themeSettings: _themeSettings,
@@ -91,6 +94,18 @@ class _VolwardAppState extends State<VolwardApp> {
       },
     );
   }
+}
+
+class _VolwardScrollBehavior extends MaterialScrollBehavior {
+  const _VolwardScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.trackpad,
+  };
 }
 
 class _ThemeBootstrapPlaceholder extends StatelessWidget {
