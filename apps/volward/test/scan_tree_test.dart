@@ -198,6 +198,40 @@ void main() {
         expect(tree.fileCount, 2);
       },
     );
+
+    test('rejects false path prefixes when inserting flat entries', () {
+      expect(isUnderFsRoot('/home/me2/x.txt', '/home/me'), isFalse);
+      expect(isUnderFsRoot('//server/shareextra/a', '//server/share'), isFalse);
+      expect(isUnderFsRoot('/home/me/docs/a.txt', '/home/me'), isTrue);
+
+      final entries = [
+        const ScanEntryRecord(
+          id: 'ok',
+          displayName: 'a.txt',
+          pathOrUri: '/home/me/docs/a.txt',
+          sizeBytes: 1,
+          category: 'Unknown',
+          deletable: false,
+        ),
+        const ScanEntryRecord(
+          id: 'bad',
+          displayName: 'x.txt',
+          pathOrUri: '/home/me2/x.txt',
+          sizeBytes: 2,
+          category: 'Unknown',
+          deletable: false,
+        ),
+      ];
+      final tree = ScanTreeBuilder.build(
+        entries: entries,
+        rootPath: '/home/me',
+      );
+      expect(tree.fileCount, 1);
+      expect(
+        tree.children.any((child) => child.path.contains('me2')),
+        isFalse,
+      );
+    });
   });
 
   group('ScanTreeNode.withAggregatedCounts', () {
@@ -306,10 +340,10 @@ void main() {
     });
 
     test('unc rejects false prefixes for parent floor semantics', () {
-      // parent of a path that looks like false-prefix sibling should still strip one segment
-      // after normalize; share root itself:
       expect(parentFsPath('//server/share/a'), '//server/share');
       expect(normalizeFsPath('//server/share/'), '//server/share');
+      expect(isUnderFsRoot('//server/shareextra/a', '//server/share'), isFalse);
+      expect(isUnderFsRoot('//server/share/a', '//server/share'), isTrue);
     });
   });
 

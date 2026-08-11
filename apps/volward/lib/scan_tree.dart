@@ -72,6 +72,16 @@ String lastPathSegment(String path) {
   return normalized.substring(idx + 1);
 }
 
+bool isUnderFsRoot(String path, String rootPath) {
+  final normalizedPath = normalizeFsPath(path);
+  final normalizedRoot = normalizeFsPath(rootPath);
+  if (normalizedPath == normalizedRoot) return true;
+  if (!normalizedPath.startsWith(normalizedRoot)) return false;
+  if (normalizedRoot == '/' || _isWindowsDriveRoot(normalizedRoot)) return true;
+  return normalizedPath.length > normalizedRoot.length &&
+      normalizedPath.codeUnitAt(normalizedRoot.length) == 47;
+}
+
 bool _isWindowsDriveRoot(String path) {
   return _hasWindowsDrivePrefix(path) &&
       path.length == 3 &&
@@ -452,16 +462,18 @@ abstract final class ScanTreeBuilder {
     String filePath,
     ScanEntryRecord entry,
   ) {
+    final normalizedRootPath = normalizeFsPath(rootPath);
     final normalizedFilePath = normalizeFsPath(filePath);
-    if (!normalizedFilePath.startsWith(rootPath)) return;
+    if (!isUnderFsRoot(normalizedFilePath, normalizedRootPath)) return;
+    if (normalizedFilePath == normalizedRootPath) return;
 
-    var relative = normalizedFilePath.substring(rootPath.length);
+    var relative = normalizedFilePath.substring(normalizedRootPath.length);
     if (relative.startsWith('/')) relative = relative.substring(1);
     if (relative.isEmpty) return;
 
     final segments = relative.split('/');
     var current = root;
-    var currentPath = rootPath;
+    var currentPath = normalizedRootPath;
 
     for (var i = 0; i < segments.length; i++) {
       final segment = segments[i];
