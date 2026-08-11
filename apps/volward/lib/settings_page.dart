@@ -4,7 +4,12 @@ import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
+import 'updater/app_updater.dart';
+import 'updater/update_error_message.dart';
+import 'updater/update_models.dart';
 import 'volward_session.dart';
+import 'widgets/apple_widgets.dart';
+import 'widgets/top_toast.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
@@ -13,12 +18,14 @@ class SettingsPage extends StatefulWidget {
     required this.session,
     required this.deletableOnly,
     required this.onDeletableOnlyChanged,
+    required this.updater,
   });
 
   final VolwardThemeSettings themeSettings;
   final VolwardSession session;
   final bool deletableOnly;
   final ValueChanged<bool> onDeletableOnlyChanged;
+  final AppUpdater updater;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -38,6 +45,28 @@ class _SettingsPageState extends State<SettingsPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.deletableOnly != widget.deletableOnly) {
       _deletableOnly = widget.deletableOnly;
+    }
+  }
+
+  Future<void> _checkForUpdates(BuildContext context) async {
+    final l10n = context.l10n;
+    await widget.updater.check(userInitiated: true);
+    if (!context.mounted) return;
+    final status = widget.updater.status;
+    if (status.phase == UpdatePhase.upToDate) {
+      showTopToast(
+        context,
+        message: l10n.settingsUpToDate,
+        type: ToastType.success,
+      );
+      return;
+    }
+    if (status.phase == UpdatePhase.error) {
+      showTopToast(
+        context,
+        message: formatUpdateStatusError(l10n, status),
+        type: ToastType.error,
+      );
     }
   }
 
@@ -198,6 +227,108 @@ class _SettingsPageState extends State<SettingsPage> {
                       onChanged: widget.session.setIncrementalScan,
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: AppleSpacing.lg),
+              _SectionHeader(title: l10n.settingsAboutSection, tokens: v),
+              const SizedBox(height: AppleSpacing.xs),
+              _SettingsCard(
+                tokens: v,
+                child: ListenableBuilder(
+                  listenable: widget.updater,
+                  builder: (context, _) {
+                    final status = widget.updater.status;
+                    return FutureBuilder<String>(
+                      future: widget.updater.localVersion(),
+                      builder: (context, snap) {
+                        final version = snap.data ?? '…';
+                        final percent = ((status.progress ?? 0) * 100).round();
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              l10n.settingsCurrentVersion(version),
+                              style: context.vwCaptionStrong,
+                            ),
+                            const SizedBox(height: AppleSpacing.sm),
+                            if (status.phase == UpdatePhase.checking)
+                              Text(
+                                l10n.settingsCheckingForUpdates,
+                                style: context.vwFinePrint,
+                              )
+                            else if (status.phase == UpdatePhase.upToDate)
+                              Text(
+                                l10n.settingsUpToDate,
+                                style: context.vwFinePrint,
+                              )
+                            else if (status.phase == UpdatePhase.available)
+                              Text(
+                                l10n.settingsUpdateAvailable(
+                                  status.release!.version,
+                                ),
+                                style: context.vwFinePrint,
+                              )
+                            else if (status.phase == UpdatePhase.downloading)
+                              Text(
+                                l10n.settingsDownloadingUpdate(percent),
+                                style: context.vwFinePrint,
+                              )
+                            else if (status.phase == UpdatePhase.installing)
+                              Text(
+                                l10n.settingsInstallingUpdate,
+                                style: context.vwFinePrint,
+                              )
+                            else if (status.phase == UpdatePhase.error)
+                              Text(
+                                formatUpdateStatusError(l10n, status),
+                                style: context.vwFinePrint,
+                              ),
+                            const SizedBox(height: AppleSpacing.sm),
+                            Wrap(
+                              spacing: AppleSpacing.sm,
+                              runSpacing: AppleSpacing.sm,
+                              children: [
+                                AppleButton(
+                                  label: l10n.settingsCheckForUpdates,
+                                  variant: AppleButtonVariant.pearl,
+                                  onPressed:
+                                      status.phase == UpdatePhase.checking ||
+                                          status.phase ==
+                                              UpdatePhase.downloading ||
+                                          status.phase == UpdatePhase.installing
+                                      ? null
+                                      : () => _checkForUpdates(context),
+                                ),
+                                if (status.phase == UpdatePhase.available)
+                                  AppleButton(
+                                    label: l10n.settingsUpdateNow,
+                                    onPressed: () =>
+                                        widget.updater.downloadAndInstall(),
+                                  ),
+                                if (status.phase == UpdatePhase.error ||
+                                    status.failureKind ==
+                                        UpdateFailureKind.noMatchingAsset ||
+                                    status.failureKind ==
+                                        UpdateFailureKind.integrity ||
+                                    status.failureKind ==
+                                        UpdateFailureKind.unsupportedRuntime)
+                                  AppleButton(
+                                    label: l10n.settingsOpenDownloadPage,
+                                    variant: AppleButtonVariant.pearl,
+                                    onPressed: () =>
+                                        widget.updater.openDownloadPage(),
+                                  ),
+                              ],
+                            ),
+                            if (status.phase == UpdatePhase.downloading) ...[
+                              const SizedBox(height: AppleSpacing.sm),
+                              LinearProgressIndicator(value: status.progress),
+                            ],
+                          ],
+                        );
+                      },
+                    );
+                  },
                 ),
               ),
             ],

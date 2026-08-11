@@ -8,6 +8,8 @@ import 'home_page.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'theme/volward_theme.dart';
 import 'theme/volward_theme_settings.dart';
+import 'updater/app_updater.dart';
+import 'updater/update_factory.dart';
 import 'volward_session.dart';
 
 Future<void> main() async {
@@ -27,6 +29,7 @@ class VolwardApp extends StatefulWidget {
 class _VolwardAppState extends State<VolwardApp> {
   late final VolwardSession _session;
   late final VolwardThemeSettings _themeSettings;
+  late final AppUpdater _updater;
   late final Future<void> _themeReady;
 
   @override
@@ -34,6 +37,7 @@ class _VolwardAppState extends State<VolwardApp> {
     super.initState();
     _session = VolwardSession();
     _themeSettings = VolwardThemeSettings();
+    _updater = createDefaultAppUpdater();
     _themeReady = _themeSettings.load();
   }
 
@@ -41,6 +45,7 @@ class _VolwardAppState extends State<VolwardApp> {
   void dispose() {
     _session.dispose();
     _themeSettings.dispose();
+    _updater.dispose();
     super.dispose();
   }
 
@@ -75,7 +80,11 @@ class _VolwardAppState extends State<VolwardApp> {
                 accent: accent,
               ),
               themeMode: _themeSettings.themeMode,
-              home: HomePage(session: _session, themeSettings: _themeSettings),
+              home: HomePage(
+                session: _session,
+                themeSettings: _themeSettings,
+                updater: _updater,
+              ),
             );
           },
         );
