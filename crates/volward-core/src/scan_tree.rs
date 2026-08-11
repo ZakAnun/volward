@@ -124,7 +124,7 @@ impl ScanTreeBuilder {
 
         for segment in segments {
             let parent_path_for_index = current_path.clone();
-            current_path = format!("{current_path}/{segment}");
+            current_path = join_path(&current_path, segment);
             if self.dir_paths.contains_key(&current_path) {
                 current = Self::find_dir_child_mut(
                     &self.dir_child_index,
@@ -166,7 +166,7 @@ impl ScanTreeBuilder {
 
         for segment in segments {
             let parent_path = current_path.clone();
-            current_path = format!("{current_path}/{segment}");
+            current_path = join_path(&current_path, segment);
             current =
                 Self::find_dir_child_mut(&self.dir_child_index, &parent_path, current, segment)
                     .expect("directory path must exist before inserting file");
@@ -230,11 +230,43 @@ fn collect_dir_indexes(
     }
 }
 
+fn is_unc_path(path: &str) -> bool {
+    if !path.starts_with("//") {
+        return false;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    parts.next().is_some() && parts.next().is_some()
+}
+
+fn unc_share_root(path: &str) -> Option<String> {
+    if !is_unc_path(path) {
+        return None;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    let server = parts.next()?;
+    let share = parts.next()?;
+    Some(format!("//{server}/{share}"))
+}
+
 fn normalize_path(path: &str) -> String {
-    if path.len() > 1 && path.ends_with('/') {
-        path[..path.len() - 1].to_string()
+    let normalized = path.replace('\\', "/");
+    if is_unc_path(&normalized) {
+        let trimmed = normalized.trim_end_matches('/');
+        if trimmed == "/" || trimmed.is_empty() {
+            return normalized;
+        }
+        if unc_share_root(trimmed).as_deref() == Some(trimmed) {
+            return trimmed.to_string();
+        }
+        return trimmed.trim_end_matches('/').to_string();
+    }
+    if normalized.len() > 1
+        && normalized.ends_with('/')
+        && !is_windows_drive_root(&normalized)
+    {
+        normalized[..normalized.len() - 1].to_string()
     } else {
-        path.to_string()
+        normalized
     }
 }
 
@@ -242,9 +274,33 @@ fn parent_path(path: &str, root_path: &str) -> String {
     if path == root_path {
         return root_path.to_string();
     }
-    path.rfind('/')
-        .map(|idx| path[..idx].to_string())
-        .unwrap_or_else(|| root_path.to_string())
+    if is_windows_drive_root(root_path) {
+        path.rfind('/')
+            .map(|idx| {
+                let parent = &path[..idx];
+                if parent == &root_path[..root_path.len() - 1] {
+                    root_path.to_string()
+                } else {
+                    parent.to_string()
+                }
+            })
+            .unwrap_or_else(|| root_path.to_string())
+    } else if let Some(share_root) = unc_share_root(root_path) {
+        path.rfind('/')
+            .map(|idx| {
+                let parent = &path[..idx];
+                if parent == share_root.as_str() || parent.len() < share_root.len() {
+                    share_root.clone()
+                } else {
+                    parent.to_string()
+                }
+            })
+            .unwrap_or(share_root)
+    } else {
+        path.rfind('/')
+            .map(|idx| path[..idx].to_string())
+            .unwrap_or_else(|| root_path.to_string())
+    }
 }
 
 fn is_under_root(path: &str, root_path: &str) -> bool {
@@ -252,7 +308,10 @@ fn is_under_root(path: &str, root_path: &str) -> bool {
     let root_path = normalize_path(root_path);
     path == root_path
         || (path.starts_with(&root_path)
-            && (root_path == "/" || path.as_bytes().get(root_path.len()) == Some(&b'/')))
+            && (root_path == "/"
+                || is_windows_drive_root(&root_path)
+                || unc_share_root(&root_path).is_some()
+                || path.as_bytes().get(root_path.len()) == Some(&b'/')))
 }
 
 fn relative_path(root_path: &str, path: &str) -> String {
@@ -267,9 +326,39 @@ fn relative_path(root_path: &str, path: &str) -> String {
     if root_path == "/" {
         return path.strip_prefix('/').unwrap_or(&path).to_string();
     }
-    path.strip_prefix(&format!("{root_path}/"))
-        .unwrap_or("")
-        .to_string()
+    if is_windows_drive_root(&root_path) {
+        path.strip_prefix(&root_path).unwrap_or("").to_string()
+    } else if unc_share_root(&root_path).is_some() {
+        path.strip_prefix(&format!("{root_path}/"))
+            .unwrap_or("")
+            .to_string()
+    } else {
+        path.strip_prefix(&format!("{root_path}/"))
+            .unwrap_or("")
+            .to_string()
+    }
+}
+
+fn join_path(base: &str, segment: &str) -> String {
+    if base == "/" {
+        format!("/{segment}")
+    } else if is_windows_drive_root(base) || is_unc_path(base) || base.ends_with('/') {
+        if base.ends_with('/') {
+            format!("{base}{segment}")
+        } else {
+            format!("{base}/{segment}")
+        }
+    } else {
+        format!("{base}/{segment}")
+    }
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3
+        && bytes[1] == b':'
+        && bytes[2] == b'/'
+        && bytes[0].is_ascii_alphabetic()
 }
 
 fn aggregate_sizes(node: &mut ScanTreeNode) {
@@ -388,6 +477,42 @@ mod tests {
     fn relative_path_handles_root_volume() {
         assert_eq!(relative_path("/", "/Users/foo"), "Users/foo");
         assert_eq!(relative_path("/", "/"), "");
+    }
+
+    #[test]
+    fn insert_file_handles_windows_paths() {
+        let mut b = ScanTreeBuilder::new("C:/Users/me");
+        b.insert_file("C:\\Users\\me\\Documents\\a.txt", Some("id"), 1);
+        let root = b.finalize();
+        let docs = find_subtree(&root, "C:/Users/me/Documents").expect("docs");
+        assert_eq!(docs.children.len(), 1);
+        assert_eq!(docs.children[0].name, "a.txt");
+    }
+
+    #[test]
+    fn normalize_and_parent_handle_unc_paths() {
+        assert_eq!(normalize_path(r"\\server\share\a\b"), "//server/share/a/b");
+        assert_eq!(normalize_path("//server/share/"), "//server/share");
+        assert_eq!(
+            parent_path("//server/share/a/b", "//server/share"),
+            "//server/share/a"
+        );
+        assert_eq!(
+            parent_path("//server/share/a", "//server/share"),
+            "//server/share"
+        );
+        assert_eq!(join_path("//server/share", "a"), "//server/share/a");
+        assert!(is_under_root("//server/share/a", "//server/share"));
+    }
+
+    #[test]
+    fn insert_file_handles_unc_paths() {
+        let mut b = ScanTreeBuilder::new(r"\\server\share");
+        b.insert_file(r"\\server\share\docs\a.txt", Some("id"), 1);
+        let root = b.finalize();
+        let docs = find_subtree(&root, "//server/share/docs").expect("docs");
+        assert_eq!(docs.children.len(), 1);
+        assert_eq!(docs.children[0].name, "a.txt");
     }
 
     #[test]
