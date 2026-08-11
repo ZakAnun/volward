@@ -515,6 +515,16 @@ mod tests {
     }
 
     #[test]
+    fn path_matrix_posix_linux_macos() {
+        assert_eq!(normalize_path("/home/me/a/"), "/home/me/a");
+        assert_eq!(parent_path("/home/me/a", "/home/me"), "/home/me");
+        assert_eq!(relative_path("/Users/me", "/Users/me/docs/a"), "docs/a");
+        assert_eq!(join_path("/home/me", "docs"), "/home/me/docs");
+        assert!(is_under_root("/home/me/a", "/home/me"));
+        assert!(!is_under_root("/home/me2", "/home/me"));
+    }
+
+    #[test]
     fn unc_paths_reject_false_prefixes() {
         assert!(!is_under_root("//server/shareextra", "//server/share"));
         assert!(!is_under_root(

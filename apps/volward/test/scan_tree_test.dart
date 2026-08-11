@@ -302,6 +302,7 @@ void main() {
       expect(joinFsPath('//server/share', 'a'), '//server/share/a');
       expect(normalizeFsPath('/home/me/a/'), '/home/me/a');
       expect(parentFsPath('/home/me/a'), '/home/me');
+      expect(joinFsPath('/home/me', 'docs'), '/home/me/docs');
     });
 
     test('unc rejects false prefixes for parent floor semantics', () {
