@@ -8,6 +8,7 @@ import 'updater/app_updater.dart';
 import 'updater/update_models.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
+import 'widgets/top_toast.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
@@ -43,6 +44,28 @@ class _SettingsPageState extends State<SettingsPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.deletableOnly != widget.deletableOnly) {
       _deletableOnly = widget.deletableOnly;
+    }
+  }
+
+  Future<void> _checkForUpdates(BuildContext context) async {
+    final l10n = context.l10n;
+    await widget.updater.check(userInitiated: true);
+    if (!context.mounted) return;
+    final status = widget.updater.status;
+    if (status.phase == UpdatePhase.upToDate) {
+      showTopToast(
+        context,
+        message: l10n.settingsUpToDate,
+        type: ToastType.success,
+      );
+      return;
+    }
+    if (status.phase == UpdatePhase.error) {
+      showTopToast(
+        context,
+        message: l10n.settingsUpdateError(status.errorMessage ?? ''),
+        type: ToastType.error,
+      );
     }
   }
 
@@ -275,9 +298,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                               UpdatePhase.downloading ||
                                           status.phase == UpdatePhase.installing
                                       ? null
-                                      : () => widget.updater.check(
-                                          userInitiated: true,
-                                        ),
+                                      : () => _checkForUpdates(context),
                                 ),
                                 if (status.phase == UpdatePhase.available)
                                   AppleButton(
