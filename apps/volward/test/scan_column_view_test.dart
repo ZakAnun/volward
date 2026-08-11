@@ -331,4 +331,82 @@ void main() {
     final largeTop = tester.getTopLeft(find.text('Large second')).dy;
     expect(smallTop, lessThan(largeTop));
   });
+
+  testWidgets('scan column view lays out in tight height without overflow', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final errors = <FlutterErrorDetails>[];
+    final old = FlutterError.onError;
+    FlutterError.onError = (details) => errors.add(details);
+    addTearDown(() => FlutterError.onError = old);
+
+    final root = ScanTreeNode(
+      name: 'root',
+      path: '/root',
+      isDirectory: true,
+      children: [
+        ScanTreeNode(
+          name: 'Documents',
+          path: '/root/Documents',
+          isDirectory: true,
+          children: [
+            ScanTreeNode(
+              name: 'Projects',
+              path: '/root/Documents/Projects',
+              isDirectory: true,
+              children: List.generate(
+                12,
+                (i) => ScanTreeNode(
+                  name: 'file_$i.txt',
+                  path: '/root/Documents/Projects/file_$i.txt',
+                  isDirectory: false,
+                  sizeBytes: 1024 * (i + 1),
+                ),
+              ),
+            ),
+            ScanTreeNode(
+              name: 'Downloads',
+              path: '/root/Documents/Downloads',
+              isDirectory: true,
+            ),
+          ],
+        ),
+        ScanTreeNode(
+          name: 'Library',
+          path: '/root/Library',
+          isDirectory: true,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            width: 1100,
+            height: 600,
+            child: ScanColumnView(
+              root: root,
+              selectionChain: [
+                root.children.first,
+                root.children.first.children.first,
+              ],
+              onSelect: (_) {},
+              formatBytes: (b) => '${b ?? 0} B',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      errors.where((e) => e.toString().contains('OVERFLOWING')),
+      isEmpty,
+    );
+  });
 }
