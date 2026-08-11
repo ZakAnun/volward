@@ -1227,8 +1227,36 @@ impl SnapshotIndexBuilder {
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn is_unc_path(path: &str) -> bool {
+    if !path.starts_with("//") {
+        return false;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    parts.next().is_some() && parts.next().is_some()
+}
+
+fn unc_share_root(path: &str) -> Option<String> {
+    if !is_unc_path(path) {
+        return None;
+    }
+    let mut parts = path[2..].split('/').filter(|p| !p.is_empty());
+    let server = parts.next()?;
+    let share = parts.next()?;
+    Some(format!("//{server}/{share}"))
+}
+
 fn normalize_path(path: &str) -> String {
     let normalized = path.replace('\\', "/");
+    if is_unc_path(&normalized) {
+        let trimmed = normalized.trim_end_matches('/');
+        if trimmed == "/" || trimmed.is_empty() {
+            return normalized;
+        }
+        if unc_share_root(trimmed).as_deref() == Some(trimmed) {
+            return trimmed.to_string();
+        }
+        return trimmed.trim_end_matches('/').to_string();
+    }
     if normalized.len() > 1
         && normalized.ends_with('/')
         && !is_windows_drive_root(&normalized)
@@ -1265,13 +1293,41 @@ fn parent_path_of(path: &str) -> String {
 }
 
 fn parent_path_of_for_root(path: &str, root_path: &str) -> String {
+    let path = normalize_path(path);
+    let root_path = normalize_path(root_path);
     if path == root_path {
-        return root_path.to_string();
+        return root_path;
+    }
+    if is_windows_drive_root(&root_path) {
+        return path
+            .rfind('/')
+            .map(|idx| {
+                let parent = &path[..idx];
+                if parent == &root_path[..root_path.len() - 1] {
+                    root_path.clone()
+                } else {
+                    parent.to_string()
+                }
+            })
+            .unwrap_or(root_path);
+    }
+    if unc_share_root(&root_path).is_some() {
+        return path
+            .rfind('/')
+            .map(|idx| {
+                let parent = &path[..idx];
+                if path_is_at_or_below(parent, &root_path) {
+                    parent.to_string()
+                } else {
+                    root_path.clone()
+                }
+            })
+            .unwrap_or(root_path);
     }
     path.rfind('/')
         .map(|idx| path[..idx].to_string())
-        .filter(|parent| path_is_at_or_below(parent, root_path))
-        .unwrap_or_else(|| root_path.to_string())
+        .filter(|parent| path_is_at_or_below(parent, &root_path))
+        .unwrap_or(root_path)
 }
 
 fn stable_scoped_entry_id(path: &str) -> String {
@@ -1288,9 +1344,13 @@ fn decrement_count(counts: &mut HashMap<String, u64>, category: &str) {
 }
 
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
+    let path = normalize_path(path);
+    let root = normalize_path(root);
     path == root
-        || (path.starts_with(root)
-            && (root == "/" || is_windows_drive_root(root) || path.as_bytes().get(root.len()) == Some(&b'/')))
+        || (path.starts_with(&root)
+            && (root == "/"
+                || is_windows_drive_root(&root)
+                || path.as_bytes().get(root.len()) == Some(&b'/')))
 }
 
 fn walk_tree(
@@ -1934,5 +1994,24 @@ mod tests {
         assert_eq!(parent_path_of("C:/Users"), "C:/");
         assert_eq!(parent_path_of(r"C:\Users\me\a.txt"), "C:/Users/me");
         assert_eq!(parent_path_of("C:/"), "C:/");
+    }
+
+    #[test]
+    fn parent_path_of_handles_unc() {
+        assert_eq!(normalize_path(r"\\server\share\a\b"), "//server/share/a/b");
+        assert_eq!(normalize_path("//server/share/"), "//server/share");
+        assert_eq!(normalize_path("//server/share///"), "//server/share");
+        assert_eq!(parent_path_of(r"\\server\share\a\b.txt"), "//server/share/a");
+        assert_eq!(parent_path_of("//server/share/a"), "//server/share");
+    }
+
+    #[test]
+    fn path_is_at_or_below_rejects_unc_false_prefix() {
+        assert!(!path_is_at_or_below("//server/shareextra", "//server/share"));
+        assert!(path_is_at_or_below("//server/share/a", "//server/share"));
+        assert_eq!(
+            parent_path_of_for_root("//server/shareextra/foo", "//server/share"),
+            "//server/share"
+        );
     }
 }
