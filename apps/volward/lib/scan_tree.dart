@@ -1,5 +1,94 @@
 import 'scan_entry_record.dart';
 
+bool _isUncPath(String path) {
+  if (!path.startsWith('//')) return false;
+  final parts = path.substring(2).split('/').where((p) => p.isNotEmpty).toList();
+  return parts.length >= 2;
+}
+
+String? _uncShareRoot(String path) {
+  if (!_isUncPath(path)) return null;
+  final parts = path.substring(2).split('/').where((p) => p.isNotEmpty).toList();
+  return '//${parts[0]}/${parts[1]}';
+}
+
+String normalizeFsPath(String path) {
+  final normalized = path.replaceAll('\\', '/');
+  if (_isUncPath(normalized)) {
+    var trimmed = normalized;
+    while (trimmed.length > 1 && trimmed.endsWith('/')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
+    if (trimmed == '/' || trimmed.isEmpty) {
+      return normalized;
+    }
+    final shareRoot = _uncShareRoot(trimmed);
+    if (shareRoot != null && shareRoot == trimmed) {
+      return trimmed;
+    }
+    return trimmed;
+  }
+  if (normalized.length > 1 &&
+      normalized.endsWith('/') &&
+      !_isWindowsDriveRoot(normalized)) {
+    return normalized.substring(0, normalized.length - 1);
+  }
+  return normalized;
+}
+
+String joinFsPath(String base, String segment) {
+  if (base == '/') return '/$segment';
+  if (_isWindowsDriveRoot(base) ||
+      _isUncPath(base) ||
+      base.endsWith('/')) {
+    if (base.endsWith('/')) return '$base$segment';
+    return '$base/$segment';
+  }
+  return '$base/$segment';
+}
+
+String parentFsPath(String path) {
+  final normalized = normalizeFsPath(path);
+  if (normalized == '/' || normalized.isEmpty) return '/';
+  final shareRoot = _uncShareRoot(normalized);
+  if (shareRoot != null && normalized == shareRoot) {
+    return shareRoot;
+  }
+  final idx = normalized.lastIndexOf('/');
+  if (idx <= 0) return _isWindowsDriveRoot(normalized) ? normalized : '/';
+  if (idx == 2 && _hasWindowsDrivePrefix(normalized)) {
+    return normalized.substring(0, 3);
+  }
+  return normalized.substring(0, idx);
+}
+
+String lastPathSegment(String path) {
+  final normalized = normalizeFsPath(path);
+  final idx = normalized.lastIndexOf('/');
+  if (idx == -1) return normalized;
+  if (idx == normalized.length - 1) {
+    return normalized.isEmpty ? normalized : normalized.substring(0, normalized.length - 1);
+  }
+  return normalized.substring(idx + 1);
+}
+
+bool _isWindowsDriveRoot(String path) {
+  return _hasWindowsDrivePrefix(path) &&
+      path.length == 3 &&
+      path.codeUnitAt(1) == 58 &&
+      path.codeUnitAt(2) == 47 &&
+      ((path.codeUnitAt(0) >= 65 && path.codeUnitAt(0) <= 90) ||
+          (path.codeUnitAt(0) >= 97 && path.codeUnitAt(0) <= 122));
+}
+
+bool _hasWindowsDrivePrefix(String path) {
+  return path.length >= 3 &&
+      path.codeUnitAt(1) == 58 &&
+      path.codeUnitAt(2) == 47 &&
+      ((path.codeUnitAt(0) >= 65 && path.codeUnitAt(0) <= 90) ||
+          (path.codeUnitAt(0) >= 97 && path.codeUnitAt(0) <= 122));
+}
+
 /// One node in the scan results tree (directory or file leaf).
 class ScanTreeNode {
   ScanTreeNode({
@@ -240,8 +329,8 @@ class ScanTreeNode {
           ? entry.displayName
           : fallbackName,
       path: !isDir && entry != null && entry.pathOrUri.isNotEmpty
-          ? entry.pathOrUri
-          : fallbackPath,
+          ? normalizeFsPath(entry.pathOrUri)
+          : normalizeFsPath(fallbackPath),
       isDirectory: isDir,
       sizeBytes: sizeBytes,
       entryId: entryId,
@@ -314,10 +403,7 @@ class ScanTreeNode {
 /// Builds a Finder-like directory tree from flat scan entries (file paths only).
 abstract final class ScanTreeBuilder {
   static String normalizeRoot(String root) {
-    if (root.length > 1 && root.endsWith('/')) {
-      return root.substring(0, root.length - 1);
-    }
-    return root;
+    return normalizeFsPath(root);
   }
 
   static ScanTreeNode build({
@@ -345,9 +431,10 @@ abstract final class ScanTreeBuilder {
     String filePath,
     ScanEntryRecord entry,
   ) {
-    if (!filePath.startsWith(rootPath)) return;
+    final normalizedFilePath = normalizeFsPath(filePath);
+    if (!normalizedFilePath.startsWith(rootPath)) return;
 
-    var relative = filePath.substring(rootPath.length);
+    var relative = normalizedFilePath.substring(rootPath.length);
     if (relative.startsWith('/')) relative = relative.substring(1);
     if (relative.isEmpty) return;
 
@@ -358,7 +445,7 @@ abstract final class ScanTreeBuilder {
     for (var i = 0; i < segments.length; i++) {
       final segment = segments[i];
       final isLast = i == segments.length - 1;
-      currentPath = '$currentPath/$segment';
+      currentPath = joinFsPath(currentPath, segment);
 
       if (isLast) {
         current.children.add(

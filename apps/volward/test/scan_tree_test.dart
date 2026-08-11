@@ -272,6 +272,27 @@ void main() {
     );
   });
 
+  group('path helpers', () {
+    test('normalize and parent handle windows and unc', () {
+      expect(normalizeFsPath(r'C:\Users\me\a'), 'C:/Users/me/a');
+      expect(normalizeFsPath('C:/'), 'C:/');
+      expect(parentFsPath('C:/Users'), 'C:/');
+      expect(parentFsPath('C:/file.txt'), 'C:/');
+      expect(normalizeFsPath(r'\\server\share\a\b'), '//server/share/a/b');
+      expect(parentFsPath('//server/share/a/b'), '//server/share/a');
+      expect(joinFsPath('//server/share', 'a'), '//server/share/a');
+      expect(normalizeFsPath('/home/me/a/'), '/home/me/a');
+      expect(parentFsPath('/home/me/a'), '/home/me');
+    });
+
+    test('unc rejects false prefixes for parent floor semantics', () {
+      // parent of a path that looks like false-prefix sibling should still strip one segment
+      // after normalize; share root itself:
+      expect(parentFsPath('//server/share/a'), '//server/share');
+      expect(normalizeFsPath('//server/share/'), '//server/share');
+    });
+  });
+
   group('flattenVisible', () {
     test('only includes expanded branches', () {
       final root = ScanTreeNode(
