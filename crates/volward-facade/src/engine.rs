@@ -712,12 +712,13 @@ fn write_snapshot_pb_atomic(snapshot: &StorageSnapshot, path: &str) -> Result<St
 }
 
 fn index_target_path_size(index: &SnapshotIndex, target: &str) -> Option<(String, u64)> {
-    let parent = parent_path_of(target)?;
+    let target = normalize_facade_path(target);
+    let parent = parent_path_of(&target)?;
     let query = index.query_directory(&parent, None, false, "name");
     query
         .direct_children
         .into_iter()
-        .find(|node| node.path == target)
+        .find(|node| facade_paths_equal(&node.path, &target))
         .map(|node| (node.path, node.size_bytes))
 }
 
