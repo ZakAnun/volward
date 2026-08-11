@@ -1228,12 +1228,16 @@ impl SnapshotIndexBuilder {
 // ---------------------------------------------------------------------------
 
 fn normalize_path(path: &str) -> String {
-    if path.len() > 1 && path.ends_with('/') {
-        path[..path.len() - 1].to_string()
+    let normalized = path.replace('\\', "/");
+    if normalized.len() > 1
+        && normalized.ends_with('/')
+        && !is_windows_drive_root(&normalized)
+    {
+        normalized[..normalized.len() - 1].to_string()
     } else if path.is_empty() {
         "/".to_string()
     } else {
-        path.to_string()
+        normalized
     }
 }
 
@@ -1246,9 +1250,17 @@ fn name_of(path: &str) -> String {
 }
 
 fn parent_path_of(path: &str) -> String {
+    let path = normalize_path(path);
     match path.rfind('/') {
+        Some(2) if has_windows_drive_prefix(&path) => path[..3].to_string(),
         Some(i) if i > 0 => path[..i].to_string(),
-        _ => "/".to_string(),
+        _ => {
+            if is_windows_drive_root(&path) {
+                path
+            } else {
+                "/".to_string()
+            }
+        }
     }
 }
 
@@ -1278,7 +1290,7 @@ fn decrement_count(counts: &mut HashMap<String, u64>, category: &str) {
 fn path_is_at_or_below(path: &str, root: &str) -> bool {
     path == root
         || (path.starts_with(root)
-            && (root == "/" || path.as_bytes().get(root.len()) == Some(&b'/')))
+            && (root == "/" || is_windows_drive_root(root) || path.as_bytes().get(root.len()) == Some(&b'/')))
 }
 
 fn walk_tree(
@@ -1361,11 +1373,31 @@ fn walk_tree(
 /// Normalises an index path: strips a single trailing slash (except for the
 /// filesystem root "/") so catalog keys agree on the canonical form.
 fn normalize_index_path(path: &str) -> String {
-    if path.len() > 1 && path.ends_with('/') {
-        path[..path.len() - 1].to_string()
+    let normalized = normalize_path(path);
+    if normalized.len() > 1
+        && normalized.ends_with('/')
+        && !is_windows_drive_root(&normalized)
+    {
+        normalized[..normalized.len() - 1].to_string()
     } else {
-        path.to_string()
+        normalized
     }
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3
+        && bytes[1] == b':'
+        && bytes[2] == b'/'
+        && bytes[0].is_ascii_alphabetic()
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3
+        && bytes[1] == b':'
+        && bytes[2] == b'/'
+        && bytes[0].is_ascii_alphabetic()
 }
 
 fn passes_entry_filter(
@@ -1894,5 +1926,13 @@ mod tests {
         let r2 = from_snap.query_directory("/root/Documents", None, false, "name");
         assert_eq!(r1.direct_children.len(), r2.direct_children.len());
         assert_eq!(r1.reclaimable_bytes, r2.reclaimable_bytes);
+    }
+
+    #[test]
+    fn parent_path_of_drive_root_child_returns_drive_root() {
+        assert_eq!(parent_path_of("C:/file.txt"), "C:/");
+        assert_eq!(parent_path_of("C:/Users"), "C:/");
+        assert_eq!(parent_path_of(r"C:\Users\me\a.txt"), "C:/Users/me");
+        assert_eq!(parent_path_of("C:/"), "C:/");
     }
 }
