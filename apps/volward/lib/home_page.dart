@@ -51,10 +51,7 @@ String? deleteTargetFromFocus(ScanTreeNode? focused) {
 }
 
 String _parentPathOf(String path) {
-  final normalized = ScanTreeBuilder.normalizeRoot(path);
-  final idx = normalized.lastIndexOf('/');
-  if (idx <= 0) return '/';
-  return normalized.substring(0, idx);
+  return parentFsPath(path);
 }
 
 String refreshPathForDeleteTargets({
@@ -325,7 +322,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_s.scanRoots.isNotEmpty) {
       return ScanTreeBuilder.normalizeRoot(_s.scanRoots.first);
     }
-    return ScanTreeBuilder.normalizeRoot(Platform.environment['HOME'] ?? '/');
+    return defaultScanRootPath(
+      environment: Platform.environment,
+      isWindows: () => Platform.isWindows,
+    );
   }
 
   String _scanTargetLabel(BuildContext context) {

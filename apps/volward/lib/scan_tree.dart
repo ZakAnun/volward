@@ -89,6 +89,27 @@ bool _hasWindowsDrivePrefix(String path) {
           (path.codeUnitAt(0) >= 97 && path.codeUnitAt(0) <= 122));
 }
 
+String defaultScanRootPath({
+  required Map<String, String> environment,
+  required bool Function() isWindows,
+}) {
+  if (isWindows()) {
+    final profile = environment['USERPROFILE'];
+    if (profile != null && profile.isNotEmpty) {
+      return normalizeFsPath(profile);
+    }
+  }
+  final home = environment['HOME'];
+  if (home != null && home.isNotEmpty) {
+    return normalizeFsPath(home);
+  }
+  final profile = environment['USERPROFILE'];
+  if (profile != null && profile.isNotEmpty) {
+    return normalizeFsPath(profile);
+  }
+  return isWindows() ? 'C:/' : '/';
+}
+
 /// One node in the scan results tree (directory or file leaf).
 class ScanTreeNode {
   ScanTreeNode({

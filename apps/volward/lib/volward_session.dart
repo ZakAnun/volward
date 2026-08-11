@@ -664,9 +664,10 @@ class VolwardSession extends ChangeNotifier {
   }
 
   String _defaultScanRoot() {
-    return Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        '/';
+    return defaultScanRootPath(
+      environment: Platform.environment,
+      isWindows: () => Platform.isWindows,
+    );
   }
 
   // Test-injectable probes for the startup-root resolver. Production code
@@ -1195,7 +1196,7 @@ class VolwardSession extends ChangeNotifier {
     try {
       final result = VolwardNativeBridge.instance.queryDirectoryJson(
         _engine!,
-        path,
+        normalizeFsPath(path),
         categoryFilter: categoryFilter,
         deletableOnly: deletableOnly,
         sortMode: sortMode,

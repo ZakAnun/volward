@@ -27,6 +27,23 @@ fn system_time_secs(time: SystemTime) -> i64 {
     }
 }
 
+fn normalize_path_string(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if normalized.len() > 1 && normalized.ends_with('/') && !is_windows_drive_root(&normalized) {
+        normalized[..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn is_windows_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3
+        && bytes[1] == b':'
+        && bytes[2] == b'/'
+        && bytes[0].is_ascii_alphabetic()
+}
+
 fn dir_fingerprint_from_read_dir(
     path: &Path,
     children: &[Result<DirEntry<((), ())>, Error>],
@@ -179,7 +196,7 @@ impl PlatformStorage for DesktopPlatform {
             let path = PathBuf::from(p);
             if path.exists() {
                 roots.push(ScanRoot {
-                    path: path.to_string_lossy().to_string(),
+                    path: normalize_path_string(&path.to_string_lossy()),
                     label: path
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -190,7 +207,7 @@ impl PlatformStorage for DesktopPlatform {
         if roots.is_empty() {
             if let Some(home) = dirs::home_dir() {
                 roots.push(ScanRoot {
-                    path: home.to_string_lossy().to_string(),
+                    path: normalize_path_string(&home.to_string_lossy()),
                     label: "Home".to_string(),
                 });
             }
@@ -259,7 +276,7 @@ impl PlatformStorage for DesktopPlatform {
                     }
                 };
                 let path = entry.path();
-                let path_str = path.to_string_lossy().to_string();
+                let path_str = normalize_path_string(&path.to_string_lossy());
                 if is_protected_path(&path, &self.protected_prefixes) {
                     continue;
                 }
@@ -415,7 +432,7 @@ impl PlatformStorage for DesktopPlatform {
             };
             let is_dir = metadata.is_dir();
             out.push(RawFsEntry {
-                path: entry_path.to_string_lossy().to_string(),
+                path: normalize_path_string(&entry_path.to_string_lossy()),
                 is_dir,
                 size_bytes: if is_dir { 0 } else { metadata.len() },
                 dir_fingerprint: None,

@@ -272,6 +272,25 @@ void main() {
     );
   });
 
+  group('defaultScanRootPath', () {
+    test('defaultScanRootPath uses USERPROFILE on Windows', () {
+      expect(
+        defaultScanRootPath(
+          environment: {'USERPROFILE': r'C:\Users\me', 'HOME': '/Users/me'},
+          isWindows: () => true,
+        ),
+        'C:/Users/me',
+      );
+      expect(
+        defaultScanRootPath(
+          environment: {'HOME': '/home/me'},
+          isWindows: () => false,
+        ),
+        '/home/me',
+      );
+    });
+  });
+
   group('path helpers', () {
     test('normalize and parent handle windows and unc', () {
       expect(normalizeFsPath(r'C:\Users\me\a'), 'C:/Users/me/a');
