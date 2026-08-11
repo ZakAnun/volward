@@ -16,7 +16,12 @@ import 'volward_session.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Analytics.bootstrap();
-  unawaited(Analytics.instance.track(AnalyticsEvents.appOpen));
+  // platform is attached by AptabaseAnalytics; explicit here keeps Noop path clear too.
+  unawaited(
+    Analytics.instance.track(AnalyticsEvents.appOpen, {
+      'platform': analyticsPlatformLabel(),
+    }),
+  );
   runApp(const VolwardApp());
 }
 

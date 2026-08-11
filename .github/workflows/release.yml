@@ -73,14 +73,23 @@ jobs:
             --dart-define="APTABASE_HOST=$APTABASE_HOST"
 
       - name: Verify macOS bundle
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: |
           APP=apps/volward/build/macos/Build/Products/Release/volward.app
           DYLIB="$APP/Contents/Frameworks/libvolward_facade.dylib"
+          BIN="$APP/Contents/MacOS/volward"
           test -d "$APP"
-          test -x "$APP/Contents/MacOS/volward"
+          test -x "$BIN"
           test -f "$DYLIB"
           codesign --verify --verbose=2 "$DYLIB"
           codesign --verify --verbose=2 "$APP"
+          # Ensure Aptabase key was compiled into the release binary (not Noop).
+          if ! strings "$BIN" | grep -Fq "$APTABASE_APP_KEY"; then
+            echo "Aptabase key not found in macOS binary — dart-define may be missing"
+            exit 1
+          fi
+          echo "Aptabase key present in macOS binary"
 
       - name: Get version
         id: version
@@ -173,6 +182,8 @@ jobs:
 
       - name: Verify Windows bundle
         shell: pwsh
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: |
           $bundle = "$env:GITHUB_WORKSPACE\apps\volward\build\windows\x64\runner\Release"
           foreach ($path in @(
@@ -186,6 +197,14 @@ jobs:
               throw "Missing Windows release file: $path"
             }
           }
+          # Ensure Aptabase key was compiled into the release binary (not Noop).
+          $exe = Join-Path $bundle "volward.exe"
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+          if ($text -notlike "*$env:APTABASE_APP_KEY*") {
+            throw "Aptabase key not found in Windows binary — dart-define may be missing"
+          }
+          Write-Host "Aptabase key present in Windows binary"
 
       - name: Get version
         id: version
@@ -300,11 +319,20 @@ jobs:
           cp target/release/libvolward_facade.so apps/volward/build/linux/x64/release/bundle/lib/
 
       - name: Verify Linux bundle
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: |
-          test -x apps/volward/build/linux/x64/release/bundle/volward
+          BIN=apps/volward/build/linux/x64/release/bundle/volward
+          test -x "$BIN"
           test -f apps/volward/build/linux/x64/release/bundle/lib/libvolward_facade.so
           test -f apps/volward/build/linux/x64/release/bundle/data/icudtl.dat
           test -d apps/volward/build/linux/x64/release/bundle/data/flutter_assets
+          # Ensure Aptabase key was compiled into the release binary (not Noop).
+          if ! strings "$BIN" | grep -Fq "$APTABASE_APP_KEY"; then
+            echo "Aptabase key not found in Linux binary — dart-define may be missing"
+            exit 1
+          fi
+          echo "Aptabase key present in Linux binary"
 
       - name: Get version
         id: version

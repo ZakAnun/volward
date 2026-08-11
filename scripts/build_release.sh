@@ -56,32 +56,15 @@ write_sha256() {
 
 # Aptabase compile-time defines for release builds.
 # Priority: env APTABASE_APP_KEY + APTABASE_HOST → apps/volward/aptabase.json
-# Missing both → Analytics stays Noop in the shipped binary.
-APTABASE_DEFINE_ARGS=()
-resolve_aptabase_defines() {
-  local key="${APTABASE_APP_KEY:-}"
-  local host="${APTABASE_HOST:-}"
-  local json="$APP_DIR/aptabase.json"
-
-  if [[ -n "$key" && -n "$host" ]]; then
-    APTABASE_DEFINE_ARGS=(
-      --dart-define="APTABASE_APP_KEY=$key"
-      --dart-define="APTABASE_HOST=$host"
-    )
-    echo "📊 Aptabase: using env APTABASE_APP_KEY / APTABASE_HOST"
-    return
-  fi
-
-  if [[ -f "$json" ]]; then
-    APTABASE_DEFINE_ARGS=(--dart-define-from-file="$json")
-    echo "📊 Aptabase: using $json"
-    return
-  fi
-
-  echo "⚠️  Aptabase: no env defines and no aptabase.json — release build will use Noop analytics" >&2
-}
-
-resolve_aptabase_defines
+# Release builds require Aptabase so Windows/Linux packages cannot ship as silent Noop.
+# Escape hatch for local experiments: ALLOW_NOOP_ANALYTICS=1
+# shellcheck source=../apps/volward/scripts/resolve_aptabase_defines.sh
+source "$APP_DIR/scripts/resolve_aptabase_defines.sh"
+if [[ "${ALLOW_NOOP_ANALYTICS:-}" == "1" ]]; then
+  resolve_aptabase_defines || true
+else
+  resolve_aptabase_defines --require
+fi
 echo ""
 
 to_windows_path() {
@@ -163,8 +146,12 @@ build_windows() {
   # Clean previous build
   rm -rf build/windows
 
-  # Build
-  flutter build windows --release "${APTABASE_DEFINE_ARGS[@]}"
+  # Build (same Aptabase defines as macOS/Linux — required unless ALLOW_NOOP_ANALYTICS=1)
+  if command -v fvm >/dev/null 2>&1; then
+    fvm flutter build windows --release "${APTABASE_DEFINE_ARGS[@]}"
+  else
+    flutter build windows --release "${APTABASE_DEFINE_ARGS[@]}"
+  fi
 
   # Copy to build directory
   WIN_BUILD="$APP_DIR/build/windows/x64/runner/Release"
@@ -220,8 +207,12 @@ build_linux() {
   # Clean previous build
   rm -rf build/linux
 
-  # Build
-  flutter build linux --release "${APTABASE_DEFINE_ARGS[@]}"
+  # Build (same Aptabase defines as macOS/Windows — required unless ALLOW_NOOP_ANALYTICS=1)
+  if command -v fvm >/dev/null 2>&1; then
+    fvm flutter build linux --release "${APTABASE_DEFINE_ARGS[@]}"
+  else
+    flutter build linux --release "${APTABASE_DEFINE_ARGS[@]}"
+  fi
 
   # Create tarball
   LINUX_BUILD="$APP_DIR/build/linux/x64/release/bundle"

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/analytics/analytics.dart';
 import 'package:volward/analytics/noop_analytics.dart';
@@ -25,6 +27,21 @@ void main() {
   test('filterAnalyticsProps handles null and empty', () {
     expect(filterAnalyticsProps(null), isEmpty);
     expect(filterAnalyticsProps(const {}), isEmpty);
+  });
+
+  test('withAnalyticsPlatform always includes platform label', () {
+    final enriched = withAnalyticsPlatform({'incremental': 1});
+    expect(enriched['incremental'], 1);
+    expect(enriched['platform'], analyticsPlatformLabel());
+    expect(
+      enriched['platform'],
+      anyOf('macos', 'windows', 'linux', Platform.operatingSystem),
+    );
+  });
+
+  test('withAnalyticsPlatform lets caller override platform', () {
+    final enriched = withAnalyticsPlatform({'platform': 'windows'});
+    expect(enriched['platform'], 'windows');
   });
 
   test('bootstrap without defines keeps NoopAnalytics', () async {
