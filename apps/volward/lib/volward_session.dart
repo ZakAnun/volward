@@ -1441,11 +1441,7 @@ class VolwardSession extends ChangeNotifier {
 
     final effectiveRoots = _scanRoots.isNotEmpty
         ? _scanRoots
-        : [
-            Platform.environment['HOME'] ??
-                Platform.environment['USERPROFILE'] ??
-                '/',
-          ];
+        : [_defaultScanRoot()];
 
     _invalidateCacheRestore();
     _scanning = true;
