@@ -45,11 +45,20 @@ abstract final class AppleRadius {
 }
 
 abstract final class AppleTypography {
-  static const displayFamily = '.AppleSystemUIFont';
-  static const textFamily = '.AppleSystemUIFont';
+  /// Semantic typography roles — not hard-bound to a single platform face.
+  static const displayFamily = 'system-ui';
+  static const textFamily = 'system-ui';
+
+  static const fontFamilyFallback = [
+    'Segoe UI',
+    'Roboto',
+    'Noto Sans',
+    'Helvetica Neue',
+    'Arial',
+  ];
 
   static const heroDisplay = TextStyle(
-    fontFamily: displayFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 40,
     fontWeight: FontWeight.w600,
     height: 1.1,
@@ -58,7 +67,7 @@ abstract final class AppleTypography {
   );
 
   static const displayLg = TextStyle(
-    fontFamily: displayFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 34,
     fontWeight: FontWeight.w600,
     height: 1.1,
@@ -66,7 +75,7 @@ abstract final class AppleTypography {
   );
 
   static const tagline = TextStyle(
-    fontFamily: displayFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 21,
     fontWeight: FontWeight.w600,
     height: 1.19,
@@ -75,7 +84,7 @@ abstract final class AppleTypography {
   );
 
   static const lead = TextStyle(
-    fontFamily: displayFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 28,
     fontWeight: FontWeight.w400,
     height: 1.14,
@@ -84,7 +93,7 @@ abstract final class AppleTypography {
   );
 
   static const body = TextStyle(
-    fontFamily: textFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 17,
     fontWeight: FontWeight.w400,
     height: 1.47,
@@ -93,7 +102,7 @@ abstract final class AppleTypography {
   );
 
   static const bodyStrong = TextStyle(
-    fontFamily: textFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 17,
     fontWeight: FontWeight.w600,
     height: 1.24,
@@ -102,7 +111,7 @@ abstract final class AppleTypography {
   );
 
   static const caption = TextStyle(
-    fontFamily: textFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 14,
     fontWeight: FontWeight.w400,
     height: 1.43,
@@ -111,7 +120,7 @@ abstract final class AppleTypography {
   );
 
   static const captionStrong = TextStyle(
-    fontFamily: textFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 14,
     fontWeight: FontWeight.w600,
     height: 1.29,
@@ -120,7 +129,7 @@ abstract final class AppleTypography {
   );
 
   static const navLink = TextStyle(
-    fontFamily: textFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 12,
     fontWeight: FontWeight.w400,
     height: 1.0,
@@ -129,7 +138,7 @@ abstract final class AppleTypography {
   );
 
   static const finePrint = TextStyle(
-    fontFamily: textFamily,
+    fontFamilyFallback: fontFamilyFallback,
     fontSize: 12,
     fontWeight: FontWeight.w400,
     height: 1.0,
