@@ -57,6 +57,18 @@ void main() {
     );
   });
 
+  test('tagFromReleasesAtom reads first entry tag', () {
+    const atom = '''
+<feed>
+  <entry>
+    <title>v0.0.1</title>
+    <link rel="alternate" href="https://github.com/ZakAnun/volward/releases/tag/v0.0.1"/>
+  </entry>
+</feed>
+''';
+    expect(GitHubVersionSource.tagFromReleasesAtom(atom), 'v0.0.1');
+  });
+
   test('conventionReleaseAssets builds CI download URLs', () {
     final assets = conventionReleaseAssets(
       owner: 'ZakAnun',

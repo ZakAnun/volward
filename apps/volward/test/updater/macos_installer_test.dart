@@ -197,6 +197,7 @@ void main() {
 
       final openIndex = calls.indexWhere((call) => call.$1 == 'open');
       expect(openIndex, greaterThanOrEqualTo(0));
+      expect(calls[openIndex].$2, ['-n', currentApp]);
       expect(calls[openIndex + 1].$1, 'rm');
       expect(calls[openIndex + 1].$2, ['-rf', currentApp]);
       expect(calls[openIndex + 2].$1, 'mv');

@@ -27,8 +27,11 @@ class HttpDownloader implements Downloader {
   }) async {
     await directory.create(recursive: true);
     final file = File('${directory.path}/${asset.name}');
-    final request = http.Request('GET', Uri.parse(asset.downloadUrl));
-    request.headers['User-Agent'] = 'Volward-Updater';
+    final request = http.Request('GET', Uri.parse(asset.downloadUrl))
+      // GitHub asset URLs redirect to object storage.
+      ..followRedirects = true
+      ..headers['User-Agent'] = 'Volward-Updater'
+      ..headers['Accept'] = '*/*';
     final response = await _client.send(request);
     if (response.statusCode != 200) {
       throw StateError('Download failed: HTTP ${response.statusCode}');

@@ -47,9 +47,9 @@ class LinuxAppImageInstaller implements PlatformInstaller {
 
   @override
   bool get canAutoInstall => isAppImageRuntime(
-    resolvedExecutable: _resolvedExecutable,
-    environment: _environment,
-  );
+        resolvedExecutable: _resolvedExecutable,
+        environment: _environment,
+      );
 
   @override
   Future<void> installAndRelaunch({
@@ -62,12 +62,33 @@ class LinuxAppImageInstaller implements PlatformInstaller {
     final targetPath = _environment['APPIMAGE'] ?? _resolvedExecutable;
     final target = File(targetPath);
     final staging = File('$targetPath.new');
+    final previous = File('$targetPath.old');
+
+    if (await staging.exists()) {
+      await staging.delete();
+    }
     await downloaded.copy(staging.path);
     final chmod = await _run('chmod', ['+x', staging.path]);
     if (chmod.exitCode != 0) {
-      throw StateError('chmod failed');
+      throw StateError('chmod failed: ${chmod.stderr}');
+    }
+
+    // Replace the directory entry while this process still holds the old inode.
+    if (await previous.exists()) {
+      await previous.delete();
+    }
+    if (await target.exists()) {
+      await target.rename(previous.path);
     }
     await staging.rename(target.path);
+    try {
+      if (await previous.exists()) {
+        await previous.delete();
+      }
+    } catch (_) {
+      // Best-effort cleanup; leaving *.old is recoverable.
+    }
+
     await _start(target.path, [], mode: ProcessStartMode.detached);
     _exitProcess(0);
   }

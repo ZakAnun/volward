@@ -75,10 +75,12 @@ class MacosInstaller implements PlatformInstaller {
       throw StateError('Failed to replace current app: $replacementError');
     }
 
+    // Clear quarantine so Gatekeeper is less likely to block the replacement.
     await _run('xattr', ['-cr', currentApp]);
     Object? openError;
     try {
-      final open = await _run('open', [currentApp]);
+      // `-n` forces a new instance even if a stale process briefly remains.
+      final open = await _run('open', ['-n', currentApp]);
       if (open.exitCode != 0) {
         openError = StateError('open failed: ${open.stderr}');
       }

@@ -82,17 +82,93 @@ class GitHubVersionSource implements VersionSource {
 
   @override
   Future<ReleaseInfo> fetchLatest() async {
-    // Prefer the public release page redirect: unauthenticated api.github.com
-    // is easily rate-limited (60 req/hour/IP) and returns HTTP 403.
+    // Prefer public HTML/Atom endpoints. Unauthenticated api.github.com is
+    // easily rate-limited (60 req/hour/IP) and returns HTTP 403.
+    Object? pageError;
     try {
       return await _fetchLatestViaReleasePage();
     } catch (error, stackTrace) {
+      pageError = error;
       debugPrint(
-        'GitHubVersionSource: release-page lookup failed, falling back to API: '
+        'GitHubVersionSource: release-page lookup failed: $error\n$stackTrace',
+      );
+    }
+    try {
+      return await _fetchLatestViaAtom();
+    } catch (error, stackTrace) {
+      debugPrint(
+        'GitHubVersionSource: atom lookup failed, falling back to API: '
         '$error\n$stackTrace',
       );
-      return _fetchLatestViaApi();
+      try {
+        return await _fetchLatestViaApi();
+      } catch (apiError) {
+        throw GitHubHttpException(
+          'Failed to resolve latest release '
+          '(page: $pageError; atom: $error; api: $apiError)',
+        );
+      }
     }
+  }
+
+  Future<ReleaseInfo> _releaseFromTag(String tag, {String body = ''}) async {
+    final version = normalizeReleaseTag(tag);
+    if (version == null) {
+      throw FormatException('Unsupported release tag: $tag');
+    }
+    return ReleaseInfo(
+      tagName: tag,
+      version: version,
+      htmlUrl: 'https://github.com/$owner/$repo/releases/tag/$tag',
+      body: body,
+      assets: conventionReleaseAssets(
+        owner: owner,
+        repo: repo,
+        tagName: tag,
+        version: version,
+      ),
+    );
+  }
+
+  /// Parses the first entry title/link from GitHub's public Atom feed.
+  static String? tagFromReleasesAtom(String atomXml) {
+    final entryMatch = RegExp(
+      r'<entry\b[^>]*>([\s\S]*?)</entry>',
+      caseSensitive: false,
+    ).firstMatch(atomXml);
+    if (entryMatch == null) return null;
+    final entry = entryMatch.group(1)!;
+    final linkMatch = RegExp(
+      r'releases/tag/([^"?\s<]+)',
+      caseSensitive: false,
+    ).firstMatch(entry);
+    if (linkMatch != null) return linkMatch.group(1);
+    final titleMatch = RegExp(
+      r'<title[^>]*>([^<]+)</title>',
+      caseSensitive: false,
+    ).firstMatch(entry);
+    return titleMatch?.group(1)?.trim();
+  }
+
+  Future<ReleaseInfo> _fetchLatestViaAtom() async {
+    final uri = Uri.https('github.com', '/$owner/$repo/releases.atom');
+    final response = await _client.get(
+      uri,
+      headers: const {
+        'User-Agent': 'Volward-Updater',
+        'Accept': 'application/atom+xml, application/xml, text/xml, */*',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw GitHubHttpException(
+        'GitHub releases.atom failed: HTTP ${response.statusCode}',
+      );
+    }
+    final tag = tagFromReleasesAtom(response.body);
+    if (tag == null) {
+      throw GitHubHttpException('Could not parse latest tag from releases.atom');
+    }
+    return _releaseFromTag(tag);
   }
 
   Future<ReleaseInfo> _fetchLatestViaReleasePage() async {
@@ -129,22 +205,7 @@ class GitHubVersionSource implements VersionSource {
         '(status=${streamed.statusCode}, location=$location)',
       );
     }
-    final version = normalizeReleaseTag(tag);
-    if (version == null) {
-      throw FormatException('Unsupported release tag: $tag');
-    }
-    return ReleaseInfo(
-      tagName: tag,
-      version: version,
-      htmlUrl: 'https://github.com/$owner/$repo/releases/tag/$tag',
-      body: '',
-      assets: conventionReleaseAssets(
-        owner: owner,
-        repo: repo,
-        tagName: tag,
-        version: version,
-      ),
-    );
+    return _releaseFromTag(tag);
   }
 
   Future<ReleaseInfo> _fetchLatestViaApi() async {

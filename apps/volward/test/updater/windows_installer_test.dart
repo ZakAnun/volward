@@ -5,16 +5,39 @@ import 'package:volward/updater/update_models.dart';
 import 'package:volward/updater/windows_installer.dart';
 
 void main() {
-  test('relaunches in detached mode after installer succeeds', () async {
-    ProcessStartMode? startMode;
-    String? startedPath;
+  test('buildUpdateBatch runs silent install then relaunches', () {
+    final batch = WindowsInstaller.buildUpdateBatch(
+      installerPath: r'C:\Temp\VolwardSetup.exe',
+      relaunchPath: r'C:\Users\me\AppData\Local\Programs\Volward\volward.exe',
+    );
+
+    expect(batch, contains(r'"C:\Temp\VolwardSetup.exe" /VERYSILENT'));
+    expect(batch, contains('/FORCECLOSEAPPLICATIONS'));
+    expect(
+      batch,
+      contains(
+        r'start "" "C:\Users\me\AppData\Local\Programs\Volward\volward.exe"',
+      ),
+    );
+  });
+
+  test('installAndRelaunch detaches update script then exits', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'volward_windows_installer_test_',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final installerFile = File('${directory.path}/VolwardSetup.exe');
+    await installerFile.writeAsBytes(const [0]);
+
+    String? started;
+    ProcessStartMode? capturedMode;
     var exited = false;
     final installer = WindowsInstaller(
-      resolvedExecutable: r'C:\Volward\volward.exe',
-      run: (command, arguments) async => ProcessResult(1, 0, '', ''),
+      resolvedExecutable: r'C:\Old\volward.exe',
+      localAppData: r'C:\Users\me\AppData\Local',
       start: (executable, arguments, {mode = ProcessStartMode.normal}) async {
-        startedPath = executable;
-        startMode = mode;
+        started = executable;
+        capturedMode = mode;
       },
       exitProcess: (code) {
         expect(code, 0);
@@ -23,18 +46,24 @@ void main() {
     );
 
     await installer.installAndRelaunch(
-      downloaded: File(r'C:\Temp\volward-setup.exe'),
+      downloaded: installerFile,
       release: const ReleaseInfo(
-        tagName: 'v1.0.0',
-        version: '1.0.0',
+        tagName: 'v0.0.2',
+        version: '0.0.2',
         htmlUrl: '',
         body: '',
         assets: [],
       ),
     );
 
-    expect(startedPath, r'C:\Volward\volward.exe');
-    expect(startMode, ProcessStartMode.detached);
+    expect(started, endsWith('volward_update.cmd'));
+    expect(capturedMode, ProcessStartMode.detached);
     expect(exited, isTrue);
+    final batch = await File(started!).readAsString();
+    expect(batch, contains(installerFile.path));
+    expect(
+      batch,
+      contains(r'C:\Users\me\AppData\Local\Programs\Volward\volward.exe'),
+    );
   });
 }
