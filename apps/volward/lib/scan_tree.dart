@@ -19,43 +19,39 @@ class ScanTreeNode {
     this.scanned = true,
     this.peekScanned = false,
     List<ScanTreeNode>? children,
-  }) : children = children ?? [],
-       category =
-           category ?? entry?.category ?? (isDirectory ? 'Folder' : 'Unknown'),
-       deletable = deletable ?? entry?.deletable ?? false,
-       subtreeBytes =
-           subtreeBytes ??
-           _deriveSubtreeBytes(
-             isDirectory,
-             sizeBytes,
-             entry?.sizeBytes,
-             children,
-           ),
-       subtreeFileCount =
-           subtreeFileCount ?? _deriveFileCount(isDirectory, children),
-       categoryMask =
-           categoryMask ??
-           _deriveCategoryMask(
-             isDirectory,
-             category ?? entry?.category ?? 'Unknown',
-             children,
-           ),
-       deletableCategoryMask =
-           deletableCategoryMask ??
-           _deriveDeletableCategoryMask(
-             isDirectory,
-             category ?? entry?.category ?? 'Unknown',
-             deletable ?? entry?.deletable ?? false,
-             children,
-           ),
-       deletableFileCount =
-           deletableFileCount ??
-           _deriveDeletableFileCount(
-             isDirectory,
-             deletable ?? entry?.deletable ?? false,
-             children,
-           ),
-       _entry = entry;
+  })  : children = children ?? [],
+        category =
+            category ?? entry?.category ?? (isDirectory ? 'Folder' : 'Unknown'),
+        deletable = deletable ?? entry?.deletable ?? false,
+        subtreeBytes = subtreeBytes ??
+            _deriveSubtreeBytes(
+              isDirectory,
+              sizeBytes,
+              entry?.sizeBytes,
+              children,
+            ),
+        subtreeFileCount =
+            subtreeFileCount ?? _deriveFileCount(isDirectory, children),
+        categoryMask = categoryMask ??
+            _deriveCategoryMask(
+              isDirectory,
+              category ?? entry?.category ?? 'Unknown',
+              children,
+            ),
+        deletableCategoryMask = deletableCategoryMask ??
+            _deriveDeletableCategoryMask(
+              isDirectory,
+              category ?? entry?.category ?? 'Unknown',
+              deletable ?? entry?.deletable ?? false,
+              children,
+            ),
+        deletableFileCount = deletableFileCount ??
+            _deriveDeletableFileCount(
+              isDirectory,
+              deletable ?? entry?.deletable ?? false,
+              children,
+            ),
+        _entry = entry;
 
   final String name;
   final String path;
@@ -233,8 +229,8 @@ class ScanTreeNode {
     final entrySize = entry?.sizeBytes ?? 0;
     final sizeBytes =
         !isDir && entrySize > 0 && (jsonSize == null || jsonSize == 0)
-        ? entrySize
-        : (jsonSize ?? entrySize);
+            ? entrySize
+            : (jsonSize ?? entrySize);
     return ScanTreeNode(
       name: !isDir && entry != null && entry.displayName.isNotEmpty
           ? entry.displayName

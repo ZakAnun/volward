@@ -30,8 +30,7 @@ abstract final class SnapshotCache {
     required String affectedPrefix,
     required int updateVersion,
   }) {
-    final matchesPrefix =
-        cachedPath == affectedPrefix ||
+    final matchesPrefix = cachedPath == affectedPrefix ||
         cachedPath.startsWith('$affectedPrefix/');
     return matchesPrefix && cachedVersion <= updateVersion;
   }

@@ -201,8 +201,7 @@ void main() {
   });
 
   test('check rejects assets whose checksum sidecar is unreachable', () async {
-    final downloader = _FakeDownloader()
-      ..resolveSha256 = (_) async => null;
+    final downloader = _FakeDownloader()..resolveSha256 = (_) async => null;
     final updater = buildUpdater(
       downloader: downloader,
       source: _FakeSource(

@@ -151,7 +151,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             color: preset.$2,
                             selected:
                                 widget.themeSettings.accentColor.toARGB32() ==
-                                preset.$2.toARGB32(),
+                                    preset.$2.toARGB32(),
                             onTap: () =>
                                 widget.themeSettings.setAccentColor(preset.$2),
                           ),
@@ -221,8 +221,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           ? l10n.settingsIncrementalScanDescription
                           : l10n.settingsIncrementalScanUnsupported,
                       value: widget.session.incrementalScan,
-                      enabled:
-                          !widget.session.scanning &&
+                      enabled: !widget.session.scanning &&
                           widget.session.canUseIncrementalScan,
                       onChanged: widget.session.setIncrementalScan,
                     ),
@@ -291,8 +290,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                 AppleButton(
                                   label: l10n.settingsCheckForUpdates,
                                   variant: AppleButtonVariant.pearl,
-                                  onPressed:
-                                      status.phase == UpdatePhase.checking ||
+                                  onPressed: status.phase ==
+                                              UpdatePhase.checking ||
                                           status.phase ==
                                               UpdatePhase.downloading ||
                                           status.phase == UpdatePhase.installing

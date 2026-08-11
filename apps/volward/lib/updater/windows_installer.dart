@@ -3,12 +3,11 @@ import 'dart:io';
 import 'platform_installer.dart';
 import 'update_models.dart';
 
-typedef WindowsProcessStarter =
-    Future<void> Function(
-      String executable,
-      List<String> arguments, {
-      ProcessStartMode mode,
-    });
+typedef WindowsProcessStarter = Future<void> Function(
+  String executable,
+  List<String> arguments, {
+  ProcessStartMode mode,
+});
 
 Future<void> _startWindowsProcess(
   String executable,
@@ -24,10 +23,10 @@ class WindowsInstaller implements PlatformInstaller {
     WindowsProcessStarter? start,
     void Function(int code)? exitProcess,
     String? localAppData,
-  }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
-       _start = start ?? _startWindowsProcess,
-       _exitProcess = exitProcess ?? exit,
-       _localAppData = localAppData ?? Platform.environment['LOCALAPPDATA'];
+  })  : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
+        _start = start ?? _startWindowsProcess,
+        _exitProcess = exitProcess ?? exit,
+        _localAppData = localAppData ?? Platform.environment['LOCALAPPDATA'];
 
   final String _resolvedExecutable;
   final WindowsProcessStarter _start;

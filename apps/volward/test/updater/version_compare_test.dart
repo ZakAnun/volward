@@ -29,9 +29,12 @@ void main() {
   group('isRemoteNewer', () {
     test('true only when remote > local', () {
       expect(isRemoteNewer(remoteTag: 'v0.0.2', localVersion: '0.0.1'), isTrue);
-      expect(isRemoteNewer(remoteTag: 'v0.0.1', localVersion: '0.0.1'), isFalse);
-      expect(isRemoteNewer(remoteTag: 'v0.0.1', localVersion: '0.0.2'), isFalse);
-      expect(isRemoteNewer(remoteTag: 'v0.0.2-beta', localVersion: '0.0.1'), isFalse);
+      expect(
+          isRemoteNewer(remoteTag: 'v0.0.1', localVersion: '0.0.1'), isFalse);
+      expect(
+          isRemoteNewer(remoteTag: 'v0.0.1', localVersion: '0.0.2'), isFalse);
+      expect(isRemoteNewer(remoteTag: 'v0.0.2-beta', localVersion: '0.0.1'),
+          isFalse);
     });
   });
 }

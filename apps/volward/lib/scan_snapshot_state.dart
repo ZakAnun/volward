@@ -43,10 +43,9 @@ class ScanSnapshotState {
         : <String, dynamic>{};
     stats['files_in_snapshot'] =
         (stats['files_in_snapshot'] as num?)?.toInt() ??
-        (summary['entry_count'] as num?)?.toInt() ??
-        0;
-    stats['scan_state'] =
-        stats['scan_state']?.toString() ??
+            (summary['entry_count'] as num?)?.toInt() ??
+            0;
+    stats['scan_state'] = stats['scan_state']?.toString() ??
         summary['scan_state']?.toString() ??
         'Done';
     final extraFields = Map<String, dynamic>.from(summary)
@@ -260,9 +259,8 @@ class ScanSnapshotState {
       if (scannedAtMs != null) 'scanned_at_ms': scannedAtMs,
       'reclaimable_estimate_bytes': reclaimableEstimateBytes,
       if (includeEntries)
-        'entries': materializeEntries()
-            .map((e) => e.toWire())
-            .toList(growable: false),
+        'entries':
+            materializeEntries().map((e) => e.toWire()).toList(growable: false),
       'tree': tree?.toWire(),
       'stats': Map<String, dynamic>.from(stats),
       ...extraFields,
