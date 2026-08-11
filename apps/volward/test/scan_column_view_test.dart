@@ -374,11 +374,7 @@ void main() {
             ),
           ],
         ),
-        ScanTreeNode(
-          name: 'Library',
-          path: '/root/Library',
-          isDirectory: true,
-        ),
+        ScanTreeNode(name: 'Library', path: '/root/Library', isDirectory: true),
       ],
     );
 
@@ -404,9 +400,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      errors.where((e) => e.toString().contains('OVERFLOWING')),
-      isEmpty,
-    );
+    expect(errors.where((e) => e.toString().contains('OVERFLOWING')), isEmpty);
   });
 }

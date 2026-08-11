@@ -454,9 +454,7 @@ impl SnapshotIndex {
                 self.root_path
             ));
         }
-        if !subtree.is_dir
-            || !paths_equal(&normalize_index_path(&subtree.path), &normalized)
-        {
+        if !subtree.is_dir || !paths_equal(&normalize_index_path(&subtree.path), &normalized) {
             return Err(format!(
                 "error:subtree root {} does not match target {normalized}",
                 subtree.path

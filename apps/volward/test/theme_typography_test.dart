@@ -3,7 +3,10 @@ import 'package:volward/theme/apple_tokens.dart';
 
 void main() {
   test('typography families are not Apple-only hard bind', () {
-    expect(AppleTypography.displayFamily.contains('AppleSystemUIFont'), isFalse);
+    expect(
+      AppleTypography.displayFamily.contains('AppleSystemUIFont'),
+      isFalse,
+    );
     expect(AppleTypography.textFamily.contains('AppleSystemUIFont'), isFalse);
     expect(AppleTypography.displayFamily, isNotEmpty);
   });

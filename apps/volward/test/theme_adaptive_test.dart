@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/theme/volward_theme.dart';
 
 void main() {
-  testWidgets('app uses Material scroll behavior without crashing', (tester) async {
+  testWidgets('app uses Material scroll behavior without crashing', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildVolwardTheme(brightness: Brightness.light),

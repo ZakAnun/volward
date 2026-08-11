@@ -396,5 +396,7 @@ String _parentDir(String path) {
 }
 
 List<String> _pathSegments(String path) {
-  return normalizeFsPath(path).split('/').where((part) => part.isNotEmpty).toList();
+  return normalizeFsPath(
+    path,
+  ).split('/').where((part) => part.isNotEmpty).toList();
 }

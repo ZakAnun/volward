@@ -2,13 +2,21 @@ import 'scan_entry_record.dart';
 
 bool _isUncPath(String path) {
   if (!path.startsWith('//')) return false;
-  final parts = path.substring(2).split('/').where((p) => p.isNotEmpty).toList();
+  final parts = path
+      .substring(2)
+      .split('/')
+      .where((p) => p.isNotEmpty)
+      .toList();
   return parts.length >= 2;
 }
 
 String? _uncShareRoot(String path) {
   if (!_isUncPath(path)) return null;
-  final parts = path.substring(2).split('/').where((p) => p.isNotEmpty).toList();
+  final parts = path
+      .substring(2)
+      .split('/')
+      .where((p) => p.isNotEmpty)
+      .toList();
   return '//${parts[0]}/${parts[1]}';
 }
 
@@ -38,9 +46,7 @@ String normalizeFsPath(String path) {
 
 String joinFsPath(String base, String segment) {
   if (base == '/') return '/$segment';
-  if (_isWindowsDriveRoot(base) ||
-      _isUncPath(base) ||
-      base.endsWith('/')) {
+  if (_isWindowsDriveRoot(base) || _isUncPath(base) || base.endsWith('/')) {
     if (base.endsWith('/')) return '$base$segment';
     return '$base/$segment';
   }
@@ -67,7 +73,9 @@ String lastPathSegment(String path) {
   final idx = normalized.lastIndexOf('/');
   if (idx == -1) return normalized;
   if (idx == normalized.length - 1) {
-    return normalized.isEmpty ? normalized : normalized.substring(0, normalized.length - 1);
+    return normalized.isEmpty
+        ? normalized
+        : normalized.substring(0, normalized.length - 1);
   }
   return normalized.substring(idx + 1);
 }
@@ -76,7 +84,8 @@ bool isUnderFsRoot(String path, String rootPath) {
   final normalizedPath = normalizeFsPath(path);
   final normalizedRoot = normalizeFsPath(rootPath);
   if (normalizedRoot.isEmpty) return false;
-  final windowsStyle = _hasWindowsDrivePrefix(normalizedPath) ||
+  final windowsStyle =
+      _hasWindowsDrivePrefix(normalizedPath) ||
       _hasWindowsDrivePrefix(normalizedRoot) ||
       normalizedPath.startsWith('//') ||
       normalizedRoot.startsWith('//');

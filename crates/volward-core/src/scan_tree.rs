@@ -590,7 +590,10 @@ mod tests {
         assert_eq!(root.children.len(), 1);
         assert_eq!(root.children[0].path, "C:/Users/me/docs");
         assert_eq!(root.children[0].children[0].path, "C:/Users/me/docs/a.txt");
-        assert_eq!(relative_path("C:/Users/me", "c:/Users/me/docs/a.txt"), "docs/a.txt");
+        assert_eq!(
+            relative_path("C:/Users/me", "c:/Users/me/docs/a.txt"),
+            "docs/a.txt"
+        );
     }
 
     #[test]

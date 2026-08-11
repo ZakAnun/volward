@@ -38,7 +38,8 @@ abstract final class SnapshotCache {
       final home = environment['HOME'];
       if (home != null && home.isNotEmpty) {
         return Directory(
-            _joinPath(home, 'Library/Application Support/Volward'));
+          _joinPath(home, 'Library/Application Support/Volward'),
+        );
       }
     }
     if (isWindows) {
@@ -82,7 +83,8 @@ abstract final class SnapshotCache {
     required String affectedPrefix,
     required int updateVersion,
   }) {
-    final matchesPrefix = cachedPath == affectedPrefix ||
+    final matchesPrefix =
+        cachedPath == affectedPrefix ||
         cachedPath.startsWith('$affectedPrefix/');
     return matchesPrefix && cachedVersion <= updateVersion;
   }

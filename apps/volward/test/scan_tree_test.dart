@@ -227,10 +227,7 @@ void main() {
         rootPath: '/home/me',
       );
       expect(tree.fileCount, 1);
-      expect(
-        tree.children.any((child) => child.path.contains('me2')),
-        isFalse,
-      );
+      expect(tree.children.any((child) => child.path.contains('me2')), isFalse);
     });
   });
 
