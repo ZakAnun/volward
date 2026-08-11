@@ -24,10 +24,7 @@ int compareSemver(String a, String b) {
   return 0;
 }
 
-bool isRemoteNewer({
-  required String remoteTag,
-  required String localVersion,
-}) {
+bool isRemoteNewer({required String remoteTag, required String localVersion}) {
   final remote = normalizeReleaseTag(remoteTag);
   final local = normalizeReleaseTag(localVersion);
   if (remote == null || local == null) return false;

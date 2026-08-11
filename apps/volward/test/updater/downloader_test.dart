@@ -39,7 +39,9 @@ void main() {
     final client = MockClient((request) async {
       if (request.url.path.endsWith('.sha256')) {
         return http.Response(
-            '${List.filled(64, '0').join()}  package.zip\n', 200);
+          '${List.filled(64, '0').join()}  package.zip\n',
+          200,
+        );
       }
       return http.Response.bytes([1, 2, 3], 200);
     });
@@ -98,27 +100,30 @@ void main() {
     expect(reachable, isTrue);
   });
 
-  test('isDownloadReachable falls back to ranged GET when HEAD is rejected',
-      () async {
-    final client = MockClient((request) async {
-      if (request.method == 'HEAD') {
-        return http.Response('', 405);
-      }
-      expect(request.method, 'GET');
-      expect(request.headers['Range'], 'bytes=0-0');
-      return http.Response.bytes([1], 206);
-    });
+  test(
+    'isDownloadReachable falls back to ranged GET when HEAD is rejected',
+    () async {
+      final client = MockClient((request) async {
+        if (request.method == 'HEAD') {
+          return http.Response('', 405);
+        }
+        expect(request.method, 'GET');
+        expect(request.headers['Range'], 'bytes=0-0');
+        return http.Response.bytes([1], 206);
+      });
 
-    final reachable = await HttpDownloader(client: client).isDownloadReachable(
-      const ReleaseAsset(
-        name: 'package.zip',
-        downloadUrl: 'https://example.invalid/package.zip',
-        sizeBytes: 3,
-      ),
-    );
+      final reachable = await HttpDownloader(client: client)
+          .isDownloadReachable(
+            const ReleaseAsset(
+              name: 'package.zip',
+              downloadUrl: 'https://example.invalid/package.zip',
+              sizeBytes: 3,
+            ),
+          );
 
-    expect(reachable, isTrue);
-  });
+      expect(reachable, isTrue);
+    },
+  );
 
   test('isDownloadReachable returns false on 404', () async {
     final client = MockClient((request) async {
