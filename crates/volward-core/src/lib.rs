@@ -1,3 +1,4 @@
+pub mod os_knowledge;
 pub mod classify;
 pub mod delete;
 pub mod index;
@@ -10,6 +11,7 @@ pub mod scan_tree;
 pub mod snapshot_catalog;
 pub mod string_table;
 
+pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;
 pub use delete::DeleteOrchestrator;
 pub use index::{

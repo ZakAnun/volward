@@ -732,6 +732,11 @@ fn default_cache_dir_from_env(
     temp_dir.join("volward")
 }
 
+/// Public accessor for the Volward data directory (respects `VOLWARD_CACHE_DIR`).
+pub fn default_data_dir() -> std::path::PathBuf {
+    default_cache_dir()
+}
+
 fn default_cache_dir() -> PathBuf {
     default_cache_dir_from_env(
         cache_platform(),
