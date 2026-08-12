@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'ai/ai_settings_store.dart';
 import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
@@ -33,11 +34,83 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late bool _deletableOnly;
+  final _apiKeyController = TextEditingController();
+  AiMode _aiMode = AiMode.byok;
+  bool _hasByokKey = false;
+  bool _privacyAccepted = false;
 
   @override
   void initState() {
     super.initState();
     _deletableOnly = widget.deletableOnly;
+    _loadAiSettings();
+  }
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAiSettings() async {
+    try {
+      final store = AiSettingsStore.instance;
+      final mode = await store.getMode();
+      String? key;
+      try {
+        key = await store.getByokKey();
+      } catch (_) {
+        // Keychain / secure storage may be unavailable in widget tests.
+        key = null;
+      }
+      final privacy = await store.isPrivacyAccepted();
+      if (!mounted) return;
+      setState(() {
+        // Platform mode is not selectable yet — fall back to BYOK in UI.
+        _aiMode = mode == AiMode.platform ? AiMode.byok : mode;
+        _hasByokKey = key != null && key.isNotEmpty;
+        _privacyAccepted = privacy;
+        if (_hasByokKey) {
+          _apiKeyController.text = '••••••••••••••••';
+        }
+      });
+    } catch (_) {
+      // Keep defaults when settings file / keychain is unavailable.
+    }
+  }
+
+  Future<void> _saveApiKey() async {
+    final l10n = context.l10n;
+    final raw = _apiKeyController.text.trim();
+    if (raw.isEmpty || raw.startsWith('•')) return;
+    await AiSettingsStore.instance.setByokKey(raw);
+    await AiSettingsStore.instance.setMode(AiMode.byok);
+    if (!mounted) return;
+    setState(() {
+      _aiMode = AiMode.byok;
+      _hasByokKey = true;
+      _apiKeyController.text = '••••••••••••••••';
+    });
+    showTopToast(
+      context,
+      message: l10n.aiSettingsApiKeySaved,
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _clearApiKey() async {
+    final l10n = context.l10n;
+    await AiSettingsStore.instance.clearByokKey();
+    if (!mounted) return;
+    setState(() {
+      _hasByokKey = false;
+      _apiKeyController.clear();
+    });
+    showTopToast(
+      context,
+      message: l10n.aiSettingsApiKeyCleared,
+      type: ToastType.success,
+    );
   }
 
   @override
@@ -228,6 +301,139 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: AppleSpacing.lg),
+              _SectionHeader(title: l10n.aiSettingsTitle, tokens: v),
+              const SizedBox(height: AppleSpacing.xs),
+              _SettingsCard(
+                tokens: v,
+                child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            l10n.aiSettingsModeLabel,
+                            style: context.vwCaptionStrong,
+                          ),
+                          const SizedBox(height: AppleSpacing.xs),
+                          DropdownButtonFormField<AiMode>(
+                            initialValue: _aiMode,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              filled: true,
+                              fillColor: v.surfacePearl,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppleRadius.sm,
+                                ),
+                                borderSide: BorderSide(color: v.hairline),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppleRadius.sm,
+                                ),
+                                borderSide: BorderSide(color: v.hairline),
+                              ),
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: AiMode.byok,
+                                child: Text(l10n.aiSettingsByokLabel),
+                              ),
+                              DropdownMenuItem(
+                                value: AiMode.platform,
+                                enabled: false,
+                                child: Text(
+                                  l10n.aiSettingsPlatformLabel,
+                                  style: TextStyle(color: v.inkMuted48),
+                                ),
+                              ),
+                            ],
+                            onChanged: (mode) async {
+                              if (mode == null || mode == AiMode.platform) {
+                                return;
+                              }
+                              await AiSettingsStore.instance.setMode(mode);
+                              if (!mounted) return;
+                              setState(() => _aiMode = mode);
+                            },
+                          ),
+                          const Divider(height: AppleSpacing.lg),
+                          Text(
+                            l10n.aiSettingsByokLabel,
+                            style: context.vwCaptionStrong,
+                          ),
+                          const SizedBox(height: AppleSpacing.xs),
+                          TextField(
+                            controller: _apiKeyController,
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              hintText: l10n.aiSettingsApiKeyHint,
+                              isDense: true,
+                              filled: true,
+                              fillColor: v.surfacePearl,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppleRadius.sm,
+                                ),
+                                borderSide: BorderSide(color: v.hairline),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppleRadius.sm,
+                                ),
+                                borderSide: BorderSide(color: v.hairline),
+                              ),
+                            ),
+                            onTap: () {
+                              if (_hasByokKey &&
+                                  _apiKeyController.text.startsWith('•')) {
+                                _apiKeyController.clear();
+                              }
+                            },
+                          ),
+                          const SizedBox(height: AppleSpacing.sm),
+                          Wrap(
+                            spacing: AppleSpacing.sm,
+                            runSpacing: AppleSpacing.sm,
+                            children: [
+                              AppleButton(
+                                label: l10n.aiSettingsSaveKey,
+                                onPressed: _saveApiKey,
+                              ),
+                              AppleButton(
+                                label: l10n.aiSettingsClearKey,
+                                variant: AppleButtonVariant.pearl,
+                                onPressed:
+                                    _hasByokKey ||
+                                        _apiKeyController.text.isNotEmpty
+                                    ? _clearApiKey
+                                    : null,
+                              ),
+                            ],
+                          ),
+                          const Divider(height: AppleSpacing.lg),
+                          Text(
+                            l10n.aiPrivacyTitle,
+                            style: context.vwCaptionStrong,
+                          ),
+                          const SizedBox(height: AppleSpacing.xs),
+                          Text(
+                            l10n.aiPrivacyBody,
+                            style: context.vwFinePrint.copyWith(
+                              color: v.inkMuted48,
+                            ),
+                          ),
+                          if (_privacyAccepted) ...[
+                            const SizedBox(height: AppleSpacing.xs),
+                            Text(
+                              l10n.aiPrivacyAccept,
+                              style: context.vwFinePrint.copyWith(
+                                color: v.primary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
               ),
               const SizedBox(height: AppleSpacing.lg),
               _SectionHeader(title: l10n.settingsAboutSection, tokens: v),

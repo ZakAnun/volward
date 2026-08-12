@@ -5,14 +5,13 @@ import 'package:flutter/material.dart';
 import 'ai/ai_provider.dart';
 import 'ai/ai_settings_store.dart';
 import 'ai/byok_ai_provider.dart';
+import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_tokens.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
 
 /// AI-assisted disk cleanup: pre-check → analyze → review verdicts → delete.
-///
-/// Uses plain string literals for copy (Task 8 will swap to l10n).
 class AiAnalysisPage extends StatefulWidget {
   const AiAnalysisPage({super.key, required this.snapshotId});
 
@@ -162,24 +161,21 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
     final store = AiSettingsStore.instance;
     if (await store.isPrivacyAccepted()) return true;
     if (!mounted) return false;
+    final l10n = context.l10n;
     final accepted = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('AI analysis privacy'),
-        content: const Text(
-          'Only paths, sizes, and file counts are sent. '
-          'File contents are never uploaded. '
-          'In BYOK mode data goes directly to Anthropic.',
-        ),
+        title: Text(l10n.aiPrivacyTitle),
+        content: Text(l10n.aiPrivacyBody),
         actions: [
           AppleButton(
-            label: 'Cancel',
+            label: l10n.scanActionCancel,
             variant: AppleButtonVariant.pearl,
             onPressed: () => Navigator.pop(ctx, false),
           ),
           AppleButton(
-            label: 'I understand',
+            label: l10n.aiPrivacyAccept,
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -193,22 +189,22 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   Future<bool> _confirmOverwriteIfNeeded() async {
     if (!_hasExistingResult) return true;
     if (!mounted) return false;
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Replace previous analysis?'),
-        content: const Text(
-          '重新分析将覆盖上次结果\n'
-          'A previous AI result exists for this scan. Continuing will overwrite it.',
-        ),
+        title: Text(l10n.aiOverwriteTitle),
+        content: Text(l10n.aiOverwriteBody),
         actions: [
           AppleButton(
-            label: 'Cancel',
+            label: l10n.scanActionCancel,
             variant: AppleButtonVariant.pearl,
             onPressed: () => Navigator.pop(ctx, false),
           ),
           AppleButton(
-            label: 'Continue',
+            label: Localizations.localeOf(ctx).languageCode.startsWith('zh')
+                ? '继续'
+                : 'Continue',
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -331,12 +327,14 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: v.canvasParchment,
       appBar: AppBar(
-        title: const Text('AI Disk Analysis'),
+        title: Text(l10n.aiAnalysisTitle),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          tooltip: l10n.back,
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -363,6 +361,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   }
 
   Widget _buildPrecheck(VolwardTokens v) {
+    final l10n = context.l10n;
     return Column(
       children: [
         Expanded(
@@ -375,13 +374,15 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
             ),
             children: [
               Text(
-                '${_preClassified.length} items pre-identified as safe to remove',
+                l10n.aiPreCheckSafeTitle(_preClassified.length),
                 style: AppleTypography.tagline.copyWith(color: v.ink),
               ),
               const SizedBox(height: AppleSpacing.xs),
               Text(
-                '${_unknown.length} items will be sent for AI analysis '
-                '(~$_estimatedTokens tokens)',
+                l10n.aiPreCheckUnknownTitle(
+                  _unknown.length,
+                  _estimatedTokens,
+                ),
                 style: AppleTypography.body.copyWith(color: v.inkMuted80),
               ),
               if (_error != null) ...[
@@ -394,14 +395,14 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
               if (!_hasProvider) ...[
                 const SizedBox(height: AppleSpacing.sm),
                 Text(
-                  'No API Key — configure in Settings',
+                  l10n.aiNoApiKey,
                   style: AppleTypography.caption.copyWith(color: v.warning),
                 ),
               ],
               const SizedBox(height: AppleSpacing.lg),
               if (_preClassified.isNotEmpty) ...[
                 Text(
-                  'Local rules (Tier 2)',
+                  l10n.aiPreCheckSafeSelectable(_preClassified.length),
                   style: AppleTypography.captionStrong.copyWith(color: v.ink),
                 ),
                 const SizedBox(height: AppleSpacing.xs),
@@ -423,7 +424,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
               children: [
                 Expanded(
                   child: AppleButton(
-                    label: 'Cancel',
+                    label: l10n.scanActionCancel,
                     variant: AppleButtonVariant.pearl,
                     expanded: true,
                     onPressed: () => Navigator.of(context).maybePop(),
@@ -432,7 +433,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
                 const SizedBox(width: AppleSpacing.sm),
                 Expanded(
                   child: AppleButton(
-                    label: 'Start AI Analysis',
+                    label: l10n.aiStartAnalysis,
                     expanded: true,
                     onPressed: _hasProvider ? _startAnalysis : null,
                   ),
@@ -467,6 +468,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   }
 
   Widget _buildResults(VolwardTokens v) {
+    final l10n = context.l10n;
     final safe = _verdicts
         .where((x) => x.verdict == 'safe_to_remove')
         .toList();
@@ -487,30 +489,30 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
             ),
             children: [
               Text(
-                'AI analysis results',
+                l10n.aiAnalysisTitle,
                 style: AppleTypography.tagline.copyWith(color: v.ink),
               ),
               const SizedBox(height: AppleSpacing.lg),
               if (_preClassified.isNotEmpty) ...[
                 Text(
-                  'Local rules (Tier 2) — ${_preClassified.length}',
+                  l10n.aiPreCheckSafeSelectable(_preClassified.length),
                   style: AppleTypography.captionStrong.copyWith(color: v.ink),
                 ),
                 ..._preClassified.map(_preClassifiedTile),
                 const SizedBox(height: AppleSpacing.md),
               ],
               _verdictSection(
-                title: 'Safe to Remove (${safe.length})',
+                title: l10n.aiVerdictSafe(safe.length),
                 items: safe,
                 selectable: true,
               ),
               _verdictSection(
-                title: 'Review Needed (${review.length})',
+                title: l10n.aiVerdictReview(review.length),
                 items: review,
                 selectable: true,
               ),
               _verdictSection(
-                title: 'Keep (${keep.length})',
+                title: l10n.aiVerdictKeep(keep.length),
                 items: keep,
                 selectable: false,
               ),
@@ -528,7 +530,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
             ),
             child: AppleButton(
               label:
-                  'Delete ${_selected.length} Selected Items (${_fmt(_selectedBytes)})',
+                  '${l10n.aiDeleteSelected(_selected.length)} (${_fmt(_selectedBytes)})',
               expanded: true,
               onPressed: _selected.isEmpty ? null : _deleteSelected,
             ),

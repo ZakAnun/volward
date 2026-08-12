@@ -799,6 +799,162 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A newer Volward release is ready to install.'**
   String get updateNotesUnavailable;
+
+  /// No description provided for @aiAnalysisTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Disk Analysis'**
+  String get aiAnalysisTitle;
+
+  /// No description provided for @aiPreCheckSafeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items pre-identified as safe to remove'**
+  String aiPreCheckSafeTitle(int count);
+
+  /// No description provided for @aiPreCheckSafeSelectable.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items already marked safe by local rules'**
+  String aiPreCheckSafeSelectable(int count);
+
+  /// No description provided for @aiPreCheckUnknownTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items will be sent for AI analysis (~{tokens} tokens)'**
+  String aiPreCheckUnknownTitle(int count, int tokens);
+
+  /// No description provided for @aiStartAnalysis.
+  ///
+  /// In en, this message translates to:
+  /// **'Start AI Analysis'**
+  String get aiStartAnalysis;
+
+  /// No description provided for @aiNoApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'No API Key — configure in Settings'**
+  String get aiNoApiKey;
+
+  /// No description provided for @aiDeleteSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} Selected Items'**
+  String aiDeleteSelected(int count);
+
+  /// No description provided for @aiVerdictSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to Remove ({count})'**
+  String aiVerdictSafe(int count);
+
+  /// No description provided for @aiVerdictReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Needed ({count})'**
+  String aiVerdictReview(int count);
+
+  /// No description provided for @aiVerdictKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep ({count})'**
+  String aiVerdictKeep(int count);
+
+  /// No description provided for @aiSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Analysis'**
+  String get aiSettingsTitle;
+
+  /// No description provided for @aiSettingsModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Mode'**
+  String get aiSettingsModeLabel;
+
+  /// No description provided for @aiSettingsByokLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring Your Own Key (Anthropic)'**
+  String get aiSettingsByokLabel;
+
+  /// No description provided for @aiSettingsPlatformLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Volward Platform (coming soon)'**
+  String get aiSettingsPlatformLabel;
+
+  /// No description provided for @aiSettingsApiKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'sk-ant-...'**
+  String get aiSettingsApiKeyHint;
+
+  /// No description provided for @aiSettingsApiKeySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'API key saved'**
+  String get aiSettingsApiKeySaved;
+
+  /// No description provided for @aiSettingsApiKeyCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'API key cleared'**
+  String get aiSettingsApiKeyCleared;
+
+  /// No description provided for @aiSettingsSaveKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get aiSettingsSaveKey;
+
+  /// No description provided for @aiSettingsClearKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get aiSettingsClearKey;
+
+  /// No description provided for @aiAnalysisFab.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Analysis'**
+  String get aiAnalysisFab;
+
+  /// No description provided for @aiPrivacyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis privacy'**
+  String get aiPrivacyTitle;
+
+  /// No description provided for @aiPrivacyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Only paths, sizes, and file counts are sent. File contents are never uploaded. In BYOK mode data goes directly to your AI provider.'**
+  String get aiPrivacyBody;
+
+  /// No description provided for @aiPrivacyAccept.
+  ///
+  /// In en, this message translates to:
+  /// **'I understand'**
+  String get aiPrivacyAccept;
+
+  /// No description provided for @aiOverwriteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace previous analysis?'**
+  String get aiOverwriteTitle;
+
+  /// No description provided for @aiOverwriteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A previous AI result exists for this scan. Continuing will overwrite it.'**
+  String get aiOverwriteBody;
+
+  /// No description provided for @back.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get back;
 }
 
 class _AppLocalizationsDelegate

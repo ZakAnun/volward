@@ -437,4 +437,98 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get updateNotesUnavailable =>
       'A newer Volward release is ready to install.';
+
+  @override
+  String get aiAnalysisTitle => 'AI Disk Analysis';
+
+  @override
+  String aiPreCheckSafeTitle(int count) {
+    return '$count items pre-identified as safe to remove';
+  }
+
+  @override
+  String aiPreCheckSafeSelectable(int count) {
+    return '$count items already marked safe by local rules';
+  }
+
+  @override
+  String aiPreCheckUnknownTitle(int count, int tokens) {
+    return '$count items will be sent for AI analysis (~$tokens tokens)';
+  }
+
+  @override
+  String get aiStartAnalysis => 'Start AI Analysis';
+
+  @override
+  String get aiNoApiKey => 'No API Key — configure in Settings';
+
+  @override
+  String aiDeleteSelected(int count) {
+    return 'Delete $count Selected Items';
+  }
+
+  @override
+  String aiVerdictSafe(int count) {
+    return 'Safe to Remove ($count)';
+  }
+
+  @override
+  String aiVerdictReview(int count) {
+    return 'Review Needed ($count)';
+  }
+
+  @override
+  String aiVerdictKeep(int count) {
+    return 'Keep ($count)';
+  }
+
+  @override
+  String get aiSettingsTitle => 'AI Analysis';
+
+  @override
+  String get aiSettingsModeLabel => 'Mode';
+
+  @override
+  String get aiSettingsByokLabel => 'Bring Your Own Key (Anthropic)';
+
+  @override
+  String get aiSettingsPlatformLabel => 'Volward Platform (coming soon)';
+
+  @override
+  String get aiSettingsApiKeyHint => 'sk-ant-...';
+
+  @override
+  String get aiSettingsApiKeySaved => 'API key saved';
+
+  @override
+  String get aiSettingsApiKeyCleared => 'API key cleared';
+
+  @override
+  String get aiSettingsSaveKey => 'Save';
+
+  @override
+  String get aiSettingsClearKey => 'Clear';
+
+  @override
+  String get aiAnalysisFab => 'AI Analysis';
+
+  @override
+  String get aiPrivacyTitle => 'AI analysis privacy';
+
+  @override
+  String get aiPrivacyBody =>
+      'Only paths, sizes, and file counts are sent. File contents are never uploaded. In BYOK mode data goes directly to your AI provider.';
+
+  @override
+  String get aiPrivacyAccept => 'I understand';
+
+  @override
+  String get aiOverwriteTitle => 'Replace previous analysis?';
+
+  @override
+  String get aiOverwriteBody =>
+      'A previous AI result exists for this scan. Continuing will overwrite it.';
+
+  @override
+  String get back => 'Back';
 }

@@ -413,4 +413,97 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateNotesUnavailable => '有新的 Volward 版本可以安装。';
+
+  @override
+  String get aiAnalysisTitle => 'AI 磁盘分析';
+
+  @override
+  String aiPreCheckSafeTitle(int count) {
+    return '$count 项已预判为可安全移除';
+  }
+
+  @override
+  String aiPreCheckSafeSelectable(int count) {
+    return '$count 项已由本地规则标记为安全';
+  }
+
+  @override
+  String aiPreCheckUnknownTitle(int count, int tokens) {
+    return '$count 项将发送给 AI 分析（约 $tokens tokens）';
+  }
+
+  @override
+  String get aiStartAnalysis => '开始 AI 分析';
+
+  @override
+  String get aiNoApiKey => '未配置 API Key — 请在设置中配置';
+
+  @override
+  String aiDeleteSelected(int count) {
+    return '删除选中的 $count 项';
+  }
+
+  @override
+  String aiVerdictSafe(int count) {
+    return '可安全移除（$count）';
+  }
+
+  @override
+  String aiVerdictReview(int count) {
+    return '建议检查（$count）';
+  }
+
+  @override
+  String aiVerdictKeep(int count) {
+    return '保留（$count）';
+  }
+
+  @override
+  String get aiSettingsTitle => 'AI 分析';
+
+  @override
+  String get aiSettingsModeLabel => '模式';
+
+  @override
+  String get aiSettingsByokLabel => '自带密钥（Anthropic）';
+
+  @override
+  String get aiSettingsPlatformLabel => 'Volward 平台（即将推出）';
+
+  @override
+  String get aiSettingsApiKeyHint => 'sk-ant-...';
+
+  @override
+  String get aiSettingsApiKeySaved => 'API 密钥已保存';
+
+  @override
+  String get aiSettingsApiKeyCleared => 'API 密钥已清除';
+
+  @override
+  String get aiSettingsSaveKey => '保存';
+
+  @override
+  String get aiSettingsClearKey => '清除';
+
+  @override
+  String get aiAnalysisFab => 'AI 分析';
+
+  @override
+  String get aiPrivacyTitle => 'AI 分析隐私说明';
+
+  @override
+  String get aiPrivacyBody =>
+      '仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 模式下数据直接发送至你的 AI 服务商。';
+
+  @override
+  String get aiPrivacyAccept => '我已了解';
+
+  @override
+  String get aiOverwriteTitle => '替换之前的分析结果？';
+
+  @override
+  String get aiOverwriteBody => '此扫描已有 AI 分析结果。继续将覆盖旧结果。';
+
+  @override
+  String get back => '返回';
 }

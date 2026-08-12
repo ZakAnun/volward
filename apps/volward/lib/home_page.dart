@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import 'ai_analysis_page.dart';
 import 'l10n/l10n.dart';
 import 'macos_settings.dart';
 import 'scan_entry_record.dart';
@@ -1403,25 +1404,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           listenable: _columnNavTick,
                           builder: (context, _) {
                             final focus = scanColumnFocusNode(_columnChain);
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                            final snapId = _s.lastSnapshot?.snapshotId;
+                            final showAi =
+                                _s.hasAiSessionApi &&
+                                hasResults &&
+                                snapId != null &&
+                                snapId.isNotEmpty &&
+                                !snapId.startsWith('preview-');
+                            return Stack(
                               children: [
-                                Expanded(
-                                  child: _padExpanded(
-                                    _buildResultsBrowser(
-                                      context,
-                                      displayTree,
-                                      matchingCount,
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(
+                                      child: _padExpanded(
+                                        _buildResultsBrowser(
+                                          context,
+                                          displayTree,
+                                          matchingCount,
+                                        ),
+                                        padding: const EdgeInsets.fromLTRB(
+                                          AppleSpacing.lg,
+                                          0,
+                                          AppleSpacing.lg,
+                                          AppleSpacing.xxs,
+                                        ),
+                                      ),
                                     ),
-                                    padding: const EdgeInsets.fromLTRB(
-                                      AppleSpacing.lg,
-                                      0,
-                                      AppleSpacing.lg,
-                                      AppleSpacing.xxs,
+                                    _buildItemPreview(context, focus),
+                                  ],
+                                ),
+                                if (showAi)
+                                  Positioned(
+                                    top: AppleSpacing.xxs,
+                                    right: AppleSpacing.lg,
+                                    child: AppleButton(
+                                      label: context.l10n.aiAnalysisFab,
+                                      icon: Icons.auto_awesome_outlined,
+                                      variant: AppleButtonVariant.pearl,
+                                      onPressed: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => AiAnalysisPage(
+                                              snapshotId: snapId,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
-                                ),
-                                _buildItemPreview(context, focus),
                               ],
                             );
                           },

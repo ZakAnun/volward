@@ -268,5 +268,83 @@
       "notes": {}
     }
   },
-  "updateNotesUnavailable": "有新的 Volward 版本可以安装。"
+  "updateNotesUnavailable": "有新的 Volward 版本可以安装。",
+  "aiAnalysisTitle": "AI 磁盘分析",
+  "aiPreCheckSafeTitle": "{count} 项已预判为可安全移除",
+  "@aiPreCheckSafeTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPreCheckSafeSelectable": "{count} 项已由本地规则标记为安全",
+  "@aiPreCheckSafeSelectable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPreCheckUnknownTitle": "{count} 项将发送给 AI 分析（约 {tokens} tokens）",
+  "@aiPreCheckUnknownTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "int"
+      }
+    }
+  },
+  "aiStartAnalysis": "开始 AI 分析",
+  "aiNoApiKey": "未配置 API Key — 请在设置中配置",
+  "aiDeleteSelected": "删除选中的 {count} 项",
+  "@aiDeleteSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictSafe": "可安全移除（{count}）",
+  "@aiVerdictSafe": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictReview": "建议检查（{count}）",
+  "@aiVerdictReview": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictKeep": "保留（{count}）",
+  "@aiVerdictKeep": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSettingsTitle": "AI 分析",
+  "aiSettingsModeLabel": "模式",
+  "aiSettingsByokLabel": "自带密钥（Anthropic）",
+  "aiSettingsPlatformLabel": "Volward 平台（即将推出）",
+  "aiSettingsApiKeyHint": "sk-ant-...",
+  "aiSettingsApiKeySaved": "API 密钥已保存",
+  "aiSettingsApiKeyCleared": "API 密钥已清除",
+  "aiSettingsSaveKey": "保存",
+  "aiSettingsClearKey": "清除",
+  "aiAnalysisFab": "AI 分析",
+  "aiPrivacyTitle": "AI 分析隐私说明",
+  "aiPrivacyBody": "仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 模式下数据直接发送至你的 AI 服务商。",
+  "aiPrivacyAccept": "我已了解",
+  "aiOverwriteTitle": "替换之前的分析结果？",
+  "aiOverwriteBody": "此扫描已有 AI 分析结果。继续将覆盖旧结果。",
+  "back": "返回"
 }

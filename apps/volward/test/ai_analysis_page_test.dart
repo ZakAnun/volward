@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai_analysis_page.dart';
+import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
 
 void main() {
@@ -63,6 +64,9 @@ void main() {
   testWidgets('AiAnalysisPage smoke construct', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
         theme: buildVolwardTheme(brightness: Brightness.light),
         home: const AiAnalysisPage(snapshotId: 'test-snap-id'),
       ),
