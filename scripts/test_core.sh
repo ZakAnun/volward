@@ -11,6 +11,10 @@ run_rust() {
   cargo test -p volward-core full_scan_indexes_every_file_without_cap
   cargo test -p volward-core index_scan_builds_catalog_without_snapshot_tree
   cargo test -p volward-core delete_trashes_deletable_paths
+  cargo test -p volward-core node_modules_matches_all_platforms
+  cargo test -p volward-core tier2_classifies_node_modules_when_tier1_misses
+  cargo test -p volward-core aggregate_folds_large_directory
+  cargo test -p volward-core save_and_load_round_trip
 }
 
 run_flutter() {

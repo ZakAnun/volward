@@ -699,6 +699,23 @@ impl SnapshotIndex {
             })
     }
 
+    /// Paths that already have a Tier-1/Tier-2 `StorageEntry`.
+    pub fn classified_paths(&self) -> HashSet<String> {
+        self.entry_id_by_path
+            .keys()
+            .map(|path_id| self.table.resolve(*path_id).to_string())
+            .collect()
+    }
+
+    /// Unclassified files with sizes (index `file_size_by_path`).
+    pub fn unclassified_files(&self) -> Vec<(String, u64)> {
+        self.file_size_by_path
+            .iter()
+            .filter(|(path_id, _)| !self.entry_id_by_path.contains_key(path_id))
+            .map(|(path_id, size)| (self.table.resolve(*path_id).to_string(), *size))
+            .collect()
+    }
+
     // ------------------------------------------------------------------
     // Query
     // ------------------------------------------------------------------
