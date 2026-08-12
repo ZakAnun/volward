@@ -505,5 +505,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiOverwriteBody => '此扫描已有 AI 分析结果。继续将覆盖旧结果。';
 
   @override
+  String get aiActionContinue => '继续';
+
+  @override
+  String get aiAnalyzing => 'AI 分析中…';
+
+  @override
+  String get aiActionRetry => '重试';
+
+  @override
+  String get aiErrorUnknown => '未知错误';
+
+  @override
+  String get aiErrorNativeUnavailable => '无法加载 AI 候选项（原生接口不可用）。';
+
+  @override
+  String get aiErrorInvalidPayload => '候选项数据格式无效。';
+
+  @override
+  String aiTruncatedNotice(int shown, int total) {
+    return '共 $total 项，已显示其中最大的 $shown 项，其余已跳过以控制请求体积。';
+  }
+
+  @override
   String get back => '返回';
 }

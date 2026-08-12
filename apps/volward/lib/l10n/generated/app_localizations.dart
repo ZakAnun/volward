@@ -950,6 +950,48 @@ abstract class AppLocalizations {
   /// **'A previous AI result exists for this scan. Continuing will overwrite it.'**
   String get aiOverwriteBody;
 
+  /// No description provided for @aiActionContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get aiActionContinue;
+
+  /// No description provided for @aiAnalyzing.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing with AI…'**
+  String get aiAnalyzing;
+
+  /// No description provided for @aiActionRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get aiActionRetry;
+
+  /// No description provided for @aiErrorUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown error'**
+  String get aiErrorUnknown;
+
+  /// No description provided for @aiErrorNativeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load AI candidates (native API unavailable).'**
+  String get aiErrorNativeUnavailable;
+
+  /// No description provided for @aiErrorInvalidPayload.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid candidates payload.'**
+  String get aiErrorInvalidPayload;
+
+  /// No description provided for @aiTruncatedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
+  String aiTruncatedNotice(int shown, int total);
+
   /// No description provided for @back.
   ///
   /// In en, this message translates to:

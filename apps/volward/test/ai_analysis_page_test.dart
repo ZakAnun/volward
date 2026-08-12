@@ -47,6 +47,29 @@ void main() {
       expect(c.toJson()['extension'], '.xyz');
     });
 
+    test('AiCandidate carries member_paths for aggregates', () {
+      final c = AiCandidate.fromJson({
+        'path': '/Users/x/big_dir',
+        'size_bytes': 2500,
+        'is_dir': true,
+        'child_count': 25,
+        'member_paths': ['/Users/x/big_dir/a.dat', '/Users/x/big_dir/b.dat'],
+      });
+      expect(c.memberPaths, hasLength(2));
+      expect(c.memberPaths.first, '/Users/x/big_dir/a.dat');
+      expect(c.toJson()['member_paths'], c.memberPaths);
+    });
+
+    test('AiCandidate without member_paths defaults to empty', () {
+      final c = AiCandidate.fromJson({
+        'path': '/tmp/foo.xyz',
+        'size_bytes': 12,
+        'is_dir': false,
+      });
+      expect(c.memberPaths, isEmpty);
+      expect(c.toJson().containsKey('member_paths'), isFalse);
+    });
+
     test('AiVerdict fromJson', () {
       final v = AiVerdict.fromJson({
         'path': '/Users/x/weird.cache',

@@ -31,10 +31,16 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   List<AiCandidate> _unknown = [];
   int _estimatedTokens = 0;
   bool _hasExistingResult = false;
+  bool _truncated = false;
+  int _candidatesBeforeCap = 0;
 
   List<AiVerdict> _verdicts = [];
   final Set<String> _selected = {};
   final Map<String, int> _sizeByPath = {};
+
+  /// Aggregate candidate path → the files it stands for. Deleting an aggregate
+  /// must target these instead of the shared parent directory.
+  final Map<String, List<String>> _memberPathsByPath = {};
 
   bool _hasProvider = false;
   bool _analyzing = false;
@@ -50,13 +56,20 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       _phase = _Phase.loading;
       _error = null;
       _sizeByPath.clear();
+      _memberPathsByPath.clear();
       _selected.clear();
       _preClassified = [];
       _unknown = [];
       _verdicts = [];
+      _truncated = false;
+      _candidatesBeforeCap = 0;
     });
     try {
       final provider = await AiSettingsStore.instance.resolveProvider();
+      if (!mounted) return;
+      // Read after the first await: initState calls this synchronously, and
+      // inherited widgets are not available until initState returns.
+      final l10n = context.l10n;
       final raw = VolwardSession.instance?.buildAiCandidatesJson(
         widget.snapshotId,
       );
@@ -64,7 +77,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         setState(() {
           _hasProvider = provider != null;
           _phase = _Phase.error;
-          _error = 'Failed to load AI candidates (native API unavailable).';
+          _error = l10n.aiErrorNativeUnavailable;
         });
         return;
       }
@@ -82,7 +95,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         setState(() {
           _hasProvider = provider != null;
           _phase = _Phase.error;
-          _error = 'Invalid candidates payload.';
+          _error = l10n.aiErrorInvalidPayload;
         });
         return;
       }
@@ -111,6 +124,9 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
             final c = AiCandidate.fromJson(Map<String, dynamic>.from(e));
             unknown.add(c);
             _sizeByPath[c.path] = c.sizeBytes;
+            if (c.memberPaths.isNotEmpty) {
+              _memberPathsByPath[c.path] = c.memberPaths;
+            }
           }
         }
       }
@@ -129,6 +145,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         _unknown = unknown;
         _estimatedTokens = _asInt(map['estimated_input_tokens']);
         _hasExistingResult = map['has_existing_result'] == true;
+        _truncated = map['truncated'] == true;
+        _candidatesBeforeCap = _asInt(map['candidates_total_before_cap']);
         _selected
           ..clear()
           ..addAll(selected);
@@ -202,9 +220,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
             onPressed: () => Navigator.pop(ctx, false),
           ),
           AppleButton(
-            label: Localizations.localeOf(ctx).languageCode.startsWith('zh')
-                ? '继续'
-                : 'Continue',
+            label: l10n.aiActionContinue,
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -297,13 +313,85 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
     }
   }
 
+  /// Expands the selection into real delete targets: an aggregate candidate
+  /// stands for the files folded into it, never for its parent directory,
+  /// which may also hold data the user never selected.
+  List<String> _deleteTargets() {
+    final targets = <String>{};
+    for (final path in _selected) {
+      final members = _memberPathsByPath[path];
+      if (members != null && members.isNotEmpty) {
+        targets.addAll(members);
+      } else {
+        targets.add(path);
+      }
+    }
+    return targets.toList();
+  }
+
   Future<void> _deleteSelected() async {
     final session = VolwardSession.instance;
     if (session == null) return;
-    final paths = _selected.toList();
-    if (paths.isEmpty) return;
-    await session.deleteEntries(paths, rescanAfterDelete: true);
-    if (mounted) Navigator.pop(context, true);
+    final targets = _deleteTargets();
+    if (targets.isEmpty) return;
+
+    final l10n = context.l10n;
+    final Map<String, dynamic> preview;
+    try {
+      preview = await session.deleteEntries(targets, dryRun: true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = l10n.deleteFailed(e.toString()));
+      return;
+    }
+    if (!mounted) return;
+    final count = (preview['deleted_count'] as num?)?.toInt() ?? targets.length;
+    final freed = (preview['freed_bytes'] as num?)?.toInt() ?? _selectedBytes;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.deleteConfirmTitle),
+        content: Text(l10n.deleteConfirmMessage(count, _fmt(freed))),
+        actions: [
+          AppleButton(
+            label: l10n.scanActionCancel,
+            variant: AppleButtonVariant.pearl,
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          AppleButton(
+            label: l10n.deleteActionDelete,
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      final report = await session.deleteEntries(
+        targets,
+        rescanAfterDelete: true,
+      );
+      if (!mounted) return;
+      final error = report['error'];
+      if (error != null) {
+        setState(() => _error = l10n.deleteFailed(error.toString()));
+        return;
+      }
+      final failed = report['failed_paths'];
+      final failedCount = failed is List ? failed.length : 0;
+      final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
+      if (failedCount > 0) {
+        setState(() {
+          _error = l10n.deleteSuccessWithFailures(failedCount, _fmt(freedAfter));
+        });
+        return;
+      }
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = l10n.deleteFailed(e.toString()));
+    }
   }
 
   void _toggle(String path, bool? value) {
@@ -341,16 +429,17 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       body: switch (_phase) {
         _Phase.loading => const Center(child: CircularProgressIndicator()),
         _Phase.error => _ErrorBody(
-          message: _error ?? 'Unknown error',
+          message: _error ?? l10n.aiErrorUnknown,
+          retryLabel: l10n.aiActionRetry,
           onRetry: _bootstrap,
         ),
-        _Phase.analyzing => const Center(
+        _Phase.analyzing => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: AppleSpacing.md),
-              Text('Analyzing with AI…'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: AppleSpacing.md),
+              Text(l10n.aiAnalyzing),
             ],
           ),
         ),
@@ -385,6 +474,13 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
                 ),
                 style: AppleTypography.body.copyWith(color: v.inkMuted80),
               ),
+              if (_truncated) ...[
+                const SizedBox(height: AppleSpacing.xs),
+                Text(
+                  l10n.aiTruncatedNotice(_unknown.length, _candidatesBeforeCap),
+                  style: AppleTypography.caption.copyWith(color: v.warning),
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: AppleSpacing.sm),
                 Text(
@@ -492,6 +588,13 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
                 l10n.aiAnalysisTitle,
                 style: AppleTypography.tagline.copyWith(color: v.ink),
               ),
+              if (_error != null) ...[
+                const SizedBox(height: AppleSpacing.sm),
+                Text(
+                  _error!,
+                  style: AppleTypography.caption.copyWith(color: v.danger),
+                ),
+              ],
               const SizedBox(height: AppleSpacing.lg),
               if (_preClassified.isNotEmpty) ...[
                 Text(
@@ -591,9 +694,14 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
 }
 
 class _ErrorBody extends StatelessWidget {
-  const _ErrorBody({required this.message, required this.onRetry});
+  const _ErrorBody({
+    required this.message,
+    required this.retryLabel,
+    required this.onRetry,
+  });
 
   final String message;
+  final String retryLabel;
   final VoidCallback onRetry;
 
   @override
@@ -611,7 +719,7 @@ class _ErrorBody extends StatelessWidget {
               style: AppleTypography.body.copyWith(color: v.danger),
             ),
             const SizedBox(height: AppleSpacing.md),
-            AppleButton(label: 'Retry', onPressed: onRetry),
+            AppleButton(label: retryLabel, onPressed: onRetry),
           ],
         ),
       ),

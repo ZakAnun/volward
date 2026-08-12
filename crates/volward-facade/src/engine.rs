@@ -8,7 +8,7 @@ use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{
-    DeleteReport, PlatformCapabilities, ScanProgress, ScanTreeNode, StorageSnapshot,
+    DeleteReport, EntryCategory, PlatformCapabilities, ScanProgress, ScanTreeNode, StorageSnapshot,
     TrashEmptyReport,
 };
 use volward_core::rules::DesktopRules;
@@ -688,7 +688,10 @@ impl VolwardEngine {
     /// (tests / legacy).
     pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
         use std::collections::HashSet;
-        use volward_core::{AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase};
+        use volward_core::{
+            AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase, PreClassifiedEntry,
+            DEFAULT_CANDIDATE_CAP,
+        };
 
         let kb = OsKnowledgeBase::for_current_platform();
         let has_existing_result = AiAnalysisResult::exists(snapshot_id);
@@ -704,8 +707,25 @@ impl VolwardEngine {
                 }
                 let classified = index.classified_paths();
                 let files = index.unclassified_files();
-                let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb)
+                let mut builder =
+                    AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
+                // Tier-2 build artifacts are already classified, so the walk above
+                // skips them; surface them so the pre-check has something to offer
+                // before any model call.
+                for entry in index.entries_with_category("BuildArtifact") {
+                    builder.push_pre_classified(PreClassifiedEntry {
+                        is_dir: index.is_directory(&entry.path),
+                        path: entry.path,
+                        size_bytes: entry.size_bytes,
+                        category: EntryCategory::BuildArtifact,
+                        confidence: "high".to_string(),
+                        reason: "Classified as build artifact by local rules".to_string(),
+                        deletable: entry.deletable,
+                    });
+                }
+                let set = builder
                     .aggregate_by_dir(20)
+                    .cap_top_n(DEFAULT_CANDIDATE_CAP)
                     .build();
                 return match serde_json::to_string(&serde_json::json!({
                     "snapshot_id": snapshot_id,
@@ -713,6 +733,8 @@ impl VolwardEngine {
                     "unknown_candidates": set.candidates,
                     "estimated_input_tokens": set.estimated_input_tokens,
                     "total_raw_count": set.total_raw_count,
+                    "candidates_total_before_cap": set.candidates_total_before_cap,
+                    "truncated": set.truncated,
                     "has_existing_result": has_existing_result,
                 })) {
                     Ok(s) => s,
@@ -741,6 +763,7 @@ impl VolwardEngine {
             .collect();
         let set = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb)
             .aggregate_by_dir(20)
+            .cap_top_n(DEFAULT_CANDIDATE_CAP)
             .build();
 
         match serde_json::to_string(&serde_json::json!({
@@ -749,6 +772,8 @@ impl VolwardEngine {
             "unknown_candidates": set.candidates,
             "estimated_input_tokens": set.estimated_input_tokens,
             "total_raw_count": set.total_raw_count,
+            "candidates_total_before_cap": set.candidates_total_before_cap,
+            "truncated": set.truncated,
             "has_existing_result": has_existing_result,
         })) {
             Ok(s) => s,
@@ -944,6 +969,64 @@ mod tests {
             stats: ScanStats::default(),
             warnings: vec![],
         }
+    }
+
+    #[test]
+    fn build_ai_candidates_json_caps_aggregates_and_lists_build_artifacts() {
+        let engine = VolwardEngine::new();
+        let mut snapshot = minimal_snapshot();
+        snapshot.entries.push(StorageEntry {
+            id: "e-node".to_string(),
+            display_name: "node_modules".to_string(),
+            path_or_uri: "/Users/x/app/node_modules".to_string(),
+            size_bytes: 4096,
+            category: EntryCategory::BuildArtifact,
+            risk_level: RiskLevel::Low,
+            source_type: SourceType::Directory,
+            deletable: true,
+            reason: "build artifact".to_string(),
+        });
+        // 25 unclassified siblings fold into one aggregate candidate.
+        let children: Vec<ScanTreeNode> = (0..25)
+            .map(|i| ScanTreeNode {
+                name: format!("blob_{i}.dat"),
+                path: format!("/Users/x/scratch/blob_{i}.dat"),
+                is_dir: false,
+                size_bytes: 100,
+                entry_id: None,
+                children: vec![],
+            })
+            .collect();
+        snapshot.tree.children.push(ScanTreeNode {
+            name: "scratch".to_string(),
+            path: "/Users/x/scratch".to_string(),
+            is_dir: true,
+            size_bytes: 2500,
+            entry_id: None,
+            children,
+        });
+        engine.set_last_snapshot(snapshot);
+
+        let json = engine.build_ai_candidates_json("test-snap");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json: {json}");
+        let candidates = parsed["unknown_candidates"].as_array().expect("candidates");
+        assert_eq!(candidates.len(), 1, "{json}");
+        assert_eq!(candidates[0]["path"], "/Users/x/scratch");
+        assert_eq!(
+            candidates[0]["member_paths"].as_array().map(Vec::len),
+            Some(25),
+            "{json}"
+        );
+        assert_eq!(parsed["truncated"], false);
+        assert_eq!(parsed["total_raw_count"], 25);
+        assert_eq!(parsed["candidates_total_before_cap"], 1);
+
+        let pre = parsed["pre_classified"].as_array().expect("pre_classified");
+        assert!(
+            pre.iter()
+                .any(|e| e["path"] == "/Users/x/app/node_modules" && e["confidence"] == "high"),
+            "{json}"
+        );
     }
 
     #[test]

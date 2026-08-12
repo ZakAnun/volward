@@ -346,5 +346,22 @@
   "aiPrivacyAccept": "I understand",
   "aiOverwriteTitle": "Replace previous analysis?",
   "aiOverwriteBody": "A previous AI result exists for this scan. Continuing will overwrite it.",
+  "aiActionContinue": "Continue",
+  "aiAnalyzing": "Analyzing with AI…",
+  "aiActionRetry": "Retry",
+  "aiErrorUnknown": "Unknown error",
+  "aiErrorNativeUnavailable": "Failed to load AI candidates (native API unavailable).",
+  "aiErrorInvalidPayload": "Invalid candidates payload.",
+  "aiTruncatedNotice": "Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.",
+  "@aiTruncatedNotice": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "back": "Back"
 }

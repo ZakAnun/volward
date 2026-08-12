@@ -3,7 +3,10 @@ import 'package:http/http.dart' as http;
 import 'ai_provider.dart';
 
 const _kDefaultModel = 'claude-haiku-4-5-20251001';
-const _kMaxBatchSize = 150;
+// One verdict costs roughly 60–120 output tokens, so 40 paths per request
+// stays well inside `_kMaxOutputTokens` even for verbose reasons.
+const _kMaxBatchSize = 40;
+const _kMaxOutputTokens = 8192;
 const _kSystemPrompt = '''
 You are a disk cleanup assistant. Given a list of file/directory paths with sizes,
 classify each as one of: safe_to_remove | review_needed | keep.
@@ -45,7 +48,7 @@ class ByokAiProvider implements AiProvider {
 
     final body = jsonEncode({
       'model': model,
-      'max_tokens': 2048,
+      'max_tokens': _kMaxOutputTokens,
       'system': _kSystemPrompt,
       'messages': [
         {'role': 'user', 'content': userContent},
@@ -74,26 +77,36 @@ class ByokAiProvider implements AiProvider {
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final text = (decoded['content'] as List).first['text'] as String;
+      if (decoded['stop_reason'] == 'max_tokens') {
+        // Truncated JSON would silently drop verdicts; flag the whole batch
+        // for manual review instead.
+        return _unparsedBatch(batch, 'AI response was truncated');
+      }
       try {
         final list = jsonDecode(text) as List;
         return list
             .map((e) => AiVerdict.fromJson(e as Map<String, dynamic>))
             .toList();
       } catch (_) {
-        return batch
-            .map(
-              (c) => AiVerdict(
-                path: c.path,
-                verdict: 'review_needed',
-                confidence: 'low',
-                reason: 'AI response could not be parsed',
-              ),
-            )
-            .toList();
+        return _unparsedBatch(batch, 'AI response could not be parsed');
       }
     }
     throw Exception('rate_limited_after_retries');
   }
+
+  static List<AiVerdict> _unparsedBatch(
+    List<AiCandidate> batch,
+    String reason,
+  ) => batch
+      .map(
+        (c) => AiVerdict(
+          path: c.path,
+          verdict: 'review_needed',
+          confidence: 'low',
+          reason: reason,
+        ),
+      )
+      .toList();
 
   static String _humanSize(int bytes) {
     if (bytes < 1024) return '${bytes}B';

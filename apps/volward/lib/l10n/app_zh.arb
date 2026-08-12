@@ -346,5 +346,22 @@
   "aiPrivacyAccept": "我已了解",
   "aiOverwriteTitle": "替换之前的分析结果？",
   "aiOverwriteBody": "此扫描已有 AI 分析结果。继续将覆盖旧结果。",
+  "aiActionContinue": "继续",
+  "aiAnalyzing": "AI 分析中…",
+  "aiActionRetry": "重试",
+  "aiErrorUnknown": "未知错误",
+  "aiErrorNativeUnavailable": "无法加载 AI 候选项（原生接口不可用）。",
+  "aiErrorInvalidPayload": "候选项数据格式无效。",
+  "aiTruncatedNotice": "共 {total} 项，已显示其中最大的 {shown} 项，其余已跳过以控制请求体积。",
+  "@aiTruncatedNotice": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "back": "返回"
 }

@@ -14,6 +14,9 @@ run_rust() {
   cargo test -p volward-core node_modules_matches_all_platforms
   cargo test -p volward-core tier2_classifies_node_modules_when_tier1_misses
   cargo test -p volward-core aggregate_folds_large_directory
+  cargo test -p volward-core from_unclassified_files_aggregate_folds_siblings
+  cargo test -p volward-core cap_top_n_keeps_largest_and_flags_truncation
+  cargo test -p volward-core every_macos_yaml_rule_compiles
   cargo test -p volward-core save_and_load_round_trip
 }
 

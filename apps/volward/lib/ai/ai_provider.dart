@@ -23,26 +23,40 @@ class AiCandidate {
   final bool isDir;
   final int? childCount;
   final String? extension;
+
+  /// Files folded into this candidate by the native aggregator. When non-empty,
+  /// `path` is only the shared parent directory and must never be deleted —
+  /// delete these member files instead.
+  final List<String> memberPaths;
+
   const AiCandidate({
     required this.path,
     required this.sizeBytes,
     required this.isDir,
     this.childCount,
     this.extension,
+    this.memberPaths = const [],
   });
-  factory AiCandidate.fromJson(Map<String, dynamic> j) => AiCandidate(
-    path: j['path'] as String,
-    sizeBytes: j['size_bytes'] as int,
-    isDir: j['is_dir'] as bool? ?? false,
-    childCount: j['child_count'] as int?,
-    extension: j['extension'] as String?,
-  );
+  factory AiCandidate.fromJson(Map<String, dynamic> j) {
+    final raw = j['member_paths'];
+    return AiCandidate(
+      path: j['path'] as String,
+      sizeBytes: j['size_bytes'] as int,
+      isDir: j['is_dir'] as bool? ?? false,
+      childCount: j['child_count'] as int?,
+      extension: j['extension'] as String?,
+      memberPaths: raw is List
+          ? raw.whereType<String>().toList(growable: false)
+          : const [],
+    );
+  }
   Map<String, dynamic> toJson() => {
     'path': path,
     'size_bytes': sizeBytes,
     'is_dir': isDir,
     if (childCount != null) 'child_count': childCount,
     if (extension != null) 'extension': extension,
+    if (memberPaths.isNotEmpty) 'member_paths': memberPaths,
   };
 }
 

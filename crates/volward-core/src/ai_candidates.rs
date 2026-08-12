@@ -3,6 +3,9 @@ use serde::Serialize;
 use crate::model::{EntryCategory, ScanTreeNode};
 use crate::os_knowledge::{Confidence, OsKnowledgeBase};
 
+/// Default maximum number of candidates sent to the model / UI.
+pub const DEFAULT_CANDIDATE_CAP: usize = 150;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AiCandidate {
     pub path: String,
@@ -10,6 +13,12 @@ pub struct AiCandidate {
     pub is_dir: bool,
     pub child_count: Option<usize>,
     pub extension: Option<String>,
+    /// Files folded into this candidate by `aggregate_by_dir`. Empty for
+    /// real file candidates. Deleting an aggregate MUST target these paths
+    /// instead of `path`, which is only the common parent directory and may
+    /// hold unrelated (classified or user) data.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub member_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,23 +36,47 @@ pub struct AiCandidateSet {
     pub pre_classified: Vec<PreClassifiedEntry>,
     pub candidates: Vec<AiCandidate>,
     pub estimated_input_tokens: usize,
+    /// Unclassified files discovered *before* `aggregate_by_dir` folded
+    /// siblings and before `cap_top_n` truncated the list.
     pub total_raw_count: usize,
+    /// Candidate count after aggregation but before `cap_top_n`.
+    pub candidates_total_before_cap: usize,
+    /// True when `cap_top_n` dropped candidates, so the UI can say so.
+    pub truncated: bool,
 }
 
 pub struct AiCandidateBuilder {
     pre_classified: Vec<PreClassifiedEntry>,
     raw_unknown: Vec<AiCandidate>,
+    raw_file_count: usize,
+    total_before_cap: Option<usize>,
 }
 
 impl AiCandidateBuilder {
+    fn empty() -> Self {
+        Self {
+            pre_classified: vec![],
+            raw_unknown: vec![],
+            raw_file_count: 0,
+            total_before_cap: None,
+        }
+    }
+
     pub fn from_tree(
         tree: &ScanTreeNode,
         classified: &HashSet<String>,
         kb: &OsKnowledgeBase,
     ) -> Self {
-        let mut b = Self { pre_classified: vec![], raw_unknown: vec![] };
+        let mut b = Self::empty();
         b.walk(tree, classified, kb);
+        b.raw_file_count = b.raw_unknown.len();
         b
+    }
+
+    /// Adds an already-classified entry (e.g. a Tier-2 index hit) so the
+    /// pre-check UI can offer it without another AI round-trip.
+    pub fn push_pre_classified(&mut self, entry: PreClassifiedEntry) {
+        self.pre_classified.push(entry);
     }
 
     fn walk(&mut self, node: &ScanTreeNode, classified: &HashSet<String>, kb: &OsKnowledgeBase) {
@@ -81,6 +114,7 @@ impl AiCandidateBuilder {
                 is_dir: false,
                 child_count: None,
                 extension: ext,
+                member_paths: vec![],
             });
         }
     }
@@ -103,12 +137,15 @@ impl AiCandidateBuilder {
         for (parent, mut children) in by_parent {
             if children.len() >= threshold {
                 let total_size: u64 = children.iter().map(|c| c.size_bytes).sum();
+                let member_paths: Vec<String> =
+                    children.iter().map(|c| c.path.clone()).collect();
                 self.raw_unknown.push(AiCandidate {
                     path: parent,
                     size_bytes: total_size,
                     is_dir: true,
                     child_count: Some(children.len()),
                     extension: None,
+                    member_paths,
                 });
             } else {
                 self.raw_unknown.append(&mut children);
@@ -118,14 +155,31 @@ impl AiCandidateBuilder {
         self
     }
 
+    /// Keeps only the `n` largest candidates. Everything sent to the model and
+    /// rendered by the UI flows through here, so the payload stays bounded no
+    /// matter how large the scan was.
+    pub fn cap_top_n(mut self, n: usize) -> Self {
+        self.total_before_cap = Some(self.raw_unknown.len());
+        if self.raw_unknown.len() > n {
+            self.raw_unknown
+                .sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
+            self.raw_unknown.truncate(n);
+        }
+        self
+    }
+
     pub fn build(self) -> AiCandidateSet {
-        let total_raw_count = self.raw_unknown.len();
+        let candidates_total_before_cap =
+            self.total_before_cap.unwrap_or(self.raw_unknown.len());
+        let truncated = candidates_total_before_cap > self.raw_unknown.len();
         let estimated_input_tokens = self.raw_unknown.len() * 8 + 200;
         AiCandidateSet {
             pre_classified: self.pre_classified,
             candidates: self.raw_unknown,
             estimated_input_tokens,
-            total_raw_count,
+            total_raw_count: self.raw_file_count,
+            candidates_total_before_cap,
+            truncated,
         }
     }
 
@@ -136,7 +190,7 @@ impl AiCandidateBuilder {
         classified: &HashSet<String>,
         kb: &OsKnowledgeBase,
     ) -> Self {
-        let mut b = Self { pre_classified: vec![], raw_unknown: vec![] };
+        let mut b = Self::empty();
         for (path, size) in files {
             if classified.contains(path) {
                 continue;
@@ -167,8 +221,10 @@ impl AiCandidateBuilder {
                 is_dir: false,
                 child_count: None,
                 extension: ext,
+                member_paths: vec![],
             });
         }
+        b.raw_file_count = b.raw_unknown.len();
         b
     }
 }
@@ -236,6 +292,42 @@ mod tests {
             .build();
         assert_eq!(set.candidates.len(), 1);
         assert_eq!(set.candidates[0].child_count, Some(25));
+        assert_eq!(set.candidates[0].member_paths.len(), 25);
+        assert!(set.candidates[0]
+            .member_paths
+            .contains(&"/Users/x/big_dir/file_0.dat".to_string()));
+        assert_eq!(set.total_raw_count, 25);
+        assert!(!set.truncated);
+    }
+
+    #[test]
+    fn cap_top_n_keeps_largest_and_flags_truncation() {
+        let kb = OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let files: Vec<(String, u64)> = (0..10)
+            .map(|i| (format!("/Users/x/dir_{i}/file.dat"), (i as u64 + 1) * 100))
+            .collect();
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+            .cap_top_n(3)
+            .build();
+        assert_eq!(set.candidates.len(), 3);
+        assert_eq!(set.candidates[0].size_bytes, 1000);
+        assert_eq!(set.candidates[2].size_bytes, 800);
+        assert!(set.truncated);
+        assert_eq!(set.candidates_total_before_cap, 10);
+        assert_eq!(set.total_raw_count, 10);
+    }
+
+    #[test]
+    fn cap_top_n_below_limit_is_not_truncated() {
+        let kb = OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let files = vec![("/Users/x/a.dat".to_string(), 10u64)];
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+            .cap_top_n(DEFAULT_CANDIDATE_CAP)
+            .build();
+        assert!(!set.truncated);
+        assert_eq!(set.candidates_total_before_cap, 1);
     }
 
     #[test]
@@ -261,5 +353,6 @@ mod tests {
         assert_eq!(set.candidates[0].path, "/Users/x/big_dir");
         assert_eq!(set.candidates[0].child_count, Some(25));
         assert_eq!(set.candidates[0].size_bytes, 2500);
+        assert_eq!(set.candidates[0].member_paths.len(), 25);
     }
 }

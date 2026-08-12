@@ -707,6 +707,29 @@ impl SnapshotIndex {
             .collect()
     }
 
+    /// Indexed entries whose category matches `category` (e.g. `"BuildArtifact"`),
+    /// largest first. Used by the AI pre-check to show Tier-2 hits that are
+    /// already safe to remove without asking the model.
+    pub fn entries_with_category(&self, category: &str) -> Vec<SnapshotEntryRecord> {
+        let Some(category_id) = self.table.get_id(category) else {
+            return vec![];
+        };
+        let mut records: Vec<SnapshotEntryRecord> = self
+            .entry_by_id
+            .values()
+            .filter(|entry| entry.category == category_id)
+            .map(|entry| self.materialize_entry(entry))
+            .collect();
+        records.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
+        records
+    }
+
+    /// True when `path` is a directory in this index.
+    pub fn is_directory(&self, path: &str) -> bool {
+        self.resolve_path_id(path)
+            .is_some_and(|path_id| self.directory_by_id.contains_key(&path_id))
+    }
+
     /// Unclassified files with sizes (index `file_size_by_path`).
     pub fn unclassified_files(&self) -> Vec<(String, u64)> {
         self.file_size_by_path

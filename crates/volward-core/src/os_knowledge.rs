@@ -124,6 +124,12 @@ impl OsKnowledgeBase {
         Self::from_yaml(yaml, platform).unwrap_or(Self { rules: vec![] })
     }
 
+    /// Number of rules that actually compiled — a rule with a bad regex or an
+    /// unknown category is silently dropped by `from_yaml`.
+    pub fn rule_count(&self) -> usize {
+        self.rules.len()
+    }
+
     pub fn classify_path(&self, path: &str) -> Option<KnownSafeEntry> {
         self.rules.iter().find(|r| r.re.is_match(path)).map(|r| KnownSafeEntry {
             category: r.category,
@@ -167,6 +173,21 @@ mod tests {
         assert!(macos.classify_path(path).is_some());
         let linux = OsKnowledgeBase::from_yaml(YAML, "linux").unwrap();
         assert!(linux.classify_path(path).is_none());
+    }
+
+    #[test]
+    fn every_macos_yaml_rule_compiles() {
+        #[derive(serde::Deserialize)]
+        struct CountFile {
+            macos: Vec<serde_yaml::Value>,
+        }
+        let declared: CountFile = serde_yaml::from_str(YAML).unwrap();
+        let kb = OsKnowledgeBase::from_yaml(YAML, "macos").unwrap();
+        assert_eq!(
+            kb.rule_count(),
+            declared.macos.len(),
+            "a macOS rule was dropped — check its regex and category"
+        );
     }
 
     #[test]

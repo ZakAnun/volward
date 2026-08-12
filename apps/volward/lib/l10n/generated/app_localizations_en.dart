@@ -530,5 +530,29 @@ class AppLocalizationsEn extends AppLocalizations {
       'A previous AI result exists for this scan. Continuing will overwrite it.';
 
   @override
+  String get aiActionContinue => 'Continue';
+
+  @override
+  String get aiAnalyzing => 'Analyzing with AI…';
+
+  @override
+  String get aiActionRetry => 'Retry';
+
+  @override
+  String get aiErrorUnknown => 'Unknown error';
+
+  @override
+  String get aiErrorNativeUnavailable =>
+      'Failed to load AI candidates (native API unavailable).';
+
+  @override
+  String get aiErrorInvalidPayload => 'Invalid candidates payload.';
+
+  @override
+  String aiTruncatedNotice(int shown, int total) {
+    return 'Showing the $shown largest of $total items — the rest were skipped to keep the request small.';
+  }
+
+  @override
   String get back => 'Back';
 }

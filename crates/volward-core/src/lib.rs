@@ -14,7 +14,9 @@ pub mod snapshot_catalog;
 pub mod string_table;
 
 pub use ai_analysis::{AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
-pub use ai_candidates::{AiCandidate, AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry};
+pub use ai_candidates::{
+    AiCandidate, AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, DEFAULT_CANDIDATE_CAP,
+};
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;
 pub use delete::DeleteOrchestrator;
