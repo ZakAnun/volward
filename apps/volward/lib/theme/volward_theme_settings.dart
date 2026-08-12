@@ -123,12 +123,17 @@ class VolwardThemeSettings extends ChangeNotifier {
     try {
       final file = settingsFileForTest ?? _settingsFile();
       await file.parent.create(recursive: true);
-      final payload = jsonEncode({
-        'theme_preference': _preferenceIndex,
-        'locale_preference': _localePreferenceIndex,
-        'accent_color': _accentValue,
-      });
-      await file.writeAsString(payload);
+      Map<String, dynamic> existing = {};
+      if (await file.exists()) {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is Map) {
+          existing = Map<String, dynamic>.from(decoded);
+        }
+      }
+      existing['theme_preference'] = _preferenceIndex;
+      existing['locale_preference'] = _localePreferenceIndex;
+      existing['accent_color'] = _accentValue;
+      await file.writeAsString(jsonEncode(existing));
     } catch (e, st) {
       debugPrint('VolwardThemeSettings: persist failed: $e\n$st');
       rethrow;
