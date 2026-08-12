@@ -32,6 +32,7 @@ fn category_pb(c: model::EntryCategory) -> i32 {
         model::EntryCategory::Duplicate => 6,
         model::EntryCategory::System => 7,
         model::EntryCategory::Unknown => 8,
+        model::EntryCategory::BuildArtifact => 9,
     }
 }
 

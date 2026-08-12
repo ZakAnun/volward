@@ -1,0 +1,74 @@
+# Volward OS knowledge base — platform-specific safe-to-delete paths
+# version must be bumped when rules change shape
+version: 1
+
+macos:
+  - pattern: "(?i)/Library/Developer/Xcode/DerivedData/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "Xcode build artifacts, regenerated automatically"
+  - pattern: "(?i)/Library/Developer/Xcode/Archives/"
+    category: BuildArtifact
+    deletable: true
+    confidence: medium
+    reason: "Xcode archives — confirm you no longer need them"
+  - pattern: "/node_modules/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "npm dependencies, restore with npm install"
+  - pattern: "(?i)/\\.gradle/caches/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "Gradle build cache"
+  - pattern: "(?i)/\\.npm/_cacache/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "npm download cache"
+  - pattern: "(?i)/\\.cache/pip/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "pip package download cache"
+  - pattern: "(?i)/Library/Application Support/.*/Cache[s]?/"
+    category: Cache
+    deletable: true
+    confidence: medium
+    reason: "Application cache directory"
+
+windows:
+  - pattern: "(?i)/AppData/Local/Temp/"
+    category: Temp
+    deletable: true
+    confidence: high
+    reason: "Windows temporary files"
+  - pattern: "(?i)/AppData/Local/Microsoft/Windows/INetCache/"
+    category: Cache
+    deletable: true
+    confidence: high
+    reason: "IE/Edge network cache"
+  - pattern: "/node_modules/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "npm dependencies, restore with npm install"
+
+linux:
+  - pattern: "(?i)/\\.cache/"
+    category: Cache
+    deletable: true
+    confidence: medium
+    reason: "User-level cache directory"
+  - pattern: "/node_modules/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "npm dependencies, restore with npm install"
+  - pattern: "(?i)/\\.gradle/caches/"
+    category: BuildArtifact
+    deletable: true
+    confidence: high
+    reason: "Gradle build cache"

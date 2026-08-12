@@ -1588,6 +1588,7 @@ pub fn category_string(cat: &EntryCategory) -> &'static str {
         EntryCategory::Duplicate => "Duplicate",
         EntryCategory::System => "System",
         EntryCategory::Unknown => "Unknown",
+        EntryCategory::BuildArtifact => "BuildArtifact",
     }
 }
 

@@ -255,6 +255,7 @@ String _entryCategory(int v) {
         6: 'Duplicate',
         7: 'System',
         8: 'Unknown',
+        9: 'BuildArtifact',
       }[v] ??
       'Unknown';
 }

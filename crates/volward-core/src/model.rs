@@ -27,6 +27,8 @@ pub enum EntryCategory {
     System,
     /// Catch-all for classified entries that don't fit other categories (not yet emitted).
     Unknown,
+    /// Build artifacts: node_modules, DerivedData, .gradle/caches — deletable, low risk.
+    BuildArtifact,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,4 +153,16 @@ pub struct DeleteReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrashEmptyReport {
     pub cleared_count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn build_artifact_serializes_round_trip() {
+        let cat = EntryCategory::BuildArtifact;
+        let json = serde_json::to_string(&cat).unwrap();
+        let back: EntryCategory = serde_json::from_str(&json).unwrap();
+        assert_eq!(cat, back);
+    }
 }
