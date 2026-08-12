@@ -10,13 +10,31 @@ use crate::manifest::{
     DirFingerprint, FileManifestStore, FileSnapshotStore, ManifestStore, ScanManifest,
 };
 use crate::model::{PlatformCapabilities, ScanPhase, ScanProgress, ScanStats, StorageSnapshot};
+use crate::os_knowledge::OsKnowledgeBase;
 use crate::platform::{PlatformError, PlatformStorage, WalkAction, WalkOptions};
 use crate::scan_tree::{find_subtree, ScanTreeBuilder};
 use crate::SnapshotIndexBuilder;
 
+fn classify_with_tiers(
+    classifier: &Classifier,
+    os_kb: &OsKnowledgeBase,
+    path: &str,
+    size_bytes: u64,
+    is_dir: bool,
+    job_id: &str,
+) -> Option<crate::model::StorageEntry> {
+    if let Some(e) = classifier.classify_path(path, size_bytes, is_dir, job_id) {
+        return Some(e);
+    }
+    os_kb
+        .classify_path(path)
+        .map(|k| k.into_storage_entry(path, size_bytes, is_dir, job_id))
+}
+
 pub struct ScanOrchestrator<'a> {
     platform: &'a dyn PlatformStorage,
     classifier: Classifier,
+    os_kb: OsKnowledgeBase,
     manifest_store: FileManifestStore,
     snapshot_store: FileSnapshotStore,
 }
@@ -35,6 +53,7 @@ impl<'a> ScanOrchestrator<'a> {
         Self {
             platform,
             classifier,
+            os_kb: OsKnowledgeBase::for_current_platform(),
             manifest_store: FileManifestStore::new(cache_dir.join("manifests")),
             snapshot_store: FileSnapshotStore::new(cache_dir.join("snapshots")),
         }
@@ -53,6 +72,7 @@ impl<'a> ScanOrchestrator<'a> {
         Self {
             platform,
             classifier,
+            os_kb: OsKnowledgeBase::for_current_platform(),
             manifest_store: FileManifestStore::new(manifest_dir),
             snapshot_store: FileSnapshotStore::new(snapshot_dir),
         }
@@ -194,10 +214,14 @@ impl<'a> ScanOrchestrator<'a> {
                 tree_builder.ensure_dir(&e.path);
             } else {
                 stats.files_seen += 1;
-                if let Some(classified) =
-                    self.classifier
-                        .classify_path(&e.path, e.size_bytes, false, &job_id)
-                {
+                if let Some(classified) = classify_with_tiers(
+                    &self.classifier,
+                    &self.os_kb,
+                    &e.path,
+                    e.size_bytes,
+                    false,
+                    &job_id,
+                ) {
                     let id = classified.id.clone();
                     stats.files_in_snapshot += 1;
                     entries.push(classified);
@@ -489,10 +513,14 @@ impl<'a> ScanOrchestrator<'a> {
             } else {
                 stats.files_seen += 1;
                 index_builder.record_file_size(&e.path, e.size_bytes);
-                if let Some(classified) =
-                    self.classifier
-                        .classify_path(&e.path, e.size_bytes, false, &job_id)
-                {
+                if let Some(classified) = classify_with_tiers(
+                    &self.classifier,
+                    &self.os_kb,
+                    &e.path,
+                    e.size_bytes,
+                    false,
+                    &job_id,
+                ) {
                     stats.files_in_snapshot += 1;
                     index_builder.insert_entry(classified);
                 }
@@ -755,10 +783,22 @@ fn unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CapabilityLevel, ScanRoot, VolumeStats};
+    use crate::model::{CapabilityLevel, EntryCategory, ScanRoot, VolumeStats};
     use std::fs;
     use std::sync::atomic::AtomicBool;
     use tempfile::TempDir;
+
+    #[test]
+    fn tier2_classifies_node_modules_when_tier1_misses() {
+        let classifier = Classifier::default();
+        let yaml = include_str!("../../../rules/os_knowledge.yaml");
+        let kb = OsKnowledgeBase::from_yaml(yaml, "macos").unwrap();
+        let path = "/Users/x/Projects/app/node_modules/lodash/index.js";
+        assert!(classifier.classify_path(path, 10, false, "j").is_none());
+        let e = classify_with_tiers(&classifier, &kb, path, 10, false, "j").unwrap();
+        assert_eq!(e.category, EntryCategory::BuildArtifact);
+        assert!(e.deletable);
+    }
 
     struct TempDirPlatform {
         root: ScanRoot,
