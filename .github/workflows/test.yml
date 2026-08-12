@@ -33,7 +33,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run Rust tests
-        run: cargo test --workspace
+        run: bash scripts/test_core.sh rust
 
   test-flutter:
     name: Flutter tests
@@ -57,5 +57,5 @@ jobs:
         working-directory: apps/volward
 
       - name: Run tests
-        run: flutter test --reporter=expanded
+        run: bash ../../scripts/test_core.sh flutter
         working-directory: apps/volward

@@ -162,13 +162,13 @@ export HTTPS_PROXY=$https_proxy
 ```bash
 # Rust
 export CARGO_TARGET_DIR="$(pwd)/target"
-cargo test
+bash scripts/test_core.sh rust
 cargo run -p volward-cli              # 等价于 volward-cli smoke
 cargo run -p volward-cli -- scan-bench # 可选性能基准
 
 # Flutter
 cd apps/volward
-fvm flutter test
+bash ../../scripts/test_core.sh flutter
 fvm flutter run -d macos
 ```
 

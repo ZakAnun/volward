@@ -25,7 +25,7 @@ fvm flutter run -d macos
 ## 测试
 
 ```bash
-fvm flutter test
+bash ../../scripts/test_core.sh flutter
 ```
 
 ## 主要模块
