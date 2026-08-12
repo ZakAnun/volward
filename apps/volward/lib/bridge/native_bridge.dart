@@ -95,6 +95,15 @@ typedef VolwardDeleteEntriesJson =
 typedef VolwardEmptyTrashJsonNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardEmptyTrashJson = Pointer<Utf8> Function(Pointer<Void>);
 
+typedef VolwardAiBuildCandidatesJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiBuildCandidatesJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiSaveResultJsonNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiSaveResultJson =
+    bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+
 // ---------------------------------------------------------------------------
 // Catalog index API typedefs (Design §5.3)
 // ---------------------------------------------------------------------------
@@ -238,6 +247,10 @@ final class VolwardNativeBridge implements VolwardBridge {
         )
         .asFunction();
     _emptyTrashJson = _tryLookupEmptyTrashJson();
+    _buildAiCandidatesJson = _tryLookupAiBuildCandidatesJson();
+    _saveAiResultJson = _tryLookupAiSaveResultJson();
+    hasAiSessionApi =
+        _buildAiCandidatesJson != null && _saveAiResultJson != null;
     _queryDirectoryJson = _tryLookupQueryDirectoryJson();
     _refreshDirectory = _tryLookupRefreshDirectory();
     _loadIndexFromPath = _tryLookupLoadIndexFromPath();
@@ -379,6 +392,9 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
   late final VolwardEmptyTrashJson? _emptyTrashJson;
+  late final bool hasAiSessionApi;
+  late final VolwardAiBuildCandidatesJson? _buildAiCandidatesJson;
+  late final VolwardAiSaveResultJson? _saveAiResultJson;
 
   // Catalog index API fields
   late final VolwardQueryDirectoryJson? _queryDirectoryJson;
@@ -645,6 +661,40 @@ final class VolwardNativeBridge implements VolwardBridge {
     return _decodeJsonPtr(out);
   }
 
+  String? buildAiCandidatesJson(Pointer<Void> engine, String snapshotId) {
+    final fn = _buildAiCandidatesJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  bool saveAiResultJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    String resultJson,
+  ) {
+    final fn = _saveAiResultJson;
+    if (fn == null) return false;
+    final snapPtr = snapshotId.toNativeUtf8();
+    final jsonPtr = resultJson.toNativeUtf8();
+    try {
+      return fn(engine, snapPtr, jsonPtr);
+    } finally {
+      calloc.free(snapPtr);
+      calloc.free(jsonPtr);
+    }
+  }
+
   Map<String, dynamic> _decodeJsonPtr(Pointer<Utf8> ptr) {
     try {
       final raw = ptr.toDartString();
@@ -688,6 +738,30 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardEmptyTrashJsonNative>>(
             'volward_empty_trash_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildCandidatesJson? _tryLookupAiBuildCandidatesJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildCandidatesJsonNative>>(
+            'volward_ai_build_candidates_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiSaveResultJson? _tryLookupAiSaveResultJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiSaveResultJsonNative>>(
+            'volward_ai_save_result_json',
           )
           .asFunction();
     } on Object {

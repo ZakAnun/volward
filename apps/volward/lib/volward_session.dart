@@ -1665,6 +1665,27 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  bool get hasAiSessionApi =>
+      _ready &&
+      _engine != null &&
+      VolwardNativeBridge.instance.hasAiSessionApi;
+
+  String? buildAiCandidatesJson(String snapshotId) {
+    final engine = _engine;
+    if (!_ready || engine == null) return null;
+    return VolwardNativeBridge.instance.buildAiCandidatesJson(engine, snapshotId);
+  }
+
+  bool saveAiResultJson(String snapshotId, String resultJson) {
+    final engine = _engine;
+    if (!_ready || engine == null) return false;
+    return VolwardNativeBridge.instance.saveAiResultJson(
+      engine,
+      snapshotId,
+      resultJson,
+    );
+  }
+
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
     bool dryRun = false,

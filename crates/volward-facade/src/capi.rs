@@ -325,6 +325,32 @@ pub unsafe extern "C" fn volward_delete_entries_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_candidates_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.build_ai_candidates_json(&snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_save_result_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    result_json: *const c_char,
+) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    let result_json = cstr_to_string(result_json).unwrap_or_default();
+    e.save_ai_result_json(&snapshot_id, &result_json)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_empty_trash_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();

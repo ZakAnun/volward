@@ -680,6 +680,90 @@ impl VolwardEngine {
             Err(e) => serde_json::json!({ "error": e }).to_string(),
         }
     }
+
+    /// Build AI candidate JSON for the given snapshot.
+    ///
+    /// Prefers `last_index` (production path — `run_index_scan` clears
+    /// `last_snapshot`), then falls back to in-memory `last_snapshot`
+    /// (tests / legacy).
+    pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
+        use std::collections::HashSet;
+        use volward_core::{AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase};
+
+        let kb = OsKnowledgeBase::for_current_platform();
+        let has_existing_result = AiAnalysisResult::exists(snapshot_id);
+
+        // 1) Prefer index (production path)
+        if let Ok(guard) = self.last_index.lock() {
+            if let Some(index) = guard.as_ref() {
+                if index.snapshot_id != snapshot_id {
+                    return format!(
+                        "error:snapshot_id mismatch: got {}",
+                        index.snapshot_id
+                    );
+                }
+                let classified = index.classified_paths();
+                let files = index.unclassified_files();
+                let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb)
+                    .aggregate_by_dir(20)
+                    .build();
+                return match serde_json::to_string(&serde_json::json!({
+                    "snapshot_id": snapshot_id,
+                    "pre_classified": set.pre_classified,
+                    "unknown_candidates": set.candidates,
+                    "estimated_input_tokens": set.estimated_input_tokens,
+                    "total_raw_count": set.total_raw_count,
+                    "has_existing_result": has_existing_result,
+                })) {
+                    Ok(s) => s,
+                    Err(e) => format!("error:serialize:{e}"),
+                };
+            }
+        }
+
+        // 2) Fallback: in-memory StorageSnapshot (tests / legacy)
+        let guard = match self.last_snapshot.lock() {
+            Ok(g) => g,
+            Err(e) => return format!("error:lock:{e}"),
+        };
+        let snapshot = match guard.as_ref() {
+            Some(s) => s,
+            None => return "error:no snapshot or index loaded".to_string(),
+        };
+        if snapshot.snapshot_id != snapshot_id {
+            return format!("error:snapshot_id mismatch: got {}", snapshot.snapshot_id);
+        }
+
+        let classified: HashSet<String> = snapshot
+            .entries
+            .iter()
+            .map(|e| e.path_or_uri.clone())
+            .collect();
+        let set = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb)
+            .aggregate_by_dir(20)
+            .build();
+
+        match serde_json::to_string(&serde_json::json!({
+            "snapshot_id": snapshot_id,
+            "pre_classified": set.pre_classified,
+            "unknown_candidates": set.candidates,
+            "estimated_input_tokens": set.estimated_input_tokens,
+            "total_raw_count": set.total_raw_count,
+            "has_existing_result": has_existing_result,
+        })) {
+            Ok(s) => s,
+            Err(e) => format!("error:serialize:{e}"),
+        }
+    }
+
+    pub fn save_ai_result_json(&self, snapshot_id: &str, result_json: &str) -> bool {
+        use volward_core::AiAnalysisResult;
+        let result: AiAnalysisResult = match serde_json::from_str(result_json) {
+            Ok(r) => r,
+            Err(_) => return false,
+        };
+        result.save(snapshot_id).is_ok()
+    }
 }
 
 /// Encodes `snapshot` as protobuf and writes it atomically to `path`.
