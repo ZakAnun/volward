@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'ai/ai_settings_store.dart';
+import 'ai/platform_auth_store.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
 import 'l10n/l10n.dart';
+import 'widgets/ai_purchase_dialog.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
@@ -42,6 +44,9 @@ class _SettingsPageState extends State<SettingsPage> {
   AiMode _aiMode = AiMode.off;
   bool _hasByokKey = false;
   bool _privacyAccepted = false;
+  PlatformUser? _platformUser;
+  bool _platformBusy = false;
+  String? _platformBanner;
 
   @override
   void initState() {
@@ -68,17 +73,143 @@ class _SettingsPageState extends State<SettingsPage> {
         key = null;
       }
       final privacy = await store.isPrivacyAccepted();
+      PlatformUser? platformUser;
+      if (mode == AiMode.platform) {
+        try {
+          await PlatformAuthStore.instance.ensureDeviceRegistered();
+          platformUser = await PlatformAuthStore.instance.currentUser();
+        } catch (_) {
+          platformUser = null;
+        }
+      }
       if (!mounted) return;
       setState(() {
         _aiMode = mode;
         _hasByokKey = key != null && key.isNotEmpty;
         _privacyAccepted = privacy;
+        _platformUser = platformUser;
         if (_hasByokKey) {
           _apiKeyController.text = '••••••••••••••••';
         }
       });
     } catch (_) {
       // Keep defaults when settings file / keychain is unavailable.
+    }
+  }
+
+  Future<void> _linkPlatformEmail() async {
+    final l10n = context.l10n;
+    final emailCtrl = TextEditingController();
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aiSettingsLinkEmail),
+        content: TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          autofocus: true,
+          decoration: InputDecoration(hintText: l10n.aiSettingsEnterEmail),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, emailCtrl.text.trim()),
+            child: Text(l10n.aiSettingsSendOtp),
+          ),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty || !mounted) return;
+
+    setState(() {
+      _platformBusy = true;
+      _platformBanner = null;
+    });
+    try {
+      await PlatformAuthStore.instance.ensureDeviceRegistered();
+      await PlatformAuthStore.instance.requestOtp(email);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _platformBusy = false;
+        _platformBanner = e.toString();
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    final otpCtrl = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aiSettingsEnterOtp),
+        content: TextField(
+          controller: otpCtrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          maxLength: 6,
+          decoration: InputDecoration(hintText: l10n.aiSettingsEnterOtp),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, otpCtrl.text.trim()),
+            child: Text(l10n.aiSettingsVerifyOtp),
+          ),
+        ],
+      ),
+    );
+    if (code == null || code.isEmpty || !mounted) {
+      setState(() => _platformBusy = false);
+      return;
+    }
+
+    try {
+      final user = await PlatformAuthStore.instance.verifyOtp(email, code);
+      unawaited(
+        Analytics.instance.track(AnalyticsEvents.aiAccountLinked, {
+          'provider': 'platform',
+        }),
+      );
+      if (!mounted) return;
+      setState(() {
+        _platformUser = user;
+        _platformBusy = false;
+        _platformBanner = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _platformBusy = false;
+        _platformBanner = e.toString();
+      });
+    }
+  }
+
+  Future<void> _openPurchase() async {
+    final user = _platformUser;
+    if (user == null) return;
+    final before = user.credits;
+    final bought = await showAiPurchaseDialog(context);
+    if (!mounted) return;
+    final refreshed = await PlatformAuthStore.instance.currentUser();
+    if (!mounted) return;
+    setState(() => _platformUser = refreshed ?? _platformUser);
+    if (bought != null &&
+        refreshed != null &&
+        refreshed.credits > before) {
+      unawaited(
+        Analytics.instance.track(AnalyticsEvents.aiCreditsPurchased, {
+          'pack_id': bought.packId,
+          'credits': bought.credits,
+        }),
+      );
     }
   }
 
@@ -381,10 +512,80 @@ class _SettingsPageState extends State<SettingsPage> {
                                   {'from': from.name, 'to': mode.name},
                                 ),
                               );
+                              PlatformUser? platformUser = _platformUser;
+                              String? banner = _platformBanner;
+                              if (mode == AiMode.platform) {
+                                try {
+                                  await PlatformAuthStore.instance
+                                      .ensureDeviceRegistered();
+                                  platformUser = await PlatformAuthStore
+                                      .instance
+                                      .currentUser();
+                                  banner = platformUser == null
+                                      ? null
+                                      : banner;
+                                } catch (e) {
+                                  final msg = e.toString();
+                                  if (msg.contains('session_expired')) {
+                                    banner = l10n.aiSettingsSessionExpired;
+                                    platformUser = null;
+                                  }
+                                }
+                              }
                               if (!mounted) return;
-                              setState(() => _aiMode = mode);
+                              setState(() {
+                                _aiMode = mode;
+                                _platformUser = platformUser;
+                                _platformBanner = banner;
+                              });
                             },
                           ),
+                          if (_aiMode == AiMode.platform) ...[
+                            const Divider(height: AppleSpacing.lg),
+                            Text(
+                              l10n.aiSettingsPlatformLabel,
+                              style: context.vwCaptionStrong,
+                            ),
+                            const SizedBox(height: AppleSpacing.xs),
+                            if (_platformBanner != null)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppleSpacing.xs,
+                                ),
+                                child: Text(
+                                  _platformBanner!,
+                                  style: context.vwFinePrint.copyWith(
+                                    color: v.warning,
+                                  ),
+                                ),
+                              ),
+                            if (_platformUser == null)
+                              AppleButton(
+                                label: l10n.aiSettingsLinkEmail,
+                                onPressed:
+                                    _platformBusy ? null : _linkPlatformEmail,
+                              )
+                            else ...[
+                              Text(
+                                l10n.aiSettingsLinkedAs(_platformUser!.email),
+                                style: context.vwFinePrint,
+                              ),
+                              const SizedBox(height: AppleSpacing.xs),
+                              Text(
+                                l10n.aiSettingsCreditsRemaining(
+                                  _platformUser!.credits,
+                                ),
+                                style: context.vwCaptionStrong,
+                              ),
+                              const SizedBox(height: AppleSpacing.xs),
+                              AppleButton(
+                                label: l10n.aiSettingsBuyCredits,
+                                variant: AppleButtonVariant.pearl,
+                                onPressed: _openPurchase,
+                              ),
+                            ],
+                          ],
+                          if (_aiMode == AiMode.byok) ...[
                           const Divider(height: AppleSpacing.lg),
                           Text(
                             l10n.aiSettingsByokLabel,
@@ -439,6 +640,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             ],
                           ),
+                          ],
                           const Divider(height: AppleSpacing.lg),
                           Text(
                             l10n.aiPrivacyTitle,

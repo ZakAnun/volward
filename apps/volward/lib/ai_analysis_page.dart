@@ -151,6 +151,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
 
   bool _hasProvider = false;
   bool _analyzing = false;
+  AiMode _mode = AiMode.off;
+  int? _platformCredits;
 
   @override
   void initState() {
@@ -172,7 +174,17 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       _candidatesBeforeCap = 0;
     });
     try {
+      final mode = await AiSettingsStore.instance.getMode();
       final provider = await AiSettingsStore.instance.resolveProvider();
+      int? platformCredits;
+      if (mode == AiMode.platform && provider != null) {
+        try {
+          final q = await provider.queryQuota();
+          platformCredits = q?.creditsRemaining;
+        } catch (_) {
+          platformCredits = null;
+        }
+      }
       if (!mounted) return;
       // Read after the first await: initState calls this synchronously, and
       // inherited widgets are not available until initState returns.
@@ -183,6 +195,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       if (!mounted) return;
       if (raw == null || raw.isEmpty) {
         setState(() {
+          _mode = mode;
+          _platformCredits = platformCredits;
           _hasProvider = provider != null;
           _phase = _Phase.error;
           _error = l10n.aiErrorNativeUnavailable;
@@ -191,6 +205,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       }
       if (raw.startsWith('error:')) {
         setState(() {
+          _mode = mode;
+          _platformCredits = platformCredits;
           _hasProvider = provider != null;
           _phase = _Phase.error;
           _error = raw;
@@ -204,6 +220,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       if (!mounted) return;
 
       setState(() {
+        _mode = mode;
+        _platformCredits = platformCredits;
         _hasProvider = provider != null;
         _preClassified = parsed.preClassified;
         _unknown = parsed.unknown;
@@ -516,6 +534,25 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         _phase = _Phase.results;
       });
     } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('insufficient_credits') && mounted) {
+        setState(() {
+          _error = context.l10n.aiInsufficientCredits;
+          _analyzing = false;
+          _phase = _Phase.precheck;
+          _platformCredits = 0;
+        });
+        return;
+      }
+      if (msg.contains('session_expired') && mounted) {
+        setState(() {
+          _error = context.l10n.aiSettingsSessionExpired;
+          _analyzing = false;
+          _hasProvider = false;
+          _phase = _Phase.precheck;
+        });
+        return;
+      }
       unawaited(
         Analytics.instance.track(AnalyticsEvents.aiAnalysisFailed, {
           'provider': providerLabel,
@@ -739,12 +776,26 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
               if (!_hasProvider) ...[
                 const SizedBox(height: AppleSpacing.sm),
                 Text(
-                  VolwardSession.instance != null &&
-                          !VolwardSession.instance!.hasAiContractApi
-                      ? l10n.aiContractUnavailable
-                      : l10n.aiNoApiKey,
+                  _mode == AiMode.platform
+                      ? l10n.aiSettingsSessionExpired
+                      : (VolwardSession.instance != null &&
+                              !VolwardSession.instance!.hasAiContractApi
+                          ? l10n.aiContractUnavailable
+                          : l10n.aiNoApiKey),
                   style: AppleTypography.caption.copyWith(color: v.warning),
                 ),
+              ],
+              if (_mode == AiMode.platform && _platformCredits != null) ...[
+                const SizedBox(height: AppleSpacing.sm),
+                Text(
+                  l10n.aiPrecheckCreditsCost(_platformCredits!),
+                  style: AppleTypography.caption.copyWith(color: v.inkMuted80),
+                ),
+                if (_platformCredits == 0)
+                  Text(
+                    l10n.aiInsufficientCredits,
+                    style: AppleTypography.caption.copyWith(color: v.warning),
+                  ),
               ],
               const SizedBox(height: AppleSpacing.lg),
               if (_preClassified.isNotEmpty) ...[
@@ -793,7 +844,11 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
                   child: AppleButton(
                     label: l10n.aiStartAnalysis,
                     expanded: true,
-                    onPressed: _hasProvider ? _startAnalysis : null,
+                    onPressed: _hasProvider &&
+                            !(_mode == AiMode.platform &&
+                                _platformCredits == 0)
+                        ? _startAnalysis
+                        : null,
                   ),
                 ),
               ],

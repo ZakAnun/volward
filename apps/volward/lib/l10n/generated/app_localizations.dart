@@ -926,6 +926,72 @@ abstract class AppLocalizations {
   /// **'Clear'**
   String get aiSettingsClearKey;
 
+  /// No description provided for @aiSettingsLinkEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Link email'**
+  String get aiSettingsLinkEmail;
+
+  /// No description provided for @aiSettingsEnterEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email address'**
+  String get aiSettingsEnterEmail;
+
+  /// No description provided for @aiSettingsEnterOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'6-digit code'**
+  String get aiSettingsEnterOtp;
+
+  /// No description provided for @aiSettingsSendOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'Send code'**
+  String get aiSettingsSendOtp;
+
+  /// No description provided for @aiSettingsVerifyOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify'**
+  String get aiSettingsVerifyOtp;
+
+  /// No description provided for @aiSettingsLinkedAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked as {email}'**
+  String aiSettingsLinkedAs(String email);
+
+  /// No description provided for @aiSettingsCreditsRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} credits remaining'**
+  String aiSettingsCreditsRemaining(int count);
+
+  /// No description provided for @aiSettingsBuyCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Buy credits'**
+  String get aiSettingsBuyCredits;
+
+  /// No description provided for @aiSettingsSessionExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'Login expired — please link your email again.'**
+  String get aiSettingsSessionExpired;
+
+  /// No description provided for @aiPrecheckCreditsCost.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated cost: 1 credit (balance {balance})'**
+  String aiPrecheckCreditsCost(int balance);
+
+  /// No description provided for @aiInsufficientCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'No credits left — buy more in Settings.'**
+  String get aiInsufficientCredits;
+
   /// No description provided for @aiAnalysisFab.
   ///
   /// In en, this message translates to:

@@ -517,6 +517,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsClearKey => 'Clear';
 
   @override
+  String get aiSettingsLinkEmail => 'Link email';
+
+  @override
+  String get aiSettingsEnterEmail => 'Email address';
+
+  @override
+  String get aiSettingsEnterOtp => '6-digit code';
+
+  @override
+  String get aiSettingsSendOtp => 'Send code';
+
+  @override
+  String get aiSettingsVerifyOtp => 'Verify';
+
+  @override
+  String aiSettingsLinkedAs(String email) {
+    return 'Linked as $email';
+  }
+
+  @override
+  String aiSettingsCreditsRemaining(int count) {
+    return '$count credits remaining';
+  }
+
+  @override
+  String get aiSettingsBuyCredits => 'Buy credits';
+
+  @override
+  String get aiSettingsSessionExpired =>
+      'Login expired — please link your email again.';
+
+  @override
+  String aiPrecheckCreditsCost(int balance) {
+    return 'Estimated cost: 1 credit (balance $balance)';
+  }
+
+  @override
+  String get aiInsufficientCredits => 'No credits left — buy more in Settings.';
+
+  @override
   String get aiAnalysisFab => 'AI Analysis';
 
   @override

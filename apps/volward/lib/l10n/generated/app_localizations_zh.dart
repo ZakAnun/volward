@@ -492,6 +492,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsClearKey => '清除';
 
   @override
+  String get aiSettingsLinkEmail => '绑定邮箱';
+
+  @override
+  String get aiSettingsEnterEmail => '邮箱地址';
+
+  @override
+  String get aiSettingsEnterOtp => '6 位验证码';
+
+  @override
+  String get aiSettingsSendOtp => '发送验证码';
+
+  @override
+  String get aiSettingsVerifyOtp => '验证';
+
+  @override
+  String aiSettingsLinkedAs(String email) {
+    return '已绑定 $email';
+  }
+
+  @override
+  String aiSettingsCreditsRemaining(int count) {
+    return '剩余 $count credits';
+  }
+
+  @override
+  String get aiSettingsBuyCredits => '购买额度';
+
+  @override
+  String get aiSettingsSessionExpired => '登录已过期，请重新绑定邮箱';
+
+  @override
+  String aiPrecheckCreditsCost(int balance) {
+    return '预计消耗 1 credit（余额 $balance）';
+  }
+
+  @override
+  String get aiInsufficientCredits => '额度不足 — 请在设置中购买。';
+
+  @override
   String get aiAnalysisFab => 'AI 分析';
 
   @override

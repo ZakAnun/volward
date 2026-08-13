@@ -342,6 +342,32 @@
   "aiSettingsApiKeyCleared": "API key cleared",
   "aiSettingsSaveKey": "Save",
   "aiSettingsClearKey": "Clear",
+  "aiSettingsLinkEmail": "Link email",
+  "aiSettingsEnterEmail": "Email address",
+  "aiSettingsEnterOtp": "6-digit code",
+  "aiSettingsSendOtp": "Send code",
+  "aiSettingsVerifyOtp": "Verify",
+  "aiSettingsLinkedAs": "Linked as {email}",
+  "@aiSettingsLinkedAs": {
+    "placeholders": {
+      "email": { "type": "String" }
+    }
+  },
+  "aiSettingsCreditsRemaining": "{count} credits remaining",
+  "@aiSettingsCreditsRemaining": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "aiSettingsBuyCredits": "Buy credits",
+  "aiSettingsSessionExpired": "Login expired — please link your email again.",
+  "aiPrecheckCreditsCost": "Estimated cost: 1 credit (balance {balance})",
+  "@aiPrecheckCreditsCost": {
+    "placeholders": {
+      "balance": { "type": "int" }
+    }
+  },
+  "aiInsufficientCredits": "No credits left — buy more in Settings.",
   "aiAnalysisFab": "AI Analysis",
   "aiPrivacyTitle": "AI analysis privacy",
   "aiPrivacyBody": "Only paths, sizes, and file counts are sent. File contents are never uploaded. BYOK sends data to DeepSeek; Platform mode sends data to Volward servers which forward to DeepSeek.",

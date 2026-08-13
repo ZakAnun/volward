@@ -342,6 +342,32 @@
   "aiSettingsApiKeyCleared": "API 密钥已清除",
   "aiSettingsSaveKey": "保存",
   "aiSettingsClearKey": "清除",
+  "aiSettingsLinkEmail": "绑定邮箱",
+  "aiSettingsEnterEmail": "邮箱地址",
+  "aiSettingsEnterOtp": "6 位验证码",
+  "aiSettingsSendOtp": "发送验证码",
+  "aiSettingsVerifyOtp": "验证",
+  "aiSettingsLinkedAs": "已绑定 {email}",
+  "@aiSettingsLinkedAs": {
+    "placeholders": {
+      "email": { "type": "String" }
+    }
+  },
+  "aiSettingsCreditsRemaining": "剩余 {count} credits",
+  "@aiSettingsCreditsRemaining": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "aiSettingsBuyCredits": "购买额度",
+  "aiSettingsSessionExpired": "登录已过期，请重新绑定邮箱",
+  "aiPrecheckCreditsCost": "预计消耗 1 credit（余额 {balance}）",
+  "@aiPrecheckCreditsCost": {
+    "placeholders": {
+      "balance": { "type": "int" }
+    }
+  },
+  "aiInsufficientCredits": "额度不足 — 请在设置中购买。",
   "aiAnalysisFab": "AI 分析",
   "aiPrivacyTitle": "AI 分析隐私说明",
   "aiPrivacyBody": "仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 将数据发送至 DeepSeek；平台模式将数据发送至 Volward 服务器再转发至 DeepSeek。",
