@@ -39,7 +39,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late bool _deletableOnly;
   final _apiKeyController = TextEditingController();
-  AiMode _aiMode = AiMode.byok;
+  AiMode _aiMode = AiMode.off;
   bool _hasByokKey = false;
   bool _privacyAccepted = false;
 
@@ -70,8 +70,7 @@ class _SettingsPageState extends State<SettingsPage> {
       final privacy = await store.isPrivacyAccepted();
       if (!mounted) return;
       setState(() {
-        // Platform mode is not selectable yet — fall back to BYOK in UI.
-        _aiMode = mode == AiMode.platform ? AiMode.byok : mode;
+        _aiMode = mode;
         _hasByokKey = key != null && key.isNotEmpty;
         _privacyAccepted = privacy;
         if (_hasByokKey) {
@@ -360,22 +359,20 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                             items: [
                               DropdownMenuItem(
+                                value: AiMode.off,
+                                child: Text(l10n.aiSettingsOffLabel),
+                              ),
+                              DropdownMenuItem(
                                 value: AiMode.byok,
                                 child: Text(l10n.aiSettingsByokLabel),
                               ),
                               DropdownMenuItem(
                                 value: AiMode.platform,
-                                enabled: false,
-                                child: Text(
-                                  l10n.aiSettingsPlatformLabel,
-                                  style: TextStyle(color: v.inkMuted48),
-                                ),
+                                child: Text(l10n.aiSettingsPlatformLabel),
                               ),
                             ],
                             onChanged: (mode) async {
-                              if (mode == null || mode == AiMode.platform) {
-                                return;
-                              }
+                              if (mode == null) return;
                               final from = _aiMode;
                               await AiSettingsStore.instance.setMode(mode);
                               unawaited(

@@ -471,7 +471,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsByokLabel => '自带密钥（DeepSeek）';
 
   @override
-  String get aiSettingsPlatformLabel => 'Volward 平台（即将推出）';
+  String get aiSettingsOffLabel => '关闭';
+
+  @override
+  String get aiSettingsPlatformLabel => 'Volward 平台';
 
   @override
   String get aiSettingsApiKeyHint => 'sk-...';
@@ -496,7 +499,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiPrivacyBody =>
-      '仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 模式下数据直接发送至你的 AI 服务商。';
+      '仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 将数据发送至 DeepSeek；平台模式将数据发送至 Volward 服务器再转发至 DeepSeek。';
 
   @override
   String get aiPrivacyAccept => '我已了解';

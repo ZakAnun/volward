@@ -10,17 +10,21 @@ import 'ai_contract.dart';
 import 'ai_provider.dart';
 import 'byok_ai_provider.dart';
 import 'platform_ai_provider.dart';
+import 'platform_auth_store.dart';
 
-enum AiMode { byok, platform }
+enum AiMode { off, byok, platform }
 
 class AiSettingsStore {
   AiSettingsStore._();
   static final AiSettingsStore instance = AiSettingsStore._();
 
   static const _kMode = 'ai_mode';
-  static const _kPrivacy = 'ai_privacy_accepted';
+  static const _kPrivacyVersion = 'ai_privacy_accepted_version';
   static const _kProvider = 'ai_byok_provider';
   static const _kByokKeyName = 'volward_byok_api_key';
+
+  /// Bumped to 2 when Platform mode shipped: paths now transit Volward servers.
+  static const kCurrentPrivacyVersion = 2;
 
   @visibleForTesting
   File? settingsFileForTest;
@@ -56,7 +60,11 @@ class AiSettingsStore {
 
   Future<AiMode> getMode() async {
     final raw = (await _readMap())[_kMode];
-    return raw == 'platform' ? AiMode.platform : AiMode.byok;
+    return switch (raw) {
+      'byok' => AiMode.byok,
+      'platform' => AiMode.platform,
+      _ => AiMode.off,
+    };
   }
 
   Future<void> setMode(AiMode mode) async {
@@ -66,11 +74,13 @@ class AiSettingsStore {
   }
 
   Future<bool> isPrivacyAccepted() async =>
-      (await _readMap())[_kPrivacy] == true;
+      ((await _readMap())[_kPrivacyVersion] as int? ?? 0) >=
+      kCurrentPrivacyVersion;
 
   Future<void> setPrivacyAccepted(bool value) async {
     final map = await _readMap();
-    map[_kPrivacy] = value;
+    map[_kPrivacyVersion] = value ? kCurrentPrivacyVersion : 0;
+    map.remove('ai_privacy_accepted'); // drop the legacy bool
     await _writeMap(map);
   }
 
@@ -90,22 +100,30 @@ class AiSettingsStore {
 
   Future<AiProvider?> resolveProvider() async {
     final mode = await getMode();
-    if (mode == AiMode.platform) return PlatformAiProvider();
-    final key = await getByokKey();
-    if (key == null || key.isEmpty) return null;
-    try {
-      final session = VolwardSession.instance;
-      if (session != null) {
-        return ByokAiProvider(
-          apiKey: key,
-          contract: SessionAiContract(session),
-        );
-      }
-      // Unit tests / pre-session: provider without contract (analyze needs inject).
-      return ByokAiProvider(apiKey: key);
-    } catch (_) {
-      // Native lib older than Dart contract surface — UI shows update hint.
-      return null;
+    switch (mode) {
+      case AiMode.off:
+        return null;
+      case AiMode.platform:
+        final token = await PlatformAuthStore.instance.userToken();
+        if (token == null || token.isEmpty) return null;
+        return PlatformAiProvider(token: token);
+      case AiMode.byok:
+        final key = await getByokKey();
+        if (key == null || key.isEmpty) return null;
+        try {
+          final session = VolwardSession.instance;
+          if (session != null) {
+            return ByokAiProvider(
+              apiKey: key,
+              contract: SessionAiContract(session),
+            );
+          }
+          // Unit tests / pre-session: provider without contract (analyze needs inject).
+          return ByokAiProvider(apiKey: key);
+        } catch (_) {
+          // Native lib older than Dart contract surface — UI shows update hint.
+          return null;
+        }
     }
   }
 }

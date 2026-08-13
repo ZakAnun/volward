@@ -496,7 +496,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsByokLabel => 'Bring Your Own Key (DeepSeek)';
 
   @override
-  String get aiSettingsPlatformLabel => 'Volward Platform (coming soon)';
+  String get aiSettingsOffLabel => 'Off';
+
+  @override
+  String get aiSettingsPlatformLabel => 'Volward Platform';
 
   @override
   String get aiSettingsApiKeyHint => 'sk-...';
@@ -521,7 +524,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiPrivacyBody =>
-      'Only paths, sizes, and file counts are sent. File contents are never uploaded. In BYOK mode data goes directly to your AI provider.';
+      'Only paths, sizes, and file counts are sent. File contents are never uploaded. BYOK sends data to DeepSeek; Platform mode sends data to Volward servers which forward to DeepSeek.';
 
   @override
   String get aiPrivacyAccept => 'I understand';

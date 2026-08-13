@@ -884,10 +884,16 @@ abstract class AppLocalizations {
   /// **'Bring Your Own Key (DeepSeek)'**
   String get aiSettingsByokLabel;
 
+  /// No description provided for @aiSettingsOffLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get aiSettingsOffLabel;
+
   /// No description provided for @aiSettingsPlatformLabel.
   ///
   /// In en, this message translates to:
-  /// **'Volward Platform (coming soon)'**
+  /// **'Volward Platform'**
   String get aiSettingsPlatformLabel;
 
   /// No description provided for @aiSettingsApiKeyHint.
@@ -935,7 +941,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiPrivacyBody.
   ///
   /// In en, this message translates to:
-  /// **'Only paths, sizes, and file counts are sent. File contents are never uploaded. In BYOK mode data goes directly to your AI provider.'**
+  /// **'Only paths, sizes, and file counts are sent. File contents are never uploaded. BYOK sends data to DeepSeek; Platform mode sends data to Volward servers which forward to DeepSeek.'**
   String get aiPrivacyBody;
 
   /// No description provided for @aiPrivacyAccept.
