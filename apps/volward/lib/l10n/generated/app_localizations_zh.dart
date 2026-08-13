@@ -499,13 +499,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiPrivacyAccept => '我已了解';
 
   @override
-  String get aiOverwriteTitle => '替换之前的分析结果？';
+  String get aiOverwriteTitle => '已有分析结果';
 
   @override
-  String get aiOverwriteBody => '此扫描已有 AI 分析结果。继续将覆盖旧结果。';
+  String get aiOverwriteBody => '此扫描已有 AI 分析结果。可加载上次结果，或重新分析以覆盖。';
 
   @override
-  String get aiActionContinue => '继续';
+  String get aiActionContinue => '重新分析';
+
+  @override
+  String get aiActionLoadPrevious => '加载上次结果';
+
+  @override
+  String get aiLoadPreviousFailed => '无法加载上次的 AI 分析结果。';
 
   @override
   String get aiAnalyzing => 'AI 分析中…';

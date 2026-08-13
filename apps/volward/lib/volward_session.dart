@@ -1676,6 +1676,42 @@ class VolwardSession extends ChangeNotifier {
     return VolwardNativeBridge.instance.buildAiCandidatesJson(engine, snapshotId);
   }
 
+  /// Prefer async native build so huge scans don't freeze the UI isolate.
+  Future<String?> buildAiCandidatesJsonAsync(String snapshotId) async {
+    final engine = _engine;
+    if (!_ready || engine == null) return null;
+    final bridge = VolwardNativeBridge.instance;
+    if (!bridge.hasAsyncAiCandidatesApi) {
+      return bridge.buildAiCandidatesJson(engine, snapshotId);
+    }
+
+    final startedAt = DateTime.now();
+    const timeout = Duration(minutes: 3);
+    while (true) {
+      if (DateTime.now().difference(startedAt) > timeout) {
+        return 'error:ai candidates build timed out';
+      }
+      final started = bridge.startBuildAiCandidatesAsync(engine, snapshotId);
+      if (started == null) {
+        return bridge.buildAiCandidatesJson(engine, snapshotId);
+      }
+      if (started.startsWith('error:')) return started;
+      if (started.startsWith('busy:')) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        continue;
+      }
+      break;
+    }
+
+    while (bridge.isAiCandidatesBuilding(engine)) {
+      if (DateTime.now().difference(startedAt) > timeout) {
+        return 'error:ai candidates build timed out';
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    return bridge.getAiCandidatesJson(engine);
+  }
+
   bool saveAiResultJson(String snapshotId, String resultJson) {
     final engine = _engine;
     if (!_ready || engine == null) return false;
@@ -1684,6 +1720,13 @@ class VolwardSession extends ChangeNotifier {
       snapshotId,
       resultJson,
     );
+  }
+
+  /// Saved AI analysis JSON for [snapshotId], or null / `error:…` on failure.
+  String? loadAiResultJson(String snapshotId) {
+    final engine = _engine;
+    if (!_ready || engine == null) return null;
+    return VolwardNativeBridge.instance.loadAiResultJson(engine, snapshotId);
   }
 
   Future<Map<String, dynamic>> deleteEntries(

@@ -523,14 +523,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiPrivacyAccept => 'I understand';
 
   @override
-  String get aiOverwriteTitle => 'Replace previous analysis?';
+  String get aiOverwriteTitle => 'Previous analysis available';
 
   @override
   String get aiOverwriteBody =>
-      'A previous AI result exists for this scan. Continuing will overwrite it.';
+      'This scan already has an AI result. Load it, or re-analyze to overwrite.';
 
   @override
-  String get aiActionContinue => 'Continue';
+  String get aiActionContinue => 'Re-analyze';
+
+  @override
+  String get aiActionLoadPrevious => 'Load previous';
+
+  @override
+  String get aiLoadPreviousFailed => 'Could not load the previous AI result.';
 
   @override
   String get aiAnalyzing => 'Analyzing with AI…';

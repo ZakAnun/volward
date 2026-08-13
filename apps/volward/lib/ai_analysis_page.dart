@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'ai/ai_provider.dart';
@@ -10,6 +11,103 @@ import 'theme/apple_tokens.dart';
 import 'theme/volward_tokens.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
+
+/// Parsed AI candidates payload (built off the UI isolate).
+class _AiCandidatesBootstrap {
+  const _AiCandidatesBootstrap({
+    required this.preClassified,
+    required this.unknown,
+    required this.sizeByPath,
+    required this.memberPathsByPath,
+    required this.estimatedTokens,
+    required this.hasExistingResult,
+    required this.truncated,
+    required this.candidatesBeforeCap,
+    required this.selected,
+    required this.resultCacheKey,
+    required this.rootPath,
+  });
+
+  final List<Map<String, dynamic>> preClassified;
+  final List<AiCandidate> unknown;
+  final Map<String, int> sizeByPath;
+  final Map<String, List<String>> memberPathsByPath;
+  final int estimatedTokens;
+  final bool hasExistingResult;
+  final bool truncated;
+  final int candidatesBeforeCap;
+  final Set<String> selected;
+  final String resultCacheKey;
+  final String rootPath;
+}
+
+int _asInt(Object? v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse('$v') ?? 0;
+}
+
+_AiCandidatesBootstrap _parseAiCandidatesPayload(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! Map) {
+    throw const FormatException('ai candidates payload is not an object');
+  }
+  final map = Map<String, dynamic>.from(decoded);
+
+  final sizeByPath = <String, int>{};
+  final memberPathsByPath = <String, List<String>>{};
+  final pre = <Map<String, dynamic>>[];
+  final preRaw = map['pre_classified'];
+  if (preRaw is List) {
+    for (final e in preRaw) {
+      if (e is Map) {
+        final entry = Map<String, dynamic>.from(e);
+        pre.add(entry);
+        final path = entry['path'] as String?;
+        if (path != null) {
+          sizeByPath[path] = _asInt(entry['size_bytes']);
+        }
+      }
+    }
+  }
+
+  final unknown = <AiCandidate>[];
+  final unkRaw = map['unknown_candidates'];
+  if (unkRaw is List) {
+    for (final e in unkRaw) {
+      if (e is Map) {
+        final c = AiCandidate.fromJson(Map<String, dynamic>.from(e));
+        unknown.add(c);
+        sizeByPath[c.path] = c.sizeBytes;
+        if (c.memberPaths.isNotEmpty) {
+          memberPathsByPath[c.path] = c.memberPaths;
+        }
+      }
+    }
+  }
+
+  final selected = <String>{};
+  for (final e in pre) {
+    if (e['confidence'] == 'high' && e['deletable'] == true) {
+      final path = e['path'] as String?;
+      if (path != null) selected.add(path);
+    }
+  }
+
+  return _AiCandidatesBootstrap(
+    preClassified: pre,
+    unknown: unknown,
+    sizeByPath: sizeByPath,
+    memberPathsByPath: memberPathsByPath,
+    estimatedTokens: _asInt(map['estimated_input_tokens']),
+    hasExistingResult: map['has_existing_result'] == true,
+    truncated: map['truncated'] == true,
+    candidatesBeforeCap: _asInt(map['candidates_total_before_cap']),
+    selected: selected,
+    resultCacheKey: map['result_cache_key']?.toString() ?? '',
+    rootPath: map['root_path']?.toString() ?? '',
+  );
+}
 
 /// AI-assisted disk cleanup: pre-check → analyze → review verdicts → delete.
 class AiAnalysisPage extends StatefulWidget {
@@ -23,6 +121,9 @@ class AiAnalysisPage extends StatefulWidget {
 
 enum _Phase { loading, precheck, analyzing, results, error }
 
+/// Choice when a previous AI result already exists for this snapshot.
+enum _ExistingResultChoice { loadPrevious, reanalyze, cancel }
+
 class _AiAnalysisPageState extends State<AiAnalysisPage> {
   _Phase _phase = _Phase.loading;
   String? _error;
@@ -33,6 +134,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
   bool _hasExistingResult = false;
   bool _truncated = false;
   int _candidatesBeforeCap = 0;
+  String _resultCacheKey = '';
+  String _rootPath = '';
 
   List<AiVerdict> _verdicts = [];
   final Set<String> _selected = {};
@@ -70,9 +173,10 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       // Read after the first await: initState calls this synchronously, and
       // inherited widgets are not available until initState returns.
       final l10n = context.l10n;
-      final raw = VolwardSession.instance?.buildAiCandidatesJson(
+      final raw = await VolwardSession.instance?.buildAiCandidatesJsonAsync(
         widget.snapshotId,
       );
+      if (!mounted) return;
       if (raw == null || raw.isEmpty) {
         setState(() {
           _hasProvider = provider != null;
@@ -90,80 +194,45 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         return;
       }
 
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        setState(() {
-          _hasProvider = provider != null;
-          _phase = _Phase.error;
-          _error = l10n.aiErrorInvalidPayload;
-        });
-        return;
-      }
-      final map = Map<String, dynamic>.from(decoded);
-
-      final pre = <Map<String, dynamic>>[];
-      final preRaw = map['pre_classified'];
-      if (preRaw is List) {
-        for (final e in preRaw) {
-          if (e is Map) {
-            final entry = Map<String, dynamic>.from(e);
-            pre.add(entry);
-            final path = entry['path'] as String?;
-            if (path != null) {
-              _sizeByPath[path] = _asInt(entry['size_bytes']);
-            }
-          }
-        }
-      }
-
-      final unknown = <AiCandidate>[];
-      final unkRaw = map['unknown_candidates'];
-      if (unkRaw is List) {
-        for (final e in unkRaw) {
-          if (e is Map) {
-            final c = AiCandidate.fromJson(Map<String, dynamic>.from(e));
-            unknown.add(c);
-            _sizeByPath[c.path] = c.sizeBytes;
-            if (c.memberPaths.isNotEmpty) {
-              _memberPathsByPath[c.path] = c.memberPaths;
-            }
-          }
-        }
-      }
-
-      final selected = <String>{};
-      for (final e in pre) {
-        if (e['confidence'] == 'high' && e['deletable'] == true) {
-          final path = e['path'] as String?;
-          if (path != null) selected.add(path);
-        }
-      }
+      // Top-level [compute] — do not wrap in an instance-method closure; that
+      // captures State/Scaffold and fails Isolate sendability checks.
+      final parsed = await compute(_parseAiCandidatesPayload, raw);
+      if (!mounted) return;
 
       setState(() {
         _hasProvider = provider != null;
-        _preClassified = pre;
-        _unknown = unknown;
-        _estimatedTokens = _asInt(map['estimated_input_tokens']);
-        _hasExistingResult = map['has_existing_result'] == true;
-        _truncated = map['truncated'] == true;
-        _candidatesBeforeCap = _asInt(map['candidates_total_before_cap']);
+        _preClassified = parsed.preClassified;
+        _unknown = parsed.unknown;
+        _sizeByPath
+          ..clear()
+          ..addAll(parsed.sizeByPath);
+        _memberPathsByPath
+          ..clear()
+          ..addAll(parsed.memberPathsByPath);
+        _estimatedTokens = parsed.estimatedTokens;
+        _hasExistingResult = parsed.hasExistingResult;
+        _truncated = parsed.truncated;
+        _candidatesBeforeCap = parsed.candidatesBeforeCap;
+        _resultCacheKey = parsed.resultCacheKey;
+        _rootPath = parsed.rootPath;
         _selected
           ..clear()
-          ..addAll(selected);
+          ..addAll(parsed.selected);
         _phase = _Phase.precheck;
       });
+      if (_hasExistingResult && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _phase != _Phase.precheck) return;
+          _offerExistingResult();
+        });
+      }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _phase = _Phase.error;
         _error = e.toString();
       });
     }
-  }
-
-  static int _asInt(Object? v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse('$v') ?? 0;
   }
 
   static String _fmt(num? bytes) {
@@ -204,11 +273,10 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
     return true;
   }
 
-  Future<bool> _confirmOverwriteIfNeeded() async {
-    if (!_hasExistingResult) return true;
-    if (!mounted) return false;
+  Future<_ExistingResultChoice> _promptExistingResult() async {
+    if (!mounted) return _ExistingResultChoice.cancel;
     final l10n = context.l10n;
-    final ok = await showDialog<bool>(
+    final choice = await showDialog<_ExistingResultChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.aiOverwriteTitle),
@@ -217,22 +285,133 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
           AppleButton(
             label: l10n.scanActionCancel,
             variant: AppleButtonVariant.pearl,
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () =>
+                Navigator.pop(ctx, _ExistingResultChoice.cancel),
+          ),
+          AppleButton(
+            label: l10n.aiActionLoadPrevious,
+            variant: AppleButtonVariant.pearl,
+            onPressed: () =>
+                Navigator.pop(ctx, _ExistingResultChoice.loadPrevious),
           ),
           AppleButton(
             label: l10n.aiActionContinue,
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () =>
+                Navigator.pop(ctx, _ExistingResultChoice.reanalyze),
           ),
         ],
       ),
     );
-    return ok == true;
+    return choice ?? _ExistingResultChoice.cancel;
+  }
+
+  Future<void> _offerExistingResult() async {
+    final choice = await _promptExistingResult();
+    if (!mounted) return;
+    switch (choice) {
+      case _ExistingResultChoice.loadPrevious:
+        await _loadPreviousResult();
+      case _ExistingResultChoice.reanalyze:
+      case _ExistingResultChoice.cancel:
+        break;
+    }
+  }
+
+  Future<bool> _loadPreviousResult() async {
+    final l10n = context.l10n;
+    final key = _resultCacheKey.isNotEmpty
+        ? _resultCacheKey
+        : widget.snapshotId;
+    final raw = VolwardSession.instance?.loadAiResultJson(key);
+    if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
+        key != widget.snapshotId) {
+      // Legacy saves were keyed only by snapshot_id.
+      final legacy = VolwardSession.instance?.loadAiResultJson(
+        widget.snapshotId,
+      );
+      return _applyLoadedResult(legacy, l10n.aiLoadPreviousFailed);
+    }
+    return _applyLoadedResult(raw, l10n.aiLoadPreviousFailed);
+  }
+
+  Future<bool> _applyLoadedResult(String? raw, String failureMessage) async {
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) {
+      if (!mounted) return false;
+      setState(() {
+        _error = failureMessage;
+        _phase = _Phase.precheck;
+      });
+      return false;
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        throw const FormatException('expected object');
+      }
+      final map = Map<String, dynamic>.from(decoded);
+      final entriesRaw = map['entries'];
+      if (entriesRaw is! List) {
+        throw const FormatException('missing entries');
+      }
+
+      final verdicts = <AiVerdict>[];
+      for (final e in entriesRaw) {
+        if (e is! Map) continue;
+        final entry = Map<String, dynamic>.from(e);
+        final path = entry['path'] as String?;
+        if (path == null || path.isEmpty) continue;
+        _sizeByPath[path] = _asInt(entry['size_bytes']);
+        verdicts.add(
+          AiVerdict(
+            path: path,
+            verdict: entry['verdict']?.toString() ?? '',
+            confidence: entry['confidence']?.toString() ?? '',
+            reason: entry['reason']?.toString() ?? '',
+          ),
+        );
+      }
+
+      if (!mounted) return false;
+      setState(() {
+        _verdicts = verdicts;
+        for (final v in verdicts) {
+          if (v.verdict == 'safe_to_remove') {
+            _selected.add(v.path);
+          }
+        }
+        _hasExistingResult = true;
+        _error = null;
+        _phase = _Phase.results;
+      });
+      return true;
+    } catch (_) {
+      if (!mounted) return false;
+      setState(() {
+        _error = failureMessage;
+        _phase = _Phase.precheck;
+      });
+      return false;
+    }
   }
 
   Future<void> _startAnalysis() async {
     if (!_hasProvider || _analyzing) return;
     if (!await _ensurePrivacyAccepted()) return;
-    if (!await _confirmOverwriteIfNeeded()) return;
+
+    if (_hasExistingResult) {
+      final choice = await _promptExistingResult();
+      if (!mounted) return;
+      switch (choice) {
+        case _ExistingResultChoice.cancel:
+          return;
+        case _ExistingResultChoice.loadPrevious:
+          await _loadPreviousResult();
+          return;
+        case _ExistingResultChoice.reanalyze:
+          break;
+      }
+    }
 
     final provider = await AiSettingsStore.instance.resolveProvider();
     if (provider == null) {
@@ -276,6 +455,8 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       final resultJson = jsonEncode({
         'schema_version': 1,
         'snapshot_id': widget.snapshotId,
+        if (_resultCacheKey.isNotEmpty) 'cache_key': _resultCacheKey,
+        if (_rootPath.isNotEmpty) 'root_path': _rootPath,
         'analyzed_at_ms': DateTime.now().millisecondsSinceEpoch,
         'mode': mode.name,
         'model': model,
@@ -526,6 +707,17 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
                 ),
+                if (_hasExistingResult) ...[
+                  const SizedBox(width: AppleSpacing.sm),
+                  Expanded(
+                    child: AppleButton(
+                      label: l10n.aiActionLoadPrevious,
+                      variant: AppleButtonVariant.pearl,
+                      expanded: true,
+                      onPressed: _loadPreviousResult,
+                    ),
+                  ),
+                ],
                 const SizedBox(width: AppleSpacing.sm),
                 Expanded(
                   child: AppleButton(
@@ -707,16 +899,21 @@ class _ErrorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = context.volward;
-    return Center(
+    return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(AppleSpacing.lg),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: AppleTypography.body.copyWith(color: v.danger),
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: AppleTypography.body.copyWith(color: v.danger),
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: AppleSpacing.md),
             AppleButton(label: retryLabel, onPressed: onRetry),

@@ -337,6 +337,36 @@ pub unsafe extern "C" fn volward_ai_build_candidates_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_start_build_candidates_async(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.start_build_ai_candidates_async(snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_is_candidates_building(engine: *mut VolwardEngine) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    e.is_ai_candidates_building()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_get_candidates_json(
+    engine: *mut VolwardEngine,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.get_ai_candidates_json())
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_ai_save_result_json(
     engine: *mut VolwardEngine,
     snapshot_id: *const c_char,
@@ -348,6 +378,18 @@ pub unsafe extern "C" fn volward_ai_save_result_json(
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
     let result_json = cstr_to_string(result_json).unwrap_or_default();
     e.save_ai_result_json(&snapshot_id, &result_json)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_load_result_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.load_ai_result_json(&snapshot_id))
 }
 
 #[no_mangle]

@@ -58,6 +58,9 @@ pub struct VolwardEngine {
     last_progress: Arc<Mutex<Option<ScanProgress>>>,
     last_checkpoint: Arc<Mutex<Option<StorageSnapshot>>>,
     _scan_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    is_ai_candidates_building: Arc<AtomicBool>,
+    ai_candidates_json: Arc<Mutex<Option<String>>>,
+    ai_candidates_generation: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Default for VolwardEngine {
@@ -81,6 +84,9 @@ impl VolwardEngine {
             last_progress: Arc::new(Mutex::new(None)),
             last_checkpoint: Arc::new(Mutex::new(None)),
             _scan_handle: Arc::new(Mutex::new(None)),
+            is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
+            ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -685,70 +691,103 @@ impl VolwardEngine {
     ///
     /// Prefers `last_index` (production path — `run_index_scan` clears
     /// `last_snapshot`), then falls back to in-memory `last_snapshot`
-    /// (tests / legacy).
+    /// (tests / legacy). Heavy work: call via
+    /// [`Self::start_build_ai_candidates_async`] from the UI path.
     pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
         use std::collections::HashSet;
         use volward_core::{
-            AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase, PreClassifiedEntry,
-            DEFAULT_CANDIDATE_CAP,
+            compute_result_cache_key, AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase,
+            PreClassifiedEntry, DEFAULT_CANDIDATE_CAP, DEFAULT_PRECLASSIFIED_CAP,
         };
 
         let kb = OsKnowledgeBase::for_current_platform();
-        let has_existing_result = AiAnalysisResult::exists(snapshot_id);
 
-        // 1) Prefer index (production path)
-        if let Ok(guard) = self.last_index.lock() {
-            if let Some(index) = guard.as_ref() {
-                if index.snapshot_id != snapshot_id {
-                    return format!(
-                        "error:snapshot_id mismatch: got {}",
-                        index.snapshot_id
-                    );
-                }
-                let classified = index.classified_paths();
-                let files = index.unclassified_files();
-                let mut builder =
-                    AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
-                // Tier-2 build artifacts are already classified, so the walk above
-                // skips them; surface them so the pre-check has something to offer
-                // before any model call.
-                for entry in index.entries_with_category("BuildArtifact") {
-                    builder.push_pre_classified(PreClassifiedEntry {
-                        is_dir: index.is_directory(&entry.path),
-                        path: entry.path,
-                        size_bytes: entry.size_bytes,
-                        category: EntryCategory::BuildArtifact,
-                        confidence: "high".to_string(),
-                        reason: "Classified as build artifact by local rules".to_string(),
-                        deletable: entry.deletable,
-                    });
-                }
-                let set = builder
-                    .aggregate_by_dir(20)
-                    .cap_top_n(DEFAULT_CANDIDATE_CAP)
-                    .build();
-                return match serde_json::to_string(&serde_json::json!({
-                    "snapshot_id": snapshot_id,
-                    "pre_classified": set.pre_classified,
-                    "unknown_candidates": set.candidates,
-                    "estimated_input_tokens": set.estimated_input_tokens,
-                    "total_raw_count": set.total_raw_count,
-                    "candidates_total_before_cap": set.candidates_total_before_cap,
-                    "truncated": set.truncated,
-                    "has_existing_result": has_existing_result,
-                })) {
-                    Ok(s) => s,
-                    Err(e) => format!("error:serialize:{e}"),
-                };
+        // 1) Prefer index (production path). Copy inputs under the lock, then
+        // release before aggregation/serialize so other FFI isn't stalled.
+        let index_inputs = if let Ok(guard) = self.last_index.lock() {
+            guard.as_ref().map(|index| {
+                (
+                    index.snapshot_id.clone(),
+                    index.root_path.clone(),
+                    index.stats.clone(),
+                    index.summary().root_size_bytes,
+                    index.reclaimable_estimate_bytes,
+                    index.classified_paths(),
+                    index.unclassified_files(),
+                    index
+                        .entries_with_category("BuildArtifact")
+                        .into_iter()
+                        .map(|entry| {
+                            (
+                                entry.path.clone(),
+                                entry.size_bytes,
+                                index.is_directory(&entry.path),
+                                entry.deletable,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+        } else {
+            None
+        };
+
+        if let Some((
+            index_snap_id,
+            root_path,
+            stats,
+            root_size_bytes,
+            reclaimable,
+            classified,
+            files,
+            build_artifacts,
+        )) = index_inputs
+        {
+            if index_snap_id != snapshot_id {
+                return format!("error:snapshot_id mismatch: got {index_snap_id}");
             }
+            let mut builder =
+                AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
+            for (path, size_bytes, is_dir, deletable) in build_artifacts {
+                builder.push_pre_classified(PreClassifiedEntry {
+                    is_dir,
+                    path,
+                    size_bytes,
+                    category: EntryCategory::BuildArtifact,
+                    confidence: "high".to_string(),
+                    reason: "Classified as build artifact by local rules".to_string(),
+                    deletable,
+                });
+            }
+            let set = builder
+                .aggregate_by_dir(20)
+                .cap_top_n(DEFAULT_CANDIDATE_CAP)
+                .build()
+                .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
+            let cache_key = compute_result_cache_key(
+                &root_path,
+                &stats,
+                root_size_bytes,
+                reclaimable,
+                &set,
+            );
+            let has_existing_result = AiAnalysisResult::exists(&cache_key)
+                || AiAnalysisResult::exists(snapshot_id);
+            return Self::serialize_ai_candidate_set(
+                snapshot_id,
+                &set,
+                has_existing_result,
+                &cache_key,
+                &root_path,
+            );
         }
 
         // 2) Fallback: in-memory StorageSnapshot (tests / legacy)
-        let guard = match self.last_snapshot.lock() {
-            Ok(g) => g,
+        let snapshot_owned = match self.last_snapshot.lock() {
+            Ok(g) => g.clone(),
             Err(e) => return format!("error:lock:{e}"),
         };
-        let snapshot = match guard.as_ref() {
+        let snapshot = match snapshot_owned.as_ref() {
             Some(s) => s,
             None => return "error:no snapshot or index loaded".to_string(),
         };
@@ -761,10 +800,7 @@ impl VolwardEngine {
             .iter()
             .map(|e| e.path_or_uri.clone())
             .collect();
-        let mut builder =
-            AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb);
-        // Mirror the index path: catalog BuildArtifact entries are already in
-        // `classified`, so from_tree skips them — surface them for pre-check.
+        let mut builder = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb);
         for entry in &snapshot.entries {
             if entry.category != EntryCategory::BuildArtifact {
                 continue;
@@ -786,16 +822,46 @@ impl VolwardEngine {
         let set = builder
             .aggregate_by_dir(20)
             .cap_top_n(DEFAULT_CANDIDATE_CAP)
-            .build();
+            .build()
+            .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
+        let root_path = snapshot.tree.path.clone();
+        let cache_key = compute_result_cache_key(
+            &root_path,
+            &snapshot.stats,
+            snapshot.tree.size_bytes,
+            snapshot.reclaimable_estimate_bytes,
+            &set,
+        );
+        let has_existing_result =
+            AiAnalysisResult::exists(&cache_key) || AiAnalysisResult::exists(snapshot_id);
 
+        Self::serialize_ai_candidate_set(
+            snapshot_id,
+            &set,
+            has_existing_result,
+            &cache_key,
+            &root_path,
+        )
+    }
+
+    fn serialize_ai_candidate_set(
+        snapshot_id: &str,
+        set: &volward_core::AiCandidateSet,
+        has_existing_result: bool,
+        cache_key: &str,
+        root_path: &str,
+    ) -> String {
         match serde_json::to_string(&serde_json::json!({
             "snapshot_id": snapshot_id,
+            "root_path": root_path,
+            "result_cache_key": cache_key,
             "pre_classified": set.pre_classified,
             "unknown_candidates": set.candidates,
             "estimated_input_tokens": set.estimated_input_tokens,
             "total_raw_count": set.total_raw_count,
             "candidates_total_before_cap": set.candidates_total_before_cap,
             "truncated": set.truncated,
+            "pre_classified_truncated": set.pre_classified_truncated,
             "has_existing_result": has_existing_result,
         })) {
             Ok(s) => s,
@@ -803,13 +869,111 @@ impl VolwardEngine {
         }
     }
 
+    /// Build candidates on a worker thread so Flutter's main isolate stays
+    /// responsive on multi-hundred-GB scans.
+    pub fn start_build_ai_candidates_async(&self, snapshot_id: String) -> String {
+        if self
+            .is_ai_candidates_building
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return "busy:ai candidates build already in progress".to_string();
+        }
+
+        let generation = self.ai_candidates_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut g) = self.ai_candidates_json.lock() {
+            *g = None;
+        }
+
+        // Snapshot Arc handles for the worker; the build method locks briefly.
+        let engine_index = self.last_index.clone();
+        let engine_snapshot = self.last_snapshot.clone();
+        let result_slot = self.ai_candidates_json.clone();
+        let building = self.is_ai_candidates_building.clone();
+        let generation_slot = self.ai_candidates_generation.clone();
+
+        // We need a thin stand-in that can call the same build logic. Reconstruct
+        // a minimal engine view via a free helper using the cloned Arcs.
+        std::thread::spawn(move || {
+            let json = Self::build_ai_candidates_json_with(
+                &engine_index,
+                &engine_snapshot,
+                &snapshot_id,
+            );
+            if generation_slot.load(Ordering::SeqCst) == generation {
+                if let Ok(mut g) = result_slot.lock() {
+                    *g = Some(json);
+                }
+            }
+            building.store(false, Ordering::Release);
+        });
+
+        "ok".to_string()
+    }
+
+    fn build_ai_candidates_json_with(
+        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        last_snapshot: &Arc<Mutex<Option<StorageSnapshot>>>,
+        snapshot_id: &str,
+    ) -> String {
+        // Temporary engine shell so we reuse the same method body without
+        // duplicating aggregation logic. Only index/snapshot fields are read.
+        let shell = VolwardEngine {
+            platform: Arc::new(DesktopPlatform::new()),
+            cancel: Arc::new(AtomicBool::new(false)),
+            is_scanning: Arc::new(AtomicBool::new(false)),
+            last_snapshot: last_snapshot.clone(),
+            last_index: last_index.clone(),
+            is_index_loading: Arc::new(AtomicBool::new(false)),
+            last_index_load_error: Arc::new(Mutex::new(None)),
+            index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            last_progress: Arc::new(Mutex::new(None)),
+            last_checkpoint: Arc::new(Mutex::new(None)),
+            _scan_handle: Arc::new(Mutex::new(None)),
+            is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
+            ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        };
+        shell.build_ai_candidates_json(snapshot_id)
+    }
+
+    pub fn is_ai_candidates_building(&self) -> bool {
+        self.is_ai_candidates_building.load(Ordering::Relaxed)
+    }
+
+    /// Latest async build payload (or error string). Empty when none yet.
+    pub fn get_ai_candidates_json(&self) -> String {
+        self.ai_candidates_json
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .unwrap_or_else(|| "error:not_ready".to_string())
+    }
+
     pub fn save_ai_result_json(&self, snapshot_id: &str, result_json: &str) -> bool {
         use volward_core::AiAnalysisResult;
-        let result: AiAnalysisResult = match serde_json::from_str(result_json) {
+        let mut result: AiAnalysisResult = match serde_json::from_str(result_json) {
             Ok(r) => r,
             Err(_) => return false,
         };
-        result.save(snapshot_id).is_ok()
+        if result.snapshot_id.is_empty() {
+            result.snapshot_id = snapshot_id.to_string();
+        }
+        result.save_for_reuse().is_ok()
+    }
+
+    /// Load a previously saved AI analysis JSON.
+    ///
+    /// Prefer the content-addressed `cache_key` (stable across re-scans of the
+    /// same directory). Falls back to `snapshot_id` for legacy files.
+    pub fn load_ai_result_json(&self, key: &str) -> String {
+        use volward_core::AiAnalysisResult;
+        match AiAnalysisResult::load(key) {
+            Some(result) => serde_json::to_string(&result)
+                .unwrap_or_else(|e| format!("error:serialize:{e}")),
+            None => "error:not_found".to_string(),
+        }
     }
 }
 

@@ -8,6 +8,8 @@ pub const DEFAULT_CANDIDATE_CAP: usize = 150;
 /// Max concrete member paths retained per aggregated directory candidate.
 /// Keeps the FFI JSON bounded even when a single parent has huge fan-out.
 pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
+/// Max Tier-2 / KB pre-classified rows shown in the pre-check UI.
+pub const DEFAULT_PRECLASSIFIED_CAP: usize = 200;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AiCandidate {
@@ -46,6 +48,8 @@ pub struct AiCandidateSet {
     pub candidates_total_before_cap: usize,
     /// True when `cap_top_n` dropped candidates, so the UI can say so.
     pub truncated: bool,
+    /// True when pre-classified rows were capped for UI/payload size.
+    pub pre_classified_truncated: bool,
 }
 
 pub struct AiCandidateBuilder {
@@ -194,6 +198,7 @@ impl AiCandidateBuilder {
             total_raw_count: self.raw_file_count,
             candidates_total_before_cap,
             truncated,
+            pre_classified_truncated: false,
         }
     }
 
@@ -243,11 +248,29 @@ impl AiCandidateBuilder {
     }
 }
 
+impl AiCandidateSet {
+    /// Keeps the largest pre-classified entries so the pre-check UI stays
+    /// responsive on huge scans (hundreds of GB / many build artifacts).
+    pub fn cap_pre_classified_top_n(mut self, n: usize) -> Self {
+        if self.pre_classified.len() <= n {
+            return self;
+        }
+        self.pre_classified.sort_by(|a, b| {
+            b.size_bytes
+                .cmp(&a.size_bytes)
+                .then(a.path.cmp(&b.path))
+        });
+        self.pre_classified.truncate(n);
+        self.pre_classified_truncated = true;
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
-    use crate::model::ScanTreeNode;
+    use crate::model::{EntryCategory, ScanTreeNode};
     use crate::os_knowledge::OsKnowledgeBase;
 
     fn leaf(path: &str, size: u64) -> ScanTreeNode {
@@ -312,6 +335,32 @@ mod tests {
             .contains(&"/Users/x/big_dir/file_0.dat".to_string()));
         assert_eq!(set.total_raw_count, 25);
         assert!(!set.truncated);
+    }
+
+    #[test]
+    fn cap_pre_classified_keeps_largest() {
+        let kb = OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let mut builder = AiCandidateBuilder::from_tree(
+            &leaf("/tmp/x", 1),
+            &HashSet::new(),
+            &kb,
+        );
+        for i in 0..50 {
+            builder.push_pre_classified(PreClassifiedEntry {
+                path: format!("/Users/x/art_{i}"),
+                size_bytes: (i + 1) as u64,
+                is_dir: true,
+                category: EntryCategory::BuildArtifact,
+                confidence: "high".into(),
+                reason: "t".into(),
+                deletable: true,
+            });
+        }
+        let set = builder.build().cap_pre_classified_top_n(10);
+        assert!(set.pre_classified_truncated);
+        assert_eq!(set.pre_classified.len(), 10);
+        assert_eq!(set.pre_classified[0].path, "/Users/x/art_49");
     }
 
     #[test]

@@ -941,20 +941,32 @@ abstract class AppLocalizations {
   /// No description provided for @aiOverwriteTitle.
   ///
   /// In en, this message translates to:
-  /// **'Replace previous analysis?'**
+  /// **'Previous analysis available'**
   String get aiOverwriteTitle;
 
   /// No description provided for @aiOverwriteBody.
   ///
   /// In en, this message translates to:
-  /// **'A previous AI result exists for this scan. Continuing will overwrite it.'**
+  /// **'This scan already has an AI result. Load it, or re-analyze to overwrite.'**
   String get aiOverwriteBody;
 
   /// No description provided for @aiActionContinue.
   ///
   /// In en, this message translates to:
-  /// **'Continue'**
+  /// **'Re-analyze'**
   String get aiActionContinue;
+
+  /// No description provided for @aiActionLoadPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Load previous'**
+  String get aiActionLoadPrevious;
+
+  /// No description provided for @aiLoadPreviousFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load the previous AI result.'**
+  String get aiLoadPreviousFailed;
 
   /// No description provided for @aiAnalyzing.
   ///

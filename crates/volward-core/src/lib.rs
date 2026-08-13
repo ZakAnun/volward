@@ -13,10 +13,12 @@ pub mod scan_tree;
 pub mod snapshot_catalog;
 pub mod string_table;
 
-pub use ai_analysis::{AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
+pub use ai_analysis::{
+    compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry,
+};
 pub use ai_candidates::{
     AiCandidate, AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, DEFAULT_CANDIDATE_CAP,
-    DEFAULT_MAX_MEMBER_PATHS,
+    DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
 };
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;
