@@ -439,6 +439,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiNoApiKey => '未配置 API Key — 请在设置中配置';
 
   @override
+  String get aiContractUnavailable => '当前原生库版本过旧，请更新 Volward 后再使用 AI 分析。';
+
+  @override
   String aiDeleteSelected(int count) {
     return '删除选中的 $count 项';
   }

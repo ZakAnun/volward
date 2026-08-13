@@ -836,6 +836,12 @@ abstract class AppLocalizations {
   /// **'No API Key — configure in Settings'**
   String get aiNoApiKey;
 
+  /// No description provided for @aiContractUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The installed native library is out of date. Please update Volward to use AI analysis.'**
+  String get aiContractUnavailable;
+
   /// No description provided for @aiDeleteSelected.
   ///
   /// In en, this message translates to:

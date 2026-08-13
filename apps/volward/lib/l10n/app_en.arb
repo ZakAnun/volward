@@ -299,6 +299,7 @@
   },
   "aiStartAnalysis": "Start AI Analysis",
   "aiNoApiKey": "No API Key — configure in Settings",
+  "aiContractUnavailable": "The installed native library is out of date. Please update Volward to use AI analysis.",
   "aiDeleteSelected": "Delete {count} Selected Items",
   "@aiDeleteSelected": {
     "placeholders": {

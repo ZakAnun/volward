@@ -463,6 +463,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiNoApiKey => 'No API Key — configure in Settings';
 
   @override
+  String get aiContractUnavailable =>
+      'The installed native library is out of date. Please update Volward to use AI analysis.';
+
+  @override
   String aiDeleteSelected(int count) {
     return 'Delete $count Selected Items';
   }

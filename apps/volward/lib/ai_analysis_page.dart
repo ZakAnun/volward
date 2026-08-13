@@ -672,7 +672,10 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
               if (!_hasProvider) ...[
                 const SizedBox(height: AppleSpacing.sm),
                 Text(
-                  l10n.aiNoApiKey,
+                  VolwardSession.instance != null &&
+                          !VolwardSession.instance!.hasAiContractApi
+                      ? l10n.aiContractUnavailable
+                      : l10n.aiNoApiKey,
                   style: AppleTypography.caption.copyWith(color: v.warning),
                 ),
               ],

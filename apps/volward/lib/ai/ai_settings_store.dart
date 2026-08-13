@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../snapshot_cache.dart';
+import '../volward_session.dart';
+import 'ai_contract.dart';
 import 'ai_provider.dart';
 import 'byok_ai_provider.dart';
 import 'platform_ai_provider.dart';
@@ -91,6 +93,19 @@ class AiSettingsStore {
     if (mode == AiMode.platform) return PlatformAiProvider();
     final key = await getByokKey();
     if (key == null || key.isEmpty) return null;
-    return ByokAiProvider(apiKey: key);
+    try {
+      final session = VolwardSession.instance;
+      if (session != null) {
+        return ByokAiProvider(
+          apiKey: key,
+          contract: SessionAiContract(session),
+        );
+      }
+      // Unit tests / pre-session: provider without contract (analyze needs inject).
+      return ByokAiProvider(apiKey: key);
+    } catch (_) {
+      // Native lib older than Dart contract surface — UI shows update hint.
+      return null;
+    }
   }
 }
