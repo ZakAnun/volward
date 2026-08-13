@@ -393,6 +393,52 @@ pub unsafe extern "C" fn volward_ai_load_result_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_upstream_endpoint() -> *mut c_char {
+    to_c_string(volward_ai::UPSTREAM_ENDPOINT.to_string())
+}
+
+/// Batch size is a contract value — Dart must read it here, never hardcode 40.
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_batch_size() -> u32 {
+    volward_ai::BATCH_SIZE as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_request_json(
+    candidates_json: *const c_char,
+) -> *mut c_char {
+    let Some(raw) = cstr_to_string(candidates_json) else {
+        return to_c_string("error:null candidates".into());
+    };
+    match serde_json::from_str::<Vec<volward_ai::AnalyzeCandidate>>(&raw) {
+        Ok(c) => to_c_string(volward_ai::build_request_body(&c)),
+        Err(e) => to_c_string(format!("error:parse:{e}")),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_parse_response_json(
+    response_json: *const c_char,
+    batch_json: *const c_char,
+) -> *mut c_char {
+    let Some(body) = cstr_to_string(response_json) else {
+        return to_c_string("error:null response".into());
+    };
+    let Some(raw_batch) = cstr_to_string(batch_json) else {
+        return to_c_string("error:null batch".into());
+    };
+    let batch: Vec<volward_ai::AnalyzeCandidate> = match serde_json::from_str(&raw_batch) {
+        Ok(b) => b,
+        Err(e) => return to_c_string(format!("error:parse:{e}")),
+    };
+    let verdicts = volward_ai::parse_response(&body, &batch);
+    match serde_json::to_string(&verdicts) {
+        Ok(s) => to_c_string(s),
+        Err(e) => to_c_string(format!("error:encode:{e}")),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_empty_trash_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
@@ -590,4 +636,78 @@ pub unsafe extern "C" fn volward_get_index_summary_json(engine: *mut VolwardEngi
 #[no_mangle]
 pub unsafe extern "C" fn volward_index_version(engine: *mut VolwardEngine) -> u64 {
     engine_ref(engine).map(|e| e.index_version()).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod ai_contract_tests {
+    use super::*;
+    use std::ffi::{CStr, CString};
+
+    unsafe fn take(ptr: *mut c_char) -> String {
+        let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+        volward_free_string(ptr);
+        s
+    }
+
+    #[test]
+    fn build_request_json_round_trips() {
+        let input = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
+        let out = unsafe { take(volward_ai_build_request_json(input.as_ptr())) };
+        assert!(!out.starts_with("error:"), "got {out}");
+        let body: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(body["model"], volward_ai::MODEL);
+        assert_eq!(body["thinking"]["type"], "disabled");
+    }
+
+    #[test]
+    fn build_request_json_ignores_member_paths() {
+        let input = CString::new(
+            r#"[{"path":"/a","size_bytes":1,"is_dir":true,"member_paths":["/a/secret"]}]"#,
+        )
+        .unwrap();
+        let out = unsafe { take(volward_ai_build_request_json(input.as_ptr())) };
+        assert!(
+            !out.contains("secret"),
+            "member_paths leaked into request: {out}"
+        );
+    }
+
+    #[test]
+    fn parse_response_json_round_trips() {
+        let upstream = r#"{"choices":[{"finish_reason":"stop","message":{"content":"[{\"path\":\"/a\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"x\"}]"}}]}"#;
+        let body = CString::new(upstream).unwrap();
+        let batch = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
+        let out =
+            unsafe { take(volward_ai_parse_response_json(body.as_ptr(), batch.as_ptr())) };
+        let arr: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(arr[0]["verdict"], "keep");
+    }
+
+    #[test]
+    fn parse_response_json_degrades_truncated_body_using_batch() {
+        let body =
+            CString::new(r#"{"choices":[{"finish_reason":"length","message":{"content":"["}}]}"#)
+                .unwrap();
+        let batch = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
+        let out =
+            unsafe { take(volward_ai_parse_response_json(body.as_ptr(), batch.as_ptr())) };
+        let arr: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(arr[0]["path"], "/a");
+        assert_eq!(arr[0]["verdict"], "review_needed");
+    }
+
+    #[test]
+    fn parse_response_json_reports_null_pointers() {
+        let batch = CString::new("[]").unwrap();
+        let a = unsafe { take(volward_ai_parse_response_json(std::ptr::null(), batch.as_ptr())) };
+        assert_eq!(a, "error:null response");
+        let body = CString::new("{}").unwrap();
+        let b = unsafe { take(volward_ai_parse_response_json(body.as_ptr(), std::ptr::null())) };
+        assert_eq!(b, "error:null batch");
+    }
+
+    #[test]
+    fn batch_size_matches_crate_constant() {
+        assert_eq!(unsafe { volward_ai_batch_size() } as usize, volward_ai::BATCH_SIZE);
+    }
 }

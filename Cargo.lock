@@ -1002,6 +1002,7 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+ "volward-ai",
  "volward-core",
 ]
 

@@ -6,6 +6,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
+import 'ai/ai_provider.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
 import 'bridge/native_bridge.dart';
@@ -1669,6 +1670,50 @@ class VolwardSession extends ChangeNotifier {
       _ready &&
       _engine != null &&
       VolwardNativeBridge.instance.hasAiSessionApi;
+
+  bool get hasAiContractApi =>
+      _ready && VolwardNativeBridge.instance.hasAiContractApi;
+
+  String? aiUpstreamEndpoint() {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiUpstreamEndpoint();
+  }
+
+  int? aiBatchSize() {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiBatchSize();
+  }
+
+  /// Build DeepSeek request body for analyze candidates (no `member_paths`).
+  String? aiBuildRequestJson(List<Map<String, dynamic>> candidates) {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiBuildRequestJson(
+      jsonEncode(candidates),
+    );
+  }
+
+  /// Parse upstream body against the batch that produced it.
+  List<AiVerdict>? aiParseResponseJson(
+    String upstreamBody,
+    List<Map<String, dynamic>> batch,
+  ) {
+    if (!hasAiContractApi) return null;
+    final raw = VolwardNativeBridge.instance.aiParseResponseJson(
+      upstreamBody,
+      jsonEncode(batch),
+    );
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return decoded
+          .whereType<Map>()
+          .map((e) => AiVerdict.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
 
   String? buildAiCandidatesJson(String snapshotId) {
     final engine = _engine;
