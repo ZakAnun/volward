@@ -5,8 +5,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
 use serde_json::json;
+use sha2::Sha256;
 use tokio::sync::oneshot;
 use tower::ServiceExt;
 
@@ -14,6 +16,8 @@ use crate::ai::proxy::UpstreamClient;
 use crate::auth::email::TestMailer;
 use crate::error::AppError;
 use crate::{app, db, AppState};
+
+type HmacSha256 = Hmac<Sha256>;
 
 struct TestCtx {
     app: axum::Router,
@@ -286,4 +290,102 @@ async fn device_register_succeeds_while_analyze_awaits_upstream() {
     let _ = tx.send(());
     let (status, _) = analyze.await.unwrap();
     assert_eq!(status, StatusCode::OK);
+}
+
+fn sign_body(secret: &str, body: &[u8]) -> String {
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(body);
+    format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+}
+
+async fn post_signed(
+    app: &axum::Router,
+    path: &str,
+    body: &str,
+    signature: &str,
+) -> StatusCode {
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post(path)
+                .header("content-type", "application/json")
+                .header("X-Signature", signature)
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    res.status()
+}
+
+#[tokio::test]
+async fn billing_webhook_idempotent_purchase() {
+    let ctx = test_ctx().await;
+    let _token = register_and_link(&ctx, "d-bill", "bill@example.com", 0).await;
+    let uid: (String,) = sqlx::query_as("SELECT id FROM users WHERE email = ?")
+        .bind("bill@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    let body = json!({
+        "meta": {
+            "event_name": "order_created",
+            "custom_data": { "user_id": uid.0, "pack_id": "starter" }
+        },
+        "data": { "id": "ord_1", "attributes": { "status": "paid" } }
+    })
+    .to_string();
+    let sig = sign_body("test-webhook-secret", body.as_bytes());
+    let s1 = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
+    let s2 = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
+    assert_eq!(s1, StatusCode::OK);
+    assert_eq!(s2, StatusCode::OK);
+    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE email = ?")
+        .bind("bill@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(credits.0, 50);
+    let kinds: Vec<(String,)> = sqlx::query_as(
+        "SELECT kind FROM transactions WHERE user_id = ? ORDER BY created_at",
+    )
+    .bind(&uid.0)
+    .fetch_all(&ctx.pool)
+    .await
+    .unwrap();
+    assert_eq!(kinds.len(), 1);
+    assert_eq!(kinds[0].0, "purchase");
+}
+
+#[tokio::test]
+async fn billing_webhook_rejects_forged_signature() {
+    let ctx = test_ctx().await;
+    let _token = register_and_link(&ctx, "d-forge", "forge@example.com", 0).await;
+    let uid: (String,) = sqlx::query_as("SELECT id FROM users WHERE email = ?")
+        .bind("forge@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    let body = json!({
+        "meta": {
+            "event_name": "order_created",
+            "custom_data": { "user_id": uid.0, "pack_id": "starter" }
+        },
+        "data": { "id": "ord_forge", "attributes": { "status": "paid" } }
+    })
+    .to_string();
+    let status = post_signed(
+        &ctx.app,
+        "/v1/billing/webhook",
+        &body,
+        "sha256=deadbeef",
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE email = ?")
+        .bind("forge@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(credits.0, 0);
 }

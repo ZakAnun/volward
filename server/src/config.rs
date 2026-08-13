@@ -35,9 +35,9 @@ impl Config {
             deepseek_api_key: "test-deepseek-key".into(),
             resend_api_key: None,
             resend_from: None,
-            ls_api_key: None,
-            ls_webhook_secret: None,
-            ls_store_id: None,
+            ls_api_key: Some("test-ls-key".into()),
+            ls_webhook_secret: Some("test-webhook-secret".into()),
+            ls_store_id: Some("1".into()),
             bind_addr: "127.0.0.1:0".into(),
         }
     }

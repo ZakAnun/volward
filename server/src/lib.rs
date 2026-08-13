@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod auth;
+pub mod billing;
 pub mod config;
 pub mod db;
 pub mod device;
@@ -50,6 +51,9 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/auth/me", get(auth::handlers::me))
         .route("/v1/ai/quota", get(ai::handlers::quota))
         .route("/v1/ai/analyze", post(ai::handlers::analyze))
+        .route("/v1/billing/packs", get(billing::handlers::packs))
+        .route("/v1/billing/checkout", post(billing::handlers::checkout))
+        .route("/v1/billing/webhook", post(billing::webhook::webhook))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
