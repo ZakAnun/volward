@@ -5,6 +5,9 @@ use crate::os_knowledge::{Confidence, OsKnowledgeBase};
 
 /// Default maximum number of candidates sent to the model / UI.
 pub const DEFAULT_CANDIDATE_CAP: usize = 150;
+/// Max concrete member paths retained per aggregated directory candidate.
+/// Keeps the FFI JSON bounded even when a single parent has huge fan-out.
+pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AiCandidate {
@@ -136,14 +139,25 @@ impl AiCandidateBuilder {
         }
         for (parent, mut children) in by_parent {
             if children.len() >= threshold {
+                let child_count = children.len();
                 let total_size: u64 = children.iter().map(|c| c.size_bytes).sum();
+                // Prefer the largest members when capping so delete still
+                // targets the bulk of reclaimable bytes.
+                if children.len() > DEFAULT_MAX_MEMBER_PATHS {
+                    children.sort_by(|a, b| {
+                        b.size_bytes
+                            .cmp(&a.size_bytes)
+                            .then(a.path.cmp(&b.path))
+                    });
+                    children.truncate(DEFAULT_MAX_MEMBER_PATHS);
+                }
                 let member_paths: Vec<String> =
                     children.iter().map(|c| c.path.clone()).collect();
                 self.raw_unknown.push(AiCandidate {
                     path: parent,
                     size_bytes: total_size,
                     is_dir: true,
-                    child_count: Some(children.len()),
+                    child_count: Some(child_count),
                     extension: None,
                     member_paths,
                 });
@@ -298,6 +312,37 @@ mod tests {
             .contains(&"/Users/x/big_dir/file_0.dat".to_string()));
         assert_eq!(set.total_raw_count, 25);
         assert!(!set.truncated);
+    }
+
+    #[test]
+    fn aggregate_caps_member_paths_to_largest() {
+        let kb = OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let children: Vec<_> = (0..250)
+            .map(|i| {
+                leaf(
+                    &format!("/Users/x/huge_dir/file_{i:03}.dat"),
+                    (i + 1) as u64,
+                )
+            })
+            .collect();
+        let tree = dir_with_children("/Users/x/huge_dir", 250 * 251 / 2, children);
+        let set = AiCandidateBuilder::from_tree(&tree, &HashSet::new(), &kb)
+            .aggregate_by_dir(20)
+            .build();
+        assert_eq!(set.candidates.len(), 1);
+        assert_eq!(set.candidates[0].child_count, Some(250));
+        assert_eq!(
+            set.candidates[0].member_paths.len(),
+            DEFAULT_MAX_MEMBER_PATHS
+        );
+        // Largest members kept first (file_249 = 250 bytes).
+        assert!(set.candidates[0]
+            .member_paths
+            .contains(&"/Users/x/huge_dir/file_249.dat".to_string()));
+        assert!(!set.candidates[0]
+            .member_paths
+            .contains(&"/Users/x/huge_dir/file_000.dat".to_string()));
     }
 
     #[test]

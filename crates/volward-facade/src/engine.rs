@@ -8,8 +8,8 @@ use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{
-    DeleteReport, EntryCategory, PlatformCapabilities, ScanProgress, ScanTreeNode, StorageSnapshot,
-    TrashEmptyReport,
+    DeleteReport, EntryCategory, PlatformCapabilities, ScanProgress, ScanTreeNode, SourceType,
+    StorageSnapshot, TrashEmptyReport,
 };
 use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
@@ -761,7 +761,29 @@ impl VolwardEngine {
             .iter()
             .map(|e| e.path_or_uri.clone())
             .collect();
-        let set = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb)
+        let mut builder =
+            AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb);
+        // Mirror the index path: catalog BuildArtifact entries are already in
+        // `classified`, so from_tree skips them — surface them for pre-check.
+        for entry in &snapshot.entries {
+            if entry.category != EntryCategory::BuildArtifact {
+                continue;
+            }
+            builder.push_pre_classified(PreClassifiedEntry {
+                is_dir: entry.source_type == SourceType::Directory,
+                path: entry.path_or_uri.clone(),
+                size_bytes: entry.size_bytes,
+                category: EntryCategory::BuildArtifact,
+                confidence: "high".to_string(),
+                reason: if entry.reason.is_empty() {
+                    "Classified as build artifact by local rules".to_string()
+                } else {
+                    entry.reason.clone()
+                },
+                deletable: entry.deletable,
+            });
+        }
+        let set = builder
             .aggregate_by_dir(20)
             .cap_top_n(DEFAULT_CANDIDATE_CAP)
             .build();

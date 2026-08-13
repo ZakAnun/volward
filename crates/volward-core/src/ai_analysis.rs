@@ -42,7 +42,10 @@ impl AiAnalysisResult {
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         let tmp = path.with_extension("tmp");
         std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+        std::fs::rename(&tmp, &path).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            e.to_string()
+        })
     }
 
     pub fn exists(snapshot_id: &str) -> bool {
@@ -74,7 +77,7 @@ mod tests {
             entries: vec![AiVerdictEntry {
                 path: "/Users/x/weird.xyz".into(),
                 size_bytes: 1000,
-                verdict: "safe_to_delete".into(),
+                verdict: "safe_to_remove".into(),
                 confidence: "medium".into(),
                 reason: "looks like temp".into(),
             }],

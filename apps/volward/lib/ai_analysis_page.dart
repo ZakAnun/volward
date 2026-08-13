@@ -251,15 +251,15 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       final mode = await AiSettingsStore.instance.getMode();
       final model = provider is ByokAiProvider
           ? provider.model
-          : 'claude-haiku-4-5-20251001';
+          : 'deepseek-v4-flash';
 
       final inputTokens = _estimatedTokens > 0
           ? _estimatedTokens
           : (_unknown.length * 8 + 200);
       final outputTokens = verdicts.length * 40;
-      // Rough Haiku-class rates: ~$1/MTok in, ~$5/MTok out.
+      // DeepSeek-V4-Flash list rates (approx.): ~$0.14/MTok in, ~$0.28/MTok out.
       final cost =
-          inputTokens * 1e-6 + outputTokens * 5e-6;
+          (inputTokens / 1e6) * 0.14 + (outputTokens / 1e6) * 0.28;
 
       final entries = verdicts
           .map(

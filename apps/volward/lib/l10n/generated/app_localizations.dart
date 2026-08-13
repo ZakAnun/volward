@@ -875,7 +875,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiSettingsByokLabel.
   ///
   /// In en, this message translates to:
-  /// **'Bring Your Own Key (Anthropic)'**
+  /// **'Bring Your Own Key (DeepSeek)'**
   String get aiSettingsByokLabel;
 
   /// No description provided for @aiSettingsPlatformLabel.
@@ -887,7 +887,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiSettingsApiKeyHint.
   ///
   /// In en, this message translates to:
-  /// **'sk-ant-...'**
+  /// **'sk-...'**
   String get aiSettingsApiKeyHint;
 
   /// No description provided for @aiSettingsApiKeySaved.

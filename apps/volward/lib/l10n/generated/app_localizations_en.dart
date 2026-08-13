@@ -489,13 +489,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsModeLabel => 'Mode';
 
   @override
-  String get aiSettingsByokLabel => 'Bring Your Own Key (Anthropic)';
+  String get aiSettingsByokLabel => 'Bring Your Own Key (DeepSeek)';
 
   @override
   String get aiSettingsPlatformLabel => 'Volward Platform (coming soon)';
 
   @override
-  String get aiSettingsApiKeyHint => 'sk-ant-...';
+  String get aiSettingsApiKeyHint => 'sk-...';
 
   @override
   String get aiSettingsApiKeySaved => 'API key saved';

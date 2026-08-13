@@ -16,6 +16,7 @@ pub mod string_table;
 pub use ai_analysis::{AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
 pub use ai_candidates::{
     AiCandidate, AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, DEFAULT_CANDIDATE_CAP,
+    DEFAULT_MAX_MEMBER_PATHS,
 };
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;

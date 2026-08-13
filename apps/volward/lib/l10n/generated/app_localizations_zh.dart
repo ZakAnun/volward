@@ -465,13 +465,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsModeLabel => '模式';
 
   @override
-  String get aiSettingsByokLabel => '自带密钥（Anthropic）';
+  String get aiSettingsByokLabel => '自带密钥（DeepSeek）';
 
   @override
   String get aiSettingsPlatformLabel => 'Volward 平台（即将推出）';
 
   @override
-  String get aiSettingsApiKeyHint => 'sk-ant-...';
+  String get aiSettingsApiKeyHint => 'sk-...';
 
   @override
   String get aiSettingsApiKeySaved => 'API 密钥已保存';

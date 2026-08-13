@@ -83,8 +83,18 @@ class _SettingsPageState extends State<SettingsPage> {
     final l10n = context.l10n;
     final raw = _apiKeyController.text.trim();
     if (raw.isEmpty || raw.startsWith('•')) return;
-    await AiSettingsStore.instance.setByokKey(raw);
-    await AiSettingsStore.instance.setMode(AiMode.byok);
+    try {
+      await AiSettingsStore.instance.setByokKey(raw);
+      await AiSettingsStore.instance.setMode(AiMode.byok);
+    } catch (e) {
+      if (!mounted) return;
+      showTopToast(
+        context,
+        message: '${l10n.aiErrorUnknown}: $e',
+        type: ToastType.error,
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _aiMode = AiMode.byok;
@@ -100,7 +110,17 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _clearApiKey() async {
     final l10n = context.l10n;
-    await AiSettingsStore.instance.clearByokKey();
+    try {
+      await AiSettingsStore.instance.clearByokKey();
+    } catch (e) {
+      if (!mounted) return;
+      showTopToast(
+        context,
+        message: '${l10n.aiErrorUnknown}: $e',
+        type: ToastType.error,
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _hasByokKey = false;

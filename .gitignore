@@ -1,5 +1,5 @@
-# Rust
-/target/
+# Rust (root + nested crate/app Cargo targets, e.g. apps/volward/target/)
+target/
 **/*.rs.bk
 
 # Flutter / Dart (apps/volward)

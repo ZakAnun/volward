@@ -23,7 +23,14 @@ class AiSettingsStore {
   @visibleForTesting
   File? settingsFileForTest;
 
-  final _secure = const FlutterSecureStorage();
+  /// Prefer the legacy macOS keychain: Data Protection Keychain needs
+  /// `keychain-access-groups` + a Mac App Development profile, which breaks
+  /// Flutter CLI builds that omit `-allowProvisioningUpdates` (-34018 otherwise).
+  final _secure = const FlutterSecureStorage(
+    mOptions: MacOsOptions(
+      useDataProtectionKeyChain: false,
+    ),
+  );
 
   File _settingsFile() =>
       settingsFileForTest ??
@@ -66,7 +73,7 @@ class AiSettingsStore {
   }
 
   Future<String> getByokProvider() async =>
-      (await _readMap())[_kProvider] as String? ?? 'anthropic';
+      (await _readMap())[_kProvider] as String? ?? 'deepseek';
 
   Future<void> setByokProvider(String provider) async {
     final map = await _readMap();
