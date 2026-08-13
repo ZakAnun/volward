@@ -92,9 +92,14 @@ mod tests {
             extension: None,
         }];
         let inner = r#"[{"path":"/a","verdict":"keep","confidence":"high","reason":"x"}]"#;
-        let body = format!(
-            r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":"```json\n{inner}\n```"}}}}]}}"#
-        );
+        let fenced = format!("```json\n{inner}\n```");
+        let body = serde_json::json!({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": { "content": fenced },
+            }],
+        })
+        .to_string();
         let out = parse_response(&body, &batch);
         assert_eq!(out[0].verdict, "keep");
     }
