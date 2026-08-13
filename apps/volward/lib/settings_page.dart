@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'ai/ai_settings_store.dart';
+import 'analytics/analytics.dart';
+import 'analytics/analytics_events.dart';
 import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
@@ -372,7 +376,14 @@ class _SettingsPageState extends State<SettingsPage> {
                               if (mode == null || mode == AiMode.platform) {
                                 return;
                               }
+                              final from = _aiMode;
                               await AiSettingsStore.instance.setMode(mode);
+                              unawaited(
+                                Analytics.instance.track(
+                                  AnalyticsEvents.aiModeChanged,
+                                  {'from': from.name, 'to': mode.name},
+                                ),
+                              );
                               if (!mounted) return;
                               setState(() => _aiMode = mode);
                             },

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'ai/ai_provider.dart';
 import 'ai/ai_settings_store.dart';
 import 'ai/byok_ai_provider.dart';
+import 'ai/platform_ai_provider.dart';
+import 'analytics/analytics.dart';
+import 'analytics/analytics_events.dart';
 import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_tokens.dart';
@@ -425,9 +429,18 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       _error = null;
     });
 
+    final mode = await AiSettingsStore.instance.getMode();
+    final providerLabel = mode == AiMode.platform ? 'platform' : 'byok';
+    final sw = Stopwatch()..start();
+    unawaited(
+      Analytics.instance.track(AnalyticsEvents.aiAnalysisStarted, {
+        'provider': providerLabel,
+        'candidate_count': _unknown.length,
+      }),
+    );
+
     try {
       final verdicts = await provider.analyze(_unknown);
-      final mode = await AiSettingsStore.instance.getMode();
       final model = provider is ByokAiProvider
           ? provider.model
           : 'deepseek-v4-flash';
@@ -452,6 +465,11 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
           )
           .toList();
 
+      var creditsUsed = 0;
+      if (provider is PlatformAiProvider) {
+        creditsUsed = provider.lastCreditsUsed;
+      }
+
       final resultJson = jsonEncode({
         'schema_version': 1,
         'snapshot_id': widget.snapshotId,
@@ -463,7 +481,7 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         'entries': entries,
         'token_usage': {'input': inputTokens, 'output': outputTokens},
         'cost_estimate_usd': cost,
-        'credits_used': 0,
+        'credits_used': creditsUsed,
       });
 
       VolwardSession.instance?.saveAiResultJson(
@@ -477,6 +495,19 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         }
       }
 
+      unawaited(
+        Analytics.instance.track(AnalyticsEvents.aiAnalysisCompleted, {
+          'provider': providerLabel,
+          'duration_ms': sw.elapsedMilliseconds,
+          'safe_count': verdicts
+              .where((v) => v.verdict == 'safe_to_remove')
+              .length,
+          'review_count':
+              verdicts.where((v) => v.verdict == 'review_needed').length,
+          'keep_count': verdicts.where((v) => v.verdict == 'keep').length,
+        }),
+      );
+
       if (!mounted) return;
       setState(() {
         _verdicts = verdicts;
@@ -485,6 +516,13 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         _phase = _Phase.results;
       });
     } catch (e) {
+      unawaited(
+        Analytics.instance.track(AnalyticsEvents.aiAnalysisFailed, {
+          'provider': providerLabel,
+          'error': _normalizeAiError(e),
+          'duration_ms': sw.elapsedMilliseconds,
+        }),
+      );
       if (!mounted) return;
       setState(() {
         _analyzing = false;
@@ -492,6 +530,25 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
         _error = e.toString();
       });
     }
+  }
+
+  static String _normalizeAiError(Object e) {
+    final s = e.toString();
+    for (final key in const [
+      'invalid_api_key',
+      'request_timeout',
+      'rate_limited_after_retries',
+      'empty_api_key',
+      'insufficient_credits',
+      'link_account_required',
+      'session_expired',
+      'ai_contract_unavailable',
+    ]) {
+      if (s.contains(key)) return key;
+    }
+    if (s.contains('api_error:')) return 'api_error';
+    if (s.contains('network_error')) return 'network_error';
+    return 'unknown';
   }
 
   /// Expands the selection into real delete targets: an aggregate candidate
@@ -562,6 +619,16 @@ class _AiAnalysisPageState extends State<AiAnalysisPage> {
       final failed = report['failed_paths'];
       final failedCount = failed is List ? failed.length : 0;
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
+      final deletedCount =
+          (report['deleted_count'] as num?)?.toInt() ??
+          (targets.length - failedCount);
+      unawaited(
+        Analytics.instance.track(AnalyticsEvents.aiDeletionConfirmed, {
+          'suggested_count': targets.length,
+          'deleted_count': deletedCount,
+          'freed_mb': freedAfter / 1e6,
+        }),
+      );
       if (failedCount > 0) {
         setState(() {
           _error = l10n.deleteSuccessWithFailures(failedCount, _fmt(freedAfter));
