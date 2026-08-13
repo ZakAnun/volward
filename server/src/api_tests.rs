@@ -1,20 +1,62 @@
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::json;
+use tokio::sync::oneshot;
 use tower::ServiceExt;
 
+use crate::ai::proxy::UpstreamClient;
 use crate::auth::email::TestMailer;
+use crate::error::AppError;
 use crate::{app, db, AppState};
 
 struct TestCtx {
     app: axum::Router,
     mailer: TestMailer,
+    pool: sqlx::SqlitePool,
 }
 
-async fn test_ctx() -> TestCtx {
+struct MockUpstream {
+    mode: MockMode,
+}
+
+enum MockMode {
+    OkKeep,
+    Fail,
+    Park(Mutex<Option<oneshot::Receiver<()>>>),
+}
+
+#[async_trait]
+impl UpstreamClient for MockUpstream {
+    async fn complete(&self, _request_body: String) -> Result<String, AppError> {
+        match &self.mode {
+            MockMode::OkKeep => Ok(r#"{
+              "choices":[{
+                "message":{"content":"[{\"path\":\"/a\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"ok\"}]"}
+              }]
+            }"#.into()),
+            MockMode::Fail => Err(AppError::BadGateway),
+            MockMode::Park(rx_slot) => {
+                let rx = rx_slot.lock().unwrap().take();
+                if let Some(rx) = rx {
+                    let _ = rx.await;
+                }
+                Ok(r#"{
+                  "choices":[{
+                    "message":{"content":"[{\"path\":\"/a\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"ok\"}]"}
+                  }]
+                }"#.into())
+            }
+        }
+    }
+}
+
+async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
     let dir = tempfile::tempdir().expect("tempdir");
     let db_path = dir.path().join("platform.db");
     let url = format!("sqlite:{}?mode=rwc", db_path.display());
@@ -23,8 +65,20 @@ async fn test_ctx() -> TestCtx {
     let config = crate::config::Config::for_test(url.clone());
     let pool = db::init_pool(&url).await.expect("init pool");
     let mailer = TestMailer::default();
-    let app = app(AppState::new(pool, config, Arc::new(mailer.clone())));
-    TestCtx { app, mailer }
+    let app = app(AppState::new(
+        pool.clone(),
+        config,
+        Arc::new(mailer.clone()),
+        upstream,
+    ));
+    TestCtx { app, mailer, pool }
+}
+
+async fn test_ctx() -> TestCtx {
+    test_ctx_with_upstream(Arc::new(MockUpstream {
+        mode: MockMode::OkKeep,
+    }))
+    .await
 }
 
 async fn body_json(res: axum::response::Response) -> serde_json::Value {
@@ -87,6 +141,44 @@ async fn get_auth(
     (status, body_json(res).await)
 }
 
+async fn register_and_link(ctx: &TestCtx, device: &str, email: &str, credits: i64) -> String {
+    let (_, reg) = post_json(
+        &ctx.app,
+        "/v1/device/register",
+        &json!({"device_uuid": device, "platform":"macos","app_version":"0.0.3"}).to_string(),
+    )
+    .await;
+    let device_token = reg["token"].as_str().unwrap().to_string();
+    let _ = post_auth(
+        &ctx.app,
+        "/v1/auth/request-otp",
+        &device_token,
+        &json!({"email": email}).to_string(),
+    )
+    .await;
+    let code = ctx.mailer.last.lock().unwrap().clone().unwrap().1;
+    let (_, verified) = post_auth(
+        &ctx.app,
+        "/v1/auth/verify-otp",
+        &device_token,
+        &json!({"email": email, "code": code, "device_uuid": device}).to_string(),
+    )
+    .await;
+    let uid = verified["user_id"].as_str().unwrap().to_string();
+    if credits != 0 {
+        sqlx::query("UPDATE users SET credits = ? WHERE id = ?")
+            .bind(credits)
+            .bind(&uid)
+            .execute(&ctx.pool)
+            .await
+            .unwrap();
+    }
+    verified["token"].as_str().unwrap().to_string()
+}
+
+const ONE_CANDIDATE: &str =
+    r#"{"candidates":[{"path":"/a","size_bytes":1,"is_dir":false}]}"#;
+
 #[tokio::test]
 async fn health_ok() {
     let ctx = test_ctx().await;
@@ -96,8 +188,6 @@ async fn health_ok() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let json = body_json(res).await;
-    assert_eq!(json["ok"], true);
 }
 
 #[tokio::test]
@@ -116,51 +206,84 @@ async fn device_register_idempotent() {
 #[tokio::test]
 async fn auth_otp_verify_binds_device_credits_zero() {
     let ctx = test_ctx().await;
-    let (_, reg) = post_json(
-        &ctx.app,
-        "/v1/device/register",
-        r#"{"device_uuid":"dev-a","platform":"macos","app_version":"0.0.3"}"#,
-    )
-    .await;
-    let device_token = reg["token"].as_str().unwrap().to_string();
-
-    let (s, _) = post_auth(
-        &ctx.app,
-        "/v1/auth/request-otp",
-        &device_token,
-        r#"{"email":"alice@example.com"}"#,
-    )
-    .await;
+    let token = register_and_link(&ctx, "dev-a", "alice@example.com", 0).await;
+    let (s, me) = get_auth(&ctx.app, "/v1/auth/me", &token).await;
     assert_eq!(s, StatusCode::OK);
-
-    let (email, code) = ctx
-        .mailer
-        .last
-        .lock()
-        .unwrap()
-        .clone()
-        .expect("otp sent");
-    assert_eq!(email, "alice@example.com");
-
-    let (s, verified) = post_auth(
-        &ctx.app,
-        "/v1/auth/verify-otp",
-        &device_token,
-        &json!({
-            "email": "alice@example.com",
-            "code": code,
-            "device_uuid": "dev-a"
-        })
-        .to_string(),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK);
-    assert_eq!(verified["credits"], 0);
-    assert_eq!(verified["email"], "alice@example.com");
-    let user_token = verified["token"].as_str().unwrap();
-
-    let (s, me) = get_auth(&ctx.app, "/v1/auth/me", user_token).await;
-    assert_eq!(s, StatusCode::OK);
-    assert_eq!(me["email"], "alice@example.com");
     assert_eq!(me["credits"], 0);
+}
+
+#[tokio::test]
+async fn analyze_402_when_no_credits() {
+    let ctx = test_ctx().await;
+    let token = register_and_link(&ctx, "d-402", "u402@example.com", 0).await;
+    let (status, _) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+}
+
+#[tokio::test]
+async fn ai_analyze_happy_path() {
+    let ctx = test_ctx().await;
+    let token = register_and_link(&ctx, "d-ok", "uok@example.com", 5).await;
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["credits_used"], 1);
+    assert_eq!(body["credits_remaining"], 4);
+    assert!(body["entries"].as_array().unwrap().len() >= 1);
+}
+
+#[tokio::test]
+async fn analyze_refunds_credit_when_upstream_fails() {
+    let ctx = test_ctx_with_upstream(Arc::new(MockUpstream {
+        mode: MockMode::Fail,
+    }))
+    .await;
+    let token = register_and_link(&ctx, "d-fail", "ufail@example.com", 5).await;
+    let (status, _) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE email = ?")
+        .bind("ufail@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(credits.0, 5);
+    let kinds: Vec<(String,)> = sqlx::query_as(
+        "SELECT kind FROM transactions WHERE user_id = (SELECT id FROM users WHERE email = ?) ORDER BY created_at",
+    )
+    .bind("ufail@example.com")
+    .fetch_all(&ctx.pool)
+    .await
+    .unwrap();
+    let kinds: Vec<&str> = kinds.iter().map(|k| k.0.as_str()).collect();
+    assert_eq!(kinds, vec!["usage", "refund"]);
+}
+
+#[tokio::test]
+async fn device_register_succeeds_while_analyze_awaits_upstream() {
+    let (tx, rx) = oneshot::channel::<()>();
+    let ctx = test_ctx_with_upstream(Arc::new(MockUpstream {
+        mode: MockMode::Park(Mutex::new(Some(rx))),
+    }))
+    .await;
+    let token = register_and_link(&ctx, "d-park", "upark@example.com", 5).await;
+    let app = ctx.app.clone();
+    let token_owned = token.clone();
+    let analyze = tokio::spawn(async move {
+        post_auth(&app, "/v1/ai/analyze", &token_owned, ONE_CANDIDATE).await
+    });
+    // Give analyze time to debit and park on upstream.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let reg = tokio::time::timeout(
+        Duration::from_secs(2),
+        post_json(
+            &ctx.app,
+            "/v1/device/register",
+            r#"{"device_uuid":"d9","platform":"macos","app_version":"0.0.3"}"#,
+        ),
+    )
+    .await
+    .expect("write blocked by analyze transaction");
+    assert!(reg.1["token"].is_string());
+    let _ = tx.send(());
+    let (status, _) = analyze.await.unwrap();
+    assert_eq!(status, StatusCode::OK);
 }

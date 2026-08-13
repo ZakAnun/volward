@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod auth;
 pub mod config;
 pub mod db;
@@ -12,6 +13,7 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 use tower_http::trace::TraceLayer;
 
+use crate::ai::proxy::{HttpUpstream, UpstreamClient};
 use crate::auth::email::{LogMailer, Mailer};
 use crate::config::Config;
 
@@ -20,14 +22,21 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub config: Arc<Config>,
     pub mailer: Arc<dyn Mailer>,
+    pub upstream: Arc<dyn UpstreamClient>,
 }
 
 impl AppState {
-    pub fn new(pool: SqlitePool, config: Config, mailer: Arc<dyn Mailer>) -> Self {
+    pub fn new(
+        pool: SqlitePool,
+        config: Config,
+        mailer: Arc<dyn Mailer>,
+        upstream: Arc<dyn UpstreamClient>,
+    ) -> Self {
         Self {
             pool,
             config: Arc::new(config),
             mailer,
+            upstream,
         }
     }
 }
@@ -39,6 +48,8 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/auth/request-otp", post(auth::handlers::request_otp))
         .route("/v1/auth/verify-otp", post(auth::handlers::verify_otp))
         .route("/v1/auth/me", get(auth::handlers::me))
+        .route("/v1/ai/quota", get(ai::handlers::quota))
+        .route("/v1/ai/analyze", post(ai::handlers::analyze))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -60,6 +71,10 @@ pub fn default_mailer(config: &Config) -> Arc<dyn Mailer> {
         (Some(key), Some(from)) => Arc::new(auth::email::ResendMailer::new(key, from)),
         _ => Arc::new(LogMailer),
     }
+}
+
+pub fn default_upstream(config: &Config) -> Arc<dyn UpstreamClient> {
+    Arc::new(HttpUpstream::new(config.deepseek_api_key.clone()))
 }
 
 #[cfg(test)]

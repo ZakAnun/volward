@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use volward_platform_api::config::Config;
-use volward_platform_api::{app, db, default_mailer, AppState};
+use volward_platform_api::{app, db, default_mailer, default_upstream, AppState};
 
 #[tokio::main]
 async fn main() {
@@ -17,6 +15,7 @@ async fn main() {
         std::process::exit(1);
     });
     let mailer = default_mailer(&config);
+    let upstream = default_upstream(&config);
     let pool = db::init_pool(&config.database_url)
         .await
         .unwrap_or_else(|e| {
@@ -24,7 +23,7 @@ async fn main() {
             std::process::exit(1);
         });
     let bind = config.bind_addr.clone();
-    let state = AppState::new(pool, config, mailer);
+    let state = AppState::new(pool, config, mailer, upstream);
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .unwrap_or_else(|e| {
