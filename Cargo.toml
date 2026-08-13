@@ -6,6 +6,7 @@ members = [
     "crates/volward-facade",
     "crates/volward-cli",
     "crates/volward-ai",
+    "server",
 ]
 
 [workspace.package]
