@@ -14,7 +14,10 @@ async fn main() {
         eprintln!("config error: {e}");
         std::process::exit(1);
     });
-    let mailer = default_mailer(&config);
+    let mailer = default_mailer(&config).unwrap_or_else(|e| {
+        eprintln!("mailer config error: {e}");
+        std::process::exit(1);
+    });
     let upstream = default_upstream(&config);
     let pool = db::init_pool(&config.database_url)
         .await

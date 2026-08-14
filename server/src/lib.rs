@@ -67,13 +67,18 @@ async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { ok: true })
 }
 
-pub fn default_mailer(config: &Config) -> Arc<dyn Mailer> {
+pub fn default_mailer(config: &Config) -> Result<Arc<dyn Mailer>, String> {
     match (
         config.resend_api_key.clone(),
         config.resend_from.clone(),
     ) {
-        (Some(key), Some(from)) => Arc::new(auth::email::ResendMailer::new(key, from)),
-        _ => Arc::new(LogMailer),
+        (Some(key), Some(from)) => Ok(Arc::new(auth::email::ResendMailer::new(key, from))),
+        _ if config.allow_log_mailer => Ok(Arc::new(LogMailer)),
+        _ => Err(
+            "RESEND_API_KEY and RESEND_FROM are required \
+             (set ALLOW_LOG_MAILER=1 only for local/dev)"
+                .into(),
+        ),
     }
 }
 

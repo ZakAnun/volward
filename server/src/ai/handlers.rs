@@ -39,9 +39,16 @@ pub async fn quota(
         .bind(uid)
         .fetch_one(&state.pool)
         .await?;
+    let total: (i64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions \
+         WHERE user_id = ? AND kind IN ('purchase', 'topup')",
+    )
+    .bind(uid)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(QuotaResponse {
         credits_remaining: credits.0,
-        credits_total: credits.0,
+        credits_total: total.0,
     }))
 }
 
@@ -82,7 +89,16 @@ pub async fn analyze(
             }))
         }
         Err(e) => {
-            let _ = refund_one_credit(&state.pool, &uid, &auth.device_id).await;
+            if let Err(refund_err) =
+                refund_one_credit(&state.pool, &uid, &auth.device_id).await
+            {
+                tracing::error!(
+                    error = %refund_err,
+                    user_id = %uid,
+                    device_id = %auth.device_id,
+                    "failed to refund credit after upstream analyze error; manual topup required"
+                );
+            }
             Err(match e {
                 AppError::BadGateway => AppError::BadGateway,
                 other => other,

@@ -77,7 +77,7 @@ pub async fn checkout(
     let Some((variant_id,)) = row else {
         return Err(AppError::BadRequest("unknown_pack".into()));
     };
-    if variant_id == "FILL_ME" {
+    if variant_id.starts_with("FILL_ME") {
         // Dev fallback: return a placeholder URL so UI can be exercised.
         return Ok(Json(CheckoutResponse {
             checkout_url: format!(

@@ -23,6 +23,7 @@ struct TestCtx {
     app: axum::Router,
     mailer: TestMailer,
     pool: sqlx::SqlitePool,
+    _dir: tempfile::TempDir,
 }
 
 struct MockUpstream {
@@ -64,7 +65,6 @@ async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
     let dir = tempfile::tempdir().expect("tempdir");
     let db_path = dir.path().join("platform.db");
     let url = format!("sqlite:{}?mode=rwc", db_path.display());
-    std::mem::forget(dir);
 
     let config = crate::config::Config::for_test(url.clone());
     let pool = db::init_pool(&url).await.expect("init pool");
@@ -75,7 +75,7 @@ async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
         Arc::new(mailer.clone()),
         upstream,
     ));
-    TestCtx { app, mailer, pool }
+    TestCtx { app, mailer, pool, _dir: dir }
 }
 
 async fn test_ctx() -> TestCtx {
@@ -251,14 +251,15 @@ async fn analyze_refunds_credit_when_upstream_fails() {
         .unwrap();
     assert_eq!(credits.0, 5);
     let kinds: Vec<(String,)> = sqlx::query_as(
-        "SELECT kind FROM transactions WHERE user_id = (SELECT id FROM users WHERE email = ?) ORDER BY created_at",
+        "SELECT kind FROM transactions WHERE user_id = (SELECT id FROM users WHERE email = ?) ORDER BY kind",
     )
     .bind("ufail@example.com")
     .fetch_all(&ctx.pool)
     .await
     .unwrap();
     let kinds: Vec<&str> = kinds.iter().map(|k| k.0.as_str()).collect();
-    assert_eq!(kinds, vec!["usage", "refund"]);
+    // Same-ms timestamps make created_at order non-deterministic; assert the set.
+    assert_eq!(kinds, vec!["refund", "usage"]);
 }
 
 #[tokio::test]
@@ -388,4 +389,167 @@ async fn billing_webhook_rejects_forged_signature() {
         .await
         .unwrap();
     assert_eq!(credits.0, 0);
+}
+
+#[tokio::test]
+async fn quota_returns_credits_after_link() {
+    let ctx = test_ctx().await;
+    // Direct balance bump without a grant ledger row → total stays 0
+    let token = register_and_link(&ctx, "d-quota", "quota@example.com", 7).await;
+    let (status, body) = get_auth(&ctx.app, "/v1/ai/quota", &token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["credits_remaining"], 7);
+    assert_eq!(body["credits_total"], 0);
+}
+
+#[tokio::test]
+async fn quota_total_sums_purchase_and_topup() {
+    let ctx = test_ctx().await;
+    let token = register_and_link(&ctx, "d-total", "total@example.com", 0).await;
+    let uid: (String,) = sqlx::query_as("SELECT id FROM users WHERE email = ?")
+        .bind("total@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    // purchase +50, topup +10, usage -1, refund +1 → total should be 60
+    for (id, kind, delta) in [
+        ("tx-p", "purchase", 50i64),
+        ("tx-t", "topup", 10),
+        ("tx-u", "usage", -1),
+        ("tx-r", "refund", 1),
+    ] {
+        sqlx::query(
+            "INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, created_at) \
+             VALUES (?, ?, NULL, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(&uid.0)
+        .bind(kind)
+        .bind(delta)
+        .bind(now)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE users SET credits = 60 WHERE id = ?")
+        .bind(&uid.0)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+
+    let (status, body) = get_auth(&ctx.app, "/v1/ai/quota", &token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["credits_remaining"], 60);
+    assert_eq!(body["credits_total"], 60);
+}
+
+#[tokio::test]
+async fn packs_returns_list_for_device() {
+    let ctx = test_ctx().await;
+    // Device-only token (no user link required for browsing packs)
+    let (_, reg) = post_json(
+        &ctx.app,
+        "/v1/device/register",
+        r#"{"device_uuid":"d-packs","platform":"macos","app_version":"0.0.3"}"#,
+    )
+    .await;
+    let device_token = reg["token"].as_str().unwrap().to_string();
+    let (status, body) = get_auth(&ctx.app, "/v1/billing/packs", &device_token).await;
+    assert_eq!(status, StatusCode::OK);
+    let packs = body.as_array().unwrap();
+    let ids: Vec<&str> = packs
+        .iter()
+        .filter_map(|p| p["id"].as_str())
+        .collect();
+    assert_eq!(packs.len(), 3, "all seeded packs must insert despite UNIQUE(ls_variant_id)");
+    assert!(ids.contains(&"starter"));
+    assert!(ids.contains(&"pro"));
+    assert!(ids.contains(&"unlimited"));
+}
+
+#[tokio::test]
+async fn checkout_returns_url_for_known_pack() {
+    let ctx = test_ctx().await;
+    // ls_variant_id = 'FILL_ME' in seeded packs → triggers dev fallback URL
+    let token = register_and_link(&ctx, "d-co", "co@example.com", 0).await;
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/billing/checkout",
+        &token,
+        r#"{"pack_id":"starter"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let url = body["checkout_url"].as_str().unwrap();
+    assert!(url.contains("starter"));
+}
+
+#[tokio::test]
+async fn otp_429_on_resend_within_cooldown() {
+    let ctx = test_ctx().await;
+    let (_, reg) = post_json(
+        &ctx.app,
+        "/v1/device/register",
+        r#"{"device_uuid":"d-cool","platform":"macos","app_version":"0.0.3"}"#,
+    )
+    .await;
+    let device_token = reg["token"].as_str().unwrap().to_string();
+    let (s1, _) = post_auth(
+        &ctx.app,
+        "/v1/auth/request-otp",
+        &device_token,
+        r#"{"email":"cool@example.com"}"#,
+    )
+    .await;
+    // Second request within the 60s cooldown window
+    let (s2, body2) = post_auth(
+        &ctx.app,
+        "/v1/auth/request-otp",
+        &device_token,
+        r#"{"email":"cool@example.com"}"#,
+    )
+    .await;
+    assert_eq!(s1, StatusCode::OK);
+    assert_eq!(s2, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body2["error"], "rate_limited");
+}
+
+#[tokio::test]
+async fn otp_blocks_after_max_attempts() {
+    let ctx = test_ctx().await;
+    let (_, reg) = post_json(
+        &ctx.app,
+        "/v1/device/register",
+        r#"{"device_uuid":"d-brute","platform":"macos","app_version":"0.0.3"}"#,
+    )
+    .await;
+    let device_token = reg["token"].as_str().unwrap().to_string();
+    let _ = post_auth(
+        &ctx.app,
+        "/v1/auth/request-otp",
+        &device_token,
+        r#"{"email":"brute@example.com"}"#,
+    )
+    .await;
+    // Submit MAX_ATTEMPTS (5) wrong codes to exhaust the attempt counter
+    for _ in 0..5 {
+        let _ = post_auth(
+            &ctx.app,
+            "/v1/auth/verify-otp",
+            &device_token,
+            r#"{"email":"brute@example.com","code":"000000","device_uuid":"d-brute"}"#,
+        )
+        .await;
+    }
+    // OTP row deleted after 5 failed attempts; any further attempt must fail
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/auth/verify-otp",
+        &device_token,
+        r#"{"email":"brute@example.com","code":"000000","device_uuid":"d-brute"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"], "unauthorized");
 }

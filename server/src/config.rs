@@ -7,6 +7,8 @@ pub struct Config {
     pub deepseek_api_key: String,
     pub resend_api_key: Option<String>,
     pub resend_from: Option<String>,
+    /// When true, missing Resend credentials fall back to LogMailer (local/dev only).
+    pub allow_log_mailer: bool,
     pub ls_api_key: Option<String>,
     pub ls_webhook_secret: Option<String>,
     pub ls_store_id: Option<String>,
@@ -21,6 +23,9 @@ impl Config {
             deepseek_api_key: env::var("DEEPSEEK_API_KEY").unwrap_or_default(),
             resend_api_key: optional("RESEND_API_KEY"),
             resend_from: optional("RESEND_FROM"),
+            allow_log_mailer: env::var("ALLOW_LOG_MAILER")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
             ls_api_key: optional("LS_API_KEY"),
             ls_webhook_secret: optional("LS_WEBHOOK_SECRET"),
             ls_store_id: optional("LS_STORE_ID"),
@@ -35,6 +40,7 @@ impl Config {
             deepseek_api_key: "test-deepseek-key".into(),
             resend_api_key: None,
             resend_from: None,
+            allow_log_mailer: true,
             ls_api_key: Some("test-ls-key".into()),
             ls_webhook_secret: Some("test-webhook-secret".into()),
             ls_store_id: Some("1".into()),
