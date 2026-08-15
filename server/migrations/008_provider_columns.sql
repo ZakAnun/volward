@@ -8,5 +8,5 @@ ALTER TABLE transactions RENAME COLUMN ls_order_id TO provider_order_id;
 -- replaced explicitly during the Paddle sandbox/live rollout.
 UPDATE packs
 SET provider_product_id = 'FILL_ME_' || id
-WHERE provider_product_id NOT LIKE 'FILL_ME%'
-  AND provider_product_id NOT LIKE 'pri_%';
+WHERE provider_product_id NOT GLOB 'FILL_ME*'
+  AND provider_product_id NOT GLOB 'pri_*';
