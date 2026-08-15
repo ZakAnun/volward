@@ -545,6 +545,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsBuyCredits => 'Buy credits';
 
   @override
+  String get aiPurchasePayHint =>
+      'Pay with WeChat on the checkout page. Balance updates after payment.';
+
+  @override
+  String get aiPurchaseWaitingHint =>
+      'Payment may still be processing. Wait a moment, then refresh your credits in Settings.';
+
+  @override
   String get aiSettingsSessionExpired =>
       'Login expired — please link your email again.';
 

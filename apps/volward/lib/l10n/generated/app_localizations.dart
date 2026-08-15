@@ -974,6 +974,18 @@ abstract class AppLocalizations {
   /// **'Buy credits'**
   String get aiSettingsBuyCredits;
 
+  /// No description provided for @aiPurchasePayHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay with WeChat on the checkout page. Balance updates after payment.'**
+  String get aiPurchasePayHint;
+
+  /// No description provided for @aiPurchaseWaitingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment may still be processing. Wait a moment, then refresh your credits in Settings.'**
+  String get aiPurchaseWaitingHint;
+
   /// No description provided for @aiSettingsSessionExpired.
   ///
   /// In en, this message translates to:

@@ -126,12 +126,9 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
   void _startPoll(String token) {
     _poll?.cancel();
     var tries = 0;
+    const maxTries = 40;
     _poll = Timer.periodic(const Duration(seconds: 3), (t) async {
       tries++;
-      if (tries > 10) {
-        t.cancel();
-        return;
-      }
       try {
         final p = PlatformAiProvider(token: token);
         final q = await p.queryQuota();
@@ -149,6 +146,12 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
           );
         }
       } catch (_) {}
+      if (tries >= maxTries && t.isActive) {
+        t.cancel();
+        if (mounted) {
+          setState(() => _error = context.l10n.aiPurchaseWaitingHint);
+        }
+      }
     });
   }
 
@@ -187,6 +190,10 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
                     TextButton(
                       onPressed: () => launchUrl(Uri.parse(_checkoutUrl!)),
                       child: const Text('Open in browser'),
+                    ),
+                    Text(
+                      l10n.aiPurchasePayHint,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const Text('Waiting for payment…'),
                   ],

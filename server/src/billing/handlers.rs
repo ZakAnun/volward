@@ -7,7 +7,8 @@ use crate::auth::middleware::{require_device, require_user};
 use crate::error::AppError;
 use crate::AppState;
 
-use super::lemon_squeezy::create_checkout;
+use super::paddle::PaddleProvider;
+use super::provider::PaymentProvider;
 
 #[derive(Serialize)]
 pub struct PackDto {
@@ -58,26 +59,17 @@ pub async fn checkout(
 ) -> Result<Json<CheckoutResponse>, AppError> {
     let auth = require_user(&state, &headers)?;
     let uid = auth.require_user()?;
-    let api_key = state
-        .config
-        .ls_api_key
-        .as_deref()
-        .ok_or_else(|| AppError::Internal("ls_api_key_missing".into()))?;
-    let store_id = state
-        .config
-        .ls_store_id
-        .as_deref()
-        .ok_or_else(|| AppError::Internal("ls_store_id_missing".into()))?;
 
     let row: Option<(String,)> =
-        sqlx::query_as("SELECT ls_variant_id FROM packs WHERE id = ? AND active = 1")
+        sqlx::query_as("SELECT provider_product_id FROM packs WHERE id = ? AND active = 1")
             .bind(&body.pack_id)
             .fetch_optional(&state.pool)
             .await?;
-    let Some((variant_id,)) = row else {
+    let Some((product_id,)) = row else {
+        tracing::error!(pack_id = %body.pack_id, "checkout requested unknown pack");
         return Err(AppError::BadRequest("unknown_pack".into()));
     };
-    if variant_id.starts_with("FILL_ME") {
+    if product_id.starts_with("FILL_ME") {
         // Dev fallback: return a placeholder URL so UI can be exercised.
         return Ok(Json(CheckoutResponse {
             checkout_url: format!(
@@ -86,6 +78,22 @@ pub async fn checkout(
             ),
         }));
     }
-    let url = create_checkout(api_key, store_id, &variant_id, uid, &body.pack_id).await?;
+    let api_key = state
+        .config
+        .paddle_api_key
+        .clone()
+        .ok_or_else(|| AppError::Internal("paddle_api_key_missing".into()))?;
+    let provider = PaddleProvider {
+        api_key,
+        webhook_secret: state
+            .config
+            .paddle_webhook_secret
+            .clone()
+            .unwrap_or_default(),
+        env: state.config.paddle_env.clone(),
+    };
+    let url = provider
+        .create_checkout(&product_id, uid, &body.pack_id)
+        .await?;
     Ok(Json(CheckoutResponse { checkout_url: url }))
 }

@@ -520,6 +520,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsBuyCredits => '购买额度';
 
   @override
+  String get aiPurchasePayHint => '请在结账页使用微信支付；支付成功后余额会自动更新。';
+
+  @override
+  String get aiPurchaseWaitingHint => '支付可能仍在处理中，请稍后在设置中刷新额度。';
+
+  @override
   String get aiSettingsSessionExpired => '登录已过期，请重新绑定邮箱';
 
   @override

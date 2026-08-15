@@ -360,6 +360,8 @@
     }
   },
   "aiSettingsBuyCredits": "Buy credits",
+  "aiPurchasePayHint": "Pay with WeChat on the checkout page. Balance updates after payment.",
+  "aiPurchaseWaitingHint": "Payment may still be processing. Wait a moment, then refresh your credits in Settings.",
   "aiSettingsSessionExpired": "Login expired — please link your email again.",
   "aiPrecheckCreditsCost": "Estimated cost: 1 credit (balance {balance})",
   "@aiPrecheckCreditsCost": {

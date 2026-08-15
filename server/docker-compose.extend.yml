@@ -11,9 +11,9 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY}
       - RESEND_FROM=noreply@yourdomain.com
       # Do not set ALLOW_LOG_MAILER in production — OTP would be logged in plaintext.
-      - LS_API_KEY=${LS_API_KEY}
-      - LS_WEBHOOK_SECRET=${LS_WEBHOOK_SECRET}
-      - LS_STORE_ID=${LS_STORE_ID}
+      - PADDLE_API_KEY=${PADDLE_API_KEY}
+      - PADDLE_WEBHOOK_SECRET=${PADDLE_WEBHOOK_SECRET}
+      - PADDLE_ENV=${PADDLE_ENV:-sandbox}
       - RUST_LOG=info
     volumes:
       - platform-data:/data

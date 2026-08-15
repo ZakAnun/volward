@@ -1,3 +1,4 @@
 pub mod handlers;
-pub mod lemon_squeezy;
+pub mod paddle;
+pub mod provider;
 pub mod webhook;

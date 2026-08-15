@@ -75,7 +75,12 @@ async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
         Arc::new(mailer.clone()),
         upstream,
     ));
-    TestCtx { app, mailer, pool, _dir: dir }
+    TestCtx {
+        app,
+        mailer,
+        pool,
+        _dir: dir,
+    }
 }
 
 async fn test_ctx() -> TestCtx {
@@ -126,11 +131,7 @@ async fn post_auth(
     (status, body_json(res).await)
 }
 
-async fn get_auth(
-    app: &axum::Router,
-    path: &str,
-    token: &str,
-) -> (StatusCode, serde_json::Value) {
+async fn get_auth(app: &axum::Router, path: &str, token: &str) -> (StatusCode, serde_json::Value) {
     let res = app
         .clone()
         .oneshot(
@@ -180,8 +181,7 @@ async fn register_and_link(ctx: &TestCtx, device: &str, email: &str, credits: i6
     verified["token"].as_str().unwrap().to_string()
 }
 
-const ONE_CANDIDATE: &str =
-    r#"{"candidates":[{"path":"/a","size_bytes":1,"is_dir":false}]}"#;
+const ONE_CANDIDATE: &str = r#"{"candidates":[{"path":"/a","size_bytes":1,"is_dir":false}]}"#;
 
 #[tokio::test]
 async fn health_ok() {
@@ -293,24 +293,22 @@ async fn device_register_succeeds_while_analyze_awaits_upstream() {
     assert_eq!(status, StatusCode::OK);
 }
 
-fn sign_body(secret: &str, body: &[u8]) -> String {
+fn sign_paddle(secret: &str, body: &[u8]) -> String {
+    let ts = chrono::Utc::now().timestamp();
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
-    mac.update(body);
-    format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    let mut msg = format!("{ts}:").into_bytes();
+    msg.extend_from_slice(body);
+    mac.update(&msg);
+    format!("ts={ts};h1={}", hex::encode(mac.finalize().into_bytes()))
 }
 
-async fn post_signed(
-    app: &axum::Router,
-    path: &str,
-    body: &str,
-    signature: &str,
-) -> StatusCode {
+async fn post_signed(app: &axum::Router, path: &str, body: &str, signature: &str) -> StatusCode {
     let res = app
         .clone()
         .oneshot(
             Request::post(path)
                 .header("content-type", "application/json")
-                .header("X-Signature", signature)
+                .header("Paddle-Signature", signature)
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -329,14 +327,15 @@ async fn billing_webhook_idempotent_purchase() {
         .await
         .unwrap();
     let body = json!({
-        "meta": {
-            "event_name": "order_created",
+        "event_type": "transaction.completed",
+        "data": {
+            "id": "txn_ord_1",
+            "status": "completed",
             "custom_data": { "user_id": uid.0, "pack_id": "starter" }
-        },
-        "data": { "id": "ord_1", "attributes": { "status": "paid" } }
+        }
     })
     .to_string();
-    let sig = sign_body("test-webhook-secret", body.as_bytes());
+    let sig = sign_paddle("test-webhook-secret", body.as_bytes());
     let s1 = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
     let s2 = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
     assert_eq!(s1, StatusCode::OK);
@@ -347,13 +346,12 @@ async fn billing_webhook_idempotent_purchase() {
         .await
         .unwrap();
     assert_eq!(credits.0, 50);
-    let kinds: Vec<(String,)> = sqlx::query_as(
-        "SELECT kind FROM transactions WHERE user_id = ? ORDER BY created_at",
-    )
-    .bind(&uid.0)
-    .fetch_all(&ctx.pool)
-    .await
-    .unwrap();
+    let kinds: Vec<(String,)> =
+        sqlx::query_as("SELECT kind FROM transactions WHERE user_id = ? ORDER BY created_at")
+            .bind(&uid.0)
+            .fetch_all(&ctx.pool)
+            .await
+            .unwrap();
     assert_eq!(kinds.len(), 1);
     assert_eq!(kinds[0].0, "purchase");
 }
@@ -368,18 +366,20 @@ async fn billing_webhook_rejects_forged_signature() {
         .await
         .unwrap();
     let body = json!({
-        "meta": {
-            "event_name": "order_created",
+        "event_type": "transaction.completed",
+        "data": {
+            "id": "txn_ord_forge",
+            "status": "completed",
             "custom_data": { "user_id": uid.0, "pack_id": "starter" }
-        },
-        "data": { "id": "ord_forge", "attributes": { "status": "paid" } }
+        }
     })
     .to_string();
+    let ts = chrono::Utc::now().timestamp();
     let status = post_signed(
         &ctx.app,
         "/v1/billing/webhook",
         &body,
-        "sha256=deadbeef",
+        &format!("ts={ts};h1=deadbeef"),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -389,6 +389,31 @@ async fn billing_webhook_rejects_forged_signature() {
         .await
         .unwrap();
     assert_eq!(credits.0, 0);
+}
+
+#[tokio::test]
+async fn billing_webhook_rejects_unknown_user() {
+    let ctx = test_ctx().await;
+    let body = json!({
+        "event_type": "transaction.completed",
+        "data": {
+            "id": "txn_ord_unknown_user",
+            "status": "completed",
+            "custom_data": { "user_id": "missing-user", "pack_id": "starter" }
+        }
+    })
+    .to_string();
+    let sig = sign_paddle("test-webhook-secret", body.as_bytes());
+    let status = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let purchases: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM transactions WHERE provider_order_id = 'txn_ord_unknown_user'",
+    )
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+    assert_eq!(purchases.0, 0);
 }
 
 #[tokio::test]
@@ -458,11 +483,12 @@ async fn packs_returns_list_for_device() {
     let (status, body) = get_auth(&ctx.app, "/v1/billing/packs", &device_token).await;
     assert_eq!(status, StatusCode::OK);
     let packs = body.as_array().unwrap();
-    let ids: Vec<&str> = packs
-        .iter()
-        .filter_map(|p| p["id"].as_str())
-        .collect();
-    assert_eq!(packs.len(), 3, "all seeded packs must insert despite UNIQUE(ls_variant_id)");
+    let ids: Vec<&str> = packs.iter().filter_map(|p| p["id"].as_str()).collect();
+    assert_eq!(
+        packs.len(),
+        3,
+        "all seeded packs must insert despite UNIQUE(provider_product_id)"
+    );
     assert!(ids.contains(&"starter"));
     assert!(ids.contains(&"pro"));
     assert!(ids.contains(&"unlimited"));
@@ -471,7 +497,7 @@ async fn packs_returns_list_for_device() {
 #[tokio::test]
 async fn checkout_returns_url_for_known_pack() {
     let ctx = test_ctx().await;
-    // ls_variant_id = 'FILL_ME' in seeded packs → triggers dev fallback URL
+    // provider_product_id = 'FILL_ME' in seeded packs → triggers dev fallback URL
     let token = register_and_link(&ctx, "d-co", "co@example.com", 0).await;
     let (status, body) = post_auth(
         &ctx.app,
