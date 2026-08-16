@@ -1,0 +1,20 @@
+---
+interface Props {
+  copy: string;
+  versionText: string;
+  unsignedText: string;
+  version: string;
+}
+
+const { copy, versionText, unsignedText, version } = Astro.props;
+---
+
+<footer class="footer">
+  <div class="shell">
+    <div class="stack" style="gap: 10px;">
+      <div>{copy}</div>
+      <div>{versionText.replace('{version}', version)}</div>
+      <div>{unsignedText}</div>
+    </div>
+  </div>
+</footer>

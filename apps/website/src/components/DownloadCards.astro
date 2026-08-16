@@ -1,0 +1,37 @@
+---
+import type { DownloadAsset } from '../lib/site';
+
+interface Props {
+  title: string;
+  lead: string;
+  items: DownloadAsset[];
+  latestHref: string;
+  latestLabel: string;
+}
+
+const { title, lead, items, latestHref, latestLabel } = Astro.props;
+---
+
+<section id="download" class="download-section">
+  <div class="shell">
+    <p class="section-label">{title}</p>
+    <p class="lede download-lead">{lead}</p>
+
+    <div class="download-panel">
+      {items.map((item) => (
+        <a class="download-row" href={item.href}>
+          <div class="download-row-copy">
+            <strong>{item.label}</strong>
+            <span>{item.hint}</span>
+          </div>
+          <code>{item.fileName}</code>
+          <span class="download-arrow" aria-hidden="true">→</span>
+        </a>
+      ))}
+    </div>
+
+    <p class="download-footnote">
+      <a href={latestHref}>{latestLabel}</a>
+    </p>
+  </div>
+</section>

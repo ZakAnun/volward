@@ -1,0 +1,130 @@
+---
+import type { FeatureCopy } from '../lib/site';
+
+interface Props {
+  title: string;
+  subtitle: string;
+  lead: string;
+  features: FeatureCopy[];
+}
+
+const { title, subtitle, lead, features } = Astro.props;
+---
+
+<section id="features" class="feature-story">
+  <div class="shell feature-story-head">
+    <p class="section-label">{title}</p>
+    <div class="feature-story-intro">
+      <h2 class="feature-story-title">{subtitle}</h2>
+      <p class="lede feature-story-lead">{lead}</p>
+    </div>
+  </div>
+
+  <div class="feature-story-list">
+    {features.map((feature, index) => {
+      const reverse = index % 2 === 1;
+
+      return (
+        <article class={`story-band ${reverse ? 'story-band-dark story-band-reverse' : 'story-band-light'}`}>
+          <div class="shell story-band-shell">
+            <div class="story-copy">
+              <p class="story-index">0{index + 1}</p>
+              <h3>{feature.title}</h3>
+              <p>{feature.body}</p>
+            </div>
+
+            <div class={`story-visual story-visual-${index}`} aria-hidden="true">
+              {index === 0 && (
+                <>
+                  <div class="story-visual-top">
+                    <span>Progressive scan</span>
+                    <span class="story-visual-chip">Live</span>
+                  </div>
+                  <div class="story-scan-ring">
+                    <strong>72%</strong>
+                    <span>Home ready</span>
+                  </div>
+                  <div class="story-scan-bars">
+                    <span style="height: 42%;" />
+                    <span style="height: 68%;" />
+                    <span style="height: 54%;" />
+                    <span style="height: 84%;" />
+                    <span style="height: 61%;" />
+                  </div>
+                </>
+              )}
+
+              {index === 1 && (
+                <>
+                  <div class="story-visual-top">
+                    <span>Finder-style browsing</span>
+                    <span class="story-visual-chip">Columns</span>
+                  </div>
+                  <div class="story-columns">
+                    <div class="story-column">
+                      <span>Home</span>
+                      <span>Downloads</span>
+                      <span>Media</span>
+                    </div>
+                    <div class="story-column story-column-muted">
+                      <span>Documents</span>
+                      <span>Projects</span>
+                      <span>Archive</span>
+                    </div>
+                    <div class="story-column story-column-soft">
+                      <span>Sort by size</span>
+                      <span>Filter</span>
+                      <span>Preview</span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {index === 2 && (
+                <>
+                  <div class="story-visual-top">
+                    <span>Safer deletion</span>
+                    <span class="story-visual-chip story-visual-chip-positive">Low risk</span>
+                  </div>
+                  <div class="story-safe-panel">
+                    <strong>Trash first</strong>
+                    <p>Cache and Temp move quickly. Media and System stay flagged.</p>
+                  </div>
+                  <div class="story-safe-tags">
+                    <span>Cache</span>
+                    <span>Temp</span>
+                    <span>Media</span>
+                    <span>System</span>
+                  </div>
+                </>
+              )}
+
+              {index === 3 && (
+                <>
+                  <div class="story-visual-top">
+                    <span>Settings and updates</span>
+                    <span class="story-visual-chip">Built in</span>
+                  </div>
+                  <div class="story-settings">
+                    <div class="story-setting">
+                      <span>Theme</span>
+                      <strong>Auto</strong>
+                    </div>
+                    <div class="story-setting">
+                      <span>Language</span>
+                      <strong>EN / 中文</strong>
+                    </div>
+                    <div class="story-setting">
+                      <span>Updates</span>
+                      <strong>In app</strong>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </article>
+      );
+    })}
+  </div>
+</section>

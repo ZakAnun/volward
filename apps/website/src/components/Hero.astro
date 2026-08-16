@@ -1,0 +1,102 @@
+---
+interface Props {
+  eyebrow: string;
+  title: string;
+  lead: string;
+  ctaPrimary: string;
+  ctaPrimaryHref: string;
+  ctaSecondary?: string;
+  ctaSecondaryHref?: string;
+  wordmarkSrc: string;
+  logoSrc: string;
+  metaItems: string[];
+}
+
+const { eyebrow, title, lead, ctaPrimary, ctaSecondary, ctaPrimaryHref, ctaSecondaryHref, wordmarkSrc, logoSrc, metaItems } = Astro.props;
+---
+
+<section class="hero section">
+  <div class="shell hero-shell">
+    <div class="hero-copy">
+      <p class="eyebrow">{eyebrow}</p>
+      <h1 class="title hero-title">{title}</h1>
+      <p class="lede hero-lead">{lead}</p>
+      <div class="button-row">
+        <a class="button button-primary" href={ctaPrimaryHref}>{ctaPrimary}</a>
+        {ctaSecondary && ctaSecondaryHref && (
+          <a class="button button-ghost" href={ctaSecondaryHref}>{ctaSecondary}</a>
+        )}
+      </div>
+      <div class="hero-meta" aria-label="Volward summary">
+        {metaItems.map((item) => (
+          <span class="hero-meta-pill">{item}</span>
+        ))}
+      </div>
+    </div>
+
+    <div class="hero-visual" aria-hidden="true">
+      <div class="hero-dashboard">
+        <div class="hero-topbar">
+          <div class="hero-dots" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="hero-topbar-brand">
+            <img src={wordmarkSrc} alt="" />
+          </div>
+          <div class="hero-topbar-chip">Preview first</div>
+        </div>
+
+        <div class="hero-board">
+          <aside class="hero-sidebar">
+            <div class="hero-logo-wrap">
+              <img src={logoSrc} alt="" />
+            </div>
+            <div class="hero-sidebar-list">
+              <div class="hero-sidebar-item hero-sidebar-item-active"><span>Home</span><span>2.4 TB</span></div>
+              <div class="hero-sidebar-item"><span>Large files</span><span>1,248</span></div>
+              <div class="hero-sidebar-item"><span>Cache</span><span>48 GB</span></div>
+              <div class="hero-sidebar-item"><span>Trash</span><span>Ready</span></div>
+            </div>
+          </aside>
+
+          <div class="hero-main">
+            <div class="hero-stat-panel">
+              <div class="hero-stat-kicker">Progressive scan</div>
+              <div class="hero-stat-value">1.2 TB</div>
+              <div class="hero-stat-label">reclaimable in preview</div>
+            </div>
+
+            <div class="hero-meter" aria-hidden="true">
+              <span></span>
+            </div>
+
+            <div class="hero-card hero-card-primary">
+              <div>
+                <strong>Browse like Finder</strong>
+                <p>Columns, filters, and sorting stay easy to inspect.</p>
+              </div>
+              <div class="hero-card-chip">Live</div>
+            </div>
+
+            <div class="hero-rows">
+              <div class="hero-row">
+                <span>Cache</span>
+                <strong>41 GB</strong>
+              </div>
+              <div class="hero-row">
+                <span>Temp</span>
+                <strong>12 GB</strong>
+              </div>
+              <div class="hero-row">
+                <span>Media</span>
+                <strong>287 GB</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

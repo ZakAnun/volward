@@ -1,0 +1,54 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import DownloadCards from '../components/DownloadCards.astro';
+import Footer from '../components/Footer.astro';
+import { APP_VERSION, DOWNLOADS, PAGE_COPY, VERSION_RELEASE_URL } from '../lib/site';
+
+const copy = PAGE_COPY.en;
+const downloads = DOWNLOADS.en;
+const heroMetaItems = [...downloads.map((item) => item.label), copy.footerVersion.replace('{version}', APP_VERSION)];
+const canonical = new URL('./', Astro.site?.href ?? 'http://localhost:4321').href;
+---
+
+<BaseLayout
+  title={copy.title}
+  description={copy.description}
+  canonical={canonical}
+  lang="en"
+  alternates={[{ lang: 'zh', href: `${canonical}zh/` }]}
+>
+  <header class="header">
+    <div class="shell header-inner">
+      <a class="nav" href="/" aria-label="Volward home">
+        <img src="/branding/volward-wordmark.png" alt="Volward" style="height: 18px;" />
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#download">{copy.navDownload}</a>
+        <a class="button button-ghost" href="/zh/">{copy.localeToggle}</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <Hero
+      eyebrow={copy.heroEyebrow}
+      title={copy.heroTitle}
+      lead={copy.heroLead}
+      ctaPrimary={copy.ctaDownload}
+      ctaPrimaryHref="#download"
+      wordmarkSrc="/branding/volward-wordmark.png"
+      logoSrc="/branding/volward-logo.png"
+      metaItems={heroMetaItems}
+    />
+    <DownloadCards
+      title={copy.downloadTitle}
+      lead={copy.downloadLead}
+      items={downloads}
+      latestHref={VERSION_RELEASE_URL}
+      latestLabel={copy.downloadAllReleases}
+    />
+  </main>
+
+  <Footer copy={copy.footerCopy} versionText={copy.footerVersion} unsignedText={copy.footerUnsigned} version={APP_VERSION} />
+</BaseLayout>
