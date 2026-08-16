@@ -1,0 +1,37 @@
+---
+interface Props {
+  homeHref: string;
+  homeAriaLabel: string;
+  navAriaLabel: string;
+  downloadLabel: string;
+  localeToggleHref: string;
+  localeToggleLabel: string;
+  wordmarkSrc: string;
+}
+
+const { homeHref, homeAriaLabel, navAriaLabel, downloadLabel, localeToggleHref, localeToggleLabel, wordmarkSrc } = Astro.props;
+---
+
+<header class="header">
+  <div class="shell header-inner">
+    <a class="nav-brand" href={homeHref} aria-label={homeAriaLabel}>
+      <img src={wordmarkSrc} alt="Volward" style="height: 48px;" />
+    </a>
+    <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav-links">
+      <span></span><span></span><span></span>
+    </button>
+    <nav id="nav-links" class="nav-links" aria-label={navAriaLabel}>
+      <a href="#download">{downloadLabel}</a>
+      <a class="button button-ghost" href={localeToggleHref}>{localeToggleLabel}</a>
+    </nav>
+  </div>
+</header>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>('.nav-toggle');
+  const nav = document.getElementById('nav-links');
+  toggle?.addEventListener('click', () => {
+    const open = nav?.classList.toggle('open') ?? false;
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+</script>

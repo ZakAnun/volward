@@ -113,6 +113,11 @@ jobs:
           cd $GITHUB_WORKSPACE
           shasum -a 256 volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip > volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip.sha256
 
+      - name: Create latest copy
+        run: |
+          cp volward-v${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.zip \
+             volward-latest-macos-${{ matrix.arch }}.zip
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -241,6 +246,12 @@ jobs:
           $file = "VolwardSetup-v$appVersion-windows-x64.exe"
           $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -Path "$file.sha256" -Value "$hash  $file"
+
+      - name: Create latest copy
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          Copy-Item "VolwardSetup-v$v-windows-x64.exe" "VolwardSetup-latest-windows-x64.exe"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -399,6 +410,11 @@ jobs:
           cd $GITHUB_WORKSPACE
           sha256sum Volward-v${{ steps.version.outputs.version }}-linux-x86_64.AppImage > Volward-v${{ steps.version.outputs.version }}-linux-x86_64.AppImage.sha256
 
+      - name: Create latest copy
+        run: |
+          cp Volward-v${{ steps.version.outputs.version }}-linux-x86_64.AppImage \
+             Volward-latest-linux-x86_64.AppImage
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -414,6 +430,7 @@ jobs:
           path: |
             Volward-v*-linux-x86_64.AppImage
             Volward-v*-linux-x86_64.AppImage.sha256
+            Volward-latest-linux-x86_64.AppImage
 
   create-release:
     name: Create Release

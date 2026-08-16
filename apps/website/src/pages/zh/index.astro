@@ -1,13 +1,14 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import Nav from '../../components/Nav.astro';
 import Hero from '../../components/Hero.astro';
 import DownloadCards from '../../components/DownloadCards.astro';
 import Footer from '../../components/Footer.astro';
-import { APP_VERSION, DOWNLOADS, PAGE_COPY, VERSION_RELEASE_URL } from '../../lib/site';
+import { DOWNLOADS, PAGE_COPY, LATEST_RELEASE_URL } from '../../lib/site';
 
 const copy = PAGE_COPY.zh;
 const downloads = DOWNLOADS.zh;
-const heroMetaItems = [...downloads.map((item) => item.label), copy.footerVersion.replace('{version}', APP_VERSION)];
+const heroMetaItems = downloads.map((item) => item.label);
 const canonical = new URL('zh/', Astro.site?.href ?? 'http://localhost:4321').href;
 ---
 
@@ -16,19 +17,17 @@ const canonical = new URL('zh/', Astro.site?.href ?? 'http://localhost:4321').hr
   description={copy.description}
   canonical={canonical}
   lang="zh"
-  alternates={[{ lang: 'en', href: `${canonical.replace(/zh\/$/, '')}` }]}
+  alternates={[{ lang: 'en', href: new URL('../', canonical).href }]}
 >
-  <header class="header">
-    <div class="shell header-inner">
-      <a class="nav" href="/zh/" aria-label="Volward 首页">
-        <img src="/branding/volward-wordmark.png" alt="Volward" style="height: 18px;" />
-      </a>
-      <nav class="nav-links" aria-label="主要导航">
-        <a href="#download">{copy.navDownload}</a>
-        <a class="button button-ghost" href="/">{copy.localeToggle}</a>
-      </nav>
-    </div>
-  </header>
+  <Nav
+    homeHref="/zh/"
+    homeAriaLabel="Volward 首页"
+    navAriaLabel="主要导航"
+    downloadLabel={copy.navDownload}
+    localeToggleHref="/"
+    localeToggleLabel={copy.localeToggle}
+    wordmarkSrc="/branding/volward-wordmark.png"
+  />
 
   <main>
     <Hero
@@ -45,10 +44,10 @@ const canonical = new URL('zh/', Astro.site?.href ?? 'http://localhost:4321').hr
       title={copy.downloadTitle}
       lead={copy.downloadLead}
       items={downloads}
-      latestHref={VERSION_RELEASE_URL}
+      latestHref={LATEST_RELEASE_URL}
       latestLabel={copy.downloadAllReleases}
     />
   </main>
 
-  <Footer copy={copy.footerCopy} versionText={copy.footerVersion} unsignedText={copy.footerUnsigned} version={APP_VERSION} />
+  <Footer copy={copy.footerCopy} versionText={copy.footerVersion} unsignedText={copy.footerUnsigned} version="" />
 </BaseLayout>

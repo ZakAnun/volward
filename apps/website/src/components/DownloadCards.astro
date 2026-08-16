@@ -1,5 +1,6 @@
 ---
 import type { DownloadAsset } from '../lib/site';
+import { LATEST_DOWNLOAD_BASE } from '../lib/site';
 
 interface Props {
   title: string;
@@ -19,7 +20,7 @@ const { title, lead, items, latestHref, latestLabel } = Astro.props;
 
     <div class="download-panel">
       {items.map((item) => (
-        <a class="download-row" href={item.href}>
+        <a class="download-row" href={`${LATEST_DOWNLOAD_BASE}/${item.fileName}`}>
           <div class="download-row-copy">
             <strong>{item.label}</strong>
             <span>{item.hint}</span>

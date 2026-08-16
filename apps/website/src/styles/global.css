@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --bg: #f5f5f7;
   --bg-soft: #eef3fb;
   --surface: rgba(255, 255, 255, 0.76);
@@ -165,7 +165,7 @@ main {
 }
 
 .header-inner {
-  min-height: 56px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -176,6 +176,40 @@ main {
   display: flex;
   align-items: center;
   gap: 18px;
+}
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.nav-toggle span {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+
+.nav-toggle[aria-expanded="true"] span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.nav-toggle[aria-expanded="true"] span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-toggle[aria-expanded="true"] span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
 }
 
 .nav-links {
@@ -796,6 +830,93 @@ main {
   font-size: 0.95rem;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #111113;
+    --bg-soft: #1a1a1e;
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-strong: #1c1c1e;
+    --text: #f5f5f7;
+    --muted: rgba(245, 245, 247, 0.58);
+    --line: rgba(255, 255, 255, 0.1);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --primary: #2997ff;
+    --primary-strong: #5baeff;
+    --primary-soft: rgba(41, 151, 255, 0.16);
+    --shadow: 0 26px 80px rgba(0, 0, 0, 0.4);
+    --shadow-strong: 0 38px 110px rgba(0, 0, 0, 0.6);
+  }
+
+  html {
+    background: var(--bg);
+  }
+
+  body {
+    background: linear-gradient(180deg, #111113 0%, #141418 44%, #131318 100%);
+  }
+
+  body::before {
+    background:
+      linear-gradient(135deg, rgba(41, 151, 255, 0.06) 0%, transparent 28%),
+      linear-gradient(225deg, rgba(255, 255, 255, 0.02) 0%, transparent 24%);
+  }
+
+  .header {
+    background: rgba(17, 17, 19, 0.88);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .button-ghost {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .hero-meta-pill {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .download-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .nav-links {
+    background: rgba(17, 17, 19, 0.96);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-links a {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .story-band-light {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.06) 100%);
+    border-top-color: rgba(255, 255, 255, 0.06);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .story-band-light .story-visual {
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.04) 100%);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .story-column {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .story-column span {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+  }
+
+  .story-scan-ring {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+}
+
 @media (max-width: 1080px) {
   .title {
     font-size: 4.2rem;
@@ -849,8 +970,37 @@ main {
     justify-self: end;
   }
 
+  .nav-toggle {
+    display: flex;
+  }
+
   .nav-links {
     display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: rgba(245, 245, 247, 0.96);
+    backdrop-filter: blur(18px);
+    border-bottom: 1px solid rgba(17, 17, 19, 0.08);
+    padding: 12px 24px 16px;
+  }
+
+  .nav-links.open {
+    display: flex;
+  }
+
+  .nav-links a {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(17, 17, 19, 0.06);
+  }
+
+  .nav-links a:last-child {
+    border-bottom: none;
+    margin-top: 4px;
   }
 }
 

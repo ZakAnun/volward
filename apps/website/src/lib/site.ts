@@ -1,7 +1,6 @@
-export const APP_VERSION = '0.0.3';
 export const GITHUB_REPO = 'ZakAnun/volward';
-export const RELEASE_BASE_URL = `https://github.com/${GITHUB_REPO}/releases/download/v${APP_VERSION}`;
-export const VERSION_RELEASE_URL = `https://github.com/${GITHUB_REPO}/releases/tag/v${APP_VERSION}`;
+export const LATEST_DOWNLOAD_BASE = `https://github.com/${GITHUB_REPO}/releases/latest/download`;
+export const LATEST_RELEASE_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 
 export type Locale = 'en' | 'zh';
 
@@ -10,7 +9,6 @@ export type DownloadAsset = {
   fileName: string;
   label: string;
   hint: string;
-  href: string;
 };
 
 export type FeatureCopy = {
@@ -125,65 +123,44 @@ export const PAGE_COPY: Record<Locale, PageCopy> = {
   },
 };
 
+type DownloadEntry = DownloadAsset & { en: { label: string; hint: string }; zh: { label: string; hint: string } };
+
+const DOWNLOAD_ENTRIES: DownloadEntry[] = [
+  {
+    id: 'macos-arm64',
+    fileName: 'volward-latest-macos-arm64.zip',
+    en: { label: 'macOS (Apple Silicon)', hint: 'Unzip and drag into /Applications. First launch: right-click → Open.' },
+    zh: { label: 'macOS（Apple Silicon）', hint: '解压后拖入 /Applications。首次打开：右键 → 打开。' },
+    label: '',
+    hint: '',
+  },
+  {
+    id: 'macos-x64',
+    fileName: 'volward-latest-macos-x64.zip',
+    en: { label: 'macOS (Intel)', hint: 'Same install flow as Apple Silicon.' },
+    zh: { label: 'macOS（Intel）', hint: '安装方式同 Apple Silicon。' },
+    label: '',
+    hint: '',
+  },
+  {
+    id: 'windows-x64',
+    fileName: 'VolwardSetup-latest-windows-x64.exe',
+    en: { label: 'Windows (x64)', hint: 'If SmartScreen appears, open More info then Run anyway.' },
+    zh: { label: 'Windows（x64）', hint: '若出现 SmartScreen：更多信息 → 仍要运行。' },
+    label: '',
+    hint: '',
+  },
+  {
+    id: 'linux-appimage',
+    fileName: 'Volward-latest-linux-x86_64.AppImage',
+    en: { label: 'Linux AppImage', hint: 'Run chmod +x first, then launch.' },
+    zh: { label: 'Linux AppImage', hint: 'chmod +x 后运行。' },
+    label: '',
+    hint: '',
+  },
+];
+
 export const DOWNLOADS: Record<Locale, DownloadAsset[]> = {
-  en: [
-    {
-      id: 'macos-arm64',
-      fileName: 'volward-v0.0.3-macos-arm64.zip',
-      label: 'macOS (Apple Silicon)',
-      hint: 'Unzip and drag into /Applications. First launch: right-click → Open.',
-      href: `${RELEASE_BASE_URL}/volward-v0.0.3-macos-arm64.zip`,
-    },
-    {
-      id: 'macos-x64',
-      fileName: 'volward-v0.0.3-macos-x64.zip',
-      label: 'macOS (Intel)',
-      hint: 'Same install flow as Apple Silicon.',
-      href: `${RELEASE_BASE_URL}/volward-v0.0.3-macos-x64.zip`,
-    },
-    {
-      id: 'windows-x64',
-      fileName: 'VolwardSetup-v0.0.3-windows-x64.exe',
-      label: 'Windows (x64)',
-      hint: 'If SmartScreen appears, open More info then Run anyway.',
-      href: `${RELEASE_BASE_URL}/VolwardSetup-v0.0.3-windows-x64.exe`,
-    },
-    {
-      id: 'linux-appimage',
-      fileName: 'Volward-v0.0.3-linux-x86_64.AppImage',
-      label: 'Linux AppImage',
-      hint: 'Run chmod +x first, then launch.',
-      href: `${RELEASE_BASE_URL}/Volward-v0.0.3-linux-x86_64.AppImage`,
-    },
-  ],
-  zh: [
-    {
-      id: 'macos-arm64',
-      fileName: 'volward-v0.0.3-macos-arm64.zip',
-      label: 'macOS（Apple Silicon）',
-      hint: '解压后拖入 /Applications。首次打开：右键 → 打开。',
-      href: `${RELEASE_BASE_URL}/volward-v0.0.3-macos-arm64.zip`,
-    },
-    {
-      id: 'macos-x64',
-      fileName: 'volward-v0.0.3-macos-x64.zip',
-      label: 'macOS（Intel）',
-      hint: '安装方式同 Apple Silicon。',
-      href: `${RELEASE_BASE_URL}/volward-v0.0.3-macos-x64.zip`,
-    },
-    {
-      id: 'windows-x64',
-      fileName: 'VolwardSetup-v0.0.3-windows-x64.exe',
-      label: 'Windows（x64）',
-      hint: '若出现 SmartScreen：更多信息 → 仍要运行。',
-      href: `${RELEASE_BASE_URL}/VolwardSetup-v0.0.3-windows-x64.exe`,
-    },
-    {
-      id: 'linux-appimage',
-      fileName: 'Volward-v0.0.3-linux-x86_64.AppImage',
-      label: 'Linux AppImage',
-      hint: 'chmod +x 后运行。',
-      href: `${RELEASE_BASE_URL}/Volward-v0.0.3-linux-x86_64.AppImage`,
-    },
-  ],
+  en: DOWNLOAD_ENTRIES.map(({ id, fileName, en }) => ({ id, fileName, ...en })),
+  zh: DOWNLOAD_ENTRIES.map(({ id, fileName, zh }) => ({ id, fileName, ...zh })),
 };
