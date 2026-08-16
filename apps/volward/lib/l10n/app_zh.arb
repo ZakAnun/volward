@@ -268,5 +268,48 @@
       "notes": {}
     }
   },
-  "updateNotesUnavailable": "有新的 Volward 版本可以安装。"
+  "updateNotesUnavailable": "有新的 Volward 版本可以安装。",
+  "homeOverviewLive": "实时磁盘数据",
+  "homeOverviewCached": "缓存磁盘数据",
+  "homeOverviewLoading": "正在读取磁盘…",
+  "homeOverviewUnavailable": "暂时无法读取磁盘容量",
+  "homeCapacityUsed": "已使用",
+  "homeCapacityTotal": "总容量",
+  "homeCapacityAvailable": "可用",
+  "homeCapacitySemantics": "已使用 {used}，总容量 {total}，可用 {available}",
+  "@homeCapacitySemantics": {
+    "placeholders": {
+      "used": {"type": "String"},
+      "total": {"type": "String"},
+      "available": {"type": "String"}
+    }
+  },
+  "homeScanTargets": "扫描范围",
+  "homeLocationHome": "主目录",
+  "homeLocationApplications": "应用程序",
+  "homeLocationDownloads": "下载",
+  "homeLocationDocuments": "文稿",
+  "homeLocationVolume": "磁盘 {name}",
+  "@homeLocationVolume": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeLocationCustom": "{name}",
+  "@homeLocationCustom": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeChooseFolder": "选择文件夹",
+  "homeCurrentTarget": "当前目标",
+  "homeLastScan": "上次扫描 {time}",
+  "@homeLastScan": {
+    "placeholders": {"time": {"type": "String"}}
+  },
+  "homeNeverScanned": "尚未扫描",
+  "homeReclaimable": "可回收 {size}",
+  "@homeReclaimable": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeBrowseFiles": "浏览文件",
+  "homeStartScan": "开始扫描",
+  "homeRescan": "重新扫描",
+  "homeCancelScan": "取消扫描"
 }

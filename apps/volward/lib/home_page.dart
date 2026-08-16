@@ -8,6 +8,9 @@ import 'l10n/l10n.dart';
 import 'macos_settings.dart';
 import 'scan_entry_record.dart';
 import 'scan_tree.dart';
+import 'storage_home_summary.dart';
+import 'storage_overview.dart';
+import 'storage_overview_provider.dart';
 import 'theme/apple_tokens.dart';
 import 'settings_page.dart';
 import 'theme/volward_theme_settings.dart';
@@ -23,6 +26,7 @@ import 'scan_tree_navigation.dart';
 import 'snapshot_catalog.dart';
 import 'snapshot_query.dart';
 import 'snapshot_view_cache.dart';
+import 'widgets/storage_steward_home.dart';
 import 'widgets/top_toast.dart';
 import 'widgets/update_available_dialog.dart';
 
@@ -58,13 +62,13 @@ String refreshPathForDeleteTargets({
   required String fallbackPath,
   required Iterable<String> targetPaths,
 }) {
-  final parentPaths = targetPaths
-      .where((path) => path.isNotEmpty)
-      .map(_parentPathOf)
-      .toSet();
+  final parentPaths =
+      targetPaths.where((path) => path.isNotEmpty).map(_parentPathOf).toSet();
   if (parentPaths.length == 1) return parentPaths.single;
   return ScanTreeBuilder.normalizeRoot(fallbackPath);
 }
+
+enum _HomeContentMode { home, browse }
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -72,10 +76,19 @@ class HomePage extends StatefulWidget {
     required this.session,
     required this.themeSettings,
     required this.updater,
+    this.directoryPicker,
+    this.storageOverviewProvider = const MethodChannelStorageOverviewProvider(),
   });
   final VolwardSession session;
   final VolwardThemeSettings themeSettings;
   final AppUpdater updater;
+  final Future<String?> Function({required String confirmButtonText})?
+      directoryPicker;
+  final StorageOverviewProvider storageOverviewProvider;
+
+  static const logoKey = Key('volward-top-nav-home');
+  static const browseFolderActionKey = Key('volward-browse-folder-action');
+  static const browseHomeActionKey = Key('volward-browse-home-action');
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -106,6 +119,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // not change snapshotId) still triggers a rebuild via setState.
   int _lastRefreshedCatalogVersion = -1;
   bool _lastTargetPreviewLoading = false;
+  bool _hasValidRoot = false;
+  _HomeContentMode _contentMode = _HomeContentMode.home;
+  Completer<bool> _startupRootGate = Completer<bool>();
+  StorageOverviewData _storageOverview = const StorageOverviewData.loading();
+  String? _homeTargetPath;
+  int _overviewLoadGeneration = 0;
+  late VolwardSession _subscribedSession;
+  int _sessionGeneration = 0;
+  VolwardSession? _startupPendingSession;
+  int? _startupPendingGeneration;
+  bool _scanStartPending = false;
+  bool _targetPreparationPending = false;
+  int _scanStartGeneration = 0;
 
   // ---------- canonical snapshot cache ----------
   ScanTreeNode? _cachedResolvedTree;
@@ -139,29 +165,155 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    widget.session.addListener(_onSessionChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Preview-first startup: lightweight session state + a validated launch
-      // root render immediately, without waiting for the full snapshot/index
-      // restore to complete (that restore continues in the background via
-      // restoreCachedSnapshotIfNeeded).
-      await widget.session.loadSessionStateIfNeeded();
-      if (!mounted) return;
-      final launchRoot = await widget.session.resolveStartupRoot();
-      if (!mounted) return;
-      if (launchRoot.isNotEmpty) {
-        if (widget.session.refreshTargetPath != launchRoot) {
-          widget.session.setScanRoots([launchRoot]);
-        }
-        await widget.session.previewTarget();
-      }
-      if (!mounted) return;
-      // Opportunistic deep hydration — must never gate the first render.
-      await widget.session.restoreCachedSnapshotIfNeeded();
-    });
+    _subscribedSession = widget.session;
+    _subscribedSession.addListener(_onSessionChanged);
+    _scheduleSessionStartup(_subscribedSession);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_maybeCheckForUpdates());
     });
+  }
+
+  void _scheduleSessionStartup(VolwardSession session) {
+    final generation = ++_sessionGeneration;
+    final gate = _startupRootGate;
+    _startupPendingSession = session;
+    _startupPendingGeneration = generation;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_runSessionStartup(session, generation, gate));
+    });
+  }
+
+  Future<void> _runSessionStartup(
+    VolwardSession session,
+    int generation,
+    Completer<bool> gate,
+  ) async {
+    try {
+      // Preview-first startup: lightweight session state + a validated launch
+      // root render immediately, without waiting for the full snapshot/index
+      // restore to complete (that restore continues in the background).
+      await session.loadSessionStateIfNeeded();
+      if (!_isCurrentSession(session, generation)) return;
+      final launchRoot = await session.resolveStartupRoot();
+      if (!_isCurrentSession(session, generation)) return;
+
+      setState(() {
+        _hasValidRoot = launchRoot.isNotEmpty;
+        _homeTargetPath = launchRoot;
+      });
+      unawaited(
+        _loadStorageOverview(
+          launchRoot,
+          expectedSession: session,
+          expectedSessionGeneration: generation,
+        ),
+      );
+      if (identical(gate, _startupRootGate) && !gate.isCompleted) {
+        gate.complete(true);
+      }
+
+      if (launchRoot.isNotEmpty) {
+        if (session.refreshTargetPath != launchRoot) {
+          session.setScanRoots([launchRoot]);
+        }
+        final previewGeneration = session.rootSwitchGeneration;
+        await session.previewTarget(expectedGeneration: previewGeneration);
+        if (!_isCurrentSession(session, generation)) return;
+      }
+
+      await session.restoreCachedSnapshotIfNeeded();
+      if (!_isCurrentSession(session, generation)) return;
+    } catch (error, stackTrace) {
+      if (_isCurrentSession(session, generation)) {
+        debugPrint('HomePage startup failed: $error\n$stackTrace');
+      }
+    } finally {
+      _finishSessionStartup(session, generation, gate);
+    }
+  }
+
+  bool _isCurrentSession(VolwardSession session, int generation) {
+    return mounted &&
+        identical(_subscribedSession, session) &&
+        generation == _sessionGeneration;
+  }
+
+  bool _isStartupPendingFor(VolwardSession session) {
+    return identical(_startupPendingSession, session) &&
+        _startupPendingGeneration == _sessionGeneration;
+  }
+
+  bool get _startupPending => _isStartupPendingFor(_subscribedSession);
+
+  void _finishSessionStartup(
+    VolwardSession session,
+    int generation,
+    Completer<bool> gate,
+  ) {
+    if (!_isCurrentSession(session, generation)) return;
+    if (identical(gate, _startupRootGate) && !gate.isCompleted) {
+      gate.complete(true);
+    }
+    if (!identical(_startupPendingSession, session) ||
+        _startupPendingGeneration != generation) {
+      return;
+    }
+    _startupPendingSession = null;
+    _startupPendingGeneration = null;
+    setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sessionChanged = !identical(oldWidget.session, widget.session);
+    final providerChanged = !identical(
+      oldWidget.storageOverviewProvider,
+      widget.storageOverviewProvider,
+    );
+    if (!sessionChanged && !providerChanged) return;
+
+    if (sessionChanged) {
+      _subscribedSession.removeListener(_onSessionChanged);
+      _subscribedSession = widget.session;
+      _subscribedSession.addListener(_onSessionChanged);
+      _sessionGeneration++;
+      _scanStartGeneration++;
+      _scanStartPending = false;
+      _targetPreparationPending = false;
+      _scanStatus = null;
+      _selected.clear();
+      _selectedSizes.clear();
+      _selectedPaths.clear();
+      _selectionAnchorPath = null;
+      _selectionAnchorColumnIndex = null;
+      _columnChain.clear();
+      _columnNavTick.value++;
+      _invalidateSnapshotCaches();
+      _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
+      _lastRefreshedCatalogVersion = _s.catalogVersion;
+      _lastDeleting = _s.deleting;
+      _lastRefreshingDirectoryCount = _s.refreshingDirectoryPaths.length;
+      _lastTargetPreviewLoading = _s.targetPreviewLoading;
+      _prevScanning = _s.scanning;
+      _homeTargetPath = null;
+      _hasValidRoot = false;
+      if (!_startupRootGate.isCompleted) {
+        _startupRootGate.complete(false);
+      }
+      _startupRootGate = Completer<bool>();
+      unawaited(_s.refreshCapabilities());
+      _overviewLoadGeneration++;
+      _storageOverview = const StorageOverviewData.loading();
+      _scheduleSessionStartup(_subscribedSession);
+      return;
+    }
+
+    _overviewLoadGeneration++;
+    _storageOverview = const StorageOverviewData.loading();
+    if (_startupRootGate.isCompleted) {
+      unawaited(_loadStorageOverview(_homeTargetPath ?? _scanRootPath()));
+    }
   }
 
   Future<void> _maybeCheckForUpdates() async {
@@ -186,7 +338,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    widget.session.removeListener(_onSessionChanged);
+    _sessionGeneration++;
+    _overviewLoadGeneration++;
+    _scanStartGeneration++;
+    _scanStartPending = false;
+    _targetPreparationPending = false;
+    _startupPendingSession = null;
+    _startupPendingGeneration = null;
+    if (!_startupRootGate.isCompleted) {
+      _startupRootGate.complete(false);
+    }
+    _subscribedSession.removeListener(_onSessionChanged);
     _columnNavTick.dispose();
     _pendingVisibleChildrenQueries.clear();
     super.dispose();
@@ -196,7 +358,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _s.refreshCapabilities();
+      if (_startupRootGate.isCompleted) {
+        unawaited(
+          _loadStorageOverview(_homeTargetPath ?? _scanRootPath()),
+        );
+      }
     }
+  }
+
+  Future<void> _loadStorageOverview(
+    String? selectedPath, {
+    VolwardSession? expectedSession,
+    int? expectedSessionGeneration,
+  }) async {
+    final generation = ++_overviewLoadGeneration;
+    final provider = widget.storageOverviewProvider;
+    bool isCurrentRequest() {
+      return mounted &&
+          generation == _overviewLoadGeneration &&
+          (expectedSession == null ||
+              identical(expectedSession, _subscribedSession)) &&
+          (expectedSessionGeneration == null ||
+              expectedSessionGeneration == _sessionGeneration) &&
+          identical(provider, widget.storageOverviewProvider);
+    }
+
+    if (selectedPath == null || selectedPath.isEmpty) {
+      if (isCurrentRequest()) {
+        setState(
+          () => _storageOverview =
+              const StorageOverviewData.unavailable('missing-root'),
+        );
+      }
+      return;
+    }
+    final data = await provider.load(
+      selectedPath: selectedPath,
+    );
+    if (!isCurrentRequest()) return;
+    setState(() => _storageOverview = data);
   }
 
   Future<void> _openFullDiskAccessSettings() async {
@@ -246,34 +446,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       });
     } else if (!_prevScanning && _s.scanning) {
       setState(() {
-        _selected.clear();
-        _selectedSizes.clear();
-        _selectedPaths.clear();
-        _selectionAnchorPath = null;
-        _selectionAnchorColumnIndex = null;
         _scanStatus = null;
-        _columnChain.clear();
-        _columnNavTick.value++;
         _invalidateSnapshotCaches();
         _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
+        if (_contentMode != _HomeContentMode.home) {
+          _selected.clear();
+          _selectedSizes.clear();
+          _selectedPaths.clear();
+          _selectionAnchorPath = null;
+          _selectionAnchorColumnIndex = null;
+          _columnChain.clear();
+          _columnNavTick.value++;
+        }
       });
     } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
       // Scan completed (possibly auto-started by switchScanRoot) — show stats.
       final count = _s.lastSnapshot?.filesInSnapshot ?? 0;
       final l10n = context.l10n;
-      final label = _s.incrementalScan
-          ? l10n.scanStatusIncremental
-          : l10n.scanStatusFull;
+      final label =
+          _s.incrementalScan ? l10n.scanStatusIncremental : l10n.scanStatusFull;
       setState(() {
         _scanStatus = l10n.scanStatusFiles(label, count);
-        _columnChain.clear();
-        _columnNavTick.value++;
         _invalidateSnapshotCaches();
-        _selectedSizes.clear();
-        _selectedPaths.clear();
-        _selectionAnchorPath = null;
-        _selectionAnchorColumnIndex = null;
         _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
+        if (_contentMode != _HomeContentMode.home) {
+          _columnChain.clear();
+          _columnNavTick.value++;
+          _selectedSizes.clear();
+          _selectedPaths.clear();
+          _selectionAnchorPath = null;
+          _selectionAnchorColumnIndex = null;
+        }
       });
     } else {
       // Checkpoint / peek merged new data. Refresh display caches whenever
@@ -300,8 +503,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             // visible-children cache invalidation above is sufficient.
             if (!_s.hasIndexApi) {
               final refreshed = refreshColumnChain(tree, _columnChain);
-              final chainChanged =
-                  refreshed.length != _columnChain.length ||
+              final chainChanged = refreshed.length != _columnChain.length ||
                   !Iterable.generate(
                     refreshed.length,
                   ).every((i) => refreshed[i].path == _columnChain[i].path);
@@ -453,8 +655,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (range.isNotEmpty) {
           setState(() {
             for (final record in range) {
-              final rangeNode =
-                  _findNodeByPath(currentTree, record.path) ??
+              final rangeNode = _findNodeByPath(currentTree, record.path) ??
                   record.toScanTreeNode();
               _addNodeSelection(rangeNode);
             }
@@ -477,7 +678,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (anchorRecord != null) {
               final anchorNode =
                   _findNodeByPath(currentTree, anchorRecord.path) ??
-                  anchorRecord.toScanTreeNode();
+                      anchorRecord.toScanTreeNode();
               _addNodeSelection(anchorNode);
             }
           }
@@ -511,8 +712,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _setColumnChain(nextChain);
     });
     _s.setCurrentDirectory(browsedDirectoryPath(nextChain));
-    final remainsSelected =
-        nextChain.length > columnIndex &&
+    final remainsSelected = nextChain.length > columnIndex &&
         nextChain[columnIndex].path == node.path;
     if (remainsSelected && actualNode.isDirectory && !actualNode.scanned) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -572,8 +772,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Re-resolve from the live tree so peek-scan merges (which update
     // tree.children but leave _columnChain nodes stale) are visible to the
     // focused branch overlay.
-    final liveNode =
-        _s.directoryOverlayForPath(node.path) ??
+    final liveNode = _s.directoryOverlayForPath(node.path) ??
         (_shouldUseTreeOverlayForPath(node.path)
             ? (_findNodeByPath(_cachedResolvedTree, node.path) ?? node)
             : node);
@@ -875,9 +1074,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// after selection or snapshot changes.
   int _selectedBytes() {
     if (_selected.isEmpty) return 0;
-    final selectedKey = _selected.isEmpty
-        ? ''
-        : (_selected.toList()..sort()).join(',');
+    final selectedKey =
+        _selected.isEmpty ? '' : (_selected.toList()..sort()).join(',');
     final compositeKey = '${_s.lastSnapshot?.snapshotId ?? ''}|$selectedKey';
     if (compositeKey == _cachedSelectedBytesKey) return _cachedSelectedBytes;
     _cachedSelectedBytes = _selected.fold<int>(
@@ -916,35 +1114,204 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return _focusedDeleteNode()?.sizeBytes ?? 0;
   }
 
-  Future<void> _pickFolder() async {
-    final path = await getDirectoryPath(
-      confirmButtonText: context.l10n.folderPickerConfirm,
-    );
-    if (path == null) return;
-    await _s.switchScanRoot(path);
+  Future<String?> _chooseFolderPath() {
+    final confirm = context.l10n.folderPickerConfirm;
+    final picker = widget.directoryPicker;
+    return picker != null
+        ? picker(confirmButtonText: confirm)
+        : getDirectoryPath(confirmButtonText: confirm);
   }
 
-  Future<void> _startScan() async {
-    if (!_s.ready) return;
-    final incremental = _s.incrementalScan;
+  Future<void> _pickFolder() async {
+    final path = await _chooseFolderPath();
+    if (path == null) return;
+    if (!await _switchToValidatedRoot(path)) return;
+    _synchronizeHomeTarget(
+      additionalState: () => _contentMode = _HomeContentMode.browse,
+    );
+  }
+
+  Future<void> _pickHomeFolder() async {
+    final path = await _chooseFolderPath();
+    if (path == null) return;
+    await _prepareHomeTarget(path);
+  }
+
+  Future<void> _prepareHomeTarget(String path) async {
+    if (_s.scanning || _targetPreparationPending) return;
+    final session = _s;
+    final sessionGeneration = _sessionGeneration;
+    _scanStartGeneration++;
+    setState(() => _targetPreparationPending = true);
     try {
-      final id = await _s.runScan();
+      final normalized = ScanTreeBuilder.normalizeRoot(path);
+      final current = ScanTreeBuilder.normalizeRoot(_scanRootPath());
+      if (normalized != current) {
+        if (!await _switchToValidatedRoot(
+          normalized,
+          startFullScan: false,
+        )) {
+          return;
+        }
+      }
+      if (!_isCurrentSession(session, sessionGeneration)) return;
+      _synchronizeHomeTarget();
+    } finally {
+      if (_isCurrentSession(session, sessionGeneration)) {
+        setState(() => _targetPreparationPending = false);
+      }
+    }
+  }
+
+  Future<bool> _switchToValidatedRoot(
+    String path, {
+    bool startFullScan = true,
+  }) async {
+    try {
+      await _s.switchScanRoot(
+        path,
+        startFullScan: startFullScan,
+        validateBeforeSwitch: true,
+      );
+      return mounted;
+    } catch (error) {
+      if (!mounted) return false;
+      showTopToast(
+        context,
+        message: context.l10n.scanStatusFailed(error.toString()),
+        type: ToastType.error,
+      );
+      return false;
+    }
+  }
+
+  void _synchronizeHomeTarget({VoidCallback? additionalState}) {
+    final target = ScanTreeBuilder.normalizeRoot(_scanRootPath());
+    final targetChanged = target != _homeTargetPath;
+    if (targetChanged) _overviewLoadGeneration++;
+    setState(() {
+      if (targetChanged) {
+        _storageOverview = const StorageOverviewData.loading();
+      }
+      _homeTargetPath = target;
+      _hasValidRoot = target.isNotEmpty;
+      additionalState?.call();
+    });
+    unawaited(_loadStorageOverview(target));
+  }
+
+  Future<void> _switchBrowseToHomeRoot() async {
+    setState(() => _scanStatus = null);
+    await _s.switchScanRoot(null);
+    if (!mounted) return;
+    _synchronizeHomeTarget();
+  }
+
+  void _showHome() {
+    if (_contentMode == _HomeContentMode.home) return;
+    setState(() => _contentMode = _HomeContentMode.home);
+  }
+
+  Future<void> _waitForStartupRootResolution() async {
+    while (mounted) {
+      final gate = _startupRootGate;
+      final resolved = await gate.future;
       if (!mounted) return;
-      final snapshot = _s.lastSnapshot;
+      if (resolved && identical(gate, _startupRootGate)) return;
+    }
+  }
+
+  Future<void> _onHomeBrowse() async {
+    if (!_startupRootGate.isCompleted) {
+      await _waitForStartupRootResolution();
+      if (!mounted) return;
+    }
+    if (_hasValidRoot) {
+      setState(() => _contentMode = _HomeContentMode.browse);
+      return;
+    }
+    await _pickFolder();
+  }
+
+  StorageHomeSummary _homeSummary(ScanProgressViewState progress) {
+    final target = _homeTargetPath ?? _scanRootPath();
+    final matching = _snapshotMatchesCurrentRoot() ? _s.lastSnapshot : null;
+    return StorageHomeSummary.fromInputs(
+      overview: _storageOverview,
+      targetPath: target,
+      matchingSnapshot: matching,
+      scanning: _s.scanning,
+      scanProgress: _s.scanning ? progress.fraction : null,
+      scanPhase: _s.scanning ? progress.phase : null,
+    );
+  }
+
+  bool get _canStartScan {
+    return _startupRootGate.isCompleted &&
+        !_startupPending &&
+        _hasValidRoot &&
+        !_targetPreparationPending &&
+        !_s.targetPreviewLoading &&
+        _s.ready &&
+        !_s.scanning &&
+        !_scanStartPending &&
+        _s.hasSnapshotFileApi;
+  }
+
+  VoidCallback? get _scanStartAction {
+    if (!_canStartScan) return null;
+    final session = _s;
+    final generation = _scanStartGeneration;
+    return () => unawaited(_startScan(session, generation));
+  }
+
+  bool _isCurrentScanStart(VolwardSession session, int generation) {
+    return mounted &&
+        identical(_subscribedSession, session) &&
+        !_isStartupPendingFor(session) &&
+        generation == _scanStartGeneration;
+  }
+
+  Future<void> _startScan(
+    VolwardSession expectedSession,
+    int expectedGeneration,
+  ) async {
+    if (!identical(_subscribedSession, expectedSession) ||
+        expectedGeneration != _scanStartGeneration ||
+        !_startupRootGate.isCompleted ||
+        _isStartupPendingFor(expectedSession) ||
+        !_hasValidRoot ||
+        _targetPreparationPending ||
+        expectedSession.targetPreviewLoading ||
+        !_canStartScan) {
+      return;
+    }
+    final session = expectedSession;
+    final generation = ++_scanStartGeneration;
+    final incremental = session.incrementalScan;
+    setState(() => _scanStartPending = true);
+    String? nextStatus;
+    try {
+      final id = await session.runScan();
+      if (!mounted || !_isCurrentScanStart(session, generation)) return;
+      final snapshot = session.lastSnapshot;
       final count = snapshot?.filesInSnapshot ?? 0;
       final l10n = context.l10n;
-      final label = incremental
-          ? l10n.scanStatusIncremental
-          : l10n.scanStatusFull;
-      setState(() {
-        _scanStatus = '${l10n.scanStatusFiles(label, count)} · $id';
-      });
+      final label =
+          incremental ? l10n.scanStatusIncremental : l10n.scanStatusFull;
+      nextStatus = '${l10n.scanStatusFiles(label, count)} · $id';
     } catch (e) {
-      if (!mounted) return;
-      final msg = e is ScanCancelledException
+      if (!mounted || !_isCurrentScanStart(session, generation)) return;
+      nextStatus = e is ScanCancelledException
           ? context.l10n.scanStatusCancelled
           : context.l10n.scanStatusFailed(e.toString());
-      setState(() => _scanStatus = msg);
+    } finally {
+      if (_isCurrentScanStart(session, generation)) {
+        setState(() {
+          _scanStartPending = false;
+          if (nextStatus != null) _scanStatus = nextStatus;
+        });
+      }
     }
   }
 
@@ -1078,8 +1445,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 880),
         child: Padding(
-          padding:
-              padding ??
+          padding: padding ??
               const EdgeInsets.fromLTRB(
                 AppleSpacing.lg,
                 AppleSpacing.sm,
@@ -1190,6 +1556,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               const SizedBox(width: AppleSpacing.xxs),
               AppleButton(
+                key: HomePage.browseFolderActionKey,
                 label: context.l10n.scanActionFolder,
                 icon: Icons.folder_open_outlined,
                 variant: AppleButtonVariant.pearl,
@@ -1198,13 +1565,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               if (_s.scanRoots.isNotEmpty) ...[
                 const SizedBox(width: AppleSpacing.xxs),
                 AppleButton(
+                  key: HomePage.browseHomeActionKey,
                   label: context.l10n.scanActionHome,
                   icon: Icons.home_outlined,
                   variant: AppleButtonVariant.pearl,
-                  onPressed: () async {
-                    setState(() => _scanStatus = null);
-                    await _s.switchScanRoot(null);
-                  },
+                  onPressed: _switchBrowseToHomeRoot,
                 ),
               ],
             ],
@@ -1270,8 +1635,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _s.scanning
                 ? context.l10n.resultsUpdating
                 : matchingCount == 0
-                ? context.l10n.resultsNoFilterMatches
-                : context.l10n.resultsNoFilterMatchesWithCount(matchingCount),
+                    ? context.l10n.resultsNoFilterMatches
+                    : context.l10n
+                        .resultsNoFilterMatchesWithCount(matchingCount),
             style: context.vwFinePrint,
             textAlign: TextAlign.center,
           ),
@@ -1286,8 +1652,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // the appropriate cached query outside the build pass.
     final treeChildrenEmpty = displayTree.children.isEmpty;
     final rootKey = _visibleChildrenKeyFor(displayTree);
-    final cachedRootChildren =
-        _visibleChildrenCache.peek(rootKey) ??
+    final cachedRootChildren = _visibleChildrenCache.peek(rootKey) ??
         _visibleChildrenCache.latestForPath(displayTree.path);
     final catalogQueryPending = _pendingVisibleChildrenQueries.contains(
       rootKey,
@@ -1302,8 +1667,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Only skip the empty-state when the catalog API is present and the root is
     // either already cached, still pending, or still scanning.  For old builds
     // or genuinely empty directories, the friendly empty-state is still shown.
-    final catalogMayHaveChildren =
-        _s.hasIndexApi &&
+    final catalogMayHaveChildren = _s.hasIndexApi &&
         (catalogQueryPending ||
             cachedRootChildren?.isNotEmpty == true ||
             _s.scanning);
@@ -1335,8 +1699,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         for (final node in _columnChain)
           if (_isPreparingVisibleChildren(node)) node.path,
       },
-      childrenPreSorted:
-          _s.hasIndexApi &&
+      childrenPreSorted: _s.hasIndexApi &&
           !_showingPreviewSnapshot &&
           _categoryFilter == null &&
           !_deletableOnly,
@@ -1355,88 +1718,109 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final browsing = _contentMode == _HomeContentMode.browse;
     final restoring = _s.restoringSnapshot;
     final snapshotMatchesCurrentRoot = _snapshotMatchesCurrentRoot();
     final loadingTarget =
         _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
     final hasResults =
         !loadingTarget && _s.lastSnapshot != null && snapshotMatchesCurrentRoot;
-    final displayTree = hasResults ? _resolveResultTree() : null;
-    final matchingCount = hasResults ? _matchingEntryCount() : 0;
+    final displayTree = browsing && hasResults ? _resolveResultTree() : null;
+    final matchingCount = browsing && hasResults ? _matchingEntryCount() : 0;
 
     return Scaffold(
-      backgroundColor: context.volward.canvasParchment,
+      backgroundColor: browsing
+          ? context.volward.canvasParchment
+          : StorageStewardHome.backgroundColor,
       body: Column(
         children: [
-          _buildTopNav(context),
+          if (browsing) _buildTopNav(context),
           Expanded(
-            child: (restoring || loadingTarget) && !hasResults
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Keep the startup shell (target picker, scan actions)
-                      // visible instead of swapping the whole page for a
-                      // full-screen skeleton — the folder picker stays usable
-                      // while the browser pane is still loading.
-                      _buildScanSection(context),
-                      Expanded(
-                        child: _buildRestoreLoading(
-                          context,
-                          label: restoring
-                              ? context.l10n.resultsRestoringPreviousScan
-                              : context.l10n.scanColumnPreparingFolder,
-                        ),
-                      ),
-                    ],
+            child: !browsing
+                ? ValueListenableBuilder<ScanProgressViewState>(
+                    valueListenable: _s.scanProgressNotifier,
+                    builder: (context, progress, _) => StorageStewardHome(
+                      summary: _homeSummary(progress),
+                      onBrowse: () => unawaited(_onHomeBrowse()),
+                      onChooseFolder: () => unawaited(_pickHomeFolder()),
+                      onSelectTarget: (location) =>
+                          unawaited(_prepareHomeTarget(location.path)),
+                      onScan: _scanStartAction,
+                      onCancelScan: _s.scanning ? _s.cancelScan : null,
+                      onOpenSettings: _openSettings,
+                    ),
                   )
-                : hasResults
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildCompactResultsChrome(
-                        context,
-                        matchingCount: matchingCount,
-                        displayTree: displayTree,
-                      ),
-                      Expanded(
-                        child: ListenableBuilder(
-                          listenable: _columnNavTick,
-                          builder: (context, _) {
-                            final focus = scanColumnFocusNode(_columnChain);
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: _padExpanded(
-                                    _buildResultsBrowser(
-                                      context,
-                                      displayTree,
-                                      matchingCount,
-                                    ),
-                                    padding: const EdgeInsets.fromLTRB(
-                                      AppleSpacing.lg,
-                                      0,
-                                      AppleSpacing.lg,
-                                      AppleSpacing.xxs,
-                                    ),
-                                  ),
+                : (restoring || loadingTarget) && !hasResults
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Keep the startup shell (target picker, scan actions)
+                          // visible instead of swapping the whole page for a
+                          // full-screen skeleton — the folder picker stays usable
+                          // while the browser pane is still loading.
+                          _buildScanSection(context),
+                          Expanded(
+                            child: _buildRestoreLoading(
+                              context,
+                              label: restoring
+                                  ? context.l10n.resultsRestoringPreviousScan
+                                  : context.l10n.scanColumnPreparingFolder,
+                            ),
+                          ),
+                        ],
+                      )
+                    : hasResults
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildCompactResultsChrome(
+                                context,
+                                matchingCount: matchingCount,
+                                displayTree: displayTree,
+                              ),
+                              Expanded(
+                                child: ListenableBuilder(
+                                  listenable: _columnNavTick,
+                                  builder: (context, _) {
+                                    final focus =
+                                        scanColumnFocusNode(_columnChain);
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Expanded(
+                                          child: _padExpanded(
+                                            _buildResultsBrowser(
+                                              context,
+                                              displayTree,
+                                              matchingCount,
+                                            ),
+                                            padding: const EdgeInsets.fromLTRB(
+                                              AppleSpacing.lg,
+                                              0,
+                                              AppleSpacing.lg,
+                                              AppleSpacing.xxs,
+                                            ),
+                                          ),
+                                        ),
+                                        _buildItemPreview(context, focus),
+                                      ],
+                                    );
+                                  },
                                 ),
-                                _buildItemPreview(context, focus),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  )
-                : CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(child: _buildScanSection(context)),
-                      const SliverToBoxAdapter(child: SizedBox(height: 72)),
-                    ],
-                  ),
+                              ),
+                            ],
+                          )
+                        : CustomScrollView(
+                            slivers: [
+                              SliverToBoxAdapter(
+                                  child: _buildScanSection(context)),
+                              const SliverToBoxAdapter(
+                                  child: SizedBox(height: 72)),
+                            ],
+                          ),
           ),
-          _buildStickyBar(context),
+          if (_contentMode == _HomeContentMode.browse) _buildStickyBar(context),
         ],
       ),
     );
@@ -1604,19 +1988,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           builder: (context, constraints) {
             final browserHeight =
                 constraints.maxHeight.isFinite && constraints.maxHeight > 0
-                ? constraints.maxHeight
-                : 360.0;
+                    ? constraints.maxHeight
+                    : 360.0;
 
             int rowsFor(int target) {
               const rowHeight = 20.0;
               const chromeHeight =
                   AppleSpacing.sm * 2 + 12 + AppleSpacing.sm + 16;
               final available = browserHeight - chromeHeight;
-              final maxRows =
-                  ((available + AppleSpacing.sm) /
-                          (rowHeight + AppleSpacing.sm))
-                      .floor()
-                      .clamp(3, 8);
+              final maxRows = ((available + AppleSpacing.sm) /
+                      (rowHeight + AppleSpacing.sm))
+                  .floor()
+                  .clamp(3, 8);
               return target < maxRows ? target : maxRows;
             }
 
@@ -1705,6 +2088,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsPage(
+          themeSettings: widget.themeSettings,
+          session: _s,
+          deletableOnly: _deletableOnly,
+          onDeletableOnlyChanged: (value) {
+            setState(() {
+              _deletableOnly = value;
+              _resetColumnNav();
+            });
+          },
+          updater: widget.updater,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopNav(BuildContext context) {
     final v = context.volward;
     return Container(
@@ -1713,15 +2115,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.md),
       child: Row(
         children: [
-          const VolwardLogoMark(size: 20),
-          const SizedBox(width: AppleSpacing.sm),
-          Text(
-            'Volward',
-            style: AppleTypography.navLink.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.12,
-              color: v.bodyOnDark,
+          Tooltip(
+            message: context.l10n.scanActionHome,
+            child: Semantics(
+              button: true,
+              label: context.l10n.scanActionHome,
+              child: InkWell(
+                key: HomePage.logoKey,
+                onTap: _showHome,
+                borderRadius: BorderRadius.circular(AppleRadius.sm),
+                child: ExcludeSemantics(
+                  child: Row(
+                    children: [
+                      const VolwardLogoMark(size: 20),
+                      const SizedBox(width: AppleSpacing.sm),
+                      Text(
+                        'Volward',
+                        style: AppleTypography.navLink.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.12,
+                          color: v.bodyOnDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: AppleSpacing.sm),
@@ -1734,24 +2154,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             icon: Icon(Icons.settings_outlined, size: 18, color: v.bodyMuted),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => SettingsPage(
-                    themeSettings: widget.themeSettings,
-                    session: _s,
-                    deletableOnly: _deletableOnly,
-                    onDeletableOnlyChanged: (value) {
-                      setState(() {
-                        _deletableOnly = value;
-                        _resetColumnNav();
-                      });
-                    },
-                    updater: widget.updater,
-                  ),
-                ),
-              );
-            },
+            onPressed: _openSettings,
           ),
         ],
       ),
@@ -1949,6 +2352,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   alignment: WrapAlignment.end,
                   children: [
                     AppleButton(
+                      key: HomePage.browseFolderActionKey,
                       label: l10n.scanActionFolder,
                       icon: Icons.folder_open_outlined,
                       variant: AppleButtonVariant.secondary,
@@ -1956,13 +2360,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ),
                     if (_s.scanRoots.isNotEmpty)
                       AppleButton(
+                        key: HomePage.browseHomeActionKey,
                         label: l10n.scanActionHome,
                         icon: Icons.home_outlined,
                         variant: AppleButtonVariant.pearl,
-                        onPressed: () async {
-                          setState(() => _scanStatus = null);
-                          await _s.switchScanRoot(null);
-                        },
+                        onPressed: _switchBrowseToHomeRoot,
                       ),
                     if (_s.scanning)
                       AppleButton(
@@ -2113,9 +2515,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 if (selectId != null && category != 'System')
                   Checkbox(
                     value: marked,
-                    onChanged: busy
-                        ? null
-                        : (_) => _toggleFocusedFileSelection(focus),
+                    onChanged:
+                        busy ? null : (_) => _toggleFocusedFileSelection(focus),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
@@ -2134,8 +2535,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildStickyBar(BuildContext context) {
-    final busy =
-        _s.deleting || _s.scanning || _s.refreshingDirectoryPaths.isNotEmpty;
+    final busy = _s.deleting ||
+        _s.scanning ||
+        _scanStartPending ||
+        _s.refreshingDirectoryPaths.isNotEmpty;
     final deleteTargetCount = _deleteTargetCount();
     final deleteTargetBytes = _deleteTargetBytes();
     final l10n = context.l10n;
@@ -2157,8 +2560,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         label = deleteTargetCount > 0
             ? l10n.stickySelected(deleteTargetCount, _fmt(deleteTargetBytes))
             : peekCount > 0
-            ? l10n.stickyDirectoriesLoading(peekCount)
-            : l10n.stickyBrowseResults;
+                ? l10n.stickyDirectoriesLoading(peekCount)
+                : l10n.stickyBrowseResults;
         // Refresh button targets the currently focused directory. The root uses
         // a full scan; a child directory uses a scoped peek scan.
         actionLabel = busy ? '' : l10n.scanActionRescan;
@@ -2170,9 +2573,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         label = _s.ready ? l10n.stickyReadyToScan : l10n.stickyLoadingEngine;
         actionLabel = l10n.scanActionStart;
         actionIcon = Icons.search;
-        actionPressed = (_s.ready && !busy && _s.hasSnapshotFileApi)
-            ? _startScan
-            : null;
+        actionPressed = _scanStartAction;
       }
     }
 
@@ -2216,9 +2617,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ? l10n.deleteActionWorking
                       : l10n.deleteActionMoveToTrash,
                   icon: _s.deleting ? null : Icons.delete_outline,
-                  onPressed: deleteTargetCount > 0 && !busy
-                      ? _confirmDelete
-                      : null,
+                  onPressed:
+                      deleteTargetCount > 0 && !busy ? _confirmDelete : null,
                 ),
               ],
             ),

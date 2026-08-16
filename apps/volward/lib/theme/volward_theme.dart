@@ -33,13 +33,13 @@ ThemeData buildVolwardTheme({
   );
 
   TextStyle inkStyle(TextStyle base) => base.copyWith(
-    color: tokens.ink,
-    fontFamilyFallback: _volwardFontFamilyFallback(),
-  );
+        color: tokens.ink,
+        fontFamilyFallback: _volwardFontFamilyFallback(),
+      );
   TextStyle mutedStyle(TextStyle base) => base.copyWith(
-    color: tokens.inkMuted80,
-    fontFamilyFallback: _volwardFontFamilyFallback(),
-  );
+        color: tokens.inkMuted80,
+        fontFamilyFallback: _volwardFontFamilyFallback(),
+      );
 
   return ThemeData(
     useMaterial3: true,

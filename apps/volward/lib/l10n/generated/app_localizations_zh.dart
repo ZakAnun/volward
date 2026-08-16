@@ -413,4 +413,86 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateNotesUnavailable => '有新的 Volward 版本可以安装。';
+
+  @override
+  String get homeOverviewLive => '实时磁盘数据';
+
+  @override
+  String get homeOverviewCached => '缓存磁盘数据';
+
+  @override
+  String get homeOverviewLoading => '正在读取磁盘…';
+
+  @override
+  String get homeOverviewUnavailable => '暂时无法读取磁盘容量';
+
+  @override
+  String get homeCapacityUsed => '已使用';
+
+  @override
+  String get homeCapacityTotal => '总容量';
+
+  @override
+  String get homeCapacityAvailable => '可用';
+
+  @override
+  String homeCapacitySemantics(String used, String total, String available) {
+    return '已使用 $used，总容量 $total，可用 $available';
+  }
+
+  @override
+  String get homeScanTargets => '扫描范围';
+
+  @override
+  String get homeLocationHome => '主目录';
+
+  @override
+  String get homeLocationApplications => '应用程序';
+
+  @override
+  String get homeLocationDownloads => '下载';
+
+  @override
+  String get homeLocationDocuments => '文稿';
+
+  @override
+  String homeLocationVolume(String name) {
+    return '磁盘 $name';
+  }
+
+  @override
+  String homeLocationCustom(String name) {
+    return '$name';
+  }
+
+  @override
+  String get homeChooseFolder => '选择文件夹';
+
+  @override
+  String get homeCurrentTarget => '当前目标';
+
+  @override
+  String homeLastScan(String time) {
+    return '上次扫描 $time';
+  }
+
+  @override
+  String get homeNeverScanned => '尚未扫描';
+
+  @override
+  String homeReclaimable(String size) {
+    return '可回收 $size';
+  }
+
+  @override
+  String get homeBrowseFiles => '浏览文件';
+
+  @override
+  String get homeStartScan => '开始扫描';
+
+  @override
+  String get homeRescan => '重新扫描';
+
+  @override
+  String get homeCancelScan => '取消扫描';
 }

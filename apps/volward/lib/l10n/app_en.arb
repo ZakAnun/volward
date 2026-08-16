@@ -268,5 +268,48 @@
       "notes": {}
     }
   },
-  "updateNotesUnavailable": "A newer Volward release is ready to install."
+  "updateNotesUnavailable": "A newer Volward release is ready to install.",
+  "homeOverviewLive": "Live disk data",
+  "homeOverviewCached": "Cached disk data",
+  "homeOverviewLoading": "Reading disk…",
+  "homeOverviewUnavailable": "Disk capacity unavailable",
+  "homeCapacityUsed": "Used",
+  "homeCapacityTotal": "Total capacity",
+  "homeCapacityAvailable": "Available",
+  "homeCapacitySemantics": "{used} used of {total}, {available} available",
+  "@homeCapacitySemantics": {
+    "placeholders": {
+      "used": {"type": "String"},
+      "total": {"type": "String"},
+      "available": {"type": "String"}
+    }
+  },
+  "homeScanTargets": "Scan range",
+  "homeLocationHome": "Home",
+  "homeLocationApplications": "Applications",
+  "homeLocationDownloads": "Downloads",
+  "homeLocationDocuments": "Documents",
+  "homeLocationVolume": "Disk {name}",
+  "@homeLocationVolume": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeLocationCustom": "{name}",
+  "@homeLocationCustom": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeChooseFolder": "Choose Folder",
+  "homeCurrentTarget": "Current target",
+  "homeLastScan": "Last scan {time}",
+  "@homeLastScan": {
+    "placeholders": {"time": {"type": "String"}}
+  },
+  "homeNeverScanned": "Not scanned yet",
+  "homeReclaimable": "{size} reclaimable",
+  "@homeReclaimable": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeBrowseFiles": "Browse Files",
+  "homeStartScan": "Start Scan",
+  "homeRescan": "Rescan",
+  "homeCancelScan": "Cancel Scan"
 }

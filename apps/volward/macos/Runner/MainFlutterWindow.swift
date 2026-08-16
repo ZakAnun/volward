@@ -43,6 +43,134 @@ private enum MacSettings {
   }
 }
 
+private enum StorageOverviewBridge {
+  private static let capacityKeys: Set<URLResourceKey> = [
+    .volumeURLKey,
+    .volumeNameKey,
+    .volumeIsLocalKey,
+    .volumeIsReadOnlyKey,
+    .volumeTotalCapacityKey,
+    .volumeAvailableCapacityKey,
+  ]
+
+  private static func volume(for path: String) throws -> [String: Any] {
+    let url = URL(fileURLWithPath: path.isEmpty ? "/" : path)
+      .resolvingSymlinksInPath()
+    let values = try url.resourceValues(forKeys: capacityKeys)
+    guard values.volumeIsLocal == true,
+      values.volumeIsReadOnly != true,
+      let volumeURL = values.volume,
+      let total = values.volumeTotalCapacity,
+      let available = values.volumeAvailableCapacity,
+      total > 0,
+      available >= 0
+    else {
+      throw NSError(domain: "StorageOverview", code: 1)
+    }
+
+    return [
+      "id": volumeURL.path,
+      "name": values.volumeName ?? volumeURL.lastPathComponent,
+      "rootPath": volumeURL.path,
+      "totalBytes": Int64(total),
+      "availableBytes": min(Int64(total), Int64(available)),
+    ]
+  }
+
+  private static func location(
+    id: String,
+    kind: String,
+    url: URL,
+    volumeId: String
+  ) -> [String: Any]? {
+    var isDirectory: ObjCBool = false
+    guard
+      FileManager.default.fileExists(
+        atPath: url.path,
+        isDirectory: &isDirectory
+      ), isDirectory.boolValue,
+      directoryContentsAreReadable(at: url)
+    else {
+      return nil
+    }
+
+    return [
+      "id": id,
+      "name": url.lastPathComponent,
+      "path": url.path,
+      "kind": kind,
+      "volumeId": volumeId,
+    ]
+  }
+
+  private static func directoryContentsAreReadable(at url: URL) -> Bool {
+    var enumerationError: Error?
+    guard
+      let enumerator = FileManager.default.enumerator(
+        at: url,
+        includingPropertiesForKeys: nil,
+        options: [.skipsSubdirectoryDescendants],
+        errorHandler: { _, error in
+          enumerationError = error
+          return false
+        }
+      )
+    else {
+      return false
+    }
+
+    _ = enumerator.nextObject()
+    return enumerationError == nil
+  }
+
+  static func load(selectedPath: String?) throws -> [String: Any] {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let path = selectedPath.flatMap { $0.isEmpty ? nil : $0 } ?? home.path
+    let selectedVolume = try volume(for: path)
+    guard let selectedVolumeId = selectedVolume["id"] as? String else {
+      throw NSError(domain: "StorageOverview", code: 2)
+    }
+
+    let candidates: [(id: String, kind: String, url: URL)] = [
+      ("home", "home", home),
+      ("applications", "applications", URL(fileURLWithPath: "/Applications")),
+      ("downloads", "downloads", home.appendingPathComponent("Downloads")),
+      ("documents", "documents", home.appendingPathComponent("Documents")),
+    ]
+    var volumesById: [String: [String: Any]] = [
+      selectedVolumeId: selectedVolume
+    ]
+    var locations: [[String: Any]] = []
+
+    for candidate in candidates {
+      guard let candidateVolume = try? volume(for: candidate.url.path),
+        let candidateVolumeId = candidateVolume["id"] as? String,
+        let item = location(
+          id: candidate.id,
+          kind: candidate.kind,
+          url: candidate.url,
+          volumeId: candidateVolumeId
+        )
+      else {
+        continue
+      }
+      volumesById[candidateVolumeId] = candidateVolume
+      locations.append(item)
+    }
+
+    let otherVolumes =
+      volumesById
+      .filter { $0.key != selectedVolumeId }
+      .sorted { $0.key < $1.key }
+      .map { $0.value }
+    return [
+      "selectedVolumeId": selectedVolumeId,
+      "volumes": [selectedVolume] + otherVolumes,
+      "locations": locations,
+    ]
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -68,6 +196,32 @@ class MainFlutterWindow: NSWindow {
         result(Bundle.main.bundlePath)
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let storageChannel = FlutterMethodChannel(
+      name: "com.volward/storage_overview",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    storageChannel.setMethodCallHandler { call, result in
+      guard call.method == "loadOverview" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+
+      let arguments = call.arguments as? [String: Any]
+      do {
+        result(
+          try StorageOverviewBridge.load(
+            selectedPath: arguments?["selectedPath"] as? String
+          ))
+      } catch {
+        result(
+          FlutterError(
+            code: "capacity_unavailable",
+            message: error.localizedDescription,
+            details: nil
+          ))
       }
     }
 
