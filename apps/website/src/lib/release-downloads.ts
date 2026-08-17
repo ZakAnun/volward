@@ -115,7 +115,7 @@ export function resolveDownloadAssets(
 export async function fetchLatestRelease(options: FetchLatestReleaseOptions = {}): Promise<GitHubRelease> {
   const fetchFn = options.fetchFn ?? fetch;
   const env = options.env ?? process.env;
-  const token = env.GITHUB_TOKEN ?? env.GH_TOKEN;
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',

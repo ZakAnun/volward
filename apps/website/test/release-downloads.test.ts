@@ -227,6 +227,27 @@ describe('fetchLatestRelease', () => {
       }),
     );
   });
+
+  it('uses GH_TOKEN when GITHUB_TOKEN is empty', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => versionedRelease,
+    });
+
+    await fetchLatestRelease({
+      fetchFn,
+      env: { GITHUB_TOKEN: '', GH_TOKEN: 'ghp_build_token' },
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.github.com/repos/ZakAnun/volward/releases/latest',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer ghp_build_token',
+        }),
+      }),
+    );
+  });
 });
 
 describe('resolveDownloads', () => {
