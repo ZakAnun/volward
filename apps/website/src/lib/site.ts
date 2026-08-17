@@ -7,6 +7,7 @@ export type Locale = 'en' | 'zh';
 export type DownloadAsset = {
   id: string;
   fileName: string;
+  href: string;
   label: string;
   hint: string;
 };
@@ -123,44 +124,41 @@ export const PAGE_COPY: Record<Locale, PageCopy> = {
   },
 };
 
-type DownloadEntry = DownloadAsset & { en: { label: string; hint: string }; zh: { label: string; hint: string } };
+export type DownloadEntry = {
+  id: DownloadAsset['id'];
+  fileName: string;
+  en: { label: string; hint: string };
+  zh: { label: string; hint: string };
+};
 
-const DOWNLOAD_ENTRIES: DownloadEntry[] = [
+export const DOWNLOAD_ENTRIES: DownloadEntry[] = [
   {
     id: 'macos-arm64',
     fileName: 'volward-latest-macos-arm64.zip',
-    en: { label: 'macOS (Apple Silicon)', hint: 'Unzip and drag into /Applications. First launch: right-click → Open.' },
-    zh: { label: 'macOS（Apple Silicon）', hint: '解压后拖入 /Applications。首次打开：右键 → 打开。' },
-    label: '',
-    hint: '',
+    en: { label: 'macOS (Apple Silicon)', hint: 'Unzip and drag into /Applications. First launch: right-click -> Open.' },
+    zh: { label: 'macOS（Apple Silicon）', hint: '解压后拖入 /Applications。首次打开：右键 -> 打开。' },
   },
   {
     id: 'macos-x64',
     fileName: 'volward-latest-macos-x64.zip',
     en: { label: 'macOS (Intel)', hint: 'Same install flow as Apple Silicon.' },
     zh: { label: 'macOS（Intel）', hint: '安装方式同 Apple Silicon。' },
-    label: '',
-    hint: '',
   },
   {
     id: 'windows-x64',
     fileName: 'VolwardSetup-latest-windows-x64.exe',
     en: { label: 'Windows (x64)', hint: 'If SmartScreen appears, open More info then Run anyway.' },
-    zh: { label: 'Windows（x64）', hint: '若出现 SmartScreen：更多信息 → 仍要运行。' },
-    label: '',
-    hint: '',
+    zh: { label: 'Windows（x64）', hint: '若出现 SmartScreen：更多信息 -> 仍要运行。' },
   },
   {
     id: 'linux-appimage',
     fileName: 'Volward-latest-linux-x86_64.AppImage',
     en: { label: 'Linux AppImage', hint: 'Run chmod +x first, then launch.' },
     zh: { label: 'Linux AppImage', hint: 'chmod +x 后运行。' },
-    label: '',
-    hint: '',
   },
 ];
 
 export const DOWNLOADS: Record<Locale, DownloadAsset[]> = {
-  en: DOWNLOAD_ENTRIES.map(({ id, fileName, en }) => ({ id, fileName, ...en })),
-  zh: DOWNLOAD_ENTRIES.map(({ id, fileName, zh }) => ({ id, fileName, ...zh })),
+  en: DOWNLOAD_ENTRIES.map(({ id, fileName, en }) => ({ id, fileName, href: LATEST_RELEASE_URL, ...en })),
+  zh: DOWNLOAD_ENTRIES.map(({ id, fileName, zh }) => ({ id, fileName, href: LATEST_RELEASE_URL, ...zh })),
 };
