@@ -250,6 +250,7 @@ std::unique_ptr<StorageOverviewChannel> RegisterStorageOverviewChannel(
           const KNOWNFOLDERID* folder_id;
         } folder_candidates[] = {
             {"home", "home", &FOLDERID_Profile},
+            {"desktop", "desktop", &FOLDERID_Desktop},
             {"downloads", "downloads", &FOLDERID_Downloads},
             {"documents", "documents", &FOLDERID_Documents},
         };

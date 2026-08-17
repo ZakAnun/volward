@@ -91,6 +91,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get filterCategorySystem => 'System';
 
   @override
+  String get homeCategoryOther => 'Other';
+
+  @override
   String get sortSizeDesc => 'Size ↓';
 
   @override
@@ -474,6 +477,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeLocationApplications => 'Applications';
 
   @override
+  String get homeLocationDesktop => 'Desktop';
+
+  @override
   String get homeLocationDownloads => 'Downloads';
 
   @override
@@ -496,6 +502,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeCurrentTarget => 'Current target';
 
   @override
+  String get homeRecentFolders => 'Recent Folders';
+
+  @override
   String homeLastScan(String time) {
     return 'Last scan $time';
   }
@@ -506,6 +515,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String homeReclaimable(String size) {
     return '$size reclaimable';
+  }
+
+  @override
+  String homeScannedSize(String size) {
+    return '$size scanned';
   }
 
   @override

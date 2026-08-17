@@ -90,6 +90,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get filterCategorySystem => '系统';
 
   @override
+  String get homeCategoryOther => '其他';
+
+  @override
   String get sortSizeDesc => '大小 ↓';
 
   @override
@@ -450,6 +453,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeLocationApplications => '应用程序';
 
   @override
+  String get homeLocationDesktop => '桌面';
+
+  @override
   String get homeLocationDownloads => '下载';
 
   @override
@@ -472,6 +478,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeCurrentTarget => '当前目标';
 
   @override
+  String get homeRecentFolders => '最近目录';
+
+  @override
   String homeLastScan(String time) {
     return '上次扫描 $time';
   }
@@ -482,6 +491,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String homeReclaimable(String size) {
     return '可回收 $size';
+  }
+
+  @override
+  String homeScannedSize(String size) {
+    return '目录占用 $size';
   }
 
   @override

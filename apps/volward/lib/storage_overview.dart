@@ -16,6 +16,7 @@ enum StorageDataFreshness { live, cached, unavailable }
 enum StorageLocationKind {
   home,
   applications,
+  desktop,
   downloads,
   documents,
   volume,

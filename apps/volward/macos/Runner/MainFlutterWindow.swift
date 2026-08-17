@@ -134,6 +134,7 @@ private enum StorageOverviewBridge {
     let candidates: [(id: String, kind: String, url: URL)] = [
       ("home", "home", home),
       ("applications", "applications", URL(fileURLWithPath: "/Applications")),
+      ("desktop", "desktop", home.appendingPathComponent("Desktop")),
       ("downloads", "downloads", home.appendingPathComponent("Downloads")),
       ("documents", "documents", home.appendingPathComponent("Documents")),
     ]

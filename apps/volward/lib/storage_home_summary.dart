@@ -4,6 +4,9 @@ import 'scan_snapshot_state.dart';
 import 'scan_tree.dart';
 import 'storage_overview.dart';
 
+const homeNamedCategoryOrder = ['Cache', 'Temp', 'Media', 'System'];
+const homeOtherCategoryName = 'Other';
+
 int? _finiteInt(Object? value) {
   return value is num && value.isFinite ? value.toInt() : null;
 }
@@ -72,6 +75,8 @@ class StorageHomeSummary {
     this.scanPhase,
     this.scannedBytes,
     this.categories = const [],
+    this.pinnedCustomLocation,
+    this.recentCustomLocations = const [],
   });
 
   final StorageOverviewData overview;
@@ -85,6 +90,8 @@ class StorageHomeSummary {
   final String? scanPhase;
   final int? scannedBytes;
   final List<StorageHomeCategorySummary> categories;
+  final StorageLocationInfo? pinnedCustomLocation;
+  final List<StorageLocationInfo> recentCustomLocations;
 
   bool get hasUsableCapacity => _hasUsableCapacity(selectedVolume);
 
@@ -95,6 +102,8 @@ class StorageHomeSummary {
     required double? scanProgress,
     String? scanPhase,
     ScanSnapshotState? matchingSnapshot,
+    StorageLocationInfo? pinnedCustomLocation,
+    List<StorageLocationInfo> recentCustomLocations = const [],
   }) {
     final normalizedTarget =
         targetPath.isEmpty ? '' : ScanTreeBuilder.normalizeRoot(targetPath);
@@ -182,13 +191,31 @@ class StorageHomeSummary {
 
     final categories = <StorageHomeCategorySummary>[];
     if (snapshotMatches) {
-      final ranked = snapshot.categoryCounts.entries
-          .where((entry) => entry.value > 0)
-          .toList()
-        ..sort((left, right) => right.value.compareTo(left.value));
-      for (final entry in ranked.take(3)) {
+      final counts = snapshot.categoryCounts;
+      var namedSum = 0;
+      var leftover = 0;
+      for (final name in homeNamedCategoryOrder) {
+        final count = counts[name] ?? 0;
+        namedSum += count;
+        if (count > 0) {
+          categories.add(StorageHomeCategorySummary(name: name, count: count));
+        }
+      }
+      for (final entry in counts.entries) {
+        if (!homeNamedCategoryOrder.contains(entry.key) && entry.value > 0) {
+          leftover += entry.value;
+        }
+      }
+      final filesSeen =
+          _nonNegativeInt(_finiteInt(snapshot.stats['files_seen'])) ?? 0;
+      final total = [filesSeen, snapshot.filesInSnapshot, namedSum + leftover]
+          .fold<int>(0, math.max);
+      if ((completedScan || filesSeen > 0) && total > namedSum) {
         categories.add(
-          StorageHomeCategorySummary(name: entry.key, count: entry.value),
+          StorageHomeCategorySummary(
+            name: homeOtherCategoryName,
+            count: total - namedSum,
+          ),
         );
       }
     }
@@ -210,6 +237,8 @@ class StorageHomeSummary {
       scanPhase: scanning ? scanPhase : null,
       scannedBytes: scannedBytes,
       categories: List.unmodifiable(categories),
+      pinnedCustomLocation: pinnedCustomLocation,
+      recentCustomLocations: List.unmodifiable(recentCustomLocations),
     );
   }
 }

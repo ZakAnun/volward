@@ -15,6 +15,7 @@ import 'package:volward/theme/volward_theme_settings.dart';
 import 'package:volward/updater/app_updater.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
+import 'package:volward/widgets/scan_filter_bar.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 
 StorageOverviewData _overviewData([String volumeName = 'Test Disk']) {
@@ -36,6 +37,13 @@ StorageOverviewData _overviewData([String volumeName = 'Test Disk']) {
         name: 'home',
         path: '/home',
         kind: StorageLocationKind.home,
+        volumeId: '/',
+      ),
+      StorageLocationInfo(
+        id: 'desktop',
+        name: 'Desktop',
+        path: '/home/Desktop',
+        kind: StorageLocationKind.desktop,
         volumeId: '/',
       ),
       StorageLocationInfo(
@@ -116,6 +124,8 @@ class _Session extends VolwardSession {
   int restoreCalls = 0;
   final Completer<void> _restoreGate = Completer<void>();
 
+  ScanSnapshotState? snapshotForTest;
+
   late final ScanSnapshotState _previewSnapshot = ScanSnapshotState.fromWire(
     buildPreviewSnapshot(
       rootPath: '/',
@@ -127,7 +137,7 @@ class _Session extends VolwardSession {
 
   @override
   ScanSnapshotState? get lastSnapshot =>
-      exposePreview ? _previewSnapshot : null;
+      snapshotForTest ?? (exposePreview ? _previewSnapshot : null);
 
   @override
   bool get restoringSnapshot => exposePreview;
@@ -210,6 +220,40 @@ class _Session extends VolwardSession {
   }
 }
 
+ScanSnapshotState _completedSnapshot({
+  String rootPath = '/',
+  int scannedAtMs = 1723766400000,
+}) {
+  return ScanSnapshotState(
+    snapshotId: 'cached-scan',
+    scannedAtMs: scannedAtMs,
+    stats: const {'scan_state': 'Done', 'files_seen': 3},
+    reclaimableEstimateBytes: 256,
+    tree: ScanTreeNode(
+      name: rootPath == '/' ? '/' : rootPath.split('/').last,
+      path: rootPath,
+      isDirectory: true,
+      sizeBytes: 4096,
+    ),
+    entryCount: 3,
+    categoryCounts: const {'Cache': 1, 'Temp': 1},
+    deletableCategoryCounts: const {},
+    deletableCount: 0,
+    extraFields: const {},
+  );
+}
+
+class _RestoringSession extends _Session {
+  _RestoringSession() : super(exposePreview: true);
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {
+    restoreCalls++;
+    await Future<void>.delayed(Duration.zero);
+    snapshotForTest = _completedSnapshot();
+  }
+}
+
 Widget _shell(
   VolwardSession session,
   VolwardThemeSettings themeSettings,
@@ -242,9 +286,8 @@ Future<void> _pumpHome(WidgetTester tester, Widget app) async {
   await tester.pump();
 }
 
-Future<void> _tapPanelBackground(WidgetTester tester) async {
-  final rect = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
-  await tester.tapAt(rect.center);
+Future<void> _openLastScan(WidgetTester tester) async {
+  await tester.tap(find.byKey(StorageStewardHome.lastScanOpenKey));
 }
 
 Future<void> _pumpUntil(
@@ -289,6 +332,37 @@ void main() {
     expect(overviewProvider.selectedPaths, ['/']);
   });
 
+  testWidgets('home last scan updates after cached snapshot restore', (
+    tester,
+  ) async {
+    final session = _RestoringSession()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-restore-summary.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(session.restoreCalls, 1);
+    expect(find.text('256 B reclaimable'), findsOneWidget);
+    expect(find.text('4 KB scanned'), findsOneWidget);
+    expect(find.textContaining('Last scan'), findsOneWidget);
+  });
+
   testWidgets('panel with a valid root enters the column browser', (
     tester,
   ) async {
@@ -303,7 +377,7 @@ void main() {
     addTearDown(updater.dispose);
 
     await _pumpHome(tester, _shell(session, themeSettings, updater));
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
 
     expect(find.byType(ScanColumnView), findsOneWidget);
@@ -336,7 +410,7 @@ void main() {
         },
       ),
     );
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
 
     expect(pickerCalls, 0);
@@ -365,7 +439,7 @@ void main() {
     addTearDown(updater.dispose);
 
     await _pumpHome(tester, _shell(session, themeSettings, updater));
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
 
     await tester.tap(find.text('Documents'));
@@ -379,7 +453,7 @@ void main() {
     await tester.pump();
     expect(find.byType(StorageStewardHome), findsOneWidget);
 
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
     final restored = tester
         .widget<ScanColumnView>(find.byType(ScanColumnView))
@@ -475,7 +549,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
 
     await tester.tap(find.byKey(HomePage.browseFolderActionKey));
@@ -519,7 +593,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
     expect(find.byKey(HomePage.browseHomeActionKey), findsOneWidget);
 
@@ -564,7 +638,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
     expect(find.byKey(HomePage.browseHomeActionKey), findsOneWidget);
 
@@ -618,6 +692,113 @@ void main() {
     expect(find.byType(StorageStewardHome), findsOneWidget);
   });
 
+  testWidgets(
+    'recent custom folders stay reachable from the sidebar menu',
+    (tester) async {
+      final picked = ['/work/archive', '/work/photos'];
+      final session = _Session(setInitialRoot: false)
+        ..setScanRoots(['/home'])
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-home-pin-custom.json',
+        )
+        ..rootExistsForTest = ((_) => true);
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await _pumpHome(
+        tester,
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          directoryPicker: ({required confirmButtonText}) async =>
+              picked.removeAt(0),
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('storage-target-custom:/work/archive')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('storage-target-custom:/work/photos')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('storage-target-custom:/work/archive')),
+        findsNothing,
+      );
+      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
+      expect(
+        find.byKey(const ValueKey('storage-target-menu-custom:/work/photos')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('storage-target-home')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+            .summary
+            .selectedLocation
+            ?.path,
+        '/home',
+      );
+      expect(
+        find.byKey(const ValueKey('storage-target-custom:/work/archive')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('storage-target-custom:/work/photos')),
+        findsNothing,
+      );
+      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsOneWidget);
+
+      await tester.tap(find.byKey(StorageStewardHome.recentFoldersKey));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('storage-recent-folder-option-custom:/work/archive'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(session.switchedRoot, '/work/archive');
+      expect(
+        tester
+            .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+            .summary
+            .selectedLocation
+            ?.path,
+        '/work/archive',
+      );
+      expect(session.recentCustomRoots, [
+        '/work/archive',
+        '/work/photos',
+      ]);
+      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
+      expect(
+        find.byKey(const ValueKey('storage-target-menu-custom:/work/archive')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('custom target hides prior capacity while overview reloads', (
     tester,
   ) async {
@@ -670,7 +851,16 @@ void main() {
     expect(find.text('600 B'), findsNothing);
 
     overviewProvider.requests.last.complete(_overviewData('New Disk'));
-    await tester.pump();
+    await _pumpUntil(
+      tester,
+      () =>
+          tester
+              .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+              .summary
+              .selectedVolume
+              ?.name ==
+          'New Disk',
+    );
     expect(
       tester
           .widget<StorageStewardHome>(find.byType(StorageStewardHome))
@@ -808,7 +998,7 @@ void main() {
     );
     expect(find.byTooltip(''), findsNothing);
 
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await _pumpUntil(tester, () => calls > 0);
 
     expect(calls, 1);
@@ -840,9 +1030,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(
-      find.byKey(const ValueKey('storage-target-downloads')),
-    );
+    await tester.tap(find.byKey(const ValueKey('storage-target-downloads')));
     await tester.pump();
 
     expect(session.switchedRoot, '/home/Downloads');
@@ -1008,9 +1196,10 @@ void main() {
         )
         .value!;
 
-    session.updateScanProgressForTest(
-      const {'phase': 'SavingResults', 'paths_seen': 20},
-    );
+    session.updateScanProgressForTest(const {
+      'phase': 'SavingResults',
+      'paths_seen': 20,
+    });
     await tester.pump();
 
     expect(find.text('Scanning files…'), findsNothing);
@@ -1089,14 +1278,12 @@ void main() {
         '${Directory.systemTemp.path}/volward-home-before-persisted.json',
       )
       ..rootExistsForTest = ((_) => true);
-    final newSession = _Session(
-      setInitialRoot: false,
-      restoredRootOnLoad: '/persisted-root',
-    )
-      ..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-home-persisted-replacement.json',
-      )
-      ..rootExistsForTest = ((_) => true);
+    final newSession =
+        _Session(setInitialRoot: false, restoredRootOnLoad: '/persisted-root')
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-home-persisted-replacement.json',
+          )
+          ..rootExistsForTest = ((_) => true);
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     final overviewProvider = _OverviewProvider();
@@ -1283,7 +1470,7 @@ void main() {
 
     oldScan.complete('old-scan-id');
     await tester.pump();
-    await _tapPanelBackground(tester);
+    await _openLastScan(tester);
     await tester.pump();
     expect(find.textContaining('old-scan-id'), findsNothing);
     expect(newSession.runScanCalls, 0);
@@ -1376,5 +1563,116 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
     expect(session.cancelCalls, 1);
+  });
+
+  testWidgets('cancelling an in-flight scan re-enables start scan', (
+    tester,
+  ) async {
+    final scanGate = Completer<String>();
+    final session = _Session(scanGate: scanGate)
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-cancel-rescan.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+    addTearDown(() {
+      if (!scanGate.isCompleted) {
+        scanGate.completeError(ScanCancelledException());
+      }
+    });
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    await tester.pump();
+    expect(session.runScanCalls, 1);
+    expect(
+      tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
+      isNull,
+    );
+
+    session.primeTransientScanStateForTest(
+      scanning: true,
+      openScanPorts: false,
+    );
+    session.notifyListeners();
+    await tester.pump();
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    await tester.pump();
+    expect(session.cancelCalls, 1);
+
+    final home = tester.widget<StorageStewardHome>(
+      find.byType(StorageStewardHome),
+    );
+    expect(home.onScan, isNotNull);
+    expect(home.onCancelScan, isNull);
+
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    await tester.pump();
+    expect(session.runScanCalls, 2);
+  });
+
+  testWidgets('home category row opens browse with that type selected', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..snapshotForTest = ScanSnapshotState.fromIndexSummary({
+        'snapshot_id': 'done-cache',
+        'root_path': '/',
+        'root_size_bytes': 80,
+        'scanned_at_ms': 1,
+        'reclaimable_estimate_bytes': 8,
+        'entry_count': 4,
+        'category_counts': {'Cache': 4},
+        'deletable_count': 0,
+        'scan_state': 'Done',
+      })
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-category-browse.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('storage-category-Cache')));
+    await tester.pump();
+
+    expect(find.byType(StorageStewardHome), findsNothing);
+    expect(find.byType(ScanFilterBar), findsOneWidget);
+    expect(
+      tester.widget<ScanFilterBar>(find.byType(ScanFilterBar)).categoryFilter,
+      'Cache',
+    );
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Cache'), findsOneWidget);
+    expect(find.text('Temp'), findsNothing);
+    expect(find.text('Media'), findsNothing);
+    expect(find.text('System'), findsNothing);
   });
 }

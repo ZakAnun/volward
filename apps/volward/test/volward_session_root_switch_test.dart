@@ -30,11 +30,20 @@ class RecordingSession extends VolwardSession {
   }
 }
 
+Future<void> waitUntil(
+  bool Function() done, {
+  int maxTicks = 20,
+}) async {
+  for (var tick = 0; tick < maxTicks && !done(); tick++) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
 void main() {
   test('prepared root previews without starting a full scan', () async {
     final session = RecordingSession();
     await session.switchScanRoot('/prepared', startFullScan: false);
-    await Future<void>.delayed(Duration.zero);
+    await waitUntil(() => session.previewCalls == 1);
 
     expect(session.scanRoots, ['/prepared']);
     expect(session.previewCalls, 1);
@@ -45,7 +54,7 @@ void main() {
   test('existing switchScanRoot callers still auto-start', () async {
     final session = RecordingSession();
     await session.switchScanRoot('/legacy');
-    await Future<void>.delayed(Duration.zero);
+    await waitUntil(() => session.previewCalls == 1 && session.scanCalls == 1);
 
     expect(session.previewCalls, 1);
     expect(session.peekCalls, 0);
@@ -58,7 +67,7 @@ void main() {
       ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
 
     await session.switchScanRoot('/active');
-    await Future<void>.delayed(Duration.zero);
+    await waitUntil(() => session.previewCalls == 1 && session.peekCalls == 1);
 
     expect(session.previewCalls, 1);
     expect(session.peekCalls, 1);

@@ -123,6 +123,52 @@ void main() {
     expect(sort, ScanSortMode.nameAsc);
   });
 
+  testWidgets('ScanFilterBar hides absent categories and keeps All', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        ScanFilterBar(
+          categoryFilter: null,
+          onCategoryChanged: (_) {},
+          sortMode: ScanSortMode.sizeDesc,
+          onSortChanged: (_) {},
+          scanning: false,
+          presentCategories: const {},
+        ),
+      ),
+    );
+
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Cache'), findsNothing);
+    expect(find.text('Temp'), findsNothing);
+    expect(find.text('Media'), findsNothing);
+    expect(find.text('System'), findsNothing);
+  });
+
+  testWidgets('ScanFilterBar shows only present categories plus All', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        ScanFilterBar(
+          categoryFilter: 'Cache',
+          onCategoryChanged: (_) {},
+          sortMode: ScanSortMode.sizeDesc,
+          onSortChanged: (_) {},
+          scanning: false,
+          presentCategories: const {'Cache'},
+        ),
+      ),
+    );
+
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Cache'), findsOneWidget);
+    expect(find.text('Temp'), findsNothing);
+    expect(find.text('Media'), findsNothing);
+    expect(find.text('System'), findsNothing);
+  });
+
   testWidgets('ScanFilterBar does not overflow at narrow widths', (
     tester,
   ) async {

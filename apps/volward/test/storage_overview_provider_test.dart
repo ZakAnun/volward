@@ -103,6 +103,13 @@ void main() {
           'volumeId': 'C:',
         },
         <String, Object?>{
+          'id': 'desktop',
+          'name': 'Desktop',
+          'path': r'C:\Users\me\Desktop',
+          'kind': 'desktop',
+          'volumeId': 'C:',
+        },
+        <String, Object?>{
           'id': 'documents',
           'name': 'Documents',
           'path': r'C:\Users\me\Documents',
@@ -117,14 +124,21 @@ void main() {
     expect(data.locations.map((item) => item.id), [
       'home',
       'downloads',
+      'desktop',
       'documents',
     ]);
     expect(data.locations.map((item) => item.kind), [
       StorageLocationKind.home,
       StorageLocationKind.downloads,
+      StorageLocationKind.desktop,
       StorageLocationKind.documents,
     ]);
-    expect(data.locations.map((item) => item.volumeId), ['C:', 'C:', 'C:']);
+    expect(data.locations.map((item) => item.volumeId), [
+      'C:',
+      'C:',
+      'C:',
+      'C:',
+    ]);
   });
 
   test('payload parser selects a requested Windows drive', () {
@@ -394,22 +408,22 @@ void main() {
   test('method channel provider maps a successful payload', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-          expect(call.method, 'loadOverview');
-          expect(call.arguments, {'selectedPath': '/Users/me'});
-          return <String, Object?>{
-            'selectedVolumeId': '/',
-            'volumes': <Object?>[
-              <String, Object?>{
-                'id': '/',
-                'name': 'Macintosh HD',
-                'rootPath': '/',
-                'totalBytes': 100,
-                'availableBytes': 40,
-              },
-            ],
-            'locations': <Object?>[],
-          };
-        });
+      expect(call.method, 'loadOverview');
+      expect(call.arguments, {'selectedPath': '/Users/me'});
+      return <String, Object?>{
+        'selectedVolumeId': '/',
+        'volumes': <Object?>[
+          <String, Object?>{
+            'id': '/',
+            'name': 'Macintosh HD',
+            'rootPath': '/',
+            'totalBytes': 100,
+            'availableBytes': 40,
+          },
+        ],
+        'locations': <Object?>[],
+      };
+    });
 
     final result = await const MethodChannelStorageOverviewProvider().load(
       selectedPath: '/Users/me',
@@ -424,8 +438,8 @@ void main() {
     () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (_) async {
-            throw PlatformException(code: 'capacity_unavailable');
-          });
+        throw PlatformException(code: 'capacity_unavailable');
+      });
 
       final result = await const MethodChannelStorageOverviewProvider().load();
 
@@ -454,8 +468,8 @@ void main() {
     () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (_) async {
-            throw MissingPluginException();
-          });
+        throw MissingPluginException();
+      });
 
       final result = await const MethodChannelStorageOverviewProvider().load();
 

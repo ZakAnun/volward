@@ -124,6 +124,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Completer<bool> _startupRootGate = Completer<bool>();
   StorageOverviewData _storageOverview = const StorageOverviewData.loading();
   String? _homeTargetPath;
+  List<StorageLocationInfo> _recentCustomLocations = const [];
   int _overviewLoadGeneration = 0;
   late VolwardSession _subscribedSession;
   int _sessionGeneration = 0;
@@ -221,8 +222,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (!_isCurrentSession(session, generation)) return;
       }
 
-      await session.restoreCachedSnapshotIfNeeded();
-      if (!_isCurrentSession(session, generation)) return;
+      _restoreCachedSnapshotInBackground(session, generation);
     } catch (error, stackTrace) {
       if (_isCurrentSession(session, generation)) {
         debugPrint('HomePage startup failed: $error\n$stackTrace');
@@ -263,6 +263,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {});
   }
 
+  Future<void> _restoreCachedSnapshotInBackground(
+    VolwardSession session,
+    int generation,
+  ) async {
+    try {
+      await session.restoreCachedSnapshotIfNeeded();
+    } catch (error, stackTrace) {
+      if (_isCurrentSession(session, generation)) {
+        debugPrint(
+            'HomePage cached snapshot restore failed: $error\n$stackTrace');
+      }
+      return;
+    }
+    if (!_isCurrentSession(session, generation)) return;
+    setState(() {
+      _invalidateSnapshotCachesForSessionUpdate();
+      _lastRefreshedSnapshotId = session.lastSnapshot?.snapshotId;
+      _lastRefreshedCatalogVersion = session.catalogVersion;
+      _syncRecentCustomLocations();
+    });
+  }
+
   @override
   void didUpdateWidget(covariant HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -297,6 +319,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _lastTargetPreviewLoading = _s.targetPreviewLoading;
       _prevScanning = _s.scanning;
       _homeTargetPath = null;
+      _recentCustomLocations = const [];
       _hasValidRoot = false;
       if (!_startupRootGate.isCompleted) {
         _startupRootGate.complete(false);
@@ -359,9 +382,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _s.refreshCapabilities();
       if (_startupRootGate.isCompleted) {
-        unawaited(
-          _loadStorageOverview(_homeTargetPath ?? _scanRootPath()),
-        );
+        unawaited(_loadStorageOverview(_homeTargetPath ?? _scanRootPath()));
       }
     }
   }
@@ -386,17 +407,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (selectedPath == null || selectedPath.isEmpty) {
       if (isCurrentRequest()) {
         setState(
-          () => _storageOverview =
-              const StorageOverviewData.unavailable('missing-root'),
+          () => _storageOverview = const StorageOverviewData.unavailable(
+            'missing-root',
+          ),
         );
       }
       return;
     }
-    final data = await provider.load(
-      selectedPath: selectedPath,
-    );
+    final data = await provider.load(selectedPath: selectedPath);
     if (!isCurrentRequest()) return;
-    setState(() => _storageOverview = data);
+    setState(() {
+      _storageOverview = data;
+      _syncRecentCustomLocations();
+    });
   }
 
   Future<void> _openFullDiskAccessSettings() async {
@@ -446,6 +469,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       });
     } else if (!_prevScanning && _s.scanning) {
       setState(() {
+        // Scan now owns the busy state; don't keep Start disabled after Stop.
+        _scanStartPending = false;
         _scanStatus = null;
         _invalidateSnapshotCaches();
         _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
@@ -459,23 +484,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _columnNavTick.value++;
         }
       });
-    } else if (_prevScanning && !_s.scanning && _s.lastSnapshot != null) {
-      // Scan completed (possibly auto-started by switchScanRoot) — show stats.
-      final count = _s.lastSnapshot?.filesInSnapshot ?? 0;
+    } else if (_prevScanning && !_s.scanning) {
+      // Completed or cancelled — release the start-scan lock even if runScan()
+      // is still unwinding (native cancel can lag behind `_scanning = false`).
+      final snapshot = _s.lastSnapshot;
+      final count = snapshot?.filesInSnapshot ?? 0;
       final l10n = context.l10n;
       final label =
           _s.incrementalScan ? l10n.scanStatusIncremental : l10n.scanStatusFull;
       setState(() {
-        _scanStatus = l10n.scanStatusFiles(label, count);
-        _invalidateSnapshotCaches();
-        _lastRefreshedSnapshotId = _s.lastSnapshot?.snapshotId;
-        if (_contentMode != _HomeContentMode.home) {
-          _columnChain.clear();
-          _columnNavTick.value++;
-          _selectedSizes.clear();
-          _selectedPaths.clear();
-          _selectionAnchorPath = null;
-          _selectionAnchorColumnIndex = null;
+        _scanStartPending = false;
+        if (snapshot != null) {
+          _scanStatus = l10n.scanStatusFiles(label, count);
+          _invalidateSnapshotCaches();
+          _lastRefreshedSnapshotId = snapshot.snapshotId;
+          if (_contentMode != _HomeContentMode.home) {
+            _columnChain.clear();
+            _columnNavTick.value++;
+            _selectedSizes.clear();
+            _selectedPaths.clear();
+            _selectionAnchorPath = null;
+            _selectionAnchorColumnIndex = null;
+          }
         }
       });
     } else {
@@ -561,9 +591,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   bool _snapshotMatchesCurrentRoot() {
+    return _snapshotMatchesTarget(_scanRootPath());
+  }
+
+  bool _snapshotMatchesTarget(String targetPath) {
     final tree = _s.lastSnapshot?.tree;
     if (tree == null || tree.path.isEmpty) return false;
-    return ScanTreeBuilder.normalizeRoot(tree.path) == _scanRootPath();
+    return ScanTreeBuilder.normalizeRoot(tree.path) ==
+        ScanTreeBuilder.normalizeRoot(targetPath);
   }
 
   void _invalidateSnapshotCaches() {
@@ -1126,6 +1161,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final path = await _chooseFolderPath();
     if (path == null) return;
     if (!await _switchToValidatedRoot(path)) return;
+    _rememberCustomTarget(ScanTreeBuilder.normalizeRoot(path));
     _synchronizeHomeTarget(
       additionalState: () => _contentMode = _HomeContentMode.browse,
     );
@@ -1135,6 +1171,58 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final path = await _chooseFolderPath();
     if (path == null) return;
     await _prepareHomeTarget(path);
+  }
+
+  bool _isPresetLocationPath(String path) {
+    final normalized = ScanTreeBuilder.normalizeRoot(path);
+    for (final location in _storageOverview.locations) {
+      if (location.kind == StorageLocationKind.volume) continue;
+      if (ScanTreeBuilder.normalizeRoot(location.path) == normalized) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  StorageLocationInfo _customLocationFor(String path) {
+    return StorageLocationInfo(
+      id: 'custom:$path',
+      name: rootDisplayNameFor(path),
+      path: path,
+      kind: StorageLocationKind.custom,
+      volumeId: _storageOverview.volumeForPath(path)?.id ?? '',
+    );
+  }
+
+  void _rememberCustomTarget(String path, {bool persist = true}) {
+    final normalized = ScanTreeBuilder.normalizeRoot(path);
+    if (normalized.isEmpty || _storageOverview.locations.isEmpty) return;
+    if (_isPresetLocationPath(normalized)) return;
+    final next = _customLocationFor(normalized);
+    final unchanged = _recentCustomLocations.isNotEmpty &&
+        ScanTreeBuilder.normalizeRoot(_recentCustomLocations.first.path) ==
+            normalized;
+    _recentCustomLocations = [
+      next,
+      for (final location in _recentCustomLocations)
+        if (ScanTreeBuilder.normalizeRoot(location.path) != normalized)
+          location,
+    ].take(5).toList(growable: false);
+    if (persist && !unchanged) {
+      _s.rememberCustomRoot(normalized);
+    }
+  }
+
+  void _syncRecentCustomLocations() {
+    _recentCustomLocations = [
+      for (final saved in _s.recentCustomRoots)
+        if (saved.isNotEmpty && !_isPresetLocationPath(saved))
+          _customLocationFor(saved),
+    ];
+    final current = _homeTargetPath;
+    if (current != null && current.isNotEmpty) {
+      _rememberCustomTarget(current, persist: false);
+    }
   }
 
   Future<void> _prepareHomeTarget(String path) async {
@@ -1147,14 +1235,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final normalized = ScanTreeBuilder.normalizeRoot(path);
       final current = ScanTreeBuilder.normalizeRoot(_scanRootPath());
       if (normalized != current) {
-        if (!await _switchToValidatedRoot(
-          normalized,
-          startFullScan: false,
-        )) {
+        if (!await _switchToValidatedRoot(normalized, startFullScan: false)) {
           return;
         }
       }
       if (!_isCurrentSession(session, sessionGeneration)) return;
+      _rememberCustomTarget(normalized);
       _synchronizeHomeTarget();
     } finally {
       if (_isCurrentSession(session, sessionGeneration)) {
@@ -1233,16 +1319,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _pickFolder();
   }
 
+  void _openHomeCategory(String name) {
+    final known = ScanFilterBar.categoryOptions.contains(name);
+    setState(() {
+      _categoryFilter = known ? name : null;
+      _resetColumnNav();
+      _contentMode = _HomeContentMode.browse;
+    });
+  }
+
   StorageHomeSummary _homeSummary(ScanProgressViewState progress) {
     final target = _homeTargetPath ?? _scanRootPath();
-    final matching = _snapshotMatchesCurrentRoot() ? _s.lastSnapshot : null;
     return StorageHomeSummary.fromInputs(
       overview: _storageOverview,
       targetPath: target,
-      matchingSnapshot: matching,
+      matchingSnapshot: _snapshotMatchesTarget(target) ? _s.lastSnapshot : null,
       scanning: _s.scanning,
       scanProgress: _s.scanning ? progress.fraction : null,
       scanPhase: _s.scanning ? progress.phase : null,
+      recentCustomLocations: _recentCustomLocations,
     );
   }
 
@@ -1577,6 +1672,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           const SizedBox(height: AppleSpacing.xxs),
           ScanFilterBar(
             categoryFilter: _categoryFilter,
+            presentCategories: {
+              if (_snapshotMatchesCurrentRoot())
+                for (final entry in _s.lastSnapshot!.categoryCounts.entries)
+                  if (entry.value > 0 &&
+                      ScanFilterBar.categoryOptions.contains(entry.key))
+                    entry.key,
+            },
             onCategoryChanged: (cat) {
               setState(() {
                 _categoryFilter = cat;
@@ -1748,6 +1850,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onScan: _scanStartAction,
                       onCancelScan: _s.scanning ? _s.cancelScan : null,
                       onOpenSettings: _openSettings,
+                      onSelectCategory: _openHomeCategory,
                     ),
                   )
                 : (restoring || loadingTarget) && !hasResults

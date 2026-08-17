@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -9,8 +11,6 @@ import 'volward_logo.dart';
 
 const _dashboardInk = Color(0xFF111113);
 const _dashboardSoft = Color(0xFF1A1A1E);
-const _meterStart = Color(0xFF8FD2FF);
-const _meterEnd = Color(0xFF2997FF);
 const _onDashboard = Color(0xFFF4F4F5);
 const _liveChipFill = Color(0x2934C759);
 const _liveChipLine = Color(0x3834C759);
@@ -21,12 +21,57 @@ const _chooseFolderFocusOrder = 10000.0;
 const _browseFocusOrder = 10001.0;
 const _scanFocusOrder = 10002.0;
 const _settingsFocusOrder = 10003.0;
+const _dashboardControlHeight = 36.0;
+const _wideSidebarWidth = 216.0;
+const _wideDashboardMinHeight = 430.0;
+const _panelGap = 14.0;
+const _sidebarPadding = 18.0;
+const _sidebarLogoHeight = 104.0;
+const _sidebarLogoGap = 18.0;
+const _targetTileHeight = 44.0;
+const _targetTileGap = 10.0;
 
 Color _glass(double whiteAlpha) {
   return Color.alphaBlend(
     Colors.white.withValues(alpha: whiteAlpha),
     _dashboardInk,
   );
+}
+
+Color _dashboardAccent(BuildContext context, double alpha) {
+  return context.volward.primary.withValues(alpha: alpha);
+}
+
+Color _dashboardBase(BuildContext context) {
+  return Color.alphaBlend(_dashboardAccent(context, 0.10), _dashboardInk);
+}
+
+Color _dashboardSoftBase(BuildContext context) {
+  return Color.alphaBlend(_dashboardAccent(context, 0.08), _dashboardSoft);
+}
+
+LinearGradient _dashboardGradient(BuildContext context) {
+  return LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      _dashboardBase(context),
+      _dashboardSoftBase(context),
+      _dashboardAccent(context, 0.42),
+    ],
+    stops: const [0, 0.55, 1],
+  );
+}
+
+LinearGradient _meterGradient(BuildContext context) {
+  final primary = context.volward.primary;
+  final start = Color.lerp(primary, Colors.white, 0.46) ?? primary;
+  final end = Color.lerp(primary, Colors.black, 0.06) ?? primary;
+  return LinearGradient(colors: [start, end]);
+}
+
+TextStyle _dashboardControlTextStyle(BuildContext context, Color color) {
+  return context.vwCaptionStrong.copyWith(color: color);
 }
 
 class StorageStewardHome extends StatelessWidget {
@@ -39,6 +84,7 @@ class StorageStewardHome extends StatelessWidget {
     required this.onScan,
     required this.onCancelScan,
     this.onOpenSettings,
+    this.onSelectCategory,
   });
 
   static const backgroundColor = Color(0xFF111113);
@@ -56,8 +102,11 @@ class StorageStewardHome extends StatelessWidget {
   static const contentViewportKey = Key('storage-overview-content-viewport');
   static const boardKey = Key('storage-overview-board');
   static const scanSummaryKey = Key('storage-overview-scan-summary');
+  static const lastScanOpenKey = Key('storage-overview-last-scan-open');
+  static const categoryPieKey = Key('storage-overview-category-pie');
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
+  static const recentFoldersKey = Key('storage-overview-recent-folders');
 
   final StorageHomeSummary summary;
   final VoidCallback onBrowse;
@@ -66,6 +115,7 @@ class StorageStewardHome extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final VoidCallback? onOpenSettings;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +131,7 @@ class StorageStewardHome extends StatelessWidget {
           onScan: onScan,
           onCancelScan: onCancelScan,
           onOpenSettings: onOpenSettings,
+          onSelectCategory: onSelectCategory,
         );
       },
     );
@@ -97,6 +148,7 @@ class _HeroVisual extends StatelessWidget {
     required this.onScan,
     required this.onCancelScan,
     required this.onOpenSettings,
+    required this.onSelectCategory,
   });
 
   final StorageHomeSummary summary;
@@ -107,6 +159,7 @@ class _HeroVisual extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final VoidCallback? onOpenSettings;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +177,7 @@ class _HeroVisual extends StatelessWidget {
               onBrowse: onBrowse,
               onScan: onScan,
               onCancelScan: onCancelScan,
+              onSelectCategory: onSelectCategory,
             )
           : _WideBoard(
               summary: summary,
@@ -131,6 +185,7 @@ class _HeroVisual extends StatelessWidget {
               onBrowse: onBrowse,
               onScan: onScan,
               onCancelScan: onCancelScan,
+              onSelectCategory: onSelectCategory,
             ),
     );
 
@@ -140,21 +195,13 @@ class _HeroVisual extends StatelessWidget {
         key: StorageStewardHome.panelKey,
         container: true,
         explicitChildNodes: true,
-        child: GestureDetector(
+        child: KeyedSubtree(
           key: StorageStewardHome.panelBackgroundKey,
-          behavior: HitTestBehavior.opaque,
-          excludeFromSemantics: true,
-          onTap: onBrowse,
           child: DecoratedBox(
             key: StorageStewardHome.dashboardSurfaceKey,
-            decoration: const BoxDecoration(
-              color: _dashboardInk,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [_dashboardInk, _dashboardSoft, Color(0x570066CC)],
-                stops: [0, 0.55, 1],
-              ),
+            decoration: BoxDecoration(
+              color: _dashboardBase(context),
+              gradient: _dashboardGradient(context),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -313,6 +360,7 @@ class _WideBoard extends StatelessWidget {
     required this.onBrowse,
     required this.onScan,
     required this.onCancelScan,
+    required this.onSelectCategory,
   });
 
   final StorageHomeSummary summary;
@@ -320,30 +368,37 @@ class _WideBoard extends StatelessWidget {
   final VoidCallback onBrowse;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 216,
-          child: KeyedSubtree(
-            key: StorageStewardHome.targetsKey,
-            child: _Sidebar(summary: summary, onSelectTarget: onSelectTarget),
+    final dashboardHeight = _wideDashboardHeight(summary);
+    return SizedBox(
+      height: dashboardHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: _wideSidebarWidth,
+            child: KeyedSubtree(
+              key: StorageStewardHome.targetsKey,
+              child: _Sidebar(summary: summary, onSelectTarget: onSelectTarget),
+            ),
           ),
-        ),
-        const SizedBox(width: 18),
-        Expanded(
-          child: _MainPane(
-            summary: summary,
-            compact: false,
-            onBrowse: onBrowse,
-            onScan: onScan,
-            onCancelScan: onCancelScan,
+          const SizedBox(width: 18),
+          Expanded(
+            child: _MainPane(
+              summary: summary,
+              compact: false,
+              balancePanels: true,
+              onBrowse: onBrowse,
+              onScan: onScan,
+              onCancelScan: onCancelScan,
+              onSelectCategory: onSelectCategory,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -355,6 +410,7 @@ class _CompactBoard extends StatelessWidget {
     required this.onBrowse,
     required this.onScan,
     required this.onCancelScan,
+    required this.onSelectCategory,
   });
 
   final StorageHomeSummary summary;
@@ -362,6 +418,7 @@ class _CompactBoard extends StatelessWidget {
   final VoidCallback onBrowse;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -376,9 +433,11 @@ class _CompactBoard extends StatelessWidget {
         _MainPane(
           summary: summary,
           compact: true,
+          balancePanels: false,
           onBrowse: onBrowse,
           onScan: onScan,
           onCancelScan: onCancelScan,
+          onSelectCategory: onSelectCategory,
         ),
       ],
     );
@@ -394,16 +453,34 @@ class _Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final targetLocations = _targetLocations(summary);
+    final recentLocations = _recentCustomLocations(summary);
+    final selectedPath = summary.selectedLocation?.path ?? '';
+    final selectedCustom =
+        summary.selectedLocation?.kind == StorageLocationKind.custom
+            ? summary.selectedLocation
+            : null;
+    final recentMenuLocation = selectedCustom ??
+        (recentLocations.isNotEmpty ? recentLocations.first : null);
+    final recentMenuChoices = [
+      if (selectedCustom != null) selectedCustom,
+      for (final location in recentLocations)
+        if (selectedCustom == null ||
+            !_samePath(location.path, selectedCustom.path))
+          location,
+    ];
     Widget targetTile(int index) {
       final location = targetLocations[index];
+      final selected = _samePath(location.path, selectedPath);
+      final choices = location.kind == StorageLocationKind.custom &&
+              recentMenuChoices.length > 1
+          ? recentMenuChoices
+          : const <StorageLocationInfo>[];
       return FocusTraversalOrder(
         order: NumericFocusOrder(_targetFocusOrderStart + index),
-        child: _TargetTile(
+        child: _TargetMenuTile(
           location: location,
-          selected: _samePath(
-            location.path,
-            summary.selectedLocation?.path ?? '',
-          ),
+          choices: choices,
+          selected: selected,
           enabled: !summary.scanning,
           onSelectTarget: onSelectTarget,
         ),
@@ -416,29 +493,59 @@ class _Sidebar extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: _glass(0.06),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const SizedBox(
-                height: 104,
-                child: Center(child: VolwardLogoMark(size: 72)),
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final recentFallback = recentMenuLocation != null &&
+              !targetLocations.any(
+                (location) => _samePath(location.path, recentMenuLocation.path),
+              );
+          final recentTile = recentFallback
+              ? FocusTraversalOrder(
+                  order: NumericFocusOrder(
+                    _targetFocusOrderStart + targetLocations.length,
+                  ),
+                  child: _TargetMenuTile(
+                    location: recentMenuLocation,
+                    choices: recentMenuChoices,
+                    selected: _samePath(recentMenuLocation.path, selectedPath),
+                    recentFallback: true,
+                    enabled: !summary.scanning,
+                    onSelectTarget: onSelectTarget,
+                  ),
+                )
+              : null;
+
+          return Padding(
+            padding: const EdgeInsets.all(_sidebarPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _glass(0.06),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const SizedBox(
+                    height: _sidebarLogoHeight,
+                    child: Center(child: VolwardLogoMark(size: 72)),
+                  ),
+                ),
+                const SizedBox(height: _sidebarLogoGap),
+                for (var index = 0;
+                    index < targetLocations.length;
+                    index++) ...[
+                  targetTile(index),
+                  if (index < targetLocations.length - 1)
+                    const SizedBox(height: _targetTileGap),
+                ],
+                if (recentTile != null) ...[
+                  const SizedBox(height: _targetTileGap),
+                  recentTile,
+                ],
+              ],
             ),
-            const SizedBox(height: 18),
-            for (var index = 0; index < targetLocations.length; index++) ...[
-              targetTile(index),
-              if (index < targetLocations.length - 1)
-                const SizedBox(height: 10),
-            ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -448,43 +555,51 @@ class _MainPane extends StatelessWidget {
   const _MainPane({
     required this.summary,
     required this.compact,
+    required this.balancePanels,
     required this.onBrowse,
     required this.onScan,
     required this.onCancelScan,
+    required this.onSelectCategory,
   });
 
   final StorageHomeSummary summary;
   final bool compact;
+  final bool balancePanels;
   final VoidCallback onBrowse;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
+    final capacity = KeyedSubtree(
+      key: StorageStewardHome.capacityKey,
+      child: _StatPanel(summary: summary, compact: compact),
+    );
+    final browse = _BrowseCard(
+      summary: summary,
+      compact: compact,
+      onBrowse: onBrowse,
+      onScan: onScan,
+      onCancelScan: onCancelScan,
+      onSelectCategory: onSelectCategory,
+    );
+    if (balancePanels) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: capacity),
+          const SizedBox(height: _panelGap),
+          Expanded(child: browse),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        KeyedSubtree(
-          key: StorageStewardHome.capacityKey,
-          child: _StatPanel(summary: summary, compact: compact),
-        ),
-        const SizedBox(height: 14),
-        _HeroMeter(summary: summary),
-        const SizedBox(height: 14),
-        _BrowseCard(
-          summary: summary,
-          compact: compact,
-          onBrowse: onBrowse,
-          onScan: onScan,
-          onCancelScan: onCancelScan,
-        ),
-        if (!compact && summary.categories.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          for (final category in summary.categories) ...[
-            const SizedBox(height: 10),
-            _CategoryRow(category: category),
-          ],
-        ],
+        capacity,
+        const SizedBox(height: _panelGap),
+        browse,
       ],
     );
   }
@@ -518,61 +633,76 @@ class _StatPanel extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          child: Padding(
-            padding: EdgeInsets.all(compact ? 18 : 22),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Tooltip(
-                  message: capacityPath,
-                  child: Text(
-                    capacityPath,
-                    key: StorageStewardHome.capacityPathKey,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.vwFinePrint.copyWith(
-                      color: Colors.white.withValues(alpha: 0.58),
-                    ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 18 : 22,
+                    compact ? 18 : 22,
+                    compact ? 18 : 22,
+                    compact ? 16 : 18,
                   ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  used,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.vwDisplayLg.copyWith(
-                    color: _onDashboard,
-                    fontSize: compact ? 40 : 52,
-                    fontWeight: FontWeight.w700,
-                    height: 0.92,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  l10n.homeCapacityUsed,
-                  style: context.vwFinePrint.copyWith(
-                    color: Colors.white.withValues(alpha: 0.72),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _CapacityMetric(
-                        label: l10n.homeCapacityTotal,
-                        value: total,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Tooltip(
+                        message: capacityPath,
+                        child: Text(
+                          capacityPath,
+                          key: StorageStewardHome.capacityPathKey,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.vwFinePrint.copyWith(
+                            color: Colors.white.withValues(alpha: 0.58),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _CapacityMetric(
-                        label: l10n.homeCapacityAvailable,
-                        value: available,
+                      const SizedBox(height: 10),
+                      Text(
+                        used,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwDisplayLg.copyWith(
+                          color: _onDashboard,
+                          fontSize: compact ? 40 : 52,
+                          fontWeight: FontWeight.w700,
+                          height: 0.92,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        l10n.homeCapacityUsed,
+                        style: context.vwFinePrint.copyWith(
+                          color: Colors.white.withValues(alpha: 0.72),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _CapacityMetric(
+                              label: l10n.homeCapacityTotal,
+                              value: total,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _CapacityMetric(
+                              label: l10n.homeCapacityAvailable,
+                              value: available,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+                if (!compact) const Spacer(),
+                _HeroMeter(summary: summary),
               ],
             ),
           ),
@@ -619,30 +749,26 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = summary.hasUsableCapacity
-        ? summary.selectedVolume?.usedFraction
-        : null;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: SizedBox(
-        key: StorageStewardHome.capacityMeterKey,
-        height: 12,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ColoredBox(color: _glass(0.08)),
-            if (progress != null)
-              FractionallySizedBox(
-                widthFactor: progress.clamp(0, 1),
-                alignment: Alignment.centerLeft,
-                child: const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [_meterStart, _meterEnd]),
-                  ),
+    final progress =
+        summary.hasUsableCapacity ? summary.selectedVolume?.usedFraction : null;
+    return SizedBox(
+      key: StorageStewardHome.capacityMeterKey,
+      height: 12,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: _glass(0.12)),
+          if (progress != null)
+            FractionallySizedBox(
+              widthFactor: progress.clamp(0, 1),
+              alignment: Alignment.centerLeft,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: _meterGradient(context),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -655,6 +781,7 @@ class _BrowseCard extends StatelessWidget {
     required this.onBrowse,
     required this.onScan,
     required this.onCancelScan,
+    required this.onSelectCategory,
   });
 
   final StorageHomeSummary summary;
@@ -662,6 +789,7 @@ class _BrowseCard extends StatelessWidget {
   final VoidCallback onBrowse;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -669,15 +797,24 @@ class _BrowseCard extends StatelessWidget {
     final scanLabel = summary.scanning
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
-        ? l10n.homeRescan
-        : l10n.homeStartScan;
+            ? l10n.homeRescan
+            : l10n.homeStartScan;
     final scanCallback = summary.scanning ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
         final stackedCard = compact || constraints.maxWidth < 280;
-        final details = Padding(
-          padding: EdgeInsets.fromLTRB(20, 18, stackedCard ? 20 : 12, 18),
-          child: _ScanSummary(summary: summary),
+        final details = GestureDetector(
+          key: StorageStewardHome.lastScanOpenKey,
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTap: onBrowse,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 18, stackedCard ? 20 : 12, 18),
+            child: _ScanSummary(
+              summary: summary,
+              onSelectCategory: onSelectCategory,
+            ),
+          ),
         );
         final actions = KeyedSubtree(
           key: StorageStewardHome.actionsKey,
@@ -728,9 +865,8 @@ class _BrowseCard extends StatelessWidget {
                               ? Icons.stop_circle_outlined
                               : Icons.radar_outlined,
                           primary: true,
-                          semanticColor: summary.scanning
-                              ? context.volward.danger
-                              : null,
+                          semanticColor:
+                              summary.scanning ? context.volward.danger : null,
                           onPressed: scanCallback,
                         ),
                       ),
@@ -793,64 +929,228 @@ class _StatusChip extends StatelessWidget {
     final foreground = switch (tone) {
       _StatusChipTone.live => _liveChipText,
       _StatusChipTone.cached => _highestContrastForeground(
-        Color.alphaBlend(fill, parentBackground),
-      ),
+          Color.alphaBlend(fill, parentBackground),
+        ),
       _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.84),
     };
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: context.vwFinePrint.copyWith(color: foreground),
+    return SizedBox(
+      height: _dashboardControlHeight,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: _dashboardControlTextStyle(context, foreground),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({required this.category});
+class _CategoryBreakdown extends StatelessWidget {
+  const _CategoryBreakdown({
+    required this.categories,
+    required this.enabled,
+    required this.onSelectCategory,
+  });
+
+  final List<StorageHomeCategorySummary> categories;
+  final bool enabled;
+  final ValueChanged<String>? onSelectCategory;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = categories.fold<int>(0, (sum, item) => sum + item.count);
+    final slices = <_PieSlice>[
+      for (final category in categories)
+        _PieSlice(
+          color: _categoryColor(category.name),
+          fraction: total == 0 ? 0 : category.count / total,
+        ),
+    ];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        CustomPaint(
+          key: StorageStewardHome.categoryPieKey,
+          size: const Size.square(72),
+          painter: _CategoryPiePainter(slices: slices),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < categories.length; i++)
+                _CategoryLegendRow(
+                  category: categories[i],
+                  color: _categoryColor(categories[i].name),
+                  percentLabel: _percentLabel(categories[i].count, total),
+                  enabled: enabled,
+                  onSelect: !enabled ||
+                          onSelectCategory == null ||
+                          categories[i].name == homeOtherCategoryName
+                      ? null
+                      : () => onSelectCategory!(categories[i].name),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PieSlice {
+  const _PieSlice({required this.color, required this.fraction});
+
+  final Color color;
+  final double fraction;
+}
+
+class _CategoryPiePainter extends CustomPainter {
+  const _CategoryPiePainter({required this.slices});
+
+  final List<_PieSlice> slices;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2;
+    final outer = Rect.fromCircle(center: center, radius: radius);
+    final inner = Rect.fromCircle(center: center, radius: radius * 0.56);
+    var start = -math.pi / 2;
+    final gap = slices.length > 1 ? 0.07 : 0.0;
+    for (final slice in slices) {
+      final sweep = slice.fraction * 2 * math.pi;
+      final padded = math.max(0.0, sweep - gap);
+      if (padded > 0) {
+        final from = start + gap / 2;
+        final path = Path()
+          ..arcTo(outer, from, padded, true)
+          ..arcTo(inner, from + padded, -padded, false)
+          ..close();
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = slice.color
+            ..isAntiAlias = true
+            ..style = PaintingStyle.fill,
+        );
+      }
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CategoryPiePainter oldDelegate) {
+    if (oldDelegate.slices.length != slices.length) return true;
+    for (var i = 0; i < slices.length; i++) {
+      final next = slices[i];
+      final previous = oldDelegate.slices[i];
+      if (next.color != previous.color || next.fraction != previous.fraction) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+class _CategoryLegendRow extends StatelessWidget {
+  const _CategoryLegendRow({
+    required this.category,
+    required this.color,
+    required this.percentLabel,
+    required this.enabled,
+    required this.onSelect,
+  });
 
   final StorageHomeCategorySummary category;
+  final Color color;
+  final String percentLabel;
+  final bool enabled;
+  final VoidCallback? onSelect;
 
   @override
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: _glass(0.05),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                _localizedCategory(context, category.name),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.vwCaption.copyWith(
-                  color: Colors.white.withValues(alpha: 0.86),
+    final label = _localizedCategory(context, category.name);
+    final count = NumberFormat.decimalPattern(locale).format(category.count);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      excludeFromSemantics: true,
+      onTap: enabled ? null : () {},
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey('storage-category-${category.name}'),
+          onTap: enabled ? onSelect : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Semantics(
+            button: true,
+            enabled: enabled,
+            label: label,
+            value: '$count · $percentLabel',
+            onTap: enabled ? onSelect : null,
+            child: ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: enabled ? 1 : 0.42),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const SizedBox(width: 8, height: 8),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwFinePrint.copyWith(
+                          color: _onDashboard.withValues(
+                            alpha: enabled ? 0.84 : 0.42,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      count,
+                      style: context.vwFinePrint.copyWith(
+                        color: _onDashboard.withValues(
+                          alpha: enabled ? 0.64 : 0.36,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      percentLabel,
+                      style: context.vwFinePrint.copyWith(
+                        color: _onDashboard.withValues(
+                          alpha: enabled ? 0.64 : 0.36,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(width: 16),
-            Text(
-              NumberFormat.decimalPattern(locale).format(category.count),
-              style: context.vwCaptionStrong.copyWith(color: _onDashboard),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -858,9 +1158,10 @@ class _CategoryRow extends StatelessWidget {
 }
 
 class _ScanSummary extends StatelessWidget {
-  const _ScanSummary({required this.summary});
+  const _ScanSummary({required this.summary, required this.onSelectCategory});
 
   final StorageHomeSummary summary;
+  final ValueChanged<String>? onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -886,6 +1187,23 @@ class _ScanSummary extends StatelessWidget {
             style: context.vwFinePrint.copyWith(color: _onDashboard),
           ),
         ],
+        if (summary.scannedBytes != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            l10n.homeScannedSize(formatStorageBytes(summary.scannedBytes)),
+            style: context.vwFinePrint.copyWith(
+              color: Colors.white.withValues(alpha: 0.74),
+            ),
+          ),
+        ],
+        if (summary.categories.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _CategoryBreakdown(
+            categories: summary.categories,
+            enabled: !summary.scanning,
+            onSelectCategory: onSelectCategory,
+          ),
+        ],
         if (summary.scanning) ...[
           const SizedBox(height: 12),
           ExcludeSemantics(
@@ -903,12 +1221,16 @@ class _ScanSummary extends StatelessWidget {
             value: summary.scanProgress == null
                 ? null
                 : '${(summary.scanProgress! * 100).round()}%',
-            child: LinearProgressIndicator(
-              key: const ValueKey('storage-scan-progress'),
-              value: summary.scanProgress,
-              minHeight: 6,
-              backgroundColor: Colors.white.withValues(alpha: 0.10),
-              color: context.volward.primary,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                key: const ValueKey('storage-scan-progress'),
+                value: summary.scanProgress,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(999),
+                backgroundColor: Colors.white.withValues(alpha: 0.10),
+                color: context.volward.primary,
+              ),
             ),
           ),
         ],
@@ -1028,8 +1350,8 @@ class _DashboardActionButton extends StatelessWidget {
     final actionColor = semanticColor ?? context.volward.primary;
     final background = enabled
         ? primary
-              ? actionColor
-              : Colors.white.withValues(alpha: 0.08)
+            ? actionColor
+            : Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
@@ -1044,35 +1366,36 @@ class _DashboardActionButton extends StatelessWidget {
         label: label,
         onTap: onPressed,
         excludeSemantics: true,
-        child: Material(
-          color: background,
-          shape: StadiumBorder(
-            side: BorderSide(
-              color: primary
-                  ? actionColor
-                  : Colors.white.withValues(alpha: 0.14),
+        child: SizedBox(
+          height: _dashboardControlHeight,
+          child: Material(
+            color: background,
+            shape: StadiumBorder(
+              side: BorderSide(
+                color: primary
+                    ? actionColor
+                    : Colors.white.withValues(alpha: 0.14),
+              ),
             ),
-          ),
-          child: InkWell(
-            onTap: onPressed,
-            customBorder: const StadiumBorder(),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              child: Row(
-                children: [
-                  Icon(icon, size: 16, color: foreground),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.vwCaptionStrong.copyWith(
-                        color: foreground,
+            child: InkWell(
+              onTap: onPressed,
+              customBorder: const StadiumBorder(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 16, color: foreground),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _dashboardControlTextStyle(context, foreground),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1089,75 +1412,228 @@ Color _highestContrastForeground(Color background) {
   return blackContrast >= whiteContrast ? Colors.black : Colors.white;
 }
 
-class _TargetTile extends StatelessWidget {
-  const _TargetTile({
+class _TargetMenuTile extends StatelessWidget {
+  const _TargetMenuTile({
     required this.location,
+    required this.choices,
     required this.selected,
     required this.enabled,
     required this.onSelectTarget,
+    this.recentFallback = false,
   });
 
   final StorageLocationInfo location;
+  final List<StorageLocationInfo> choices;
   final bool selected;
   final bool enabled;
   final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final bool recentFallback;
 
   @override
   Widget build(BuildContext context) {
-    final label = localizedLocationLabel(context, location);
+    final hasMenu = choices.isNotEmpty;
+    final label = recentFallback
+        ? context.l10n.homeRecentFolders
+        : localizedLocationLabel(context, location);
+    final selectedFill = _dashboardAccent(context, 0.24);
+    final selectedLine = _dashboardAccent(context, 0.62);
+    final tileKey = ValueKey(
+      recentFallback
+          ? 'storage-overview-recent-folders-tile'
+          : 'storage-target-${location.id}',
+    );
+    final tileContent = _TargetTileContent(
+      label: label,
+      choices: choices,
+      selected: selected,
+      enabled: enabled,
+      recentFallback: recentFallback,
+    );
+    final tile = Material(
+      color: selected ? selectedFill : Colors.white.withValues(alpha: 0.04),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected ? selectedLine : Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Tooltip(
+        message:
+            recentFallback ? context.l10n.homeRecentFolders : location.path,
+        child: hasMenu
+            ? KeyedSubtree(
+                key: tileKey,
+                child: ExcludeSemantics(child: tileContent),
+              )
+            : InkWell(
+                key: tileKey,
+                onTap: enabled ? () => onSelectTarget(location) : null,
+                borderRadius: BorderRadius.circular(16),
+                child: Semantics(
+                  key: ValueKey(
+                    recentFallback
+                        ? 'storage-recent-folders-semantics'
+                        : 'storage-target-semantics-${location.id}',
+                  ),
+                  selected: selected,
+                  button: true,
+                  enabled: enabled,
+                  label: label,
+                  value: recentFallback
+                      ? choices.length.toString()
+                      : location.path,
+                  onTap: enabled ? () => onSelectTarget(location) : null,
+                  child: ExcludeSemantics(child: tileContent),
+                ),
+              ),
+      ),
+    );
+    if (!hasMenu) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: enabled ? null : () {},
+        child: tile,
+      );
+    }
+    final menuSurface = Color.alphaBlend(
+      _dashboardAccent(context, 0.18),
+      _dashboardSoft,
+    );
+    final menuShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+    );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       excludeFromSemantics: true,
       onTap: enabled ? null : () {},
-      child: Material(
-        color: selected
-            ? const Color(0x2E0066CC)
-            : Colors.white.withValues(alpha: 0.04),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: selected
-                ? const Color(0x668FD2FF)
-                : Colors.white.withValues(alpha: 0.08),
-          ),
-        ),
-        child: Tooltip(
-          message: location.path,
-          child: InkWell(
-            key: ValueKey('storage-target-${location.id}'),
-            onTap: enabled ? () => onSelectTarget(location) : null,
-            borderRadius: BorderRadius.circular(16),
-            child: Semantics(
-              key: ValueKey('storage-target-semantics-${location.id}'),
-              selected: selected,
-              button: true,
-              enabled: enabled,
-              label: label,
-              value: location.path,
-              onTap: enabled ? () => onSelectTarget(location) : null,
-              child: ExcludeSemantics(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.vwCaption.copyWith(
-                        color: _onDashboard.withValues(
-                          alpha: enabled ? (selected ? 1 : 0.8) : 0.42,
+      child: Semantics(
+        container: true,
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: label,
+        value: recentFallback ? choices.length.toString() : location.path,
+        onTap: enabled ? () {} : null,
+        child: PopupMenuButton<StorageLocationInfo>(
+          key: recentFallback
+              ? StorageStewardHome.recentFoldersKey
+              : ValueKey('storage-target-menu-${location.id}'),
+          enabled: enabled,
+          tooltip: label,
+          color: menuSurface,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          shape: menuShape,
+          onSelected: onSelectTarget,
+          itemBuilder: (context) => [
+            for (final location in choices)
+              PopupMenuItem<StorageLocationInfo>(
+                key: ValueKey('storage-recent-folder-option-${location.id}'),
+                value: location,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 220),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        localizedLocationLabel(context, location),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwCaptionStrong.copyWith(
+                          color: _onDashboard,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 2),
+                      Text(
+                        location.path,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwFinePrint.copyWith(
+                          color: _onDashboard.withValues(alpha: 0.62),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+          child: tile,
+        ),
+      ),
+    );
+  }
+}
+
+class _TargetTileContent extends StatelessWidget {
+  const _TargetTileContent({
+    required this.label,
+    required this.choices,
+    required this.selected,
+    required this.enabled,
+    required this.recentFallback,
+  });
+
+  final String label;
+  final List<StorageLocationInfo> choices;
+  final bool selected;
+  final bool enabled;
+  final bool recentFallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasMenu = choices.isNotEmpty;
+    return SizedBox(
+      width: double.infinity,
+      height: _targetTileHeight,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: [
+            if (recentFallback) ...[
+              Icon(
+                Icons.history_outlined,
+                size: 16,
+                color: _onDashboard.withValues(
+                  alpha: enabled ? 0.8 : 0.42,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.vwCaption.copyWith(
+                  color: _onDashboard.withValues(
+                    alpha: enabled ? (selected ? 1 : 0.8) : 0.42,
                   ),
                 ),
               ),
             ),
-          ),
+            if (hasMenu) ...[
+              const SizedBox(width: 8),
+              if (recentFallback)
+                Text(
+                  choices.length.toString(),
+                  style: context.vwFinePrint.copyWith(
+                    color: _onDashboard.withValues(
+                      alpha: enabled ? 0.58 : 0.32,
+                    ),
+                  ),
+                ),
+              Icon(
+                Icons.arrow_drop_down,
+                size: 18,
+                color: _onDashboard.withValues(
+                  alpha: enabled ? 0.8 : 0.42,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -1175,6 +1651,7 @@ String localizedLocationLabel(
   return switch (location.kind) {
     StorageLocationKind.home => l10n.homeLocationHome,
     StorageLocationKind.applications => l10n.homeLocationApplications,
+    StorageLocationKind.desktop => l10n.homeLocationDesktop,
     StorageLocationKind.downloads => l10n.homeLocationDownloads,
     StorageLocationKind.documents => l10n.homeLocationDocuments,
     StorageLocationKind.volume => l10n.homeLocationVolume(name),
@@ -1212,8 +1689,28 @@ String _localizedCategory(BuildContext context, String name) {
     'Temp' => l10n.filterCategoryTemp,
     'Media' => l10n.filterCategoryMedia,
     'System' => l10n.filterCategorySystem,
+    'Other' => l10n.homeCategoryOther,
     _ => name,
   };
+}
+
+Color _categoryColor(String name) {
+  return switch (name) {
+    'Cache' => const Color(0xFF64D2FF),
+    'Temp' => const Color(0xFFFFD60A),
+    'Media' => const Color(0xFFBF5AF2),
+    'System' => const Color(0xFF30D158),
+    'Other' => const Color(0xFF8E8E93),
+    _ => const Color(0xFF8E8E93),
+  };
+}
+
+String _percentLabel(int count, int total) {
+  if (total <= 0 || count <= 0) return '0%';
+  final exact = count * 100 / total;
+  if (exact < 0.1) return '<0.1%';
+  if (exact < 1) return '${exact.toStringAsFixed(1)}%';
+  return '${exact.round()}%';
 }
 
 String _localizedScanPhase(BuildContext context, String? phase) {
@@ -1290,6 +1787,55 @@ List<StorageLocationInfo> _targetLocations(StorageHomeSummary summary) {
     locations.add(selectedLocation);
   }
   return locations;
+}
+
+double _wideDashboardHeight(StorageHomeSummary summary) {
+  final visibleTargets = _visibleTargetCount(summary);
+  final targetHeight = _sidebarPadding * 2 +
+      _sidebarLogoHeight +
+      _sidebarLogoGap +
+      visibleTargets * _targetTileHeight +
+      math.max(0, visibleTargets - 1) * _targetTileGap;
+  return math.max(_wideDashboardMinHeight, targetHeight);
+}
+
+int _visibleTargetCount(StorageHomeSummary summary) {
+  final targetLocations = _targetLocations(summary);
+  final recentLocations = _recentCustomLocations(summary);
+  final selectedCustom =
+      summary.selectedLocation?.kind == StorageLocationKind.custom
+          ? summary.selectedLocation
+          : null;
+  final recentMenuLocation = selectedCustom ??
+      (recentLocations.isNotEmpty ? recentLocations.first : null);
+  final hasRecentFallback = recentMenuLocation != null &&
+      !targetLocations.any(
+        (location) => _samePath(location.path, recentMenuLocation.path),
+      );
+  return targetLocations.length + (hasRecentFallback ? 1 : 0);
+}
+
+List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
+  final locations = _targetLocations(summary);
+  final pinnedCustomLocation = summary.pinnedCustomLocation;
+  final customLocations = [
+    ...summary.recentCustomLocations,
+    if (pinnedCustomLocation != null) pinnedCustomLocation,
+  ];
+  final recent = <StorageLocationInfo>[];
+  for (final customLocation in customLocations) {
+    if (customLocation.path.isNotEmpty &&
+        customLocation.kind == StorageLocationKind.custom &&
+        !locations.any(
+          (location) => _samePath(location.path, customLocation.path),
+        ) &&
+        !recent.any(
+          (location) => _samePath(location.path, customLocation.path),
+        )) {
+      recent.add(customLocation);
+    }
+  }
+  return recent;
 }
 
 String _formatScanTime(BuildContext context, int millisecondsSinceEpoch) {

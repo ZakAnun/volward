@@ -254,6 +254,12 @@ abstract class AppLocalizations {
   /// **'System'**
   String get filterCategorySystem;
 
+  /// No description provided for @homeCategoryOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get homeCategoryOther;
+
   /// No description provided for @sortSizeDesc.
   ///
   /// In en, this message translates to:
@@ -866,6 +872,12 @@ abstract class AppLocalizations {
   /// **'Applications'**
   String get homeLocationApplications;
 
+  /// No description provided for @homeLocationDesktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop'**
+  String get homeLocationDesktop;
+
   /// No description provided for @homeLocationDownloads.
   ///
   /// In en, this message translates to:
@@ -902,6 +914,12 @@ abstract class AppLocalizations {
   /// **'Current target'**
   String get homeCurrentTarget;
 
+  /// No description provided for @homeRecentFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Folders'**
+  String get homeRecentFolders;
+
   /// No description provided for @homeLastScan.
   ///
   /// In en, this message translates to:
@@ -919,6 +937,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{size} reclaimable'**
   String homeReclaimable(String size);
+
+  /// No description provided for @homeScannedSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} scanned'**
+  String homeScannedSize(String size);
 
   /// No description provided for @homeBrowseFiles.
   ///

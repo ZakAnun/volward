@@ -26,6 +26,7 @@
   "filterCategoryTemp": "Temp",
   "filterCategoryMedia": "Media",
   "filterCategorySystem": "System",
+  "homeCategoryOther": "Other",
   "sortSizeDesc": "Size ↓",
   "sortSizeAsc": "Size ↑",
   "sortNameAsc": "Name",
@@ -287,6 +288,7 @@
   "homeScanTargets": "Scan range",
   "homeLocationHome": "Home",
   "homeLocationApplications": "Applications",
+  "homeLocationDesktop": "Desktop",
   "homeLocationDownloads": "Downloads",
   "homeLocationDocuments": "Documents",
   "homeLocationVolume": "Disk {name}",
@@ -299,6 +301,7 @@
   },
   "homeChooseFolder": "Choose Folder",
   "homeCurrentTarget": "Current target",
+  "homeRecentFolders": "Recent Folders",
   "homeLastScan": "Last scan {time}",
   "@homeLastScan": {
     "placeholders": {"time": {"type": "String"}}
@@ -306,6 +309,10 @@
   "homeNeverScanned": "Not scanned yet",
   "homeReclaimable": "{size} reclaimable",
   "@homeReclaimable": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeScannedSize": "{size} scanned",
+  "@homeScannedSize": {
     "placeholders": {"size": {"type": "String"}}
   },
   "homeBrowseFiles": "Browse Files",

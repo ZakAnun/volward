@@ -49,6 +49,35 @@ void main() {
       expect(session.refreshTargetPath, '/other-root');
     });
 
+    test('rememberCustomRoot keeps recent roots as an MRU list', () async {
+      final session = VolwardSession.test();
+      final file = File(
+        '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      session.sessionStateFileForTest = file;
+
+      session.rememberCustomRoot('/Users/test/Projects');
+      session.rememberCustomRoot('/Users/test/Archives');
+      session.rememberCustomRoot('/Users/test/Projects');
+      for (var i = 0; i < 10 && !await file.exists(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.lastCustomRoot, '/Users/test/Projects');
+      expect(session.recentCustomRoots, [
+        '/Users/test/Projects',
+        '/Users/test/Archives',
+      ]);
+
+      final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect(raw['last_custom_root'], '/Users/test/Projects');
+      expect(raw['last_custom_roots'], [
+        '/Users/test/Projects',
+        '/Users/test/Archives',
+      ]);
+      await file.delete();
+    });
+
     test('hasIndexApi is a bool', () {
       final session = VolwardSession.test();
       expect(session.hasIndexApi, isA<bool>());
@@ -78,7 +107,8 @@ void main() {
       await file.delete();
     });
 
-    test('loadSessionStateIfNeeded ignores empty session state files', () async {
+    test('loadSessionStateIfNeeded ignores empty session state files',
+        () async {
       final session = VolwardSession.test();
       final file = File(
         '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
@@ -104,6 +134,52 @@ void main() {
 
       final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       expect(raw['scan_roots'], ['/Users/test/Downloads']);
+      await file.delete();
+    });
+
+    test('switchScanRoot to a default root keeps the last custom root',
+        () async {
+      final session = VolwardSession.test();
+      final file = File(
+        '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      session.sessionStateFileForTest = file;
+
+      session.setLastCustomRoot('/Users/test/Projects');
+      await session.switchScanRoot('/Users/test');
+
+      final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect(raw['scan_roots'], ['/Users/test']);
+      expect(raw['last_custom_root'], '/Users/test/Projects');
+      await file.delete();
+    });
+
+    test('loadSessionStateIfNeeded restores the last custom root', () async {
+      final session = VolwardSession.test();
+      final file = File(
+        '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      session.sessionStateFileForTest = file;
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode({
+          'scan_roots': ['/Users/test'],
+          'last_custom_root': '/Users/test/Projects',
+          'last_custom_roots': [
+            '/Users/test/Archives',
+            '/Users/test/Projects',
+          ],
+        }),
+      );
+
+      await session.loadSessionStateIfNeeded();
+
+      expect(session.scanRoots, ['/Users/test']);
+      expect(session.lastCustomRoot, '/Users/test/Archives');
+      expect(session.recentCustomRoots, [
+        '/Users/test/Archives',
+        '/Users/test/Projects',
+      ]);
       await file.delete();
     });
   });

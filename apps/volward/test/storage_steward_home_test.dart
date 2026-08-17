@@ -28,6 +28,14 @@ const applications = StorageLocationInfo(
   volumeId: '/',
 );
 
+const desktop = StorageLocationInfo(
+  id: 'desktop',
+  name: 'Desktop',
+  path: '/Users/me/Desktop',
+  kind: StorageLocationKind.desktop,
+  volumeId: '/',
+);
+
 const documents = StorageLocationInfo(
   id: 'documents',
   name: 'Documents',
@@ -57,7 +65,7 @@ final readySummary = StorageHomeSummary(
   overview: StorageOverviewData(
     selectedVolumeId: '/',
     volumes: const [volume],
-    locations: const [home, applications, downloads, documents],
+    locations: const [home, applications, desktop, downloads, documents],
   ),
   selectedLocation: home,
   selectedVolume: volume,
@@ -127,11 +135,21 @@ const customLocation = StorageLocationInfo(
   volumeId: '/',
 );
 
+const secondCustomPath = '/Users/me/Projects/Photo Library';
+
+const secondCustomLocation = StorageLocationInfo(
+  id: 'custom-photo-library',
+  name: 'Photo Library',
+  path: secondCustomPath,
+  kind: StorageLocationKind.custom,
+  volumeId: '/',
+);
+
 final customSummary = StorageHomeSummary(
   overview: StorageOverviewData(
     selectedVolumeId: '/',
     volumes: const [volume],
-    locations: const [home, applications, downloads, documents],
+    locations: const [home, applications, desktop, downloads, documents],
   ),
   selectedLocation: customLocation,
   selectedVolume: volume,
@@ -155,7 +173,7 @@ final longPosixSummary = StorageHomeSummary(
   overview: StorageOverviewData(
     selectedVolumeId: '/',
     volumes: const [volume],
-    locations: const [home, applications, downloads, documents],
+    locations: const [home, applications, desktop, downloads, documents],
   ),
   selectedLocation: longPosixLocation,
   selectedVolume: volume,
@@ -197,6 +215,14 @@ const windowsDownloads = StorageLocationInfo(
   volumeId: 'C:',
 );
 
+const windowsDesktop = StorageLocationInfo(
+  id: 'desktop',
+  name: 'Desktop',
+  path: r'C:\Users\me\Desktop',
+  kind: StorageLocationKind.desktop,
+  volumeId: 'C:',
+);
+
 const windowsDocuments = StorageLocationInfo(
   id: 'documents',
   name: 'Documents',
@@ -209,7 +235,12 @@ final windowsUserFolderSummary = StorageHomeSummary(
   overview: StorageOverviewData(
     selectedVolumeId: 'C:',
     volumes: const [windowsSystemVolume, windowsVolume],
-    locations: const [windowsHome, windowsDownloads, windowsDocuments],
+    locations: const [
+      windowsHome,
+      windowsDesktop,
+      windowsDownloads,
+      windowsDocuments,
+    ],
   ),
   selectedLocation: windowsHome,
   selectedVolume: windowsSystemVolume,
@@ -259,6 +290,7 @@ final windowsMultiDriveSummary = StorageHomeSummary(
     volumes: const [windowsSystemVolume, windowsVolume],
     locations: const [
       windowsHome,
+      windowsDesktop,
       windowsDownloads,
       windowsDocuments,
       windowsSystemDrive,
@@ -400,16 +432,16 @@ final invalidLiveSummary = StorageHomeSummary(
 );
 
 Finder targetTiles() => find.byWidgetPredicate((widget) {
-  final key = widget.key;
-  return widget is InkWell &&
-      key is ValueKey<String> &&
-      key.value.startsWith('storage-target-');
-});
+      final key = widget.key;
+      return widget is InkWell &&
+          key is ValueKey<String> &&
+          key.value.startsWith('storage-target-');
+    });
 
 Finder capacityMeterFill() => find.descendant(
-  of: find.byKey(StorageStewardHome.capacityMeterKey),
-  matching: find.byType(FractionallySizedBox),
-);
+      of: find.byKey(StorageStewardHome.capacityMeterKey),
+      matching: find.byType(FractionallySizedBox),
+    );
 
 ({Rect targets, Rect capacity, Rect scan}) homeGeometry(WidgetTester tester) {
   return (
@@ -432,12 +464,10 @@ void expectButtonSemantics(SemanticsNode node, {required bool enabled}) {
 double contrastRatio(Color first, Color second) {
   final firstLuminance = first.computeLuminance();
   final secondLuminance = second.computeLuminance();
-  final lighter = firstLuminance > secondLuminance
-      ? firstLuminance
-      : secondLuminance;
-  final darker = firstLuminance > secondLuminance
-      ? secondLuminance
-      : firstLuminance;
+  final lighter =
+      firstLuminance > secondLuminance ? firstLuminance : secondLuminance;
+  final darker =
+      firstLuminance > secondLuminance ? secondLuminance : firstLuminance;
   return (lighter + 0.05) / (darker + 0.05);
 }
 
@@ -451,13 +481,13 @@ void expectTextContrast(WidgetTester tester, Finder finder, Color background) {
 }
 
 Finder statusChipFinder() => find.descendant(
-  of: find.byKey(StorageStewardHome.actionsKey),
-  matching: find.byWidgetPredicate((widget) {
-    final decoration = widget is DecoratedBox ? widget.decoration : null;
-    return decoration is BoxDecoration &&
-        decoration.borderRadius == BorderRadius.circular(999);
-  }),
-);
+      of: find.byKey(StorageStewardHome.actionsKey),
+      matching: find.byWidgetPredicate((widget) {
+        final decoration = widget is DecoratedBox ? widget.decoration : null;
+        return decoration is BoxDecoration &&
+            decoration.borderRadius == BorderRadius.circular(999);
+      }),
+    );
 
 BoxDecoration statusChipDecoration(WidgetTester tester) {
   final finder = statusChipFinder();
@@ -522,6 +552,7 @@ Future<void> pumpOverview(
   VoidCallback? onScan,
   VoidCallback? onCancelScan,
   VoidCallback? onOpenSettings,
+  ValueChanged<String>? onSelectCategory,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -542,6 +573,7 @@ Future<void> pumpOverview(
           onScan: onScan,
           onCancelScan: onCancelScan,
           onOpenSettings: onOpenSettings,
+          onSelectCategory: onSelectCategory,
         ),
       ),
     ),
@@ -573,7 +605,7 @@ void main() {
     }
   });
 
-  testWidgets('capacity meter sits between capacity and scan regions', (
+  testWidgets('capacity meter sits at the bottom of the disk card', (
     tester,
   ) async {
     await pumpOverview(tester);
@@ -583,15 +615,117 @@ void main() {
         of: find.byKey(StorageStewardHome.capacityKey),
         matching: find.byKey(StorageStewardHome.capacityMeterKey),
       ),
-      findsNothing,
+      findsOneWidget,
     );
     final capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
     final meter = tester.getRect(
       find.byKey(StorageStewardHome.capacityMeterKey),
     );
     final scan = tester.getRect(find.byKey(StorageStewardHome.scanSummaryKey));
-    expect(meter.top - capacity.bottom, closeTo(14, 1));
-    expect(scan.top - meter.bottom, closeTo(14, 1));
+    expect(meter.bottom, closeTo(capacity.bottom, 1));
+    expect(meter.left, closeTo(capacity.left, 1));
+    expect(meter.right, closeTo(capacity.right, 1));
+    expect(meter.height, closeTo(12, 1));
+    expect(scan.top - capacity.bottom, closeTo(14, 1));
+  });
+
+  testWidgets('category pie sits in the last scan card', (tester) async {
+    await pumpOverview(tester, summary: categorizedSummary);
+
+    expect(
+      find.descendant(
+        of: find.byKey(StorageStewardHome.scanSummaryKey),
+        matching: find.byKey(StorageStewardHome.categoryPieKey),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(StorageStewardHome.capacityKey),
+        matching: find.byKey(StorageStewardHome.categoryPieKey),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(StorageStewardHome.scanSummaryKey),
+        matching: find.byKey(const ValueKey('storage-category-Cache')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(StorageStewardHome.capacityKey),
+        matching: find.byKey(const ValueKey('storage-category-Cache')),
+      ),
+      findsNothing,
+    );
+    final scan = tester.getRect(find.byKey(StorageStewardHome.scanSummaryKey));
+    final pie = tester.getRect(find.byKey(StorageStewardHome.categoryPieKey));
+    expect(pie.top, greaterThan(scan.top));
+    expect(pie.bottom, lessThanOrEqualTo(scan.bottom));
+  });
+
+  testWidgets('category pie omits unscanned labels and shows other remainder', (
+    tester,
+  ) async {
+    await pumpOverview(tester, summary: categorizedSummary);
+
+    expect(
+      find.byKey(const ValueKey('storage-category-Cache')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('storage-category-Temp')), findsNothing);
+    expect(find.byKey(const ValueKey('storage-category-Media')), findsNothing);
+    expect(find.byKey(const ValueKey('storage-category-System')), findsNothing);
+    expect(find.byKey(const ValueKey('storage-category-Other')), findsNothing);
+    expect(find.text('100%'), findsOneWidget);
+
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: categorizedSummary.overview,
+        selectedLocation: categorizedSummary.selectedLocation,
+        selectedVolume: categorizedSummary.selectedVolume,
+        scanning: false,
+        hasCompletedScan: true,
+        categories: const [
+          StorageHomeCategorySummary(name: 'Cache', count: 4),
+          StorageHomeCategorySummary(name: 'Other', count: 9),
+        ],
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('storage-category-Cache')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('storage-category-Other')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('storage-category-System')), findsNothing);
+    expect(find.text('31%'), findsOneWidget);
+    expect(find.text('69%'), findsOneWidget);
+
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: categorizedSummary.overview,
+        selectedLocation: categorizedSummary.selectedLocation,
+        selectedVolume: categorizedSummary.selectedVolume,
+        scanning: false,
+        hasCompletedScan: true,
+        categories: const [
+          StorageHomeCategorySummary(name: 'Cache', count: 1141),
+          StorageHomeCategorySummary(name: 'Other', count: 316859),
+        ],
+      ),
+    );
+
+    expect(find.text('0%'), findsNothing);
+    expect(find.text('0.4%'), findsOneWidget);
+    expect(find.text('100%'), findsOneWidget);
   });
 
   testWidgets('valid capacity meter fill matches used fraction', (
@@ -610,10 +744,40 @@ void main() {
         matching: find.byType(DecoratedBox),
       ),
     );
-    expect(
-      (fillDecoration.decoration as BoxDecoration).gradient,
-      const LinearGradient(colors: [Color(0xFF8FD2FF), Color(0xFF2997FF)]),
-    );
+    final tokens = Theme.of(
+      tester.element(find.byKey(StorageStewardHome.capacityMeterKey)),
+    ).extension<VolwardTokens>()!;
+    final gradient = (fillDecoration.decoration as BoxDecoration).gradient!
+        as LinearGradient;
+    expect(gradient.colors, [
+      Color.lerp(tokens.primary, Colors.white, 0.46),
+      Color.lerp(tokens.primary, Colors.black, 0.06),
+    ]);
+  });
+
+  testWidgets('status, browse, and scan controls use one height and font', (
+    tester,
+  ) async {
+    await pumpOverview(tester, onScan: () {});
+
+    final statusHeight = tester.getSize(statusChipFinder()).height;
+    final browseHeight =
+        tester.getSize(find.byKey(StorageStewardHome.browseKey)).height;
+    final scanHeight =
+        tester.getSize(find.byKey(StorageStewardHome.scanActionKey)).height;
+
+    expect(statusHeight, closeTo(36, 1));
+    expect(browseHeight, closeTo(statusHeight, 1));
+    expect(scanHeight, closeTo(statusHeight, 1));
+
+    final statusFont =
+        tester.widget<Text>(find.text('Live disk data')).style!.fontSize;
+    final browseFont =
+        tester.widget<Text>(find.text('Browse Files')).style!.fontSize;
+    final scanFont =
+        tester.widget<Text>(find.text('Start Scan')).style!.fontSize;
+    expect(browseFont, statusFont);
+    expect(scanFont, statusFont);
   });
 
   testWidgets('tab traversal follows dashboard order without volume selector', (
@@ -624,6 +788,7 @@ void main() {
     await expectTabSequence(tester, [
       const ValueKey('storage-target-home'),
       const ValueKey('storage-target-applications'),
+      const ValueKey('storage-target-desktop'),
       const ValueKey('storage-target-downloads'),
       const ValueKey('storage-target-documents'),
       StorageStewardHome.chooseFolderKey,
@@ -646,6 +811,7 @@ void main() {
     await expectTabSequence(tester, [
       StorageStewardHome.volumeSelectorKey,
       const ValueKey('storage-target-home'),
+      const ValueKey('storage-target-desktop'),
       const ValueKey('storage-target-downloads'),
       const ValueKey('storage-target-documents'),
       StorageStewardHome.chooseFolderKey,
@@ -694,7 +860,7 @@ void main() {
 
     expect(targets.right, lessThan(capacity.left));
     expect(capacity.width, greaterThan(targets.width));
-    expect(scanSummary.top - capacity.bottom, closeTo(40, 1));
+    expect(scanSummary.top - capacity.bottom, closeTo(14, 1));
     expect(actions.top, greaterThanOrEqualTo(scanSummary.top));
     expect(actions.left, greaterThan(scanSummary.left));
     expect(panel.width, greaterThan(1000));
@@ -764,14 +930,17 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.byKey(StorageStewardHome.panelKey),
-        matching: find.byWidgetPredicate((widget) {
-          final decoration = widget is DecoratedBox ? widget.decoration : null;
-          return decoration is BoxDecoration &&
-              decoration.borderRadius == BorderRadius.circular(18);
-        }),
+        of: find.byKey(StorageStewardHome.scanSummaryKey),
+        matching: find.byKey(const ValueKey('storage-category-Cache')),
       ),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(StorageStewardHome.capacityKey),
+        matching: find.byKey(const ValueKey('storage-category-Cache')),
+      ),
+      findsNothing,
     );
   });
 
@@ -1059,7 +1228,9 @@ void main() {
     }
   });
 
-  testWidgets('home canvas keeps the fixed Layout C gradient', (tester) async {
+  testWidgets('home canvas follows the selected accent gradient', (
+    tester,
+  ) async {
     for (final (_, accent) in VolwardTokens.accentPresets) {
       for (final brightness in Brightness.values) {
         await pumpOverview(tester, brightness: brightness, accent: accent);
@@ -1069,18 +1240,72 @@ void main() {
           find.byKey(StorageStewardHome.dashboardSurfaceKey),
         );
         final decoration = surface.decoration as BoxDecoration;
+        final tokens = Theme.of(
+          tester.element(find.byKey(StorageStewardHome.dashboardSurfaceKey)),
+        ).extension<VolwardTokens>()!;
+        final base = Color.alphaBlend(
+          tokens.primary.withValues(alpha: 0.10),
+          const Color(0xFF111113),
+        );
+        final soft = Color.alphaBlend(
+          tokens.primary.withValues(alpha: 0.08),
+          const Color(0xFF1A1A1E),
+        );
 
-        expect(decoration.color, const Color(0xFF111113));
+        expect(decoration.color, base);
         expect(decoration.gradient, isA<LinearGradient>());
         final gradient = decoration.gradient! as LinearGradient;
-        expect(gradient.colors, const [
-          Color(0xFF111113),
-          Color(0xFF1A1A1E),
-          Color(0x570066CC),
+        expect(gradient.colors, [
+          base,
+          soft,
+          tokens.primary.withValues(alpha: 0.42),
         ]);
         expect(gradient.stops, const [0, 0.55, 1]);
       }
     }
+  });
+
+  testWidgets('category row opens the matching type without other actions', (
+    tester,
+  ) async {
+    String? selectedCategory;
+    var browses = 0;
+    var scans = 0;
+    await pumpOverview(
+      tester,
+      summary: categorizedSummary,
+      onBrowse: () => browses++,
+      onScan: () => scans++,
+      onSelectCategory: (name) => selectedCategory = name,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('storage-category-Cache')));
+    await tester.pump();
+
+    expect(selectedCategory, 'Cache');
+    expect(browses, 0);
+    expect(scans, 0);
+  });
+
+  testWidgets('scanning absorbs category row taps', (tester) async {
+    String? selectedCategory;
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: categorizedSummary.overview,
+        selectedLocation: categorizedSummary.selectedLocation,
+        selectedVolume: categorizedSummary.selectedVolume,
+        scanning: true,
+        hasCompletedScan: false,
+        categories: categorizedSummary.categories,
+      ),
+      onSelectCategory: (name) => selectedCategory = name,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('storage-category-Cache')));
+    await tester.pump();
+
+    expect(selectedCategory, isNull);
   });
 
   testWidgets('built-in targets render and selection stays independent', (
@@ -1103,6 +1328,10 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey('storage-target-desktop')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey('storage-target-documents')),
       findsOneWidget,
     );
@@ -1117,9 +1346,12 @@ void main() {
       ),
     );
     final selectedShape = selectedMaterial.shape! as RoundedRectangleBorder;
-    expect(selectedMaterial.color, const Color(0x2E0066CC));
+    final tokens = Theme.of(
+      tester.element(selectedTarget),
+    ).extension<VolwardTokens>()!;
+    expect(selectedMaterial.color, tokens.primary.withValues(alpha: 0.24));
     expect(selectedShape.borderRadius, BorderRadius.circular(16));
-    expect(selectedShape.side.color, const Color(0x668FD2FF));
+    expect(selectedShape.side.color, tokens.primary.withValues(alpha: 0.62));
     expect(
       tester.widget<InkWell>(selectedTarget).borderRadius,
       BorderRadius.circular(16),
@@ -1131,6 +1363,166 @@ void main() {
     expect(browses, 0);
     expect(chooses, 0);
     expect(scans, 0);
+  });
+
+  testWidgets(
+    'pinned custom target is available from one recent folders button',
+    (tester) async {
+      StorageLocationInfo? selected;
+      await pumpOverview(
+        tester,
+        summary: StorageHomeSummary(
+          overview: customSummary.overview,
+          selectedLocation: home,
+          selectedVolume: volume,
+          scanning: false,
+          hasCompletedScan: false,
+          pinnedCustomLocation: customLocation,
+        ),
+        onSelectTarget: (location) => selected = location,
+      );
+
+      expect(
+        find.byKey(const ValueKey('storage-target-custom-deep-archive')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('storage-target-home')),
+        findsOneWidget,
+      );
+      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsOneWidget);
+
+      await tester.tap(find.byKey(StorageStewardHome.recentFoldersKey));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'storage-recent-folder-option-custom-deep-archive',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(selected, customLocation);
+    },
+  );
+
+  testWidgets('recent custom targets stay in one lightweight menu', (
+    tester,
+  ) async {
+    StorageLocationInfo? selected;
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: customSummary.overview,
+        selectedLocation: home,
+        selectedVolume: volume,
+        scanning: false,
+        hasCompletedScan: false,
+        recentCustomLocations: const [customLocation, secondCustomLocation],
+      ),
+      onSelectTarget: (location) => selected = location,
+    );
+
+    expect(
+      find.byKey(const ValueKey('storage-target-custom-deep-archive')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom-photo-library')),
+      findsNothing,
+    );
+    expect(find.byKey(StorageStewardHome.recentFoldersKey), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('storage-recent-folders-semantics')),
+      findsNothing,
+    );
+    expect(find.text('Recent Folders'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    final menuButton = tester.widget<PopupMenuButton<StorageLocationInfo>>(
+      find.byKey(StorageStewardHome.recentFoldersKey),
+    );
+    final tokens = Theme.of(
+      tester.element(find.byKey(StorageStewardHome.recentFoldersKey)),
+    ).extension<VolwardTokens>()!;
+    expect(
+      menuButton.color,
+      Color.alphaBlend(
+        tokens.primary.withValues(alpha: 0.18),
+        const Color(0xFF1A1A1E),
+      ),
+    );
+    expect(menuButton.elevation, 0);
+    expect(menuButton.shadowColor, Colors.transparent);
+    expect(menuButton.shape, isA<RoundedRectangleBorder>());
+
+    await tester.tap(find.byKey(StorageStewardHome.recentFoldersKey));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey('storage-recent-folder-option-custom-deep-archive'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('storage-recent-folder-option-custom-photo-library'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(
+        const ValueKey('storage-recent-folder-option-custom-photo-library'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(selected, secondCustomLocation);
+  });
+
+  testWidgets('selected custom target doubles as the recent folders menu', (
+    tester,
+  ) async {
+    StorageLocationInfo? selected;
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: customSummary.overview,
+        selectedLocation: customLocation,
+        selectedVolume: volume,
+        scanning: false,
+        hasCompletedScan: false,
+        recentCustomLocations: const [customLocation, secondCustomLocation],
+      ),
+      onSelectTarget: (location) => selected = location,
+    );
+
+    expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
+    expect(
+      find.byKey(const ValueKey('storage-target-custom-deep-archive')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom-photo-library')),
+      findsNothing,
+    );
+    final menuButton = tester.widget<PopupMenuButton<StorageLocationInfo>>(
+      find.byKey(const ValueKey('storage-target-menu-custom-deep-archive')),
+    );
+    expect(menuButton.child, isA<Material>());
+
+    await tester.tap(
+      find.byKey(const ValueKey('storage-target-menu-custom-deep-archive')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey('storage-recent-folder-option-custom-photo-library'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(selected, secondCustomLocation);
   });
 
   testWidgets('custom selection becomes a compact target with full path', (
@@ -1213,8 +1605,12 @@ void main() {
         onScan: () => scans++,
       );
 
-      expect(targetTiles(), findsNWidgets(3));
+      expect(targetTiles(), findsNWidgets(4));
       expect(find.byKey(const ValueKey('storage-target-home')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('storage-target-desktop')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('storage-target-drive-d')),
         findsNothing,
@@ -1255,8 +1651,12 @@ void main() {
         onSelectTarget: (location) => selected = location,
       );
 
-      expect(targetTiles(), findsNWidgets(3));
+      expect(targetTiles(), findsNWidgets(4));
       expect(find.byKey(const ValueKey('storage-target-home')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('storage-target-desktop')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('storage-target-downloads')),
         findsOneWidget,
@@ -1310,8 +1710,10 @@ void main() {
       onScan: () => scans++,
     );
 
-    final panel = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
-    await tester.tapAt(panel.center);
+    final capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
+    await tester.tapAt(capacity.center);
+    expect(browses, 0);
+    await tester.tap(find.byKey(StorageStewardHome.lastScanOpenKey));
     expect(browses, 1);
     await tester.tap(find.byKey(StorageStewardHome.browseKey));
     expect(browses, 2);
@@ -1355,6 +1757,21 @@ void main() {
     );
     expect(target.onTap, isNull);
     expect(find.byKey(const ValueKey('storage-scan-progress')), findsOneWidget);
+    final progress = tester.widget<LinearProgressIndicator>(
+      find.byKey(const ValueKey('storage-scan-progress')),
+    );
+    expect(progress.borderRadius, BorderRadius.circular(999));
+    expect(
+      tester
+          .widget<ClipRRect>(
+            find.ancestor(
+              of: find.byKey(const ValueKey('storage-scan-progress')),
+              matching: find.byType(ClipRRect),
+            ),
+          )
+          .borderRadius,
+      BorderRadius.circular(999),
+    );
     expect(find.text('Cancel Scan'), findsOneWidget);
     await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
     expect(cancels, 1);
@@ -1613,7 +2030,8 @@ void main() {
         Size(640, 600),
         Size(620, 600),
       ]) {
-        testWidgets('no overflow $locale $brightness '
+        testWidgets(
+            'no overflow $locale $brightness '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(
             tester,
@@ -1639,7 +2057,8 @@ void main() {
         Size(700, 600),
         Size(620, 600),
       ]) {
-        testWidgets('long platform data does not overflow '
+        testWidgets(
+            'long platform data does not overflow '
             '$platformLabel ${locale.languageCode} '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(

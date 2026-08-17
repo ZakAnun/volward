@@ -26,6 +26,7 @@
   "filterCategoryTemp": "临时文件",
   "filterCategoryMedia": "媒体",
   "filterCategorySystem": "系统",
+  "homeCategoryOther": "其他",
   "sortSizeDesc": "大小 ↓",
   "sortSizeAsc": "大小 ↑",
   "sortNameAsc": "名称",
@@ -287,6 +288,7 @@
   "homeScanTargets": "扫描范围",
   "homeLocationHome": "主目录",
   "homeLocationApplications": "应用程序",
+  "homeLocationDesktop": "桌面",
   "homeLocationDownloads": "下载",
   "homeLocationDocuments": "文稿",
   "homeLocationVolume": "磁盘 {name}",
@@ -299,6 +301,7 @@
   },
   "homeChooseFolder": "选择文件夹",
   "homeCurrentTarget": "当前目标",
+  "homeRecentFolders": "最近目录",
   "homeLastScan": "上次扫描 {time}",
   "@homeLastScan": {
     "placeholders": {"time": {"type": "String"}}
@@ -306,6 +309,10 @@
   "homeNeverScanned": "尚未扫描",
   "homeReclaimable": "可回收 {size}",
   "@homeReclaimable": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeScannedSize": "目录占用 {size}",
+  "@homeScannedSize": {
     "placeholders": {"size": {"type": "String"}}
   },
   "homeBrowseFiles": "浏览文件",

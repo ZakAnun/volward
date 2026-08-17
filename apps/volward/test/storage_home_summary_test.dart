@@ -13,12 +13,19 @@ ScanSnapshotState snapshot({
   String scanState = 'Done',
   int? scannedAtMs = 42,
   int sizeBytes = 50,
+  int entryCount = 1,
+  int? filesSeen,
+  int? filesInSnapshot,
   Map<String, int> categoryCounts = const {},
 }) {
   return ScanSnapshotState(
     snapshotId: id,
     scannedAtMs: scannedAtMs,
-    stats: {'scan_state': scanState},
+    stats: {
+      'scan_state': scanState,
+      if (filesSeen != null) 'files_seen': filesSeen,
+      if (filesInSnapshot != null) 'files_in_snapshot': filesInSnapshot,
+    },
     reclaimableEstimateBytes: reclaimable,
     tree: ScanTreeNode(
       name: 'me',
@@ -26,7 +33,7 @@ ScanSnapshotState snapshot({
       isDirectory: true,
       sizeBytes: sizeBytes,
     ),
-    entryCount: 1,
+    entryCount: entryCount,
     categoryCounts: categoryCounts,
     deletableCategoryCounts: const {},
     deletableCount: 0,
@@ -460,6 +467,26 @@ void main() {
     expect(summary.scanProgress, 0.99);
   });
 
+  test('recent custom locations survive a default target selection', () {
+    const recent = StorageLocationInfo(
+      id: 'custom:/Users/me/Work/client',
+      name: 'client',
+      path: '/Users/me/Work/client',
+      kind: StorageLocationKind.custom,
+      volumeId: '/',
+    );
+    final summary = StorageHomeSummary.fromInputs(
+      overview: liveOverview,
+      targetPath: '/Users/me',
+      scanning: false,
+      scanProgress: null,
+      recentCustomLocations: [recent],
+    );
+
+    expect(summary.selectedLocation!.kind, StorageLocationKind.home);
+    expect(summary.recentCustomLocations, [recent]);
+  });
+
   test('legal path whitespace is preserved for custom targets', () {
     final summary = StorageHomeSummary.fromInputs(
       overview: liveOverview,
@@ -582,17 +609,18 @@ void main() {
     expect(rootDisplayNameFor('/mnt/data '), 'data ');
   });
 
-  test('category summaries keep the top three positive counts', () {
+  test('category summaries keep scanned labels and other remainder', () {
     final summary = StorageHomeSummary.fromInputs(
       overview: liveOverview,
       targetPath: '/Users/me',
       matchingSnapshot: snapshot(
+        filesSeen: 80,
+        filesInSnapshot: 55,
+        entryCount: 55,
         categoryCounts: const {
           'Cache': 12,
           'Temp': 3,
           'Media': 40,
-          'System': 8,
-          'Other': 0,
         },
       ),
       scanning: false,
@@ -601,10 +629,10 @@ void main() {
 
     expect(
       summary.categories.map((category) => category.name).toList(),
-      ['Media', 'Cache', 'System'],
+      ['Cache', 'Temp', 'Media', 'Other'],
     );
     expect(summary.categories.map((category) => category.count).toList(),
-        [40, 12, 8]);
+        [12, 3, 40, 25]);
     expect(summary.scannedBytes, 50);
   });
 

@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:volward/scan_preview.dart';
 import 'package:volward/scan_snapshot_state.dart';
+import 'package:volward/snapshot_cache.dart';
 import 'package:volward/volward_session.dart';
 
 ScanSnapshotState snapshot(String id, String root) =>
@@ -16,6 +20,49 @@ ScanSnapshotState snapshot(String id, String root) =>
       },
       'entries': const [],
     });
+
+void writeCachedSnapshot({
+  required Directory cacheDir,
+  required String manifestName,
+  required String snapshotName,
+  required String root,
+  required String snapshotId,
+  required int scannedAtMs,
+  required int sizeBytes,
+  required int reclaimableBytes,
+}) {
+  Directory('${cacheDir.path}/manifests').createSync(recursive: true);
+  Directory('${cacheDir.path}/snapshots').createSync(recursive: true);
+  final snapshotFile = File('${cacheDir.path}/snapshots/$snapshotName.json')
+    ..writeAsStringSync(
+      jsonEncode({
+        'snapshot_id': snapshotId,
+        'scanned_at_ms': scannedAtMs,
+        'reclaimable_estimate_bytes': reclaimableBytes,
+        'entries': const [],
+        'tree': {
+          'name': root.split('/').last,
+          'path': root,
+          'is_dir': true,
+          'size_bytes': sizeBytes,
+          'children': const [],
+        },
+        'stats': {
+          'scan_state': 'Done',
+          'files_seen': 4,
+          'files_in_snapshot': 4,
+        },
+      }),
+    );
+  File('${cacheDir.path}/manifests/$manifestName.json').writeAsStringSync(
+    jsonEncode({
+      'root': root,
+      'scanned_at_ms': scannedAtMs,
+      'snapshot_id': snapshotId,
+      'snapshot_path': snapshotFile.path,
+    }),
+  );
+}
 
 void main() {
   test('snapshot update preserves selection and invalidates one prefix', () {
@@ -184,10 +231,10 @@ void main() {
     );
 
     session.deleteRunnerForTest = (_, __, ___) => {
-      'deleted_count': 1,
-      'freed_bytes': 12,
-      'failed_paths': const <String>[],
-    };
+          'deleted_count': 1,
+          'freed_bytes': 12,
+          'failed_paths': const <String>[],
+        };
     final refreshStarted = Completer<void>();
     final finishRefresh = Completer<void>();
     session.directoryRefreshRunnerForTest = (path) async {
@@ -250,4 +297,142 @@ void main() {
     expect(later, lessThan(0.04));
     expect(done, 1.0);
   });
+
+  test(
+    'restoreCachedSnapshotIfNeeded overwrites a preview stub from disk cache',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-restore-preview',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      const root = '/Users/test/Home';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'cached',
+        snapshotName: 'cached',
+        root: root,
+        snapshotId: 'cached-scan',
+        scannedAtMs: 1700000000000,
+        sizeBytes: 100,
+        reclaimableBytes: 42,
+      );
+
+      final session = VolwardSession.test()..setScanRoots([root]);
+      session.setSnapshotForTest(
+        ScanSnapshotState.fromWire(
+          buildPreviewSnapshot(rootPath: root, quickListEntries: const []),
+        ),
+      );
+      expect(session.lastSnapshot!.snapshotId, startsWith('preview-'));
+
+      await session.restoreCachedSnapshotIfNeeded();
+
+      expect(session.lastSnapshot!.snapshotId, 'cached-scan');
+      expect(session.lastSnapshot!.stats['scan_state'], 'Done');
+      expect(session.lastSnapshot!.reclaimableEstimateBytes, 42);
+    },
+  );
+
+  test(
+    'restoreCachedSnapshotIfNeeded keeps an already completed scan',
+    () async {
+      final session = VolwardSession.test()..setScanRoots(['/Users/test/Home']);
+      session.setSnapshotForTest(snapshot('live-scan', '/Users/test/Home'));
+
+      await session.restoreCachedSnapshotIfNeeded();
+
+      expect(session.lastSnapshot!.snapshotId, 'live-scan');
+    },
+  );
+
+  test(
+    'restoreCachedSnapshotIfNeeded replaces a completed scan from another root',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-restore-custom',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      const homeRoot = '/Users/test/Home';
+      const customRoot = '/Users/test/Projects/Archive';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'custom',
+        snapshotName: 'custom',
+        root: customRoot,
+        snapshotId: 'custom-scan',
+        scannedAtMs: 1700000000100,
+        sizeBytes: 80,
+        reclaimableBytes: 9,
+      );
+
+      final session = VolwardSession.test()..setScanRoots([customRoot]);
+      session.setSnapshotForTest(snapshot('home-scan', homeRoot));
+
+      await session.restoreCachedSnapshotIfNeeded();
+
+      expect(session.lastSnapshot!.snapshotId, 'custom-scan');
+      expect(session.lastSnapshot!.tree!.path, customRoot);
+    },
+  );
+
+  test(
+    'switchScanRoot restores cached scan for the selected root before preview',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-restore',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      const cachedRoot = '/Users/test/Downloads';
+      const otherRoot = '/Users/test/Documents';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'downloads',
+        snapshotName: 'downloads',
+        root: cachedRoot,
+        snapshotId: 'downloads-scan',
+        scannedAtMs: 1700000000200,
+        sizeBytes: 512,
+        reclaimableBytes: 7,
+      );
+
+      var previewCalls = 0;
+      final session = VolwardSession.test()
+        ..setScanRoots([otherRoot])
+        ..scanRootPreviewReaderForTest = ((root) async {
+          previewCalls++;
+          return [
+            {'path': '$root/Preview', 'is_dir': true},
+          ];
+        });
+      session.setSnapshotForTest(snapshot('other-scan', otherRoot));
+
+      await session.switchScanRoot(cachedRoot, startFullScan: false);
+      for (var index = 0;
+          index < 20 && session.lastSnapshot?.snapshotId != 'downloads-scan';
+          index++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.lastSnapshot!.snapshotId, 'downloads-scan');
+      expect(session.lastSnapshot!.tree!.path, cachedRoot);
+      expect(session.lastSnapshot!.tree!.sizeBytes, 512);
+      expect(session.targetPreviewLoading, isFalse);
+      expect(previewCalls, 0);
+    },
+  );
 }

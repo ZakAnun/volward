@@ -407,6 +407,8 @@ FlMethodResponse* load_overview(FlMethodCall* call) {
   const std::string home = raw_home == nullptr ? "" : raw_home;
   const std::vector<LocationCandidate> candidates = {
       {"home", "home", home},
+      {"desktop", "desktop",
+       user_directory_or_fallback(G_USER_DIRECTORY_DESKTOP, "Desktop")},
       {"downloads", "downloads",
        user_directory_or_fallback(G_USER_DIRECTORY_DOWNLOAD, "Downloads")},
       {"documents", "documents",

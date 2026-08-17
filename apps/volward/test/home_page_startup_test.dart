@@ -154,6 +154,18 @@ class _PendingPreviewSession extends VolwardSession {
   }
 }
 
+class _HangingRestoreSession extends _PendingPreviewSession {
+  _HangingRestoreSession({required super.root, required super.previewGate});
+
+  final Completer<void> restoreGate = Completer<void>();
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() {
+    restoreCalls++;
+    return restoreGate.future;
+  }
+}
+
 class _LocalVersionReader implements LocalVersionReader {
   _LocalVersionReader(this.version);
 
@@ -460,6 +472,43 @@ void main() {
       expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
       expect(overviewProvider.calls, 1);
       expect(overviewProvider.selectedPaths, ['/']);
+    },
+  );
+
+  testWidgets(
+    'Start Scan stays enabled while cache restore is still loading',
+    (tester) async {
+      final previewGate = Completer<void>()..complete();
+      final session = _HangingRestoreSession(
+        root: '/',
+        previewGate: previewGate,
+      )..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-hanging-restore.json',
+        );
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await tester.pumpWidget(
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(session.previewCalls, 1);
+      expect(session.restoreCalls, 1);
+      expect(
+        tester
+            .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+            .onScan,
+        isNotNull,
+      );
     },
   );
 
