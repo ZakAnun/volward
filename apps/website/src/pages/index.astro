@@ -4,10 +4,11 @@ import Nav from '../components/Nav.astro';
 import Hero from '../components/Hero.astro';
 import DownloadCards from '../components/DownloadCards.astro';
 import Footer from '../components/Footer.astro';
-import { DOWNLOADS, PAGE_COPY, LATEST_RELEASE_URL } from '../lib/site';
+import { PAGE_COPY, LATEST_RELEASE_URL } from '../lib/site';
+import { resolveDownloads } from '../lib/release-downloads';
 
 const copy = PAGE_COPY.en;
-const downloads = DOWNLOADS.en;
+const downloads = await resolveDownloads('en', { logger: console });
 const heroMetaItems = downloads.map((item) => item.label);
 const canonical = new URL('./', Astro.site?.href ?? 'http://localhost:4321').href;
 ---

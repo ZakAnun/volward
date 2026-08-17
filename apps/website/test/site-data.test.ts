@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { DOWNLOADS, LATEST_RELEASE_URL, PAGE_COPY } from '../src/lib/site';
 
 describe('site data', () => {
-  it('supplies latest-style release fallback download data', () => {
-    expect(DOWNLOADS.en.map((item) => item.fileName)).toEqual([
-      'volward-latest-macos-arm64.zip',
-      'volward-latest-macos-x64.zip',
-      'VolwardSetup-latest-windows-x64.exe',
-      'Volward-latest-linux-x86_64.AppImage',
+  it('keeps fallback downloads safe when the resolver is not used', () => {
+    expect(DOWNLOADS.en).toHaveLength(4);
+    expect(DOWNLOADS.zh).toHaveLength(4);
+    expect(DOWNLOADS.en.every((item) => item.href === LATEST_RELEASE_URL)).toBe(true);
+    expect(DOWNLOADS.zh.every((item) => item.href === LATEST_RELEASE_URL)).toBe(true);
+    expect(DOWNLOADS.en.map((item) => item.id)).toEqual([
+      'macos-arm64',
+      'macos-x64',
+      'windows-x64',
+      'linux-appimage',
     ]);
-    expect(DOWNLOADS.en.map((item) => item.href)).toEqual(Array(4).fill(LATEST_RELEASE_URL));
   });
 
   it('keeps the EN and ZH copy keys aligned', () => {
