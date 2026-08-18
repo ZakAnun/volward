@@ -523,6 +523,30 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get homeLargestItems => 'Largest items';
+
+  @override
+  String homeLargestItemsTotal(String size) {
+    return '$size total';
+  }
+
+  @override
+  String get homeLargestItemsEmpty => 'Shown after scanning';
+
+  @override
+  String get homeFolderEmpty => 'This folder is empty';
+
+  @override
+  String homeLargestItemsSemantics(
+    String name,
+    String size,
+    int rank,
+    int count,
+  ) {
+    return '$name, $size, $rank of $count';
+  }
+
+  @override
   String get homeBrowseFiles => 'Browse Files';
 
   @override

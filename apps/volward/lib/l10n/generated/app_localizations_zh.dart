@@ -499,6 +499,30 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get homeLargestItems => '最占空间的项目';
+
+  @override
+  String homeLargestItemsTotal(String size) {
+    return '共 $size';
+  }
+
+  @override
+  String get homeLargestItemsEmpty => '扫描后显示';
+
+  @override
+  String get homeFolderEmpty => '此文件夹为空';
+
+  @override
+  String homeLargestItemsSemantics(
+    String name,
+    String size,
+    int rank,
+    int count,
+  ) {
+    return '第 $rank 项，共 $count 项：$name，$size';
+  }
+
+  @override
   String get homeBrowseFiles => '浏览文件';
 
   @override

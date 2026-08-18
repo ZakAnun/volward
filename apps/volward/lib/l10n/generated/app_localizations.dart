@@ -944,6 +944,41 @@ abstract class AppLocalizations {
   /// **'{size} scanned'**
   String homeScannedSize(String size);
 
+  /// No description provided for @homeLargestItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Largest items'**
+  String get homeLargestItems;
+
+  /// No description provided for @homeLargestItemsTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} total'**
+  String homeLargestItemsTotal(String size);
+
+  /// No description provided for @homeLargestItemsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Shown after scanning'**
+  String get homeLargestItemsEmpty;
+
+  /// No description provided for @homeFolderEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder is empty'**
+  String get homeFolderEmpty;
+
+  /// No description provided for @homeLargestItemsSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, {size}, {rank} of {count}'**
+  String homeLargestItemsSemantics(
+    String name,
+    String size,
+    int rank,
+    int count,
+  );
+
   /// No description provided for @homeBrowseFiles.
   ///
   /// In en, this message translates to:

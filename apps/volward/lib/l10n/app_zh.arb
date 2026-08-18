@@ -315,6 +315,22 @@
   "@homeScannedSize": {
     "placeholders": {"size": {"type": "String"}}
   },
+  "homeLargestItems": "最占空间的项目",
+  "homeLargestItemsTotal": "共 {size}",
+  "@homeLargestItemsTotal": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeLargestItemsEmpty": "扫描后显示",
+  "homeFolderEmpty": "此文件夹为空",
+  "homeLargestItemsSemantics": "第 {rank} 项，共 {count} 项：{name}，{size}",
+  "@homeLargestItemsSemantics": {
+    "placeholders": {
+      "name": {"type": "String"},
+      "size": {"type": "String"},
+      "rank": {"type": "int"},
+      "count": {"type": "int"}
+    }
+  },
   "homeBrowseFiles": "浏览文件",
   "homeStartScan": "开始扫描",
   "homeRescan": "重新扫描",

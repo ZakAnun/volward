@@ -315,6 +315,22 @@
   "@homeScannedSize": {
     "placeholders": {"size": {"type": "String"}}
   },
+  "homeLargestItems": "Largest items",
+  "homeLargestItemsTotal": "{size} total",
+  "@homeLargestItemsTotal": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeLargestItemsEmpty": "Shown after scanning",
+  "homeFolderEmpty": "This folder is empty",
+  "homeLargestItemsSemantics": "{name}, {size}, {rank} of {count}",
+  "@homeLargestItemsSemantics": {
+    "placeholders": {
+      "name": {"type": "String"},
+      "size": {"type": "String"},
+      "rank": {"type": "int"},
+      "count": {"type": "int"}
+    }
+  },
   "homeBrowseFiles": "Browse Files",
   "homeStartScan": "Start Scan",
   "homeRescan": "Rescan",
