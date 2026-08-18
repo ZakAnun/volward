@@ -26,9 +26,11 @@ const _scanFocusOrder = 10002.0;
 const _settingsFocusOrder = 10003.0;
 const _dashboardControlHeight = 36.0;
 const _wideSidebarWidth = 216.0;
-// Three blocks need more room than two: at 430 the composition block gets
-// ~128px against ~200px of content. The board scrolls, so growing is safe.
-const _wideDashboardMinHeight = 700.0;
+// Right panel needs minimum height for three blocks plus board bottom padding:
+// capacity ~120px + gap 14px + largest ~150px + gap 14px + composition ~150px + bottom padding 22px
+// Plus extra buffer for content variations = ~658px
+// Use sidebar height as baseline, but ensure right panel fits without overflow.
+const _minRightPanelHeight = 658.0;
 const _panelGap = 14.0;
 const _sidebarPadding = 18.0;
 const _sidebarLogoHeight = 104.0;
@@ -1516,12 +1518,12 @@ List<StorageLocationInfo> _targetLocations(StorageHomeSummary summary) {
 
 double _wideDashboardHeight(StorageHomeSummary summary) {
   final visibleTargets = _visibleTargetCount(summary);
-  final targetHeight = _sidebarPadding * 2 +
+  final sidebarHeight = _sidebarPadding * 2 +
       _sidebarLogoHeight +
       _sidebarLogoGap +
       visibleTargets * _targetTileHeight +
       math.max(0, visibleTargets - 1) * _targetTileGap;
-  return math.max(_wideDashboardMinHeight, targetHeight);
+  return math.max(_minRightPanelHeight, sidebarHeight);
 }
 
 int _visibleTargetCount(StorageHomeSummary summary) {
