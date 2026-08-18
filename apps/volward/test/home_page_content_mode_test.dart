@@ -287,7 +287,7 @@ Future<void> _pumpHome(WidgetTester tester, Widget app) async {
 }
 
 Future<void> _openLastScan(WidgetTester tester) async {
-  await tester.tap(find.byKey(StorageStewardHome.lastScanOpenKey));
+  await tester.tap(find.byKey(StorageStewardHome.browseKey));
 }
 
 Future<void> _pumpUntil(
@@ -359,7 +359,7 @@ void main() {
 
     expect(session.restoreCalls, 1);
     expect(find.text('256 B reclaimable'), findsOneWidget);
-    expect(find.text('4 KB scanned'), findsOneWidget);
+    expect(find.text('4 KB total'), findsOneWidget);
     expect(find.textContaining('Last scan'), findsOneWidget);
   });
 

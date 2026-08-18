@@ -9,6 +9,7 @@ import '../storage_overview.dart';
 import '../theme/volward_tokens.dart';
 import 'home/category_breakdown.dart';
 import 'home/dashboard_theme.dart';
+import 'home/largest_items_panel.dart';
 import 'volward_logo.dart';
 
 const _dashboardInk = kDashboardInk;
@@ -25,7 +26,9 @@ const _scanFocusOrder = 10002.0;
 const _settingsFocusOrder = 10003.0;
 const _dashboardControlHeight = 36.0;
 const _wideSidebarWidth = 216.0;
-const _wideDashboardMinHeight = 430.0;
+// Three blocks need more room than two: at 430 the composition block gets
+// ~128px against ~200px of content. The board scrolls, so growing is safe.
+const _wideDashboardMinHeight = 700.0;
 const _panelGap = 14.0;
 const _sidebarPadding = 18.0;
 const _sidebarLogoHeight = 104.0;
@@ -82,6 +85,7 @@ class StorageStewardHome extends StatelessWidget {
     required this.onCancelScan,
     this.onOpenSettings,
     this.onSelectCategory,
+    this.onOpenItem,
   });
 
   static const backgroundColor = Color(0xFF111113);
@@ -99,7 +103,6 @@ class StorageStewardHome extends StatelessWidget {
   static const contentViewportKey = Key('storage-overview-content-viewport');
   static const boardKey = Key('storage-overview-board');
   static const scanSummaryKey = Key('storage-overview-scan-summary');
-  static const lastScanOpenKey = Key('storage-overview-last-scan-open');
   static const categoryPieKey = CategoryBreakdown.pieKey;
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
@@ -113,6 +116,7 @@ class StorageStewardHome extends StatelessWidget {
   final VoidCallback? onCancelScan;
   final VoidCallback? onOpenSettings;
   final ValueChanged<String>? onSelectCategory;
+  final ValueChanged<StorageHomeItem>? onOpenItem;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +133,7 @@ class StorageStewardHome extends StatelessWidget {
           onCancelScan: onCancelScan,
           onOpenSettings: onOpenSettings,
           onSelectCategory: onSelectCategory,
+          onOpenItem: onOpenItem,
         );
       },
     );
@@ -146,6 +151,7 @@ class _HeroVisual extends StatelessWidget {
     required this.onCancelScan,
     required this.onOpenSettings,
     required this.onSelectCategory,
+    required this.onOpenItem,
   });
 
   final StorageHomeSummary summary;
@@ -157,6 +163,7 @@ class _HeroVisual extends StatelessWidget {
   final VoidCallback? onCancelScan;
   final VoidCallback? onOpenSettings;
   final ValueChanged<String>? onSelectCategory;
+  final ValueChanged<StorageHomeItem>? onOpenItem;
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +182,7 @@ class _HeroVisual extends StatelessWidget {
               onScan: onScan,
               onCancelScan: onCancelScan,
               onSelectCategory: onSelectCategory,
+              onOpenItem: onOpenItem,
             )
           : _WideBoard(
               summary: summary,
@@ -183,6 +191,7 @@ class _HeroVisual extends StatelessWidget {
               onScan: onScan,
               onCancelScan: onCancelScan,
               onSelectCategory: onSelectCategory,
+              onOpenItem: onOpenItem,
             ),
     );
 
@@ -358,6 +367,7 @@ class _WideBoard extends StatelessWidget {
     required this.onScan,
     required this.onCancelScan,
     required this.onSelectCategory,
+    required this.onOpenItem,
   });
 
   final StorageHomeSummary summary;
@@ -366,6 +376,7 @@ class _WideBoard extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
+  final ValueChanged<StorageHomeItem>? onOpenItem;
 
   @override
   Widget build(BuildContext context) {
@@ -392,6 +403,7 @@ class _WideBoard extends StatelessWidget {
               onScan: onScan,
               onCancelScan: onCancelScan,
               onSelectCategory: onSelectCategory,
+              onOpenItem: onOpenItem,
             ),
           ),
         ],
@@ -408,6 +420,7 @@ class _CompactBoard extends StatelessWidget {
     required this.onScan,
     required this.onCancelScan,
     required this.onSelectCategory,
+    required this.onOpenItem,
   });
 
   final StorageHomeSummary summary;
@@ -416,6 +429,7 @@ class _CompactBoard extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
+  final ValueChanged<StorageHomeItem>? onOpenItem;
 
   @override
   Widget build(BuildContext context) {
@@ -435,6 +449,7 @@ class _CompactBoard extends StatelessWidget {
           onScan: onScan,
           onCancelScan: onCancelScan,
           onSelectCategory: onSelectCategory,
+          onOpenItem: onOpenItem,
         ),
       ],
     );
@@ -557,6 +572,7 @@ class _MainPane extends StatelessWidget {
     required this.onScan,
     required this.onCancelScan,
     required this.onSelectCategory,
+    required this.onOpenItem,
   });
 
   final StorageHomeSummary summary;
@@ -566,6 +582,7 @@ class _MainPane extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
+  final ValueChanged<StorageHomeItem>? onOpenItem;
 
   @override
   Widget build(BuildContext context) {
@@ -573,7 +590,12 @@ class _MainPane extends StatelessWidget {
       key: StorageStewardHome.capacityKey,
       child: _StatPanel(summary: summary, compact: compact),
     );
-    final browse = _BrowseCard(
+    final largest = LargestItemsPanel(
+      summary: summary,
+      maxItems: compact ? 3 : 5,
+      onOpenItem: onOpenItem,
+    );
+    final composition = _BrowseCard(
       summary: summary,
       compact: compact,
       onBrowse: onBrowse,
@@ -585,9 +607,11 @@ class _MainPane extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: capacity),
+          Expanded(flex: 35, child: capacity),
           const SizedBox(height: _panelGap),
-          Expanded(child: browse),
+          Expanded(flex: 40, child: largest),
+          const SizedBox(height: _panelGap),
+          Expanded(flex: 38, child: composition),
         ],
       );
     }
@@ -596,7 +620,9 @@ class _MainPane extends StatelessWidget {
       children: [
         capacity,
         const SizedBox(height: _panelGap),
-        browse,
+        largest,
+        const SizedBox(height: _panelGap),
+        composition,
       ],
     );
   }
@@ -800,18 +826,25 @@ class _BrowseCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final stackedCard = compact || constraints.maxWidth < 280;
-        final details = GestureDetector(
-          key: StorageStewardHome.lastScanOpenKey,
-          behavior: HitTestBehavior.opaque,
-          excludeFromSemantics: true,
-          onTap: onBrowse,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(20, 18, stackedCard ? 20 : 12, 18),
-            child: _ScanSummary(
-              summary: summary,
-              onSelectCategory: onSelectCategory,
-            ),
-          ),
+        final details = Padding(
+          padding: EdgeInsets.fromLTRB(20, 18, stackedCard ? 20 : 12, 18),
+          child: summary.categories.isEmpty
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    summary.hasCompletedScan
+                        ? l10n.homeFolderEmpty
+                        : l10n.homeLargestItemsEmpty,
+                    style: context.vwFinePrint.copyWith(
+                      color: _onDashboard.withValues(alpha: 0.42),
+                    ),
+                  ),
+                )
+              : CategoryBreakdown(
+                  categories: summary.categories,
+                  enabled: !summary.scanning,
+                  onSelectCategory: onSelectCategory,
+                ),
         );
         final actions = KeyedSubtree(
           key: StorageStewardHome.actionsKey,
@@ -831,6 +864,27 @@ class _BrowseCard extends StatelessWidget {
                     label: _overviewStatus(context, summary),
                     tone: _statusChipTone(summary),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    summary.lastScannedAtMs == null
+                        ? l10n.homeNeverScanned
+                        : l10n.homeLastScan(
+                            _formatScanTime(context, summary.lastScannedAtMs!),
+                          ),
+                    maxLines: 2,
+                    style: context.vwFinePrint.copyWith(
+                      color: Colors.white.withValues(alpha: 0.58),
+                    ),
+                  ),
+                  if (summary.reclaimableBytes != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.homeReclaimable(
+                        formatStorageBytes(summary.reclaimableBytes),
+                      ),
+                      style: context.vwFinePrint.copyWith(color: _onDashboard),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerRight,
@@ -951,88 +1005,6 @@ class _StatusChip extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ScanSummary extends StatelessWidget {
-  const _ScanSummary({required this.summary, required this.onSelectCategory});
-
-  final StorageHomeSummary summary;
-  final ValueChanged<String>? onSelectCategory;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          summary.lastScannedAtMs == null
-              ? l10n.homeNeverScanned
-              : l10n.homeLastScan(
-                  _formatScanTime(context, summary.lastScannedAtMs!),
-                ),
-          maxLines: 2,
-          style: context.vwFinePrint.copyWith(
-            color: Colors.white.withValues(alpha: 0.58),
-          ),
-        ),
-        if (summary.reclaimableBytes != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            l10n.homeReclaimable(formatStorageBytes(summary.reclaimableBytes)),
-            style: context.vwFinePrint.copyWith(color: _onDashboard),
-          ),
-        ],
-        if (summary.scannedBytes != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            l10n.homeScannedSize(formatStorageBytes(summary.scannedBytes)),
-            style: context.vwFinePrint.copyWith(
-              color: Colors.white.withValues(alpha: 0.74),
-            ),
-          ),
-        ],
-        if (summary.categories.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          CategoryBreakdown(
-            categories: summary.categories,
-            enabled: !summary.scanning,
-            onSelectCategory: onSelectCategory,
-          ),
-        ],
-        if (summary.scanning) ...[
-          const SizedBox(height: 12),
-          ExcludeSemantics(
-            child: Text(
-              _localizedScanPhase(context, summary.scanPhase),
-              key: const ValueKey('storage-scan-phase'),
-              style: context.vwFinePrint.copyWith(
-                color: Colors.white.withValues(alpha: 0.68),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Semantics(
-            label: _localizedScanPhase(context, summary.scanPhase),
-            value: summary.scanProgress == null
-                ? null
-                : '${(summary.scanProgress! * 100).round()}%',
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                key: const ValueKey('storage-scan-progress'),
-                value: summary.scanProgress,
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(999),
-                backgroundColor: Colors.white.withValues(alpha: 0.10),
-                color: context.volward.primary,
-              ),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }
@@ -1479,9 +1451,6 @@ _StatusChipTone _statusChipTone(StorageHomeSummary summary) {
     StorageDataFreshness.unavailable || null => _StatusChipTone.neutral,
   };
 }
-
-String _localizedScanPhase(BuildContext context, String? phase) =>
-    localizedScanPhase(context, phase);
 
 bool _samePath(String left, String right) {
   final leftIsWindows = _isWindowsPath(left);

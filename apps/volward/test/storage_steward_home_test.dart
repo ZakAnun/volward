@@ -9,6 +9,7 @@ import 'package:volward/storage_home_summary.dart';
 import 'package:volward/storage_overview.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/theme/volward_tokens.dart';
+import 'package:volward/widgets/home/largest_items_panel.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 import 'package:volward/widgets/volward_logo.dart';
 
@@ -553,6 +554,7 @@ Future<void> pumpOverview(
   VoidCallback? onCancelScan,
   VoidCallback? onOpenSettings,
   ValueChanged<String>? onSelectCategory,
+  ValueChanged<StorageHomeItem>? onOpenItem,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -574,6 +576,7 @@ Future<void> pumpOverview(
           onCancelScan: onCancelScan,
           onOpenSettings: onOpenSettings,
           onSelectCategory: onSelectCategory,
+          onOpenItem: onOpenItem,
         ),
       ),
     ),
@@ -621,12 +624,12 @@ void main() {
     final meter = tester.getRect(
       find.byKey(StorageStewardHome.capacityMeterKey),
     );
-    final scan = tester.getRect(find.byKey(StorageStewardHome.scanSummaryKey));
+    final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
     expect(meter.bottom, closeTo(capacity.bottom, 1));
     expect(meter.left, closeTo(capacity.left, 1));
     expect(meter.right, closeTo(capacity.right, 1));
     expect(meter.height, closeTo(12, 1));
-    expect(scan.top - capacity.bottom, closeTo(14, 1));
+    expect(largest.top - capacity.bottom, closeTo(14, 1));
   });
 
   testWidgets('category pie sits in the last scan card', (tester) async {
@@ -853,6 +856,7 @@ void main() {
     final panel = tester.getRect(find.byKey(StorageStewardHome.panelKey));
     final capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
     final targets = tester.getRect(find.byKey(StorageStewardHome.targetsKey));
+    final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
     final scanSummary = tester.getRect(
       find.byKey(StorageStewardHome.scanSummaryKey),
     );
@@ -860,7 +864,8 @@ void main() {
 
     expect(targets.right, lessThan(capacity.left));
     expect(capacity.width, greaterThan(targets.width));
-    expect(scanSummary.top - capacity.bottom, closeTo(14, 1));
+    expect(largest.top - capacity.bottom, closeTo(14, 1));
+    expect(scanSummary.top - largest.bottom, closeTo(14, 1));
     expect(actions.top, greaterThanOrEqualTo(scanSummary.top));
     expect(actions.left, greaterThan(scanSummary.left));
     expect(panel.width, greaterThan(1000));
@@ -1713,7 +1718,7 @@ void main() {
     final capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
     await tester.tapAt(capacity.center);
     expect(browses, 0);
-    await tester.tap(find.byKey(StorageStewardHome.lastScanOpenKey));
+    await tester.tap(find.byKey(StorageStewardHome.browseKey));
     expect(browses, 1);
     await tester.tap(find.byKey(StorageStewardHome.browseKey));
     expect(browses, 2);
@@ -2088,4 +2093,159 @@ void main() {
       }
     }
   }
+
+  StorageHomeSummary summaryWithItems({
+    List<StorageHomeItem> items = const [],
+    bool scanning = false,
+    bool hasCompletedScan = true,
+    int? scannedBytes,
+    List<StorageHomeCategorySummary>? categories,
+  }) {
+    return StorageHomeSummary(
+      overview: readySummary.overview,
+      selectedLocation: readySummary.selectedLocation,
+      selectedVolume: readySummary.selectedVolume,
+      scanning: scanning,
+      hasCompletedScan: hasCompletedScan,
+      scannedBytes: scannedBytes,
+      categories: categories ?? completedSummary.categories,
+      largestItems: items,
+    );
+  }
+
+  const bigFile = StorageHomeItem(
+    name: 'Xcode.dmg',
+    path: '/Users/me/Xcode.dmg',
+    sizeBytes: 12000000000,
+    isDirectory: false,
+    scanned: true,
+  );
+  const archiveDir = StorageHomeItem(
+    name: 'archive',
+    path: '/Users/me/archive',
+    sizeBytes: 8000000000,
+    isDirectory: true,
+    scanned: false,
+  );
+
+  testWidgets('the right panel stacks three blocks top to bottom', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      summary: summaryWithItems(items: const [bigFile, archiveDir]),
+    );
+
+    final capacity = tester.getRect(
+      find.byKey(StorageStewardHome.capacityKey),
+    );
+    final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
+    final composition = tester.getRect(
+      find.byKey(StorageStewardHome.scanSummaryKey),
+    );
+
+    expect(capacity.bottom, lessThanOrEqualTo(largest.top));
+    expect(largest.bottom, lessThanOrEqualTo(composition.top));
+    expect(capacity.left, closeTo(largest.left, 1));
+    expect(largest.left, closeTo(composition.left, 1));
+  });
+
+  testWidgets('no overflow at common window sizes', (tester) async {
+    for (final size in const [
+      Size(1280, 800),
+      Size(1440, 900),
+      Size(1024, 720),
+      Size(600, 1400),
+    ]) {
+      await pumpOverview(
+        tester,
+        size: size,
+        summary: summaryWithItems(
+          items: const [bigFile, archiveDir],
+          scannedBytes: 31200000000,
+        ),
+      );
+      expect(tester.takeException(), isNull, reason: 'overflow at $size');
+    }
+  });
+
+  testWidgets('the composition block keeps both actions and the pie', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      summary: summaryWithItems(
+        categories: const [StorageHomeCategorySummary(name: 'Cache', count: 4)],
+      ),
+    );
+
+    expect(find.byKey(StorageStewardHome.browseKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.scanActionKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.categoryPieKey), findsOneWidget);
+  });
+
+  testWidgets('an empty category list drops the pie for a hint', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: readySummary.overview,
+        selectedLocation: readySummary.selectedLocation,
+        selectedVolume: readySummary.selectedVolume,
+        scanning: false,
+        hasCompletedScan: true,
+      ),
+    );
+
+    expect(find.byKey(StorageStewardHome.categoryPieKey), findsNothing);
+    expect(find.text('This folder is empty'), findsWidgets);
+  });
+
+  testWidgets('onOpenItem reaches the panel rows', (tester) async {
+    StorageHomeItem? opened;
+    await pumpOverview(
+      tester,
+      summary: summaryWithItems(items: const [bigFile]),
+      onOpenItem: (item) => opened = item,
+    );
+
+    await tester.tap(find.byKey(LargestItemsPanel.rowKey(bigFile.path)));
+    await tester.pump();
+
+    expect(opened?.path, bigFile.path);
+  });
+
+  testWidgets('compact shows three rows, wide shows five', (tester) async {
+    final many = [
+      for (var i = 0; i < 5; i++)
+        StorageHomeItem(
+          name: 'item$i',
+          path: '/Users/me/item$i',
+          sizeBytes: 1000 - i,
+          isDirectory: false,
+          scanned: true,
+        ),
+    ];
+
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: summaryWithItems(items: many),
+    );
+    expect(
+      find.byKey(LargestItemsPanel.rowKey('/Users/me/item3')),
+      findsNothing,
+    );
+
+    await pumpOverview(
+      tester,
+      size: const Size(1280, 900),
+      summary: summaryWithItems(items: many),
+    );
+    expect(
+      find.byKey(LargestItemsPanel.rowKey('/Users/me/item4')),
+      findsOneWidget,
+    );
+  });
 }

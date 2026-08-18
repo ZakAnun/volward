@@ -101,6 +101,7 @@ class LargestItemsPanel extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
+              key: const ValueKey('storage-scan-progress'),
               value: summary.scanProgress,
               minHeight: 6,
               borderRadius: BorderRadius.circular(999),
