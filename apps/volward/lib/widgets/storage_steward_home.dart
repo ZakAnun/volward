@@ -7,11 +7,12 @@ import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
 import '../theme/volward_tokens.dart';
+import 'home/dashboard_theme.dart';
 import 'volward_logo.dart';
 
-const _dashboardInk = Color(0xFF111113);
+const _dashboardInk = kDashboardInk;
 const _dashboardSoft = Color(0xFF1A1A1E);
-const _onDashboard = Color(0xFFF4F4F5);
+const _onDashboard = kOnDashboard;
 const _liveChipFill = Color(0x2934C759);
 const _liveChipLine = Color(0x3834C759);
 const _liveChipText = Color(0xFFD5FFD9);
@@ -31,12 +32,7 @@ const _sidebarLogoGap = 18.0;
 const _targetTileHeight = 44.0;
 const _targetTileGap = 10.0;
 
-Color _glass(double whiteAlpha) {
-  return Color.alphaBlend(
-    Colors.white.withValues(alpha: whiteAlpha),
-    _dashboardInk,
-  );
-}
+Color _glass(double whiteAlpha) => dashboardGlass(whiteAlpha);
 
 Color _dashboardAccent(BuildContext context, double alpha) {
   return context.volward.primary.withValues(alpha: alpha);
@@ -1713,19 +1709,8 @@ String _percentLabel(int count, int total) {
   return '${exact.round()}%';
 }
 
-String _localizedScanPhase(BuildContext context, String? phase) {
-  final l10n = context.l10n;
-  return switch (phase) {
-    'DiscoveringRoots' => l10n.scanPhaseDiscoveringRoots,
-    'Walking' => l10n.scanPhaseWalking,
-    'Classifying' => l10n.scanPhaseClassifying,
-    'Aggregating' => l10n.scanPhaseAggregating,
-    'SavingResults' => l10n.scanPhaseSavingResults,
-    'LoadingResults' => l10n.scanPhaseLoadingResults,
-    'Done' => l10n.scanPhaseDone,
-    _ => phase == null || phase.isEmpty ? l10n.scanStatusScanning : phase,
-  };
-}
+String _localizedScanPhase(BuildContext context, String? phase) =>
+    localizedScanPhase(context, phase);
 
 bool _samePath(String left, String right) {
   final leftIsWindows = _isWindowsPath(left);
