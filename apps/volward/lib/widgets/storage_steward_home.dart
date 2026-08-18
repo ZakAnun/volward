@@ -102,7 +102,7 @@ class StorageStewardHome extends StatelessWidget {
   static const dashboardSurfaceKey = Key('storage-overview-dashboard-surface');
   static const contentViewportKey = Key('storage-overview-content-viewport');
   static const boardKey = Key('storage-overview-board');
-  static const scanSummaryKey = Key('storage-overview-scan-summary');
+  static const browseCardKey = Key('storage-overview-browse-card');
   static const categoryPieKey = CategoryBreakdown.pieKey;
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
@@ -930,7 +930,7 @@ class _BrowseCard extends StatelessWidget {
         );
 
         return KeyedSubtree(
-          key: StorageStewardHome.scanSummaryKey,
+          key: StorageStewardHome.browseCardKey,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: _glass(0.08),

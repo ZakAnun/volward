@@ -448,7 +448,7 @@ Finder capacityMeterFill() => find.descendant(
   return (
     targets: tester.getRect(find.byKey(StorageStewardHome.targetsKey)),
     capacity: tester.getRect(find.byKey(StorageStewardHome.capacityKey)),
-    scan: tester.getRect(find.byKey(StorageStewardHome.scanSummaryKey)),
+    scan: tester.getRect(find.byKey(StorageStewardHome.browseCardKey)),
   );
 }
 
@@ -497,7 +497,7 @@ BoxDecoration statusChipDecoration(WidgetTester tester) {
 }
 
 Color scanSummarySurfaceColor(WidgetTester tester) {
-  final scanSummary = find.byKey(StorageStewardHome.scanSummaryKey);
+  final scanSummary = find.byKey(StorageStewardHome.browseCardKey);
   final surface = tester.widget<DecoratedBox>(
     find.descendant(of: scanSummary, matching: find.byType(DecoratedBox)).first,
   );
@@ -637,7 +637,7 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.byKey(StorageStewardHome.scanSummaryKey),
+        of: find.byKey(StorageStewardHome.browseCardKey),
         matching: find.byKey(StorageStewardHome.categoryPieKey),
       ),
       findsOneWidget,
@@ -651,7 +651,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: find.byKey(StorageStewardHome.scanSummaryKey),
+        of: find.byKey(StorageStewardHome.browseCardKey),
         matching: find.byKey(const ValueKey('storage-category-Cache')),
       ),
       findsOneWidget,
@@ -663,7 +663,7 @@ void main() {
       ),
       findsNothing,
     );
-    final scan = tester.getRect(find.byKey(StorageStewardHome.scanSummaryKey));
+    final scan = tester.getRect(find.byKey(StorageStewardHome.browseCardKey));
     final pie = tester.getRect(find.byKey(StorageStewardHome.categoryPieKey));
     expect(pie.top, greaterThan(scan.top));
     expect(pie.bottom, lessThanOrEqualTo(scan.bottom));
@@ -845,7 +845,7 @@ void main() {
     expect(find.byKey(StorageStewardHome.panelKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.capacityKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.targetsKey), findsOneWidget);
-    expect(find.byKey(StorageStewardHome.scanSummaryKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.browseCardKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.actionsKey), findsOneWidget);
     expect(find.text('Desktop storage steward'), findsNothing);
     expect(find.text('See what is taking space.'), findsNothing);
@@ -858,7 +858,7 @@ void main() {
     final targets = tester.getRect(find.byKey(StorageStewardHome.targetsKey));
     final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
     final scanSummary = tester.getRect(
-      find.byKey(StorageStewardHome.scanSummaryKey),
+      find.byKey(StorageStewardHome.browseCardKey),
     );
     final actions = tester.getRect(find.byKey(StorageStewardHome.actionsKey));
 
@@ -923,7 +923,7 @@ void main() {
     final scanSurface = tester.widget<DecoratedBox>(
       find
           .descendant(
-            of: find.byKey(StorageStewardHome.scanSummaryKey),
+            of: find.byKey(StorageStewardHome.browseCardKey),
             matching: find.byType(DecoratedBox),
           )
           .first,
@@ -935,7 +935,7 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.byKey(StorageStewardHome.scanSummaryKey),
+        of: find.byKey(StorageStewardHome.browseCardKey),
         matching: find.byKey(const ValueKey('storage-category-Cache')),
       ),
       findsOneWidget,
@@ -1020,7 +1020,7 @@ void main() {
     final capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
     final targets = tester.getRect(find.byKey(StorageStewardHome.targetsKey));
     final scanSummary = tester.getRect(
-      find.byKey(StorageStewardHome.scanSummaryKey),
+      find.byKey(StorageStewardHome.browseCardKey),
     );
     final actions = tester.getRect(find.byKey(StorageStewardHome.actionsKey));
 
@@ -1138,7 +1138,7 @@ void main() {
           onScan: () {},
         );
 
-        final scanSummary = find.byKey(StorageStewardHome.scanSummaryKey);
+        final scanSummary = find.byKey(StorageStewardHome.browseCardKey);
         final scanBento = tester.widget<DecoratedBox>(
           find
               .descendant(of: scanSummary, matching: find.byType(DecoratedBox))
@@ -2141,7 +2141,7 @@ void main() {
     );
     final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
     final composition = tester.getRect(
-      find.byKey(StorageStewardHome.scanSummaryKey),
+      find.byKey(StorageStewardHome.browseCardKey),
     );
 
     expect(capacity.bottom, lessThanOrEqualTo(largest.top));
