@@ -1,19 +1,17 @@
 import type { DownloadAsset, Locale } from './site';
-import { DOWNLOAD_ENTRIES, DOWNLOADS, GITHUB_REPO, LATEST_RELEASE_URL } from './site';
+import { DOWNLOAD_ENTRIES, DOWNLOADS, GITHUB_RELEASES_URL, GITHUB_REPO } from './site';
+import {
+  assertPlatformMatchersCoverSiteData,
+  findReleaseDownloadOption,
+  type GitHubReleaseAssets,
+  type ReleaseAsset,
+} from './release-assets';
 
-export const LATEST_RELEASE_FALLBACK_FILE_NAME = 'GitHub Releases';
+export const RELEASES_FALLBACK_FILE_NAME = 'GitHub Releases';
 
 const GITHUB_LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
-type ReleaseAsset = {
-  name: string;
-  browser_download_url: string;
-};
-
-type GitHubRelease = {
-  tag_name: string;
-  assets: ReleaseAsset[];
-};
+type GitHubRelease = GitHubReleaseAssets;
 
 type Logger = Pick<Console, 'warn'>;
 
@@ -30,82 +28,38 @@ type ResolveDownloadAssetsOptions = {
   logger?: Logger;
 };
 
-type PlatformMatcher = {
-  id: DownloadAsset['id'];
-  versionedFileName: (tagName: string) => string;
-  matchesFallback: (fileName: string) => boolean;
-};
-
-const PLATFORM_MATCHERS: PlatformMatcher[] = [
-  {
-    id: 'macos-arm64',
-    versionedFileName: (tagName) => `volward-${tagName}-macos-arm64.zip`,
-    matchesFallback: (fileName) => fileName.includes('macos-arm64') && fileName.endsWith('.zip'),
-  },
-  {
-    id: 'macos-x64',
-    versionedFileName: (tagName) => `volward-${tagName}-macos-x64.zip`,
-    matchesFallback: (fileName) => fileName.includes('macos-x64') && fileName.endsWith('.zip'),
-  },
-  {
-    id: 'windows-x64',
-    versionedFileName: (tagName) => `VolwardSetup-${tagName}-windows-x64.exe`,
-    matchesFallback: (fileName) => fileName.includes('windows-x64') && fileName.endsWith('.exe'),
-  },
-  {
-    id: 'linux-appimage',
-    versionedFileName: (tagName) => `Volward-${tagName}-linux-x86_64.AppImage`,
-    matchesFallback: (fileName) => fileName.includes('linux-x86_64') && fileName.endsWith('.AppImage'),
-  },
-];
-
-function assertPlatformMatchersCoverSiteData() {
-  const matcherIds = PLATFORM_MATCHERS.map((platform) => platform.id);
-  const entryIds = DOWNLOAD_ENTRIES.map((entry) => entry.id);
-
-  if (matcherIds.join('|') !== entryIds.join('|')) {
-    throw new Error('Release download platform matchers do not align with site download entries');
-  }
-}
-
 export function resolveDownloadAssets(
   locale: Locale,
   release: GitHubRelease,
   options: ResolveDownloadAssetsOptions = {},
 ): DownloadAsset[] {
   assertPlatformMatchersCoverSiteData();
-  const assets = release.assets.filter((asset) => !asset.name.endsWith('.sha256'));
   const copyById = new Map(DOWNLOADS[locale].map((item) => [item.id, item]));
-  const latestFileNameById = new Map(DOWNLOAD_ENTRIES.map((entry) => [entry.id, entry.fileName]));
 
-  return PLATFORM_MATCHERS.map((platform) => {
-    const latestFileName = latestFileNameById.get(platform.id);
-    const exactLatest = assets.find((asset) => asset.name === latestFileName);
-    const exactVersioned = assets.find((asset) => asset.name === platform.versionedFileName(release.tag_name));
-    const fallback = assets.find((asset) => platform.matchesFallback(asset.name));
-    const asset = exactLatest ?? exactVersioned ?? fallback;
-    const copy = copyById.get(platform.id);
+  return DOWNLOAD_ENTRIES.map((entry) => {
+    const asset = findReleaseDownloadOption(release, entry.id);
+    const copy = copyById.get(entry.id);
 
     if (!copy) {
-      throw new Error(`Missing localized download copy for ${platform.id}`);
+      throw new Error(`Missing localized download copy for ${entry.id}`);
     }
 
     if (!asset) {
-      options.logger?.warn(`[website] Falling back to GitHub Releases for ${platform.id}: matching asset not found`);
+      options.logger?.warn(`[website] Falling back to GitHub Releases for ${entry.id}: matching asset not found`);
 
       return {
-        id: platform.id,
-        fileName: LATEST_RELEASE_FALLBACK_FILE_NAME,
-        href: LATEST_RELEASE_URL,
+        id: entry.id,
+        fileName: RELEASES_FALLBACK_FILE_NAME,
+        href: GITHUB_RELEASES_URL,
         label: copy.label,
         hint: copy.hint,
       };
     }
 
     return {
-      id: platform.id,
-      fileName: asset.name,
-      href: asset.browser_download_url,
+      id: entry.id,
+      fileName: asset.fileName,
+      href: asset.href,
       label: copy.label,
       hint: copy.hint,
     };
@@ -163,12 +117,6 @@ export async function resolveDownloads(
     const message = error instanceof Error ? error.message : String(error);
     options.logger?.warn(`[website] Falling back to GitHub Releases download links: ${message}`);
 
-    return DOWNLOADS[locale].map((item) => ({
-      id: item.id,
-      fileName: LATEST_RELEASE_FALLBACK_FILE_NAME,
-      href: LATEST_RELEASE_URL,
-      label: item.label,
-      hint: item.hint,
-    }));
+    return DOWNLOADS[locale];
   }
 }

@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "astro dev",
+    "dev": "zsh scripts/dev.zsh",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
@@ -15,6 +15,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@aptabase/web": "^0.5.0",
     "@astrojs/sitemap": "^3.2.0",
     "astro": "^5.12.0"
   },

@@ -1,6 +1,5 @@
 export const GITHUB_REPO = 'ZakAnun/volward';
-export const LATEST_DOWNLOAD_BASE = `https://github.com/${GITHUB_REPO}/releases/latest/download`;
-export const LATEST_RELEASE_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
+export const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
 export type Locale = 'en' | 'zh';
 
@@ -24,6 +23,8 @@ export type PageCopy = {
   navDownload: string;
   localeToggle: string;
   downloadAllReleases: string;
+  downloadPlatformAriaLabel: string;
+  releaseLogTitle: string;
   heroEyebrow: string;
   heroTitle: string;
   heroLead: string;
@@ -48,6 +49,8 @@ export const PAGE_COPY: Record<Locale, PageCopy> = {
     navDownload: 'Download',
     localeToggle: '中文',
     downloadAllReleases: 'See all releases on GitHub',
+    downloadPlatformAriaLabel: 'Volward for {platform}',
+    releaseLogTitle: 'Latest release logs',
     heroEyebrow: 'Desktop storage steward',
     heroTitle: 'See what is taking space.',
     heroLead:
@@ -89,6 +92,8 @@ export const PAGE_COPY: Record<Locale, PageCopy> = {
     navDownload: '下载',
     localeToggle: 'EN',
     downloadAllReleases: '前往 GitHub 查看全部版本',
+    downloadPlatformAriaLabel: '适用于 {platform} 的 Volward',
+    releaseLogTitle: '最新更新日志',
     heroEyebrow: '桌面存储管家',
     heroTitle: '先看清谁在占空间。',
     heroLead:
@@ -159,6 +164,6 @@ export const DOWNLOAD_ENTRIES: DownloadEntry[] = [
 ];
 
 export const DOWNLOADS: Record<Locale, DownloadAsset[]> = {
-  en: DOWNLOAD_ENTRIES.map(({ id, fileName, en }) => ({ id, fileName, href: LATEST_RELEASE_URL, ...en })),
-  zh: DOWNLOAD_ENTRIES.map(({ id, fileName, zh }) => ({ id, fileName, href: LATEST_RELEASE_URL, ...zh })),
+  en: DOWNLOAD_ENTRIES.map(({ id, fileName, en }) => ({ id, fileName, href: GITHUB_RELEASES_URL, ...en })),
+  zh: DOWNLOAD_ENTRIES.map(({ id, fileName, zh }) => ({ id, fileName, href: GITHUB_RELEASES_URL, ...zh })),
 };

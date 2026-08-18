@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  LATEST_RELEASE_FALLBACK_FILE_NAME,
+  RELEASES_FALLBACK_FILE_NAME,
   fetchLatestRelease,
   resolveDownloadAssets,
   resolveDownloads,
 } from '../src/lib/release-downloads';
-import { LATEST_RELEASE_URL } from '../src/lib/site';
+import { GITHUB_RELEASES_URL } from '../src/lib/site';
 
 const versionedRelease = {
   tag_name: 'v0.0.3',
@@ -134,8 +134,8 @@ describe('resolveDownloadAssets', () => {
 
     const linux = downloads.find((item) => item.id === 'linux-appimage');
     expect(linux).toMatchObject({
-      fileName: LATEST_RELEASE_FALLBACK_FILE_NAME,
-      href: LATEST_RELEASE_URL,
+      fileName: RELEASES_FALLBACK_FILE_NAME,
+      href: GITHUB_RELEASES_URL,
     });
   });
 
@@ -156,8 +156,8 @@ describe('resolveDownloadAssets', () => {
       fileName: 'volward-v0.0.3-macos-arm64.zip',
     });
     expect(downloads.find((item) => item.id === 'windows-x64')).toMatchObject({
-      fileName: LATEST_RELEASE_FALLBACK_FILE_NAME,
-      href: LATEST_RELEASE_URL,
+      fileName: RELEASES_FALLBACK_FILE_NAME,
+      href: GITHUB_RELEASES_URL,
     });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('windows-x64'));
   });
@@ -251,7 +251,7 @@ describe('fetchLatestRelease', () => {
 });
 
 describe('resolveDownloads', () => {
-  it('falls back to the latest release page for every platform when the API request fails', async () => {
+  it('falls back to the complete releases page when the API request fails', async () => {
     const warn = vi.fn();
 
     const downloads = await resolveDownloads('en', {
@@ -261,8 +261,8 @@ describe('resolveDownloads', () => {
     });
 
     expect(downloads).toHaveLength(4);
-    expect(downloads.every((item) => item.href === LATEST_RELEASE_URL)).toBe(true);
-    expect(downloads.every((item) => item.fileName === LATEST_RELEASE_FALLBACK_FILE_NAME)).toBe(true);
+    expect(downloads.every((item) => item.href === GITHUB_RELEASES_URL)).toBe(true);
+    expect(downloads.every((item) => item.fileName !== '')).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('rate limited'));
   });
 });

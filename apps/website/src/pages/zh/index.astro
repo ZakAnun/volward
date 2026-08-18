@@ -2,13 +2,17 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Nav from '../../components/Nav.astro';
 import Hero from '../../components/Hero.astro';
+import Features from '../../components/Features.astro';
+import ReleaseNotes from '../../components/ReleaseNotes.astro';
 import DownloadCards from '../../components/DownloadCards.astro';
 import Footer from '../../components/Footer.astro';
-import { PAGE_COPY, LATEST_RELEASE_URL } from '../../lib/site';
+import { GITHUB_RELEASES_URL, PAGE_COPY } from '../../lib/site';
 import { resolveDownloads } from '../../lib/release-downloads';
+import { resolveReleaseLogs } from '../../lib/release-logs';
 
 const copy = PAGE_COPY.zh;
 const downloads = await resolveDownloads('zh', { logger: console });
+const releaseLogs = await resolveReleaseLogs('zh', { logger: console });
 const heroMetaItems = downloads.map((item) => item.label);
 const canonical = new URL('zh/', Astro.site?.href ?? 'http://localhost:4321').href;
 ---
@@ -24,10 +28,11 @@ const canonical = new URL('zh/', Astro.site?.href ?? 'http://localhost:4321').hr
     homeHref="/zh/"
     homeAriaLabel="Volward 首页"
     navAriaLabel="主要导航"
+    featuresLabel={copy.navFeatures}
     downloadLabel={copy.navDownload}
     localeToggleHref="/"
     localeToggleLabel={copy.localeToggle}
-    wordmarkSrc="/branding/volward-wordmark.png"
+    logoSrc="/branding/volward-logo.svg"
   />
 
   <main>
@@ -37,17 +42,27 @@ const canonical = new URL('zh/', Astro.site?.href ?? 'http://localhost:4321').hr
       lead={copy.heroLead}
       ctaPrimary={copy.ctaDownload}
       ctaPrimaryHref="#download"
+      ctaSecondary={copy.ctaLearn}
+      ctaSecondaryHref="#features"
       wordmarkSrc="/branding/volward-wordmark.png"
       logoSrc="/branding/volward-logo.png"
       metaItems={heroMetaItems}
+    />
+    <Features
+      title={copy.navFeatures}
+      subtitle={copy.featureSectionTitle}
+      lead={copy.featureSectionLead}
+      features={copy.features}
     />
     <DownloadCards
       title={copy.downloadTitle}
       lead={copy.downloadLead}
       items={downloads}
-      latestHref={LATEST_RELEASE_URL}
+      latestHref={GITHUB_RELEASES_URL}
       latestLabel={copy.downloadAllReleases}
+      downloadPlatformAriaLabel={copy.downloadPlatformAriaLabel}
     />
+    <ReleaseNotes title={copy.releaseLogTitle} items={releaseLogs} />
   </main>
 
   <Footer copy={copy.footerCopy} versionText={copy.footerVersion} unsignedText={copy.footerUnsigned} version="" />

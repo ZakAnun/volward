@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@aptabase/web':
+        specifier: ^0.5.0
+        version: 0.5.0
       '@astrojs/sitemap':
         specifier: ^3.2.0
         version: 3.7.3
@@ -29,6 +32,9 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
 packages:
+
+  '@aptabase/web@0.5.0':
+    resolution: {integrity: sha512-+RFdaS0bLJtqTZyB1uG32S7tuTfJTGbG2bkdVMs3AT7yG7DP2yb6JY5rZoBf3UyW9sigFHGRkbXoAXdCMZibWA==}
 
   '@astrojs/check@0.9.10':
     resolution: {integrity: sha512-zgx/UQMozdjOa3bOxjgeCFdtpE3c9rRX6xHwa+2QXvy8z8Akifu2AtubHyv/zzC2znO8dl8fFWL4K+Ba9kS8HQ==}
@@ -2287,6 +2293,8 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@aptabase/web@0.5.0': {}
 
   '@astrojs/check@0.9.10(prettier@3.9.6)(typescript@5.9.3)':
     dependencies:
