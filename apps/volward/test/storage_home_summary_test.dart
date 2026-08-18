@@ -664,4 +664,165 @@ void main() {
     expect(formatStorageBytes(100 * 1024), '100 KB');
     expect(formatStorageBytes(1024 * 1024 * 1024 * 1024), '1 TB');
   });
+
+  ScanTreeNode candidate(
+    String name,
+    int bytes, {
+    bool isDirectory = false,
+    bool scanned = true,
+  }) {
+    return ScanTreeNode(
+      name: name,
+      path: '/Users/me/$name',
+      isDirectory: isDirectory,
+      sizeBytes: bytes,
+      subtreeBytes: bytes,
+      scanned: scanned,
+    );
+  }
+
+  group('largestItems', () {
+    test('a large file outranks a smaller directory', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [
+          candidate('archive', 8, isDirectory: true),
+          candidate('Xcode.dmg', 12),
+        ],
+      );
+
+      expect(
+        summary.largestItems.map((e) => e.name).toList(),
+        ['Xcode.dmg', 'archive'],
+      );
+      expect(summary.largestItems.first.sizeBytes, 12);
+      expect(summary.largestItems.first.isDirectory, isFalse);
+    });
+
+    test('keeps at most five items', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [
+          for (var i = 0; i < 9; i++) candidate('item$i', 100 - i),
+        ],
+      );
+
+      expect(summary.largestItems, hasLength(5));
+      expect(summary.largestItems.last.sizeBytes, 96);
+    });
+
+    test('fewer candidates than the limit are all kept', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [candidate('only', 5)],
+      );
+
+      expect(summary.largestItems, hasLength(1));
+    });
+
+    test('a preview snapshot yields no items', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(id: 'preview-1'),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [candidate('archive', 8, isDirectory: true)],
+      );
+
+      expect(summary.largestItems, isEmpty);
+    });
+
+    test('no matching snapshot yields no items', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [candidate('archive', 8, isDirectory: true)],
+      );
+
+      expect(summary.largestItems, isEmpty);
+    });
+
+    test('a completed scan of an empty folder is not "never scanned"', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: const [],
+      );
+
+      expect(summary.largestItems, isEmpty);
+      expect(summary.hasCompletedScan, isTrue);
+    });
+
+    test('all-zero sizes still produce items', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [candidate('a', 0), candidate('b', 0)],
+      );
+
+      expect(summary.largestItems, hasLength(2));
+      expect(summary.largestItems.every((e) => e.sizeBytes == 0), isTrue);
+    });
+
+    test('partial directory sizes carry the scanned flag', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [
+          candidate('partial', 9, isDirectory: true, scanned: false),
+        ],
+      );
+
+      expect(summary.largestItems.single.scanned, isFalse);
+      expect(summary.largestItems.single.path, '/Users/me/partial');
+    });
+
+    test('the returned list is unmodifiable', () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(),
+        scanning: false,
+        scanProgress: null,
+        largestItemCandidates: [candidate('a', 1)],
+      );
+
+      expect(
+        () => summary.largestItems.add(
+          const StorageHomeItem(
+            name: 'x',
+            path: '/x',
+            sizeBytes: 1,
+            isDirectory: false,
+            scanned: true,
+          ),
+        ),
+        throwsUnsupportedError,
+      );
+    });
+  });
 }

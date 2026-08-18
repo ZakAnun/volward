@@ -6,6 +6,7 @@ import 'storage_overview.dart';
 
 const homeNamedCategoryOrder = ['Cache', 'Temp', 'Media', 'System'];
 const homeOtherCategoryName = 'Other';
+const homeLargestItemLimit = 5;
 
 int? _finiteInt(Object? value) {
   return value is num && value.isFinite ? value.toInt() : null;
@@ -62,6 +63,26 @@ class StorageHomeCategorySummary {
   final int count;
 }
 
+/// One row in the home dashboard's "largest items" block.
+class StorageHomeItem {
+  const StorageHomeItem({
+    required this.name,
+    required this.path,
+    required this.sizeBytes,
+    required this.isDirectory,
+    required this.scanned,
+  });
+
+  final String name;
+  final String path;
+  final int sizeBytes;
+  final bool isDirectory;
+
+  /// False when the size is a partial subtree total the scan has not finished
+  /// walking. Callers render such sizes as approximate.
+  final bool scanned;
+}
+
 class StorageHomeSummary {
   const StorageHomeSummary({
     required this.overview,
@@ -75,6 +96,7 @@ class StorageHomeSummary {
     this.scanPhase,
     this.scannedBytes,
     this.categories = const [],
+    this.largestItems = const [],
     this.pinnedCustomLocation,
     this.recentCustomLocations = const [],
   });
@@ -90,6 +112,7 @@ class StorageHomeSummary {
   final String? scanPhase;
   final int? scannedBytes;
   final List<StorageHomeCategorySummary> categories;
+  final List<StorageHomeItem> largestItems;
   final StorageLocationInfo? pinnedCustomLocation;
   final List<StorageLocationInfo> recentCustomLocations;
 
@@ -102,6 +125,7 @@ class StorageHomeSummary {
     required double? scanProgress,
     String? scanPhase,
     ScanSnapshotState? matchingSnapshot,
+    List<ScanTreeNode> largestItemCandidates = const [],
     StorageLocationInfo? pinnedCustomLocation,
     List<StorageLocationInfo> recentCustomLocations = const [],
   }) {
@@ -189,6 +213,11 @@ class StorageHomeSummary {
       reclaimableBytes = null;
     }
 
+    final largestItems = _deriveLargestItems(
+      largestItemCandidates,
+      snapshotMatches && !previewSnapshot,
+    );
+
     final categories = <StorageHomeCategorySummary>[];
     if (snapshotMatches) {
       final counts = snapshot.categoryCounts;
@@ -237,6 +266,7 @@ class StorageHomeSummary {
       scanPhase: scanning ? scanPhase : null,
       scannedBytes: scannedBytes,
       categories: List.unmodifiable(categories),
+      largestItems: largestItems,
       pinnedCustomLocation: pinnedCustomLocation,
       recentCustomLocations: List.unmodifiable(recentCustomLocations),
     );
@@ -262,4 +292,26 @@ String formatStorageBytes(num? bytes) {
   }
   final digits = value >= 100 || value == value.roundToDouble() ? 0 : 1;
   return '${value.toStringAsFixed(digits)} ${units[unit]}';
+}
+
+List<StorageHomeItem> _deriveLargestItems(
+  List<ScanTreeNode> candidates,
+  bool authoritative,
+) {
+  if (!authoritative || candidates.isEmpty) return const <StorageHomeItem>[];
+  // `SnapshotQueryResult.directNodes` is `[...dirs, ...files]` — each group is
+  // sorted, but there is no ordering across the two. Re-sort before slicing or
+  // a 12 GB file renders below an 8 GB directory.
+  final sorted = List<ScanTreeNode>.of(candidates)
+    ..sort((a, b) => b.displayBytes.compareTo(a.displayBytes));
+  return List.unmodifiable(<StorageHomeItem>[
+    for (final node in sorted.take(homeLargestItemLimit))
+      StorageHomeItem(
+        name: node.name,
+        path: node.path,
+        sizeBytes: node.displayBytes,
+        isDirectory: node.isDirectory,
+        scanned: node.scanned,
+      ),
+  ]);
 }
