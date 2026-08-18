@@ -652,6 +652,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (prefixes.isEmpty) {
       _visibleChildrenCache.clear();
       _pendingVisibleChildrenQueries.clear();
+      // Cache key omits catalogVersion, but unconditional invalidation here keeps it safe.
       _largestItemsCacheKey = null;
       return;
     }
