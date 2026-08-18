@@ -16,6 +16,43 @@ export type FeatureCopy = {
   body: string;
 };
 
+export type HeroDashboardCopy = {
+  volumeName: string;
+  chooseFolder: string;
+  targets: {
+    home: string;
+    applications: string;
+    desktop: string;
+    downloads: string;
+    documents: string;
+  };
+  capacityPath: string;
+  usedBytes: string;
+  usedLabel: string;
+  totalBytes: string;
+  totalLabel: string;
+  availableBytes: string;
+  availableLabel: string;
+  largestTitle: string;
+  scannedLabel: string;
+  largestItems: [
+    { name: string; size: string; barWidth: string; kind: 'folder' | 'file' },
+    { name: string; size: string; barWidth: string; kind: 'folder' | 'file' },
+    { name: string; size: string; barWidth: string; kind: 'folder' | 'file' },
+  ];
+  categories: {
+    cache: string;
+    temp: string;
+    media: string;
+    system: string;
+  };
+  status: string;
+  lastScan: string;
+  reclaimable: string;
+  browseFiles: string;
+  startScan: string;
+};
+
 export type PageCopy = {
   title: string;
   description: string;
@@ -30,6 +67,7 @@ export type PageCopy = {
   heroLead: string;
   ctaDownload: string;
   ctaLearn: string;
+  heroDashboard: HeroDashboardCopy;
   featureSectionTitle: string;
   featureSectionLead: string;
   downloadTitle: string;
@@ -57,6 +95,42 @@ export const PAGE_COPY: Record<Locale, PageCopy> = {
       'Scan progressively, browse in Finder-style columns, and move reclaimable files to Trash with a calm, explicit flow.',
     ctaDownload: 'Download',
     ctaLearn: 'Learn more',
+    heroDashboard: {
+      volumeName: 'Macintosh HD',
+      chooseFolder: 'Choose Folder',
+      targets: {
+        home: 'Home',
+        applications: 'Applications',
+        desktop: 'Desktop',
+        downloads: 'Downloads',
+        documents: 'Documents',
+      },
+      capacityPath: '/Users/volward',
+      usedBytes: '386 GB',
+      usedLabel: 'Used',
+      totalBytes: '1 TB',
+      totalLabel: 'Total capacity',
+      availableBytes: '638 GB',
+      availableLabel: 'Available',
+      largestTitle: 'Largest items',
+      scannedLabel: '386 GB scanned',
+      largestItems: [
+        { name: 'Library', size: '132 GB', barWidth: '100%', kind: 'folder' },
+        { name: 'Movies', size: '84 GB', barWidth: '64%', kind: 'folder' },
+        { name: 'Xcode.app', size: '31 GB', barWidth: '24%', kind: 'file' },
+      ],
+      categories: {
+        cache: 'Cache',
+        temp: 'Temp',
+        media: 'Media',
+        system: 'System',
+      },
+      status: 'Live disk data',
+      lastScan: 'Last scan today',
+      reclaimable: '128 GB reclaimable',
+      browseFiles: 'Browse Files',
+      startScan: 'Start Scan',
+    },
     featureSectionTitle: 'A quieter way to clean up.',
     featureSectionLead: 'Every step stays visible, reversible, and easy to revisit.',
     downloadTitle: 'Download Volward',
@@ -100,6 +174,42 @@ export const PAGE_COPY: Record<Locale, PageCopy> = {
       '渐进式扫描、Finder 式浏览，再把可回收文件安全移到废纸篓，整个流程尽量安静而明确。',
     ctaDownload: '下载',
     ctaLearn: '了解功能',
+    heroDashboard: {
+      volumeName: 'Macintosh HD',
+      chooseFolder: '选择文件夹',
+      targets: {
+        home: '个人目录',
+        applications: '应用程序',
+        desktop: '桌面',
+        downloads: '下载',
+        documents: '文稿',
+      },
+      capacityPath: '/Users/volward',
+      usedBytes: '386 GB',
+      usedLabel: '已使用',
+      totalBytes: '1 TB',
+      totalLabel: '总容量',
+      availableBytes: '638 GB',
+      availableLabel: '可用',
+      largestTitle: '最大项目',
+      scannedLabel: '已扫描 386 GB',
+      largestItems: [
+        { name: '资源库', size: '132 GB', barWidth: '100%', kind: 'folder' },
+        { name: '影片', size: '84 GB', barWidth: '64%', kind: 'folder' },
+        { name: 'Xcode.app', size: '31 GB', barWidth: '24%', kind: 'file' },
+      ],
+      categories: {
+        cache: '缓存',
+        temp: '临时',
+        media: '媒体',
+        system: '系统',
+      },
+      status: '实时磁盘数据',
+      lastScan: '上次扫描：今天',
+      reclaimable: '可回收 128 GB',
+      browseFiles: '浏览文件',
+      startScan: '开始扫描',
+    },
     featureSectionTitle: '更安静地清理空间。',
     featureSectionLead: '每一步都保持可见、可回退，也更容易重新检查。',
     downloadTitle: '下载 Volward',
