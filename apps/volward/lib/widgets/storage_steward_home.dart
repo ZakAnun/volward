@@ -7,6 +7,7 @@ import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
 import '../theme/volward_tokens.dart';
+import 'home/category_breakdown.dart';
 import 'home/dashboard_theme.dart';
 import 'volward_logo.dart';
 
@@ -99,7 +100,7 @@ class StorageStewardHome extends StatelessWidget {
   static const boardKey = Key('storage-overview-board');
   static const scanSummaryKey = Key('storage-overview-scan-summary');
   static const lastScanOpenKey = Key('storage-overview-last-scan-open');
-  static const categoryPieKey = Key('storage-overview-category-pie');
+  static const categoryPieKey = CategoryBreakdown.pieKey;
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
   static const recentFoldersKey = Key('storage-overview-recent-folders');
@@ -954,205 +955,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class _CategoryBreakdown extends StatelessWidget {
-  const _CategoryBreakdown({
-    required this.categories,
-    required this.enabled,
-    required this.onSelectCategory,
-  });
-
-  final List<StorageHomeCategorySummary> categories;
-  final bool enabled;
-  final ValueChanged<String>? onSelectCategory;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = categories.fold<int>(0, (sum, item) => sum + item.count);
-    final slices = <_PieSlice>[
-      for (final category in categories)
-        _PieSlice(
-          color: _categoryColor(category.name),
-          fraction: total == 0 ? 0 : category.count / total,
-        ),
-    ];
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        CustomPaint(
-          key: StorageStewardHome.categoryPieKey,
-          size: const Size.square(72),
-          painter: _CategoryPiePainter(slices: slices),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < categories.length; i++)
-                _CategoryLegendRow(
-                  category: categories[i],
-                  color: _categoryColor(categories[i].name),
-                  percentLabel: _percentLabel(categories[i].count, total),
-                  enabled: enabled,
-                  onSelect: !enabled ||
-                          onSelectCategory == null ||
-                          categories[i].name == homeOtherCategoryName
-                      ? null
-                      : () => onSelectCategory!(categories[i].name),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _PieSlice {
-  const _PieSlice({required this.color, required this.fraction});
-
-  final Color color;
-  final double fraction;
-}
-
-class _CategoryPiePainter extends CustomPainter {
-  const _CategoryPiePainter({required this.slices});
-
-  final List<_PieSlice> slices;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.shortestSide / 2;
-    final outer = Rect.fromCircle(center: center, radius: radius);
-    final inner = Rect.fromCircle(center: center, radius: radius * 0.56);
-    var start = -math.pi / 2;
-    final gap = slices.length > 1 ? 0.07 : 0.0;
-    for (final slice in slices) {
-      final sweep = slice.fraction * 2 * math.pi;
-      final padded = math.max(0.0, sweep - gap);
-      if (padded > 0) {
-        final from = start + gap / 2;
-        final path = Path()
-          ..arcTo(outer, from, padded, true)
-          ..arcTo(inner, from + padded, -padded, false)
-          ..close();
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = slice.color
-            ..isAntiAlias = true
-            ..style = PaintingStyle.fill,
-        );
-      }
-      start += sweep;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CategoryPiePainter oldDelegate) {
-    if (oldDelegate.slices.length != slices.length) return true;
-    for (var i = 0; i < slices.length; i++) {
-      final next = slices[i];
-      final previous = oldDelegate.slices[i];
-      if (next.color != previous.color || next.fraction != previous.fraction) {
-        return true;
-      }
-    }
-    return false;
-  }
-}
-
-class _CategoryLegendRow extends StatelessWidget {
-  const _CategoryLegendRow({
-    required this.category,
-    required this.color,
-    required this.percentLabel,
-    required this.enabled,
-    required this.onSelect,
-  });
-
-  final StorageHomeCategorySummary category;
-  final Color color;
-  final String percentLabel;
-  final bool enabled;
-  final VoidCallback? onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final locale = Localizations.localeOf(context).toLanguageTag();
-    final label = _localizedCategory(context, category.name);
-    final count = NumberFormat.decimalPattern(locale).format(category.count);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      excludeFromSemantics: true,
-      onTap: enabled ? null : () {},
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: ValueKey('storage-category-${category.name}'),
-          onTap: enabled ? onSelect : null,
-          borderRadius: BorderRadius.circular(8),
-          child: Semantics(
-            button: true,
-            enabled: enabled,
-            label: label,
-            value: '$count · $percentLabel',
-            onTap: enabled ? onSelect : null,
-            child: ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: enabled ? 1 : 0.42),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const SizedBox(width: 8, height: 8),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.vwFinePrint.copyWith(
-                          color: _onDashboard.withValues(
-                            alpha: enabled ? 0.84 : 0.42,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      count,
-                      style: context.vwFinePrint.copyWith(
-                        color: _onDashboard.withValues(
-                          alpha: enabled ? 0.64 : 0.36,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      percentLabel,
-                      style: context.vwFinePrint.copyWith(
-                        color: _onDashboard.withValues(
-                          alpha: enabled ? 0.64 : 0.36,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ScanSummary extends StatelessWidget {
   const _ScanSummary({required this.summary, required this.onSelectCategory});
 
@@ -1194,7 +996,7 @@ class _ScanSummary extends StatelessWidget {
         ],
         if (summary.categories.isNotEmpty) ...[
           const SizedBox(height: 12),
-          _CategoryBreakdown(
+          CategoryBreakdown(
             categories: summary.categories,
             enabled: !summary.scanning,
             onSelectCategory: onSelectCategory,
@@ -1676,37 +1478,6 @@ _StatusChipTone _statusChipTone(StorageHomeSummary summary) {
     StorageDataFreshness.cached => _StatusChipTone.cached,
     StorageDataFreshness.unavailable || null => _StatusChipTone.neutral,
   };
-}
-
-String _localizedCategory(BuildContext context, String name) {
-  final l10n = context.l10n;
-  return switch (name) {
-    'Cache' => l10n.filterCategoryCache,
-    'Temp' => l10n.filterCategoryTemp,
-    'Media' => l10n.filterCategoryMedia,
-    'System' => l10n.filterCategorySystem,
-    'Other' => l10n.homeCategoryOther,
-    _ => name,
-  };
-}
-
-Color _categoryColor(String name) {
-  return switch (name) {
-    'Cache' => const Color(0xFF64D2FF),
-    'Temp' => const Color(0xFFFFD60A),
-    'Media' => const Color(0xFFBF5AF2),
-    'System' => const Color(0xFF30D158),
-    'Other' => const Color(0xFF8E8E93),
-    _ => const Color(0xFF8E8E93),
-  };
-}
-
-String _percentLabel(int count, int total) {
-  if (total <= 0 || count <= 0) return '0%';
-  final exact = count * 100 / total;
-  if (exact < 0.1) return '<0.1%';
-  if (exact < 1) return '${exact.toStringAsFixed(1)}%';
-  return '${exact.round()}%';
 }
 
 String _localizedScanPhase(BuildContext context, String? phase) =>
