@@ -16,6 +16,7 @@ import 'package:volward/updater/app_updater.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 import 'package:volward/widgets/scan_filter_bar.dart';
+import 'package:volward/widgets/home/largest_items_panel.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 
 StorageOverviewData _overviewData([String volumeName = 'Test Disk']) {
@@ -1674,5 +1675,60 @@ void main() {
     expect(find.text('Temp'), findsNothing);
     expect(find.text('Media'), findsNothing);
     expect(find.text('System'), findsNothing);
+  });
+
+  testWidgets('tapping a largest-items row opens browse at the item', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..snapshotForTest = ScanSnapshotState(
+        snapshotId: 'scan-with-children',
+        scannedAtMs: 1723766400000,
+        stats: const {'scan_state': 'Done', 'files_seen': 5},
+        reclaimableEstimateBytes: 512,
+        tree: ScanTreeNode(
+          name: '/',
+          path: '/',
+          isDirectory: true,
+          sizeBytes: 10240,
+          children: [
+            ScanTreeNode(
+              name: 'big',
+              path: '/big',
+              isDirectory: true,
+              sizeBytes: 8192,
+            ),
+          ],
+        ),
+        entryCount: 5,
+        categoryCounts: const {'Cache': 2, 'Temp': 1},
+        deletableCategoryCounts: const {},
+        deletableCount: 0,
+        extraFields: const {},
+      )
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-largest-items-tap.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(LargestItemsPanel.rowKey('/big')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(StorageStewardHome.panelKey), findsNothing);
   });
 }

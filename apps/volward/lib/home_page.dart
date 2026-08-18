@@ -145,6 +145,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final SnapshotViewCache<List<SnapshotNodeRecord>> _visibleChildrenCache =
       SnapshotViewCache(capacity: 128);
   final Set<SnapshotQueryKey> _pendingVisibleChildrenQueries = {};
+  List<ScanTreeNode> _largestItemCandidates = const [];
+  String? _largestItemsCacheKey;
 
   static const int _asyncVisibleChildrenThreshold = 512;
   static const int _maxAsyncSortedChildren = 2048;
@@ -601,12 +603,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ScanTreeBuilder.normalizeRoot(targetPath);
   }
 
+  /// Direct children of the scanned target, for the home dashboard's middle
+  /// block. `SnapshotCatalog.queryNode` is a synchronous in-memory FFI read,
+  /// but `_homeSummary` runs inside `build()` and rebuilds on every scan
+  /// progress tick — so memoize on (snapshotId, targetPath).
+  List<ScanTreeNode> _largestItemsFor(String targetPath) {
+    final snapshot = _s.lastSnapshot;
+    final tree = snapshot?.tree;
+    if (snapshot == null || tree == null || !_snapshotMatchesTarget(targetPath)) {
+      _largestItemsCacheKey = null;
+      _largestItemCandidates = const [];
+      return const [];
+    }
+    final cacheKey = '${snapshot.snapshotId}|$targetPath';
+    if (cacheKey == _largestItemsCacheKey) return _largestItemCandidates;
+    final result = SnapshotCatalog.queryNode(
+      key: SnapshotQueryKey(
+        snapshotId: snapshot.snapshotId,
+        version: _s.catalogVersion,
+        path: tree.path,
+        categoryFilter: null,
+        deletableOnly: false,
+        sortMode: ScanSortMode.sizeDesc,
+      ),
+      node: tree,
+      includeEntryRecords: false,
+    );
+    _largestItemsCacheKey = cacheKey;
+    _largestItemCandidates = result.directNodes;
+    return _largestItemCandidates;
+  }
+
   void _invalidateSnapshotCaches() {
     _cachedResolvedTree = null;
     _cachedResolvedTreeKey = null;
     _cachedSelectedBytesKey = null;
     _visibleChildrenCache.clear();
     _pendingVisibleChildrenQueries.clear();
+    _largestItemsCacheKey = null;
   }
 
   void _invalidateSnapshotCachesForSessionUpdate() {
@@ -618,6 +652,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (prefixes.isEmpty) {
       _visibleChildrenCache.clear();
       _pendingVisibleChildrenQueries.clear();
+      _largestItemsCacheKey = null;
       return;
     }
     for (final prefix in prefixes) {
@@ -631,6 +666,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
       return false;
     });
+    _largestItemsCacheKey = null;
   }
 
   void _resetColumnNav() {
@@ -1307,16 +1343,50 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _onHomeBrowse() async {
+  Future<void> _onHomeBrowse({String? focusPath}) async {
     if (!_startupRootGate.isCompleted) {
       await _waitForStartupRootResolution();
       if (!mounted) return;
     }
-    if (_hasValidRoot) {
-      setState(() => _contentMode = _HomeContentMode.browse);
+    if (!_hasValidRoot) {
+      await _pickFolder();
       return;
     }
-    await _pickFolder();
+    setState(() {
+      _contentMode = _HomeContentMode.browse;
+      if (focusPath != null) _focusBrowseOnPath(focusPath);
+    });
+  }
+
+  /// Opens the column chain down to [path]'s directory. A file focuses its
+  /// parent, so the file's own row is on screen.
+  void _focusBrowseOnPath(String path) {
+    final root = _resolveResultTree();
+    if (root == null) return;
+    final node = _findNodeByPath(root, path);
+    if (node == null) return;
+    final directory = node.isDirectory ? node.path : parentFsPath(node.path);
+    _setColumnChain(_chainToPath(root, directory));
+  }
+
+  List<ScanTreeNode> _chainToPath(ScanTreeNode root, String targetPath) {
+    final chain = <ScanTreeNode>[];
+    var current = root;
+    while (current.path != targetPath) {
+      ScanTreeNode? next;
+      for (final child in current.children) {
+        if (!child.isDirectory) continue;
+        if (targetPath == child.path ||
+            targetPath.startsWith('${child.path}/')) {
+          next = child;
+          break;
+        }
+      }
+      if (next == null) break;
+      chain.add(next);
+      current = next;
+    }
+    return chain;
   }
 
   void _openHomeCategory(String name) {
@@ -1334,6 +1404,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       overview: _storageOverview,
       targetPath: target,
       matchingSnapshot: _snapshotMatchesTarget(target) ? _s.lastSnapshot : null,
+      largestItemCandidates: _largestItemsFor(target),
       scanning: _s.scanning,
       scanProgress: _s.scanning ? progress.fraction : null,
       scanPhase: _s.scanning ? progress.phase : null,
@@ -1851,6 +1922,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onCancelScan: _s.scanning ? _s.cancelScan : null,
                       onOpenSettings: _openSettings,
                       onSelectCategory: _openHomeCategory,
+                      onOpenItem: (item) =>
+                          unawaited(_onHomeBrowse(focusPath: item.path)),
                     ),
                   )
                 : (restoring || loadingTarget) && !hasResults
