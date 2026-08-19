@@ -471,9 +471,10 @@ class _Sidebar extends StatelessWidget {
     final selectedPath = summary.selectedLocation?.path ?? '';
     final selectedCustom =
         summary.selectedLocation?.kind == StorageLocationKind.custom
-            ? summary.selectedLocation
-            : null;
-    final recentMenuLocation = selectedCustom ??
+        ? summary.selectedLocation
+        : null;
+    final recentMenuLocation =
+        selectedCustom ??
         (recentLocations.isNotEmpty ? recentLocations.first : null);
     final recentMenuChoices = [
       if (selectedCustom != null) selectedCustom,
@@ -485,7 +486,8 @@ class _Sidebar extends StatelessWidget {
     Widget targetTile(int index) {
       final location = targetLocations[index];
       final selected = _samePath(location.path, selectedPath);
-      final choices = location.kind == StorageLocationKind.custom &&
+      final choices =
+          location.kind == StorageLocationKind.custom &&
               recentMenuChoices.length > 1
           ? recentMenuChoices
           : const <StorageLocationInfo>[];
@@ -509,7 +511,8 @@ class _Sidebar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final recentFallback = recentMenuLocation != null &&
+          final recentFallback =
+              recentMenuLocation != null &&
               !targetLocations.any(
                 (location) => _samePath(location.path, recentMenuLocation.path),
               );
@@ -545,9 +548,11 @@ class _Sidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: _sidebarLogoGap),
-                for (var index = 0;
-                    index < targetLocations.length;
-                    index++) ...[
+                for (
+                  var index = 0;
+                  index < targetLocations.length;
+                  index++
+                ) ...[
                   targetTile(index),
                   if (index < targetLocations.length - 1)
                     const SizedBox(height: _targetTileGap),
@@ -774,8 +779,9 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress =
-        summary.hasUsableCapacity ? summary.selectedVolume?.usedFraction : null;
+    final progress = summary.hasUsableCapacity
+        ? summary.selectedVolume?.usedFraction
+        : null;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,
@@ -788,9 +794,7 @@ class _HeroMeter extends StatelessWidget {
               widthFactor: progress.clamp(0, 1),
               alignment: Alignment.centerLeft,
               child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: _meterGradient(context),
-                ),
+                decoration: BoxDecoration(gradient: _meterGradient(context)),
               ),
             ),
         ],
@@ -822,8 +826,8 @@ class _BrowseCard extends StatelessWidget {
     final scanLabel = summary.scanning
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
-            ? l10n.homeRescan
-            : l10n.homeStartScan;
+        ? l10n.homeRescan
+        : l10n.homeStartScan;
     final scanCallback = summary.scanning ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -918,8 +922,9 @@ class _BrowseCard extends StatelessWidget {
                               ? Icons.stop_circle_outlined
                               : Icons.radar_outlined,
                           primary: true,
-                          semanticColor:
-                              summary.scanning ? context.volward.danger : null,
+                          semanticColor: summary.scanning
+                              ? context.volward.danger
+                              : null,
                           onPressed: scanCallback,
                         ),
                       ),
@@ -982,8 +987,8 @@ class _StatusChip extends StatelessWidget {
     final foreground = switch (tone) {
       _StatusChipTone.live => _liveChipText,
       _StatusChipTone.cached => _highestContrastForeground(
-          Color.alphaBlend(fill, parentBackground),
-        ),
+        Color.alphaBlend(fill, parentBackground),
+      ),
       _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.84),
     };
     return SizedBox(
@@ -1122,8 +1127,8 @@ class _DashboardActionButton extends StatelessWidget {
     final actionColor = semanticColor ?? context.volward.primary;
     final background = enabled
         ? primary
-            ? actionColor
-            : Colors.white.withValues(alpha: 0.08)
+              ? actionColor
+              : Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
@@ -1230,8 +1235,9 @@ class _TargetMenuTile extends StatelessWidget {
         ),
       ),
       child: Tooltip(
-        message:
-            recentFallback ? context.l10n.homeRecentFolders : location.path,
+        message: recentFallback
+            ? context.l10n.homeRecentFolders
+            : location.path,
         child: hasMenu
             ? KeyedSubtree(
                 key: tileKey,
@@ -1368,9 +1374,7 @@ class _TargetTileContent extends StatelessWidget {
               Icon(
                 Icons.history_outlined,
                 size: 16,
-                color: _onDashboard.withValues(
-                  alpha: enabled ? 0.8 : 0.42,
-                ),
+                color: _onDashboard.withValues(alpha: enabled ? 0.8 : 0.42),
               ),
               const SizedBox(width: 8),
             ],
@@ -1400,9 +1404,7 @@ class _TargetTileContent extends StatelessWidget {
               Icon(
                 Icons.arrow_drop_down,
                 size: 18,
-                color: _onDashboard.withValues(
-                  alpha: enabled ? 0.8 : 0.42,
-                ),
+                color: _onDashboard.withValues(alpha: enabled ? 0.8 : 0.42),
               ),
             ],
           ],
@@ -1518,7 +1520,8 @@ List<StorageLocationInfo> _targetLocations(StorageHomeSummary summary) {
 
 double _wideDashboardHeight(StorageHomeSummary summary) {
   final visibleTargets = _visibleTargetCount(summary);
-  final sidebarHeight = _sidebarPadding * 2 +
+  final sidebarHeight =
+      _sidebarPadding * 2 +
       _sidebarLogoHeight +
       _sidebarLogoGap +
       visibleTargets * _targetTileHeight +
@@ -1531,11 +1534,13 @@ int _visibleTargetCount(StorageHomeSummary summary) {
   final recentLocations = _recentCustomLocations(summary);
   final selectedCustom =
       summary.selectedLocation?.kind == StorageLocationKind.custom
-          ? summary.selectedLocation
-          : null;
-  final recentMenuLocation = selectedCustom ??
+      ? summary.selectedLocation
+      : null;
+  final recentMenuLocation =
+      selectedCustom ??
       (recentLocations.isNotEmpty ? recentLocations.first : null);
-  final hasRecentFallback = recentMenuLocation != null &&
+  final hasRecentFallback =
+      recentMenuLocation != null &&
       !targetLocations.any(
         (location) => _samePath(location.path, recentMenuLocation.path),
       );

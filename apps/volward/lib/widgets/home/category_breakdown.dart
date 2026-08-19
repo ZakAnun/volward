@@ -51,7 +51,8 @@ class CategoryBreakdown extends StatelessWidget {
                   color: categoryColor(categories[i].name),
                   percentLabel: percentLabel(categories[i].count, total),
                   enabled: enabled,
-                  onSelect: !enabled ||
+                  onSelect:
+                      !enabled ||
                           onSelectCategory == null ||
                           categories[i].name == homeOtherCategoryName
                       ? null

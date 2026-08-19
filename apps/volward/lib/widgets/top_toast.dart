@@ -87,10 +87,10 @@ class _TopToastWidgetState extends State<_TopToastWidget>
     final v = context.volward;
     final (bg, icon, iconColor) = switch (widget.type) {
       ToastType.success => (
-          v.canvas,
-          Icons.check_circle_rounded,
-          const Color(0xFF34C759),
-        ),
+        v.canvas,
+        Icons.check_circle_rounded,
+        const Color(0xFF34C759),
+      ),
       ToastType.error => (v.canvas, Icons.error_rounded, v.danger),
       ToastType.info => (v.canvas, Icons.info_rounded, v.primary),
     };

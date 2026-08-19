@@ -3,11 +3,12 @@ import 'dart:io';
 import 'platform_installer.dart';
 import 'update_models.dart';
 
-typedef LinuxProcessStarter = Future<void> Function(
-  String executable,
-  List<String> arguments, {
-  ProcessStartMode mode,
-});
+typedef LinuxProcessStarter =
+    Future<void> Function(
+      String executable,
+      List<String> arguments, {
+      ProcessStartMode mode,
+    });
 
 Future<void> _startLinuxProcess(
   String executable,
@@ -24,11 +25,11 @@ class LinuxAppImageInstaller implements PlatformInstaller {
     Future<ProcessResult> Function(String, List<String>)? run,
     LinuxProcessStarter? start,
     void Function(int code)? exitProcess,
-  })  : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
-        _environment = environment ?? Platform.environment,
-        _run = run ?? Process.run,
-        _start = start ?? _startLinuxProcess,
-        _exitProcess = exitProcess ?? exit;
+  }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
+       _environment = environment ?? Platform.environment,
+       _run = run ?? Process.run,
+       _start = start ?? _startLinuxProcess,
+       _exitProcess = exitProcess ?? exit;
 
   final String _resolvedExecutable;
   final Map<String, String> _environment;
@@ -46,9 +47,9 @@ class LinuxAppImageInstaller implements PlatformInstaller {
 
   @override
   bool get canAutoInstall => isAppImageRuntime(
-        resolvedExecutable: _resolvedExecutable,
-        environment: _environment,
-      );
+    resolvedExecutable: _resolvedExecutable,
+    environment: _environment,
+  );
 
   @override
   Future<void> installAndRelaunch({

@@ -433,16 +433,16 @@ final invalidLiveSummary = StorageHomeSummary(
 );
 
 Finder targetTiles() => find.byWidgetPredicate((widget) {
-      final key = widget.key;
-      return widget is InkWell &&
-          key is ValueKey<String> &&
-          key.value.startsWith('storage-target-');
-    });
+  final key = widget.key;
+  return widget is InkWell &&
+      key is ValueKey<String> &&
+      key.value.startsWith('storage-target-');
+});
 
 Finder capacityMeterFill() => find.descendant(
-      of: find.byKey(StorageStewardHome.capacityMeterKey),
-      matching: find.byType(FractionallySizedBox),
-    );
+  of: find.byKey(StorageStewardHome.capacityMeterKey),
+  matching: find.byType(FractionallySizedBox),
+);
 
 ({Rect targets, Rect capacity, Rect scan}) homeGeometry(WidgetTester tester) {
   return (
@@ -465,10 +465,12 @@ void expectButtonSemantics(SemanticsNode node, {required bool enabled}) {
 double contrastRatio(Color first, Color second) {
   final firstLuminance = first.computeLuminance();
   final secondLuminance = second.computeLuminance();
-  final lighter =
-      firstLuminance > secondLuminance ? firstLuminance : secondLuminance;
-  final darker =
-      firstLuminance > secondLuminance ? secondLuminance : firstLuminance;
+  final lighter = firstLuminance > secondLuminance
+      ? firstLuminance
+      : secondLuminance;
+  final darker = firstLuminance > secondLuminance
+      ? secondLuminance
+      : firstLuminance;
   return (lighter + 0.05) / (darker + 0.05);
 }
 
@@ -482,13 +484,13 @@ void expectTextContrast(WidgetTester tester, Finder finder, Color background) {
 }
 
 Finder statusChipFinder() => find.descendant(
-      of: find.byKey(StorageStewardHome.actionsKey),
-      matching: find.byWidgetPredicate((widget) {
-        final decoration = widget is DecoratedBox ? widget.decoration : null;
-        return decoration is BoxDecoration &&
-            decoration.borderRadius == BorderRadius.circular(999);
-      }),
-    );
+  of: find.byKey(StorageStewardHome.actionsKey),
+  matching: find.byWidgetPredicate((widget) {
+    final decoration = widget is DecoratedBox ? widget.decoration : null;
+    return decoration is BoxDecoration &&
+        decoration.borderRadius == BorderRadius.circular(999);
+  }),
+);
 
 BoxDecoration statusChipDecoration(WidgetTester tester) {
   final finder = statusChipFinder();
@@ -750,8 +752,9 @@ void main() {
     final tokens = Theme.of(
       tester.element(find.byKey(StorageStewardHome.capacityMeterKey)),
     ).extension<VolwardTokens>()!;
-    final gradient = (fillDecoration.decoration as BoxDecoration).gradient!
-        as LinearGradient;
+    final gradient =
+        (fillDecoration.decoration as BoxDecoration).gradient!
+            as LinearGradient;
     expect(gradient.colors, [
       Color.lerp(tokens.primary, Colors.white, 0.46),
       Color.lerp(tokens.primary, Colors.black, 0.06),
@@ -764,21 +767,29 @@ void main() {
     await pumpOverview(tester, onScan: () {});
 
     final statusHeight = tester.getSize(statusChipFinder()).height;
-    final browseHeight =
-        tester.getSize(find.byKey(StorageStewardHome.browseKey)).height;
-    final scanHeight =
-        tester.getSize(find.byKey(StorageStewardHome.scanActionKey)).height;
+    final browseHeight = tester
+        .getSize(find.byKey(StorageStewardHome.browseKey))
+        .height;
+    final scanHeight = tester
+        .getSize(find.byKey(StorageStewardHome.scanActionKey))
+        .height;
 
     expect(statusHeight, closeTo(36, 1));
     expect(browseHeight, closeTo(statusHeight, 1));
     expect(scanHeight, closeTo(statusHeight, 1));
 
-    final statusFont =
-        tester.widget<Text>(find.text('Live disk data')).style!.fontSize;
-    final browseFont =
-        tester.widget<Text>(find.text('Browse Files')).style!.fontSize;
-    final scanFont =
-        tester.widget<Text>(find.text('Start Scan')).style!.fontSize;
+    final statusFont = tester
+        .widget<Text>(find.text('Live disk data'))
+        .style!
+        .fontSize;
+    final browseFont = tester
+        .widget<Text>(find.text('Browse Files'))
+        .style!
+        .fontSize;
+    final scanFont = tester
+        .widget<Text>(find.text('Start Scan'))
+        .style!
+        .fontSize;
     expect(browseFont, statusFont);
     expect(scanFont, statusFont);
   });
@@ -1391,19 +1402,14 @@ void main() {
         find.byKey(const ValueKey('storage-target-custom-deep-archive')),
         findsNothing,
       );
-      expect(
-        find.byKey(const ValueKey('storage-target-home')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('storage-target-home')), findsOneWidget);
       expect(find.byKey(StorageStewardHome.recentFoldersKey), findsOneWidget);
 
       await tester.tap(find.byKey(StorageStewardHome.recentFoldersKey));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
-          const ValueKey(
-            'storage-recent-folder-option-custom-deep-archive',
-          ),
+          const ValueKey('storage-recent-folder-option-custom-deep-archive'),
         ),
       );
       await tester.pumpAndSettle();
@@ -2035,8 +2041,7 @@ void main() {
         Size(640, 600),
         Size(620, 600),
       ]) {
-        testWidgets(
-            'no overflow $locale $brightness '
+        testWidgets('no overflow $locale $brightness '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(
             tester,
@@ -2062,8 +2067,7 @@ void main() {
         Size(700, 600),
         Size(620, 600),
       ]) {
-        testWidgets(
-            'long platform data does not overflow '
+        testWidgets('long platform data does not overflow '
             '$platformLabel ${locale.languageCode} '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(
@@ -2136,9 +2140,7 @@ void main() {
       summary: summaryWithItems(items: const [bigFile, archiveDir]),
     );
 
-    final capacity = tester.getRect(
-      find.byKey(StorageStewardHome.capacityKey),
-    );
+    final capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
     final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
     final composition = tester.getRect(
       find.byKey(StorageStewardHome.browseCardKey),

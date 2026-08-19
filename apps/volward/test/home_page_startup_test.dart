@@ -274,10 +274,8 @@ void main() {
     tester,
   ) async {
     final previewGate = Completer<void>();
-    final session = _PendingPreviewSession(
-      root: '/',
-      previewGate: previewGate,
-    )..sessionStateFileForTest = File(
+    final session = _PendingPreviewSession(root: '/', previewGate: previewGate)
+      ..sessionStateFileForTest = File(
         '${Directory.systemTemp.path}/volward-startup-preview-pending.json',
       );
     final themeSettings = VolwardThemeSettings();
@@ -319,19 +317,17 @@ void main() {
     tester,
   ) async {
     final completedPreview = Completer<void>()..complete();
-    final oldSession = _PendingPreviewSession(
-      root: '/old',
-      previewGate: completedPreview,
-    )..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-old-ready.json',
-      );
+    final oldSession =
+        _PendingPreviewSession(root: '/old', previewGate: completedPreview)
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-startup-old-ready.json',
+          );
     final newPreview = Completer<void>();
-    final newSession = _PendingPreviewSession(
-      root: '/new',
-      previewGate: newPreview,
-    )..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-new-pending.json',
-      );
+    final newSession =
+        _PendingPreviewSession(root: '/new', previewGate: newPreview)
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-startup-new-pending.json',
+          );
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);
@@ -365,16 +361,19 @@ void main() {
     );
   });
 
-  testWidgets('startup preview error clears scan pending state',
-      (tester) async {
+  testWidgets('startup preview error clears scan pending state', (
+    tester,
+  ) async {
     final completedPreview = Completer<void>()..complete();
-    final session = _PendingPreviewSession(
-      root: '/',
-      previewGate: completedPreview,
-      failPreview: true,
-    )..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-preview-error.json',
-      );
+    final session =
+        _PendingPreviewSession(
+            root: '/',
+            previewGate: completedPreview,
+            failPreview: true,
+          )
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-startup-preview-error.json',
+          );
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);
@@ -397,18 +396,16 @@ void main() {
   ) async {
     final oldPreview = Completer<void>();
     final newPreview = Completer<void>();
-    final oldSession = _PendingPreviewSession(
-      root: '/old',
-      previewGate: oldPreview,
-    )..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-old-blocked.json',
-      );
-    final newSession = _PendingPreviewSession(
-      root: '/new',
-      previewGate: newPreview,
-    )..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-new-blocked.json',
-      );
+    final oldSession =
+        _PendingPreviewSession(root: '/old', previewGate: oldPreview)
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-startup-old-blocked.json',
+          );
+    final newSession =
+        _PendingPreviewSession(root: '/new', previewGate: newPreview)
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-startup-new-blocked.json',
+          );
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);
@@ -475,42 +472,37 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Start Scan stays enabled while cache restore is still loading',
-    (tester) async {
-      final previewGate = Completer<void>()..complete();
-      final session = _HangingRestoreSession(
-        root: '/',
-        previewGate: previewGate,
-      )..sessionStateFileForTest = File(
-          '${Directory.systemTemp.path}/volward-startup-hanging-restore.json',
-        );
-      final themeSettings = VolwardThemeSettings();
-      final updater = AppUpdater.test();
-      addTearDown(themeSettings.dispose);
-      addTearDown(updater.dispose);
-
-      await tester.pumpWidget(
-        _shell(
-          session,
-          themeSettings,
-          updater,
-          storageOverviewProvider: _OverviewProvider(),
-        ),
+  testWidgets('Start Scan stays enabled while cache restore is still loading', (
+    tester,
+  ) async {
+    final previewGate = Completer<void>()..complete();
+    final session = _HangingRestoreSession(root: '/', previewGate: previewGate)
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-startup-hanging-restore.json',
       );
-      await tester.pump();
-      await tester.pump();
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
 
-      expect(session.previewCalls, 1);
-      expect(session.restoreCalls, 1);
-      expect(
-        tester
-            .widget<StorageStewardHome>(find.byType(StorageStewardHome))
-            .onScan,
-        isNotNull,
-      );
-    },
-  );
+    await tester.pumpWidget(
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(session.previewCalls, 1);
+    expect(session.restoreCalls, 1);
+    expect(
+      tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
+      isNotNull,
+    );
+  });
 
   testWidgets(
     'HomePage keeps the folder picker visible when no launch root exists',
@@ -623,9 +615,7 @@ void main() {
       isTrue,
     );
 
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     expect(overviewProvider.selectedPaths, ['/', '/']);
 
     overviewProvider.requests[1].complete(_overviewData('Fresh Disk'));

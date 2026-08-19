@@ -136,8 +136,8 @@ class _ScanColumnViewState extends State<ScanColumnView> {
           (node.path == widget.root.path && widget.visibleChildren != null
               ? widget.visibleChildren!
               : node.children
-                  .map(SnapshotNodeRecord.fromTree)
-                  .toList(growable: false));
+                    .map(SnapshotNodeRecord.fromTree)
+                    .toList(growable: false));
     }
 
     final cols = <_FinderColumnData>[
@@ -359,9 +359,11 @@ class _FinderColumn extends StatelessWidget {
       _FinderTap(
         node: node,
         columnItems: items,
-        commandPressed: keys.contains(LogicalKeyboardKey.metaLeft) ||
+        commandPressed:
+            keys.contains(LogicalKeyboardKey.metaLeft) ||
             keys.contains(LogicalKeyboardKey.metaRight),
-        shiftPressed: keys.contains(LogicalKeyboardKey.shiftLeft) ||
+        shiftPressed:
+            keys.contains(LogicalKeyboardKey.shiftLeft) ||
             keys.contains(LogicalKeyboardKey.shiftRight),
       ),
     );
@@ -409,55 +411,54 @@ class _FinderColumn extends StatelessWidget {
               ),
             )
           : items.length > _paintedColumnThreshold
-              ? _PaintedFinderColumn(
-                  width: width,
-                  height: height,
-                  items: items,
-                  selected: selected,
-                  onSelect: onSelect,
-                  formatBytes: formatBytes,
-                  selectedEntryIds: selectedEntryIds,
-                  peekInFlight: peekInFlight,
-                  style: rowStyle,
-                )
-              : ListView.builder(
-                  primary: false,
-                  clipBehavior: Clip.hardEdge,
-                  itemExtent: 28,
-                  // 500px = ~18 rows pre-rendered above/below viewport.
-                  // The old value (112px = 4 rows) caused frame drops on fast
-                  // scroll because off-screen rows were destroyed and rebuilt
-                  // before the rasteriser could keep up.
-                  scrollCacheExtent: const ScrollCacheExtent.pixels(500),
-                  addAutomaticKeepAlives: false,
-                  addRepaintBoundaries: false,
-                  addSemanticIndexes: false,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final node = items[index];
-                    final isSelected = selected?.path == node.path;
-                    final entryId = node.entryId;
-                    final marked = (entryId != null &&
-                            selectedEntryIds.contains(entryId)) ||
-                        selectedEntryIds.contains(node.path);
-                    final isDir = node.isDirectory;
-                    final subtitle = isDir
-                        ? (node.scanned ? formatBytes(node.displayBytes) : '—')
-                        : formatBytes(node.sizeBytes);
+          ? _PaintedFinderColumn(
+              width: width,
+              height: height,
+              items: items,
+              selected: selected,
+              onSelect: onSelect,
+              formatBytes: formatBytes,
+              selectedEntryIds: selectedEntryIds,
+              peekInFlight: peekInFlight,
+              style: rowStyle,
+            )
+          : ListView.builder(
+              primary: false,
+              clipBehavior: Clip.hardEdge,
+              itemExtent: 28,
+              // 500px = ~18 rows pre-rendered above/below viewport.
+              // The old value (112px = 4 rows) caused frame drops on fast
+              // scroll because off-screen rows were destroyed and rebuilt
+              // before the rasteriser could keep up.
+              scrollCacheExtent: const ScrollCacheExtent.pixels(500),
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: false,
+              addSemanticIndexes: false,
+              padding: const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final node = items[index];
+                final isSelected = selected?.path == node.path;
+                final entryId = node.entryId;
+                final marked =
+                    (entryId != null && selectedEntryIds.contains(entryId)) ||
+                    selectedEntryIds.contains(node.path);
+                final isDir = node.isDirectory;
+                final subtitle = isDir
+                    ? (node.scanned ? formatBytes(node.displayBytes) : '—')
+                    : formatBytes(node.sizeBytes);
 
-                    return _FinderRow(
-                      node: node,
-                      isSelected: isSelected,
-                      markedForDelete: marked,
-                      subtitle: subtitle,
-                      style: rowStyle,
-                      peekInFlight: peekInFlight.contains(node.path),
-                      onTap: (details) => _handleTap(node, details),
-                    );
-                  },
-                ),
+                return _FinderRow(
+                  node: node,
+                  isSelected: isSelected,
+                  markedForDelete: marked,
+                  subtitle: subtitle,
+                  style: rowStyle,
+                  peekInFlight: peekInFlight.contains(node.path),
+                  onTap: (details) => _handleTap(node, details),
+                );
+              },
+            ),
     );
   }
 }
@@ -556,9 +557,11 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
       _FinderTap(
         node: widget.items[index],
         columnItems: widget.items,
-        commandPressed: keys.contains(LogicalKeyboardKey.metaLeft) ||
+        commandPressed:
+            keys.contains(LogicalKeyboardKey.metaLeft) ||
             keys.contains(LogicalKeyboardKey.metaRight),
-        shiftPressed: keys.contains(LogicalKeyboardKey.shiftLeft) ||
+        shiftPressed:
+            keys.contains(LogicalKeyboardKey.shiftLeft) ||
             keys.contains(LogicalKeyboardKey.shiftRight),
       ),
     );
@@ -580,8 +583,9 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
           onTapUp: _handleTap,
           child: SizedBox(
             width: widget.width,
-            height:
-                contentHeight < widget.height ? widget.height : contentHeight,
+            height: contentHeight < widget.height
+                ? widget.height
+                : contentHeight,
             child: CustomPaint(
               painter: _FinderColumnPainter(
                 scrollController: _scrollController,
@@ -641,9 +645,9 @@ class _FinderColumnPainter extends CustomPainter {
         ? scrollController.offset.clamp(0.0, double.infinity)
         : 0.0;
     final first = ((offset - _verticalPadding) / _rowHeight).floor().clamp(
-          0,
-          items.length,
-        );
+      0,
+      items.length,
+    );
     final last = ((offset + viewportHeight - _verticalPadding) / _rowHeight)
         .ceil()
         .clamp(0, items.length);
@@ -658,13 +662,14 @@ class _FinderColumnPainter extends CustomPainter {
     final y = _verticalPadding + index * _rowHeight;
     final selected = node.path == selectedPath;
     final entryId = node.entryId;
-    final marked = (entryId != null && selectedEntryIds.contains(entryId)) ||
+    final marked =
+        (entryId != null && selectedEntryIds.contains(entryId)) ||
         selectedEntryIds.contains(node.path);
     final bg = selected
         ? style.selectedBackground
         : marked
-            ? style.markedBackground
-            : Colors.transparent;
+        ? style.markedBackground
+        : Colors.transparent;
     if ((bg.a * 255.0).round().clamp(0, 255) != 0) {
       canvas.drawRect(
         Rect.fromLTWH(0, y, size.width, _rowHeight),
@@ -893,8 +898,8 @@ class _FinderRow extends StatelessWidget {
                   size: 16,
                   color: isDir
                       ? (isSelected
-                          ? style.selectedFolderIcon
-                          : style.folderIcon)
+                            ? style.selectedFolderIcon
+                            : style.folderIcon)
                       : style.fileIcon,
                 ),
                 const SizedBox(width: AppleSpacing.xxs),
@@ -919,8 +924,8 @@ class _FinderRow extends StatelessWidget {
                           ),
                         )
                       : (!node.scanned)
-                          ? Icon(Icons.more_horiz, size: 14, color: muted)
-                          : Icon(Icons.chevron_right, size: 14, color: muted)
+                      ? Icon(Icons.more_horiz, size: 14, color: muted)
+                      : Icon(Icons.chevron_right, size: 14, color: muted)
                 else
                   Text(
                     subtitle,

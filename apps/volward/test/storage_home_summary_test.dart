@@ -37,10 +37,7 @@ ScanSnapshotState snapshot({
     categoryCounts: categoryCounts,
     deletableCategoryCounts: const {},
     deletableCount: 0,
-    extraFields: {
-      'volume_total_bytes': total,
-      'volume_used_bytes': used,
-    },
+    extraFields: {'volume_total_bytes': total, 'volume_used_bytes': used},
   );
 }
 
@@ -574,19 +571,21 @@ void main() {
     expect(summary.hasCompletedScan, isTrue);
   });
 
-  test('incomplete non-preview snapshot treats zero reclaimable as unknown',
-      () {
-    final summary = StorageHomeSummary.fromInputs(
-      overview: liveOverview,
-      targetPath: '/Users/me',
-      matchingSnapshot: snapshot(reclaimable: 0, scanState: 'Walking'),
-      scanning: true,
-      scanProgress: 0.5,
-    );
+  test(
+    'incomplete non-preview snapshot treats zero reclaimable as unknown',
+    () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me',
+        matchingSnapshot: snapshot(reclaimable: 0, scanState: 'Walking'),
+        scanning: true,
+        scanProgress: 0.5,
+      );
 
-    expect(summary.reclaimableBytes, isNull);
-    expect(summary.hasCompletedScan, isFalse);
-  });
+      expect(summary.reclaimableBytes, isNull);
+      expect(summary.hasCompletedScan, isFalse);
+    },
+  );
 
   test('matching snapshot drops malformed negative metadata', () {
     final summary = StorageHomeSummary.fromInputs(
@@ -617,22 +616,24 @@ void main() {
         filesSeen: 80,
         filesInSnapshot: 55,
         entryCount: 55,
-        categoryCounts: const {
-          'Cache': 12,
-          'Temp': 3,
-          'Media': 40,
-        },
+        categoryCounts: const {'Cache': 12, 'Temp': 3, 'Media': 40},
       ),
       scanning: false,
       scanProgress: null,
     );
 
-    expect(
-      summary.categories.map((category) => category.name).toList(),
-      ['Cache', 'Temp', 'Media', 'Other'],
-    );
-    expect(summary.categories.map((category) => category.count).toList(),
-        [12, 3, 40, 25]);
+    expect(summary.categories.map((category) => category.name).toList(), [
+      'Cache',
+      'Temp',
+      'Media',
+      'Other',
+    ]);
+    expect(summary.categories.map((category) => category.count).toList(), [
+      12,
+      3,
+      40,
+      25,
+    ]);
     expect(summary.scannedBytes, 50);
   });
 
@@ -695,10 +696,10 @@ void main() {
         ],
       );
 
-      expect(
-        summary.largestItems.map((e) => e.name).toList(),
-        ['Xcode.dmg', 'archive'],
-      );
+      expect(summary.largestItems.map((e) => e.name).toList(), [
+        'Xcode.dmg',
+        'archive',
+      ]);
       expect(summary.largestItems.first.sizeBytes, 12);
       expect(summary.largestItems.first.isDirectory, isFalse);
     });

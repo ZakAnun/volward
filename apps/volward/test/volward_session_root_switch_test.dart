@@ -30,10 +30,7 @@ class RecordingSession extends VolwardSession {
   }
 }
 
-Future<void> waitUntil(
-  bool Function() done, {
-  int maxTicks = 20,
-}) async {
+Future<void> waitUntil(bool Function() done, {int maxTicks = 20}) async {
   for (var tick = 0; tick < maxTicks && !done(); tick++) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }

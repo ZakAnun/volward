@@ -408,22 +408,22 @@ void main() {
   test('method channel provider maps a successful payload', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      expect(call.method, 'loadOverview');
-      expect(call.arguments, {'selectedPath': '/Users/me'});
-      return <String, Object?>{
-        'selectedVolumeId': '/',
-        'volumes': <Object?>[
-          <String, Object?>{
-            'id': '/',
-            'name': 'Macintosh HD',
-            'rootPath': '/',
-            'totalBytes': 100,
-            'availableBytes': 40,
-          },
-        ],
-        'locations': <Object?>[],
-      };
-    });
+          expect(call.method, 'loadOverview');
+          expect(call.arguments, {'selectedPath': '/Users/me'});
+          return <String, Object?>{
+            'selectedVolumeId': '/',
+            'volumes': <Object?>[
+              <String, Object?>{
+                'id': '/',
+                'name': 'Macintosh HD',
+                'rootPath': '/',
+                'totalBytes': 100,
+                'availableBytes': 40,
+              },
+            ],
+            'locations': <Object?>[],
+          };
+        });
 
     final result = await const MethodChannelStorageOverviewProvider().load(
       selectedPath: '/Users/me',
@@ -438,8 +438,8 @@ void main() {
     () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (_) async {
-        throw PlatformException(code: 'capacity_unavailable');
-      });
+            throw PlatformException(code: 'capacity_unavailable');
+          });
 
       final result = await const MethodChannelStorageOverviewProvider().load();
 
@@ -468,8 +468,8 @@ void main() {
     () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (_) async {
-        throw MissingPluginException();
-      });
+            throw MissingPluginException();
+          });
 
       final result = await const MethodChannelStorageOverviewProvider().load();
 

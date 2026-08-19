@@ -34,7 +34,8 @@ class _AppleButtonState extends State<AppleButton> {
     BorderSide? border,
     EdgeInsets padding,
     TextStyle textStyle,
-  ) _style(BuildContext context) {
+  )
+  _style(BuildContext context) {
     final v = context.volward;
     switch (widget.variant) {
       case AppleButtonVariant.primary:
@@ -79,7 +80,8 @@ class _AppleButtonState extends State<AppleButton> {
   Widget build(BuildContext context) {
     final (bg, fg, border, padding, textStyle) = _style(context);
     final enabled = widget.onPressed != null;
-    final radius = widget.variant == AppleButtonVariant.pearl ||
+    final radius =
+        widget.variant == AppleButtonVariant.pearl ||
             widget.variant == AppleButtonVariant.darkUtility
         ? AppleRadius.sm
         : AppleRadius.pill;
@@ -104,8 +106,9 @@ class _AppleButtonState extends State<AppleButton> {
           child: Padding(
             padding: padding,
             child: Row(
-              mainAxisSize:
-                  widget.expanded ? MainAxisSize.max : MainAxisSize.min,
+              mainAxisSize: widget.expanded
+                  ? MainAxisSize.max
+                  : MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (widget.icon != null) ...[

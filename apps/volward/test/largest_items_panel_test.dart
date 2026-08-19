@@ -110,17 +110,16 @@ void main() {
   });
 
   testWidgets('a partial size is marked approximate', (tester) async {
-    await pumpPanel(tester,
-        summary: summaryWithItems(items: const [archiveDir]));
+    await pumpPanel(
+      tester,
+      summary: summaryWithItems(items: const [archiveDir]),
+    );
 
     expect(find.textContaining('+'), findsOneWidget);
   });
 
   testWidgets('never scanned shows the empty hint', (tester) async {
-    await pumpPanel(
-      tester,
-      summary: summaryWithItems(hasCompletedScan: false),
-    );
+    await pumpPanel(tester, summary: summaryWithItems(hasCompletedScan: false));
 
     expect(find.byKey(LargestItemsPanel.emptyKey), findsOneWidget);
     expect(find.text('Shown after scanning'), findsOneWidget);
@@ -202,10 +201,14 @@ void main() {
       summary: summaryWithItems(items: many),
       maxItems: 3,
     );
-    expect(find.byKey(LargestItemsPanel.rowKey('/Users/me/item2')),
-        findsOneWidget);
     expect(
-        find.byKey(LargestItemsPanel.rowKey('/Users/me/item3')), findsNothing);
+      find.byKey(LargestItemsPanel.rowKey('/Users/me/item2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(LargestItemsPanel.rowKey('/Users/me/item3')),
+      findsNothing,
+    );
 
     await pumpPanel(
       tester,

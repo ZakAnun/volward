@@ -54,10 +54,7 @@ bool _volumeContainsPath(StorageVolumeInfo volume, String normalizedPath) {
 }
 
 class StorageHomeCategorySummary {
-  const StorageHomeCategorySummary({
-    required this.name,
-    required this.count,
-  });
+  const StorageHomeCategorySummary({required this.name, required this.count});
 
   final String name;
   final int count;
@@ -129,10 +126,12 @@ class StorageHomeSummary {
     StorageLocationInfo? pinnedCustomLocation,
     List<StorageLocationInfo> recentCustomLocations = const [],
   }) {
-    final normalizedTarget =
-        targetPath.isEmpty ? '' : ScanTreeBuilder.normalizeRoot(targetPath);
+    final normalizedTarget = targetPath.isEmpty
+        ? ''
+        : ScanTreeBuilder.normalizeRoot(targetPath);
     final snapshot = matchingSnapshot;
-    final snapshotMatches = normalizedTarget.isNotEmpty &&
+    final snapshotMatches =
+        normalizedTarget.isNotEmpty &&
         snapshot != null &&
         _sameFsPath(snapshot.tree?.path ?? '', normalizedTarget);
 
@@ -199,8 +198,8 @@ class StorageHomeSummary {
 
     final boundedProgress =
         scanning && scanProgress != null && scanProgress.isFinite
-            ? math.min(scanProgress.clamp(0, 1), 0.99).toDouble()
-            : null;
+        ? math.min(scanProgress.clamp(0, 1), 0.99).toDouble()
+        : null;
 
     final completedScan =
         snapshotMatches && snapshot.stats['scan_state']?.toString() == 'Done';
@@ -237,8 +236,11 @@ class StorageHomeSummary {
       }
       final filesSeen =
           _nonNegativeInt(_finiteInt(snapshot.stats['files_seen'])) ?? 0;
-      final total = [filesSeen, snapshot.filesInSnapshot, namedSum + leftover]
-          .fold<int>(0, math.max);
+      final total = [
+        filesSeen,
+        snapshot.filesInSnapshot,
+        namedSum + leftover,
+      ].fold<int>(0, math.max);
       if ((completedScan || filesSeen > 0) && total > namedSum) {
         categories.add(
           StorageHomeCategorySummary(
@@ -249,8 +251,9 @@ class StorageHomeSummary {
       }
     }
 
-    final treeBytes =
-        snapshotMatches ? _nonNegativeInt(snapshot.tree?.sizeBytes) : null;
+    final treeBytes = snapshotMatches
+        ? _nonNegativeInt(snapshot.tree?.sizeBytes)
+        : null;
     final scannedBytes = treeBytes == 0 && !completedScan ? null : treeBytes;
 
     return StorageHomeSummary(
@@ -260,8 +263,9 @@ class StorageHomeSummary {
       scanning: scanning,
       hasCompletedScan: completedScan,
       reclaimableBytes: reclaimableBytes,
-      lastScannedAtMs:
-          snapshotMatches ? _nonNegativeInt(snapshot.scannedAtMs) : null,
+      lastScannedAtMs: snapshotMatches
+          ? _nonNegativeInt(snapshot.scannedAtMs)
+          : null,
       scanProgress: boundedProgress,
       scanPhase: scanning ? scanPhase : null,
       scannedBytes: scannedBytes,

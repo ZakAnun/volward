@@ -7,34 +7,34 @@ import 'package:volward/widgets/scan_filter_bar.dart';
 void main() {
   group('mergeSubtreeIntoSnapshot', () {
     Map<String, dynamic> baseSnapshot() => {
-          'snapshot_id': 'preview',
-          'entries': <Map<String, dynamic>>[],
-          'tree': {
-            'name': 'root',
-            'path': '/root',
+      'snapshot_id': 'preview',
+      'entries': <Map<String, dynamic>>[],
+      'tree': {
+        'name': 'root',
+        'path': '/root',
+        'is_dir': true,
+        'size_bytes': 0,
+        'scanned': false,
+        'children': [
+          {
+            'name': 'Documents',
+            'path': '/root/Documents',
             'is_dir': true,
             'size_bytes': 0,
             'scanned': false,
-            'children': [
-              {
-                'name': 'Documents',
-                'path': '/root/Documents',
-                'is_dir': true,
-                'size_bytes': 0,
-                'scanned': false,
-                'children': <Map<String, dynamic>>[],
-              },
-              {
-                'name': 'Downloads',
-                'path': '/root/Downloads',
-                'is_dir': true,
-                'size_bytes': 0,
-                'scanned': false,
-                'children': <Map<String, dynamic>>[],
-              },
-            ],
+            'children': <Map<String, dynamic>>[],
           },
-        };
+          {
+            'name': 'Downloads',
+            'path': '/root/Downloads',
+            'is_dir': true,
+            'size_bytes': 0,
+            'scanned': false,
+            'children': <Map<String, dynamic>>[],
+          },
+        ],
+      },
+    };
 
     test('replaces only the targeted subtree, leaving siblings untouched', () {
       final merged = mergeSubtreeIntoSnapshot(
@@ -240,8 +240,7 @@ void main() {
       );
     });
 
-    test(
-        'merging at the root path updates root fields but preserves children '
+    test('merging at the root path updates root fields but preserves children '
         'the checkpoint has not rediscovered yet (checkpoint case)', () {
       final merged = mergeSubtreeIntoSnapshot(
         snapshot: baseSnapshot(),
@@ -269,8 +268,7 @@ void main() {
       expect(children.any((c) => c['path'] == '/root/Downloads'), isTrue);
     });
 
-    test(
-        'keeps an already-resolved child (e.g. a completed Wave-2 peek scan) '
+    test('keeps an already-resolved child (e.g. a completed Wave-2 peek scan) '
         'instead of regressing it to a less-complete checkpoint view', () {
       final snapshot = baseSnapshot();
       (snapshot['tree'] as Map)['children'] = [
@@ -321,9 +319,11 @@ void main() {
       );
 
       final tree = merged['tree'] as Map<String, dynamic>;
-      final documents = (tree['children'] as List).firstWhere(
-        (c) => c['path'] == '/root/Documents',
-      ) as Map;
+      final documents =
+          (tree['children'] as List).firstWhere(
+                (c) => c['path'] == '/root/Documents',
+              )
+              as Map;
       expect(documents['size_bytes'], 5000, reason: 'peeked data preserved');
       expect((documents['children'] as List), hasLength(1));
     });
@@ -387,8 +387,9 @@ void main() {
 
         final documents =
             ((merged['tree'] as Map)['children'] as List).firstWhere(
-          (c) => c['path'] == '/root/Documents',
-        ) as Map;
+                  (c) => c['path'] == '/root/Documents',
+                )
+                as Map;
         expect(
           documents['size_bytes'],
           800,
@@ -453,8 +454,7 @@ void main() {
       },
     );
 
-    test(
-        'when a peeked dir loses the size race, children are upserted so the '
+    test('when a peeked dir loses the size race, children are upserted so the '
         'peeked grandchild is not wiped by a partial checkpoint', () {
       final snapshot = baseSnapshot();
       (snapshot['tree'] as Map)['children'] = [
@@ -513,8 +513,9 @@ void main() {
 
       final documents =
           ((merged['tree'] as Map)['children'] as List).firstWhere(
-        (c) => c['path'] == '/root/Documents',
-      ) as Map;
+                (c) => c['path'] == '/root/Documents',
+              )
+              as Map;
       final kids = documents['children'] as List;
       expect(documents['scanned'], isTrue);
       expect(documents['size_bytes'], 500);
@@ -525,8 +526,7 @@ void main() {
       expect(kids.any((c) => c['path'] == '/root/Documents/new.txt'), isTrue);
     });
 
-    test(
-        'preview dirs (scanned:false) wholesale-adopt checkpoint children '
+    test('preview dirs (scanned:false) wholesale-adopt checkpoint children '
         'without deep-preserving stale preview-only grandchildren', () {
       final snapshot = baseSnapshot();
       (snapshot['tree'] as Map)['children'] = [
@@ -580,8 +580,9 @@ void main() {
 
       final documents =
           ((merged['tree'] as Map)['children'] as List).firstWhere(
-        (c) => c['path'] == '/root/Documents',
-      ) as Map;
+                (c) => c['path'] == '/root/Documents',
+              )
+              as Map;
       final kids = documents['children'] as List;
       expect(documents['scanned'], isTrue);
       expect(kids, hasLength(1));
@@ -696,12 +697,16 @@ void main() {
         );
 
         final tree = merged['tree'] as Map<String, dynamic>;
-        final documents = (tree['children'] as List).firstWhere(
-          (c) => c['path'] == '/root/Documents',
-        ) as Map;
-        final subFolder = (documents['children'] as List).firstWhere(
-          (c) => c['path'] == '/root/Documents/SubFolder',
-        ) as Map;
+        final documents =
+            (tree['children'] as List).firstWhere(
+                  (c) => c['path'] == '/root/Documents',
+                )
+                as Map;
+        final subFolder =
+            (documents['children'] as List).firstWhere(
+                  (c) => c['path'] == '/root/Documents/SubFolder',
+                )
+                as Map;
 
         expect(
           documents['scanned'],
@@ -747,15 +752,15 @@ void main() {
 
         final documents =
             ((merged['tree'] as Map)['children'] as List).firstWhere(
-          (c) => c['path'] == '/root/Documents',
-        ) as Map;
+                  (c) => c['path'] == '/root/Documents',
+                )
+                as Map;
         expect(documents['size_bytes'], 200);
         expect(documents['scanned'], isTrue);
       },
     );
 
-    test(
-        'an authoritative (peek) merge trusts the new data wholesale, even '
+    test('an authoritative (peek) merge trusts the new data wholesale, even '
         'when it is smaller than the old data — e.g. a file was deleted', () {
       final snapshot = baseSnapshot();
       (snapshot['tree'] as Map)['children'] = [
@@ -814,8 +819,9 @@ void main() {
 
       final documents =
           ((merged['tree'] as Map)['children'] as List).firstWhere(
-        (c) => c['path'] == '/root/Documents',
-      ) as Map;
+                (c) => c['path'] == '/root/Documents',
+              )
+              as Map;
       expect(
         documents['size_bytes'],
         3000,
@@ -830,8 +836,7 @@ void main() {
       );
     });
 
-    test(
-        'an authoritative merge drops stale entries whose path was under the '
+    test('an authoritative merge drops stale entries whose path was under the '
         'peeked subtree but is absent from the fresh peek result', () {
       final snapshot = baseSnapshot();
       snapshot['entries'] = [

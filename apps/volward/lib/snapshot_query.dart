@@ -3,10 +3,10 @@ import 'scan_tree.dart';
 import 'widgets/scan_filter_bar.dart';
 
 String rustSortModeName(ScanSortMode mode) => switch (mode) {
-      ScanSortMode.sizeDesc => 'size_desc',
-      ScanSortMode.sizeAsc => 'size_asc',
-      ScanSortMode.nameAsc => 'name_asc',
-    };
+  ScanSortMode.sizeDesc => 'size_desc',
+  ScanSortMode.sizeAsc => 'size_asc',
+  ScanSortMode.nameAsc => 'name_asc',
+};
 
 // ---------------------------------------------------------------------------
 // SnapshotNodeRecord — lightweight node descriptor for catalog query results.
@@ -60,35 +60,35 @@ class SnapshotNodeRecord {
       );
 
   factory SnapshotNodeRecord.fromTree(ScanTreeNode node) => SnapshotNodeRecord(
-        path: node.path,
-        name: node.name,
-        isDirectory: node.isDirectory,
-        sizeBytes: node.displayBytes,
-        entryId: node.entryId,
-        category: node.category,
-        deletable: node.deletable,
-        scanned: node.scanned,
-        categoryMask: node.categoryMask,
-        deletableCategoryMask: node.deletableCategoryMask,
-        deletableFileCount: node.deletableFileCount,
-      );
+    path: node.path,
+    name: node.name,
+    isDirectory: node.isDirectory,
+    sizeBytes: node.displayBytes,
+    entryId: node.entryId,
+    category: node.category,
+    deletable: node.deletable,
+    scanned: node.scanned,
+    categoryMask: node.categoryMask,
+    deletableCategoryMask: node.deletableCategoryMask,
+    deletableFileCount: node.deletableFileCount,
+  );
 
   /// Converts back to a minimal [ScanTreeNode] for code paths that still
   /// require the tree type (e.g. column navigation chain).
   ScanTreeNode toScanTreeNode() => ScanTreeNode(
-        name: name,
-        path: path,
-        isDirectory: isDirectory,
-        sizeBytes: sizeBytes,
-        entryId: entryId,
-        category: category,
-        deletable: deletable,
-        subtreeBytes: sizeBytes,
-        categoryMask: categoryMask,
-        deletableCategoryMask: deletableCategoryMask,
-        deletableFileCount: deletableFileCount,
-        scanned: scanned,
-      );
+    name: name,
+    path: path,
+    isDirectory: isDirectory,
+    sizeBytes: sizeBytes,
+    entryId: entryId,
+    category: category,
+    deletable: deletable,
+    subtreeBytes: sizeBytes,
+    categoryMask: categoryMask,
+    deletableCategoryMask: deletableCategoryMask,
+    deletableFileCount: deletableFileCount,
+    scanned: scanned,
+  );
 
   int get displayBytes => sizeBytes;
 
@@ -128,13 +128,13 @@ class SnapshotQueryKey {
   final ScanSortMode sortMode;
 
   SnapshotQueryKey copyWith({String? path}) => SnapshotQueryKey(
-        snapshotId: snapshotId,
-        version: version,
-        path: path ?? this.path,
-        categoryFilter: categoryFilter,
-        deletableOnly: deletableOnly,
-        sortMode: sortMode,
-      );
+    snapshotId: snapshotId,
+    version: version,
+    path: path ?? this.path,
+    categoryFilter: categoryFilter,
+    deletableOnly: deletableOnly,
+    sortMode: sortMode,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -148,13 +148,13 @@ class SnapshotQueryKey {
 
   @override
   int get hashCode => Object.hash(
-        snapshotId,
-        version,
-        path,
-        categoryFilter,
-        deletableOnly,
-        sortMode,
-      );
+    snapshotId,
+    version,
+    path,
+    categoryFilter,
+    deletableOnly,
+    sortMode,
+  );
 }
 
 class SnapshotQueryResult {

@@ -260,7 +260,7 @@ Widget _shell(
   VolwardThemeSettings themeSettings,
   AppUpdater updater, {
   Future<String?> Function({required String confirmButtonText})?
-      directoryPicker,
+  directoryPicker,
   StorageOverviewProvider storageOverviewProvider =
       const MethodChannelStorageOverviewProvider(),
 }) {
@@ -693,112 +693,108 @@ void main() {
     expect(find.byType(StorageStewardHome), findsOneWidget);
   });
 
-  testWidgets(
-    'recent custom folders stay reachable from the sidebar menu',
-    (tester) async {
-      final picked = ['/work/archive', '/work/photos'];
-      final session = _Session(setInitialRoot: false)
-        ..setScanRoots(['/home'])
-        ..sessionStateFileForTest = File(
-          '${Directory.systemTemp.path}/volward-home-pin-custom.json',
-        )
-        ..rootExistsForTest = ((_) => true);
-      final themeSettings = VolwardThemeSettings();
-      final updater = AppUpdater.test();
-      addTearDown(themeSettings.dispose);
-      addTearDown(updater.dispose);
+  testWidgets('recent custom folders stay reachable from the sidebar menu', (
+    tester,
+  ) async {
+    final picked = ['/work/archive', '/work/photos'];
+    final session = _Session(setInitialRoot: false)
+      ..setScanRoots(['/home'])
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pin-custom.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
 
-      await _pumpHome(
-        tester,
-        _shell(
-          session,
-          themeSettings,
-          updater,
-          directoryPicker: ({required confirmButtonText}) async =>
-              picked.removeAt(0),
-          storageOverviewProvider: _OverviewProvider(),
-        ),
-      );
-      await tester.pump();
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        directoryPicker: ({required confirmButtonText}) async =>
+            picked.removeAt(0),
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+    await tester.pump();
 
-      await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
-      await tester.pump();
-      await tester.pump();
+    await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
+    await tester.pump();
+    await tester.pump();
 
-      expect(
-        find.byKey(const ValueKey('storage-target-custom:/work/archive')),
-        findsOneWidget,
-      );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom:/work/archive')),
+      findsOneWidget,
+    );
 
-      await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
-      await tester.pump();
-      await tester.pump();
+    await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
+    await tester.pump();
+    await tester.pump();
 
-      expect(
-        find.byKey(const ValueKey('storage-target-custom:/work/photos')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('storage-target-custom:/work/archive')),
-        findsNothing,
-      );
-      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
-      expect(
-        find.byKey(const ValueKey('storage-target-menu-custom:/work/photos')),
-        findsOneWidget,
-      );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom:/work/photos')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom:/work/archive')),
+      findsNothing,
+    );
+    expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
+    expect(
+      find.byKey(const ValueKey('storage-target-menu-custom:/work/photos')),
+      findsOneWidget,
+    );
 
-      await tester.tap(find.byKey(const ValueKey('storage-target-home')));
-      await tester.pump();
-      await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('storage-target-home')));
+    await tester.pump();
+    await tester.pump();
 
-      expect(
-        tester
-            .widget<StorageStewardHome>(find.byType(StorageStewardHome))
-            .summary
-            .selectedLocation
-            ?.path,
-        '/home',
-      );
-      expect(
-        find.byKey(const ValueKey('storage-target-custom:/work/archive')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('storage-target-custom:/work/photos')),
-        findsNothing,
-      );
-      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsOneWidget);
+    expect(
+      tester
+          .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+          .summary
+          .selectedLocation
+          ?.path,
+      '/home',
+    );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom:/work/archive')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('storage-target-custom:/work/photos')),
+      findsNothing,
+    );
+    expect(find.byKey(StorageStewardHome.recentFoldersKey), findsOneWidget);
 
-      await tester.tap(find.byKey(StorageStewardHome.recentFoldersKey));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey('storage-recent-folder-option-custom:/work/archive'),
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(find.byKey(StorageStewardHome.recentFoldersKey));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey('storage-recent-folder-option-custom:/work/archive'),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(session.switchedRoot, '/work/archive');
-      expect(
-        tester
-            .widget<StorageStewardHome>(find.byType(StorageStewardHome))
-            .summary
-            .selectedLocation
-            ?.path,
-        '/work/archive',
-      );
-      expect(session.recentCustomRoots, [
-        '/work/archive',
-        '/work/photos',
-      ]);
-      expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
-      expect(
-        find.byKey(const ValueKey('storage-target-menu-custom:/work/archive')),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(session.switchedRoot, '/work/archive');
+    expect(
+      tester
+          .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+          .summary
+          .selectedLocation
+          ?.path,
+      '/work/archive',
+    );
+    expect(session.recentCustomRoots, ['/work/archive', '/work/photos']);
+    expect(find.byKey(StorageStewardHome.recentFoldersKey), findsNothing);
+    expect(
+      find.byKey(const ValueKey('storage-target-menu-custom:/work/archive')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('custom target hides prior capacity while overview reloads', (
     tester,
