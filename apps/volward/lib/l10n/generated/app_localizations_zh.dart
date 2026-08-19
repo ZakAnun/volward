@@ -381,9 +381,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsUpdateNow => '立即更新';
 
   @override
-  String get settingsUpdateLater => '稍后';
-
-  @override
   String settingsDownloadingUpdate(int percent) {
     return '正在下载更新… $percent%';
   }
@@ -412,19 +409,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateReadyDismissTooltip => '暂不更新';
-
-  @override
-  String updateAvailableTitle(Object version) {
-    return '发现新版本 — $version';
-  }
-
-  @override
-  String updateAvailableMessage(Object notes) {
-    return '$notes';
-  }
-
-  @override
-  String get updateNotesUnavailable => '有新的 Volward 版本可以安装。';
 
   @override
   String get homeOverviewLive => '实时磁盘数据';

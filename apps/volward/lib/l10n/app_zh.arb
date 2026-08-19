@@ -234,7 +234,6 @@
     }
   },
   "settingsUpdateNow": "立即更新",
-  "settingsUpdateLater": "稍后",
   "settingsDownloadingUpdate": "正在下载更新… {percent}%",
   "@settingsDownloadingUpdate": {
     "placeholders": {
@@ -260,19 +259,6 @@
   "settingsUpdateReady": "新版本已下载完成，可随时更新。",
   "updateReadyAction": "完成更新",
   "updateReadyDismissTooltip": "暂不更新",
-  "updateAvailableTitle": "发现新版本 — {version}",
-  "@updateAvailableTitle": {
-    "placeholders": {
-      "version": {}
-    }
-  },
-  "updateAvailableMessage": "{notes}",
-  "@updateAvailableMessage": {
-    "placeholders": {
-      "notes": {}
-    }
-  },
-  "updateNotesUnavailable": "有新的 Volward 版本可以安装。",
   "homeOverviewLive": "实时磁盘数据",
   "homeOverviewCached": "缓存磁盘数据",
   "homeOverviewLoading": "正在读取磁盘…",

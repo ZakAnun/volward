@@ -56,8 +56,6 @@ class AppUpdater extends ChangeNotifier {
   UpdateStatus get status => _status;
 
   bool _dismissedThisSession = false;
-  bool get shouldPromptOnStartup =>
-      !_dismissedThisSession && _status.phase == UpdatePhase.available;
 
   /// True while a downloaded package is waiting and the user has not dismissed
   /// the home-page pill this session.
@@ -74,20 +72,6 @@ class AppUpdater extends ChangeNotifier {
   String? _cachedLocalVersion;
   Future<String> localVersion() async {
     return _cachedLocalVersion ??= await _localVersionReader.currentVersion();
-  }
-
-  void dismissAvailable() {
-    _dismissedThisSession = true;
-    if (_status.phase == UpdatePhase.available) {
-      _setStatus(UpdateStatus.idle);
-    }
-  }
-
-  void dismissErrorPrompt() {
-    _dismissedThisSession = true;
-    if (_status.phase == UpdatePhase.error) {
-      _setStatus(UpdateStatus.idle);
-    }
   }
 
   Future<void> check({required bool userInitiated}) async {

@@ -404,9 +404,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsUpdateNow => 'Update now';
 
   @override
-  String get settingsUpdateLater => 'Later';
-
-  @override
   String settingsDownloadingUpdate(int percent) {
     return 'Downloading update… $percent%';
   }
@@ -435,20 +432,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updateReadyDismissTooltip => 'Dismiss';
-
-  @override
-  String updateAvailableTitle(Object version) {
-    return 'Update available — $version';
-  }
-
-  @override
-  String updateAvailableMessage(Object notes) {
-    return '$notes';
-  }
-
-  @override
-  String get updateNotesUnavailable =>
-      'A newer Volward release is ready to install.';
 
   @override
   String get homeOverviewLive => 'Live disk data';

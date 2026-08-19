@@ -752,12 +752,6 @@ abstract class AppLocalizations {
   /// **'Update now'**
   String get settingsUpdateNow;
 
-  /// No description provided for @settingsUpdateLater.
-  ///
-  /// In en, this message translates to:
-  /// **'Later'**
-  String get settingsUpdateLater;
-
   /// No description provided for @settingsDownloadingUpdate.
   ///
   /// In en, this message translates to:
@@ -805,24 +799,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dismiss'**
   String get updateReadyDismissTooltip;
-
-  /// No description provided for @updateAvailableTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Update available — {version}'**
-  String updateAvailableTitle(Object version);
-
-  /// No description provided for @updateAvailableMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'{notes}'**
-  String updateAvailableMessage(Object notes);
-
-  /// No description provided for @updateNotesUnavailable.
-  ///
-  /// In en, this message translates to:
-  /// **'A newer Volward release is ready to install.'**
-  String get updateNotesUnavailable;
 
   /// No description provided for @homeOverviewLive.
   ///

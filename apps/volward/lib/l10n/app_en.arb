@@ -234,7 +234,6 @@
     }
   },
   "settingsUpdateNow": "Update now",
-  "settingsUpdateLater": "Later",
   "settingsDownloadingUpdate": "Downloading update… {percent}%",
   "@settingsDownloadingUpdate": {
     "placeholders": {
@@ -260,19 +259,6 @@
   "settingsUpdateReady": "A new version is downloaded and ready.",
   "updateReadyAction": "Complete update",
   "updateReadyDismissTooltip": "Dismiss",
-  "updateAvailableTitle": "Update available — {version}",
-  "@updateAvailableTitle": {
-    "placeholders": {
-      "version": {}
-    }
-  },
-  "updateAvailableMessage": "{notes}",
-  "@updateAvailableMessage": {
-    "placeholders": {
-      "notes": {}
-    }
-  },
-  "updateNotesUnavailable": "A newer Volward release is ready to install.",
   "homeOverviewLive": "Live disk data",
   "homeOverviewCached": "Cached disk data",
   "homeOverviewLoading": "Reading disk…",

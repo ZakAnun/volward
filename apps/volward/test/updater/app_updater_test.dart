@@ -288,22 +288,6 @@ void main() {
     },
   );
 
-  test('dismissAvailable suppresses startup prompt flag', () async {
-    final updater = buildUpdater();
-    await updater.check(userInitiated: false);
-    expect(updater.shouldPromptOnStartup, isTrue);
-    updater.dismissAvailable();
-    expect(updater.shouldPromptOnStartup, isFalse);
-    expect(updater.status.phase, UpdatePhase.idle);
-  });
-
-  test('dismissAvailable does not wipe a non-available phase', () async {
-    final updater = buildUpdater(local: '0.0.2');
-    await updater.check(userInitiated: true);
-    updater.dismissAvailable();
-    expect(updater.status.phase, UpdatePhase.upToDate);
-  });
-
   test('openDownloadPage opens html_url', () async {
     final urls = _FakeUrls();
     final updater = buildUpdater(urls: urls);
@@ -342,13 +326,6 @@ void main() {
       expect(updater.status.failureKind, UpdateFailureKind.unsupportedRuntime);
     },
   );
-
-  test('dismissErrorPrompt clears an error for the session', () async {
-    final updater = buildUpdater(installer: const UnsupportedInstaller());
-    await updater.check(userInitiated: false);
-    updater.dismissErrorPrompt();
-    expect(updater.status.phase, UpdatePhase.idle);
-  });
 
   test('downloadOnly parks at readyToInstall without installing', () async {
     final installer = _FakeInstaller();

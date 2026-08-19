@@ -16,7 +16,6 @@ import 'settings_page.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
 import 'updater/app_updater.dart';
-import 'updater/update_models.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
 import 'widgets/volward_logo.dart';
@@ -28,7 +27,7 @@ import 'snapshot_query.dart';
 import 'snapshot_view_cache.dart';
 import 'widgets/storage_steward_home.dart';
 import 'widgets/top_toast.dart';
-import 'widgets/update_available_dialog.dart';
+import 'widgets/update_ready_pill.dart';
 
 /// Returns the path that the refresh button should target (Design §6.1).
 ///
@@ -174,7 +173,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _subscribedSession.addListener(_onSessionChanged);
     _scheduleSessionStartup(_subscribedSession);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_maybeCheckForUpdates());
+      unawaited(widget.updater.checkAndPrefetch());
     });
   }
 
@@ -341,25 +340,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _storageOverview = const StorageOverviewData.loading();
     if (_startupRootGate.isCompleted) {
       unawaited(_loadStorageOverview(_homeTargetPath ?? _scanRootPath()));
-    }
-  }
-
-  Future<void> _maybeCheckForUpdates() async {
-    await widget.updater.check(userInitiated: false);
-    if (!mounted) return;
-    if (widget.updater.shouldPromptOnStartup) {
-      await showUpdateAvailableDialog(
-        context: context,
-        updater: widget.updater,
-      );
-      return;
-    }
-    final status = widget.updater.status;
-    if (status.phase == UpdatePhase.error &&
-        (status.failureKind == UpdateFailureKind.noMatchingAsset ||
-            status.failureKind == UpdateFailureKind.integrity ||
-            status.failureKind == UpdateFailureKind.unsupportedRuntime)) {
-      await showUpdateFailureDialog(context: context, updater: widget.updater);
     }
   }
 
@@ -1922,94 +1902,106 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       backgroundColor: browsing
           ? context.volward.canvasParchment
           : StorageStewardHome.backgroundColor,
-      body: Column(
+      body: Stack(
         children: [
-          if (browsing) _buildTopNav(context),
-          Expanded(
-            child: !browsing
-                ? ValueListenableBuilder<ScanProgressViewState>(
-                    valueListenable: _s.scanProgressNotifier,
-                    builder: (context, progress, _) => StorageStewardHome(
-                      summary: _homeSummary(progress),
-                      onBrowse: () => unawaited(_onHomeBrowse()),
-                      onChooseFolder: () => unawaited(_pickHomeFolder()),
-                      onSelectTarget: (location) =>
-                          unawaited(_prepareHomeTarget(location.path)),
-                      onScan: _scanStartAction,
-                      onCancelScan: _s.scanning ? _s.cancelScan : null,
-                      onOpenSettings: _openSettings,
-                      onSelectCategory: _openHomeCategory,
-                      onOpenItem: (item) =>
-                          unawaited(_onHomeBrowse(focusPath: item.path)),
-                    ),
-                  )
-                : (restoring || loadingTarget) && !hasResults
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Keep the startup shell (target picker, scan actions)
-                      // visible instead of swapping the whole page for a
-                      // full-screen skeleton — the folder picker stays usable
-                      // while the browser pane is still loading.
-                      _buildScanSection(context),
-                      Expanded(
-                        child: _buildRestoreLoading(
-                          context,
-                          label: restoring
-                              ? context.l10n.resultsRestoringPreviousScan
-                              : context.l10n.scanColumnPreparingFolder,
+          Column(
+            children: [
+              if (browsing) _buildTopNav(context),
+              Expanded(
+                child: !browsing
+                    ? ValueListenableBuilder<ScanProgressViewState>(
+                        valueListenable: _s.scanProgressNotifier,
+                        builder: (context, progress, _) => StorageStewardHome(
+                          summary: _homeSummary(progress),
+                          onBrowse: () => unawaited(_onHomeBrowse()),
+                          onChooseFolder: () => unawaited(_pickHomeFolder()),
+                          onSelectTarget: (location) =>
+                              unawaited(_prepareHomeTarget(location.path)),
+                          onScan: _scanStartAction,
+                          onCancelScan: _s.scanning ? _s.cancelScan : null,
+                          onOpenSettings: _openSettings,
+                          onSelectCategory: _openHomeCategory,
+                          onOpenItem: (item) =>
+                              unawaited(_onHomeBrowse(focusPath: item.path)),
                         ),
-                      ),
-                    ],
-                  )
-                : hasResults
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildCompactResultsChrome(
-                        context,
-                        matchingCount: matchingCount,
-                        displayTree: displayTree,
-                      ),
-                      Expanded(
-                        child: ListenableBuilder(
-                          listenable: _columnNavTick,
-                          builder: (context, _) {
-                            final focus = scanColumnFocusNode(_columnChain);
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: _padExpanded(
-                                    _buildResultsBrowser(
-                                      context,
-                                      displayTree,
-                                      matchingCount,
+                      )
+                    : (restoring || loadingTarget) && !hasResults
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Keep the startup shell (target picker, scan actions)
+                          // visible instead of swapping the whole page for a
+                          // full-screen skeleton — the folder picker stays usable
+                          // while the browser pane is still loading.
+                          _buildScanSection(context),
+                          Expanded(
+                            child: _buildRestoreLoading(
+                              context,
+                              label: restoring
+                                  ? context.l10n.resultsRestoringPreviousScan
+                                  : context.l10n.scanColumnPreparingFolder,
+                            ),
+                          ),
+                        ],
+                      )
+                    : hasResults
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildCompactResultsChrome(
+                            context,
+                            matchingCount: matchingCount,
+                            displayTree: displayTree,
+                          ),
+                          Expanded(
+                            child: ListenableBuilder(
+                              listenable: _columnNavTick,
+                              builder: (context, _) {
+                                final focus = scanColumnFocusNode(_columnChain);
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(
+                                      child: _padExpanded(
+                                        _buildResultsBrowser(
+                                          context,
+                                          displayTree,
+                                          matchingCount,
+                                        ),
+                                        padding: const EdgeInsets.fromLTRB(
+                                          AppleSpacing.lg,
+                                          0,
+                                          AppleSpacing.lg,
+                                          AppleSpacing.xxs,
+                                        ),
+                                      ),
                                     ),
-                                    padding: const EdgeInsets.fromLTRB(
-                                      AppleSpacing.lg,
-                                      0,
-                                      AppleSpacing.lg,
-                                      AppleSpacing.xxs,
-                                    ),
-                                  ),
-                                ),
-                                _buildItemPreview(context, focus),
-                              ],
-                            );
-                          },
-                        ),
+                                    _buildItemPreview(context, focus),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      )
+                    : CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(child: _buildScanSection(context)),
+                          const SliverToBoxAdapter(child: SizedBox(height: 72)),
+                        ],
                       ),
-                    ],
-                  )
-                : CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(child: _buildScanSection(context)),
-                      const SliverToBoxAdapter(child: SizedBox(height: 72)),
-                    ],
-                  ),
+              ),
+              if (_contentMode == _HomeContentMode.browse)
+                _buildStickyBar(context),
+            ],
           ),
-          if (_contentMode == _HomeContentMode.browse) _buildStickyBar(context),
+          Positioned(
+            right: 16,
+            // Browse mode parks a ~56px sticky bar on the bottom edge.
+            bottom: _contentMode == _HomeContentMode.browse ? 72 : 16,
+            child: UpdateReadyPill(updater: widget.updater),
+          ),
         ],
       ),
     );
