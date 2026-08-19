@@ -59,6 +59,18 @@ class AppUpdater extends ChangeNotifier {
   bool get shouldPromptOnStartup =>
       !_dismissedThisSession && _status.phase == UpdatePhase.available;
 
+  /// True while a downloaded package is waiting and the user has not dismissed
+  /// the home-page pill this session.
+  bool get showsReadyBanner =>
+      !_dismissedThisSession && _status.phase == UpdatePhase.readyToInstall;
+
+  /// Hides the home-page pill for this session. Deliberately leaves [_status]
+  /// alone: the downloaded package stays installable from the settings page.
+  void dismissReadyToInstall() {
+    _dismissedThisSession = true;
+    notifyListeners();
+  }
+
   String? _cachedLocalVersion;
   Future<String> localVersion() async {
     return _cachedLocalVersion ??= await _localVersionReader.currentVersion();
@@ -174,16 +186,18 @@ class AppUpdater extends ChangeNotifier {
     }
   }
 
-  Future<void> downloadAndInstall() async {
+  /// Fetches and verifies the package, then parks at
+  /// [UpdatePhase.readyToInstall]. Never installs.
+  Future<void> downloadOnly() async {
     if (_status.phase != UpdatePhase.available) {
       throw StateError(
-        'Cannot install update while phase is ${_status.phase.name}',
+        'Cannot download update while phase is ${_status.phase.name}',
       );
     }
     final release = _status.release;
     final asset = _status.matchedAsset;
     if (release == null || asset == null) {
-      throw StateError('No available update to install');
+      throw StateError('No available update to download');
     }
 
     try {
@@ -212,26 +226,83 @@ class AppUpdater extends ChangeNotifier {
       );
       _setStatus(
         UpdateStatus(
-          phase: UpdatePhase.installing,
+          phase: UpdatePhase.readyToInstall,
           release: release,
           matchedAsset: asset,
           progress: 1,
+          downloadedFile: file,
         ),
       );
-      await _installer.installAndRelaunch(downloaded: file, release: release);
     } catch (error, stackTrace) {
-      debugPrint('AppUpdater.downloadAndInstall failed: $error\n$stackTrace');
-      final failureKind = _failureKindForInstallError(error);
+      debugPrint('AppUpdater.downloadOnly failed: $error\n$stackTrace');
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.error,
           release: release,
           matchedAsset: asset,
-          failureKind: failureKind,
+          failureKind: _failureKindForInstallError(error),
           errorMessage: error.toString(),
         ),
       );
     }
+  }
+
+  /// Replaces the app with the already-downloaded package and relaunches.
+  ///
+  /// On the happy path this does not return — the platform installer exits the
+  /// process.
+  Future<void> installDownloaded() async {
+    if (_status.phase != UpdatePhase.readyToInstall) {
+      throw StateError(
+        'Cannot install update while phase is ${_status.phase.name}',
+      );
+    }
+    final release = _status.release;
+    final asset = _status.matchedAsset;
+    final file = _status.downloadedFile;
+    if (release == null || file == null) {
+      throw StateError('No downloaded update to install');
+    }
+
+    try {
+      _setStatus(
+        UpdateStatus(
+          phase: UpdatePhase.installing,
+          release: release,
+          matchedAsset: asset,
+          progress: 1,
+          downloadedFile: file,
+        ),
+      );
+      await _installer.installAndRelaunch(downloaded: file, release: release);
+    } catch (error, stackTrace) {
+      debugPrint('AppUpdater.installDownloaded failed: $error\n$stackTrace');
+      _setStatus(
+        UpdateStatus(
+          phase: UpdatePhase.error,
+          release: release,
+          matchedAsset: asset,
+          failureKind: _failureKindForInstallError(error),
+          errorMessage: error.toString(),
+        ),
+      );
+    }
+  }
+
+  /// One-shot download + install, used by the settings page's "Update now".
+  Future<void> downloadAndInstall() async {
+    await downloadOnly();
+    if (_status.phase != UpdatePhase.readyToInstall) return;
+    await installDownloaded();
+  }
+
+  /// Startup path: check silently, and if a newer release exists, fetch it in
+  /// the background so the home page can offer a one-tap install. Never throws
+  /// and never installs.
+  Future<void> checkAndPrefetch() async {
+    await check(userInitiated: false);
+    if (_status.phase != UpdatePhase.available) return;
+    await downloadOnly();
   }
 
   UpdateFailureKind _failureKindForInstallError(Object error) {
