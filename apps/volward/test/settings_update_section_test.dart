@@ -165,6 +165,12 @@ void main() {
       installer: installer,
     );
     addTearDown(updater.dispose);
+    // The real flow is: startup prefetch finishes, then the user opens
+    // settings — so land at `readyToInstall` before the first render.
+    // `runAsync` is required because the prefetch does real file I/O, which
+    // the fake-async test zone cannot drive.
+    await tester.runAsync(() => updater.checkAndPrefetch());
+    expect(updater.status.phase, UpdatePhase.readyToInstall);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -183,16 +189,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await updater.checkAndPrefetch();
-    expect(updater.status.phase, UpdatePhase.readyToInstall);
-    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text('Complete update'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
 
     expect(find.text('Complete update'), findsOneWidget);
     expect(find.text('Check for updates'), findsNothing);
     expect(find.text('A new version is downloaded and ready.'), findsOneWidget);
 
     await tester.tap(find.text('Complete update'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(installer.calls, 1);
   });
 

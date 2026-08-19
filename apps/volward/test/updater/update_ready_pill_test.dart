@@ -130,8 +130,10 @@ void main() {
     addTearDown(updater.dispose);
 
     await tester.pumpWidget(_host(updater));
-    await updater.checkAndPrefetch();
-    await tester.pumpAndSettle();
+    // `checkAndPrefetch` does real file I/O, which the fake-async test zone
+    // cannot drive — `runAsync` hands it the real event loop.
+    await tester.runAsync(() => updater.checkAndPrefetch());
+    await tester.pump();
 
     expect(updater.status.phase, UpdatePhase.readyToInstall);
     expect(find.text('Complete update'), findsOneWidget);
@@ -145,8 +147,8 @@ void main() {
     addTearDown(updater.dispose);
 
     await tester.pumpWidget(_host(updater));
-    await updater.checkAndPrefetch();
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => updater.checkAndPrefetch());
+    await tester.pump();
 
     await tester.tap(find.byKey(UpdateReadyPill.actionKey));
     await tester.pumpAndSettle();
@@ -163,8 +165,8 @@ void main() {
     addTearDown(updater.dispose);
 
     await tester.pumpWidget(_host(updater));
-    await updater.checkAndPrefetch();
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => updater.checkAndPrefetch());
+    await tester.pump();
 
     await tester.tap(find.byKey(UpdateReadyPill.dismissKey));
     await tester.pumpAndSettle();
