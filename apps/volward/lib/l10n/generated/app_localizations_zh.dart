@@ -90,6 +90,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get filterCategorySystem => '系统';
 
   @override
+  String get homeCategoryOther => '其他';
+
+  @override
   String get sortSizeDesc => '大小 ↓';
 
   @override
@@ -413,4 +416,121 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateNotesUnavailable => '有新的 Volward 版本可以安装。';
+
+  @override
+  String get homeOverviewLive => '实时磁盘数据';
+
+  @override
+  String get homeOverviewCached => '缓存磁盘数据';
+
+  @override
+  String get homeOverviewLoading => '正在读取磁盘…';
+
+  @override
+  String get homeOverviewUnavailable => '暂时无法读取磁盘容量';
+
+  @override
+  String get homeCapacityUsed => '已使用';
+
+  @override
+  String get homeCapacityTotal => '总容量';
+
+  @override
+  String get homeCapacityAvailable => '可用';
+
+  @override
+  String homeCapacitySemantics(String used, String total, String available) {
+    return '已使用 $used，总容量 $total，可用 $available';
+  }
+
+  @override
+  String get homeScanTargets => '扫描范围';
+
+  @override
+  String get homeLocationHome => '主目录';
+
+  @override
+  String get homeLocationApplications => '应用程序';
+
+  @override
+  String get homeLocationDesktop => '桌面';
+
+  @override
+  String get homeLocationDownloads => '下载';
+
+  @override
+  String get homeLocationDocuments => '文稿';
+
+  @override
+  String homeLocationVolume(String name) {
+    return '磁盘 $name';
+  }
+
+  @override
+  String homeLocationCustom(String name) {
+    return '$name';
+  }
+
+  @override
+  String get homeChooseFolder => '选择文件夹';
+
+  @override
+  String get homeCurrentTarget => '当前目标';
+
+  @override
+  String get homeRecentFolders => '最近目录';
+
+  @override
+  String homeLastScan(String time) {
+    return '上次扫描 $time';
+  }
+
+  @override
+  String get homeNeverScanned => '尚未扫描';
+
+  @override
+  String homeReclaimable(String size) {
+    return '可回收 $size';
+  }
+
+  @override
+  String homeScannedSize(String size) {
+    return '目录占用 $size';
+  }
+
+  @override
+  String get homeLargestItems => '最占空间的项目';
+
+  @override
+  String homeLargestItemsTotal(String size) {
+    return '共 $size';
+  }
+
+  @override
+  String get homeLargestItemsEmpty => '扫描后显示';
+
+  @override
+  String get homeFolderEmpty => '此文件夹为空';
+
+  @override
+  String homeLargestItemsSemantics(
+    String name,
+    String size,
+    int rank,
+    int count,
+  ) {
+    return '第 $rank 项，共 $count 项：$name，$size';
+  }
+
+  @override
+  String get homeBrowseFiles => '浏览文件';
+
+  @override
+  String get homeStartScan => '开始扫描';
+
+  @override
+  String get homeRescan => '重新扫描';
+
+  @override
+  String get homeCancelScan => '取消扫描';
 }

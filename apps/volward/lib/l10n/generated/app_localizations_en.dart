@@ -91,6 +91,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get filterCategorySystem => 'System';
 
   @override
+  String get homeCategoryOther => 'Other';
+
+  @override
   String get sortSizeDesc => 'Size ↓';
 
   @override
@@ -437,4 +440,121 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get updateNotesUnavailable =>
       'A newer Volward release is ready to install.';
+
+  @override
+  String get homeOverviewLive => 'Live disk data';
+
+  @override
+  String get homeOverviewCached => 'Cached disk data';
+
+  @override
+  String get homeOverviewLoading => 'Reading disk…';
+
+  @override
+  String get homeOverviewUnavailable => 'Disk capacity unavailable';
+
+  @override
+  String get homeCapacityUsed => 'Used';
+
+  @override
+  String get homeCapacityTotal => 'Total capacity';
+
+  @override
+  String get homeCapacityAvailable => 'Available';
+
+  @override
+  String homeCapacitySemantics(String used, String total, String available) {
+    return '$used used of $total, $available available';
+  }
+
+  @override
+  String get homeScanTargets => 'Scan range';
+
+  @override
+  String get homeLocationHome => 'Home';
+
+  @override
+  String get homeLocationApplications => 'Applications';
+
+  @override
+  String get homeLocationDesktop => 'Desktop';
+
+  @override
+  String get homeLocationDownloads => 'Downloads';
+
+  @override
+  String get homeLocationDocuments => 'Documents';
+
+  @override
+  String homeLocationVolume(String name) {
+    return 'Disk $name';
+  }
+
+  @override
+  String homeLocationCustom(String name) {
+    return '$name';
+  }
+
+  @override
+  String get homeChooseFolder => 'Choose Folder';
+
+  @override
+  String get homeCurrentTarget => 'Current target';
+
+  @override
+  String get homeRecentFolders => 'Recent Folders';
+
+  @override
+  String homeLastScan(String time) {
+    return 'Last scan $time';
+  }
+
+  @override
+  String get homeNeverScanned => 'Not scanned yet';
+
+  @override
+  String homeReclaimable(String size) {
+    return '$size reclaimable';
+  }
+
+  @override
+  String homeScannedSize(String size) {
+    return '$size scanned';
+  }
+
+  @override
+  String get homeLargestItems => 'Largest items';
+
+  @override
+  String homeLargestItemsTotal(String size) {
+    return '$size total';
+  }
+
+  @override
+  String get homeLargestItemsEmpty => 'Shown after scanning';
+
+  @override
+  String get homeFolderEmpty => 'This folder is empty';
+
+  @override
+  String homeLargestItemsSemantics(
+    String name,
+    String size,
+    int rank,
+    int count,
+  ) {
+    return '$name, $size, $rank of $count';
+  }
+
+  @override
+  String get homeBrowseFiles => 'Browse Files';
+
+  @override
+  String get homeStartScan => 'Start Scan';
+
+  @override
+  String get homeRescan => 'Rescan';
+
+  @override
+  String get homeCancelScan => 'Cancel Scan';
 }
