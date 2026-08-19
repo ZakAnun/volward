@@ -278,6 +278,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                 l10n.settingsInstallingUpdate,
                                 style: context.vwFinePrint,
                               )
+                            else if (status.phase == UpdatePhase.readyToInstall)
+                              Text(
+                                l10n.settingsUpdateReady,
+                                style: context.vwFinePrint,
+                              )
                             else if (status.phase == UpdatePhase.error)
                               Text(
                                 formatUpdateStatusError(l10n, status),
@@ -288,17 +293,28 @@ class _SettingsPageState extends State<SettingsPage> {
                               spacing: AppleSpacing.sm,
                               runSpacing: AppleSpacing.sm,
                               children: [
-                                AppleButton(
-                                  label: l10n.settingsCheckForUpdates,
-                                  variant: AppleButtonVariant.pearl,
-                                  onPressed:
-                                      status.phase == UpdatePhase.checking ||
-                                          status.phase ==
-                                              UpdatePhase.downloading ||
-                                          status.phase == UpdatePhase.installing
-                                      ? null
-                                      : () => _checkForUpdates(context),
-                                ),
+                                // A prefetched package is waiting: the only
+                                // sensible action is finishing the install, so
+                                // don't offer a re-check that would re-download.
+                                if (status.phase == UpdatePhase.readyToInstall)
+                                  AppleButton(
+                                    label: l10n.updateReadyAction,
+                                    onPressed: () =>
+                                        widget.updater.installDownloaded(),
+                                  )
+                                else
+                                  AppleButton(
+                                    label: l10n.settingsCheckForUpdates,
+                                    variant: AppleButtonVariant.pearl,
+                                    onPressed:
+                                        status.phase == UpdatePhase.checking ||
+                                            status.phase ==
+                                                UpdatePhase.downloading ||
+                                            status.phase ==
+                                                UpdatePhase.installing
+                                        ? null
+                                        : () => _checkForUpdates(context),
+                                  ),
                                 if (status.phase == UpdatePhase.available)
                                   AppleButton(
                                     label: l10n.settingsUpdateNow,
