@@ -405,6 +405,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsOpenDownloadPage => '打开下载页';
 
   @override
+  String get settingsUpdateReady => '新版本已下载完成，可随时更新。';
+
+  @override
+  String get updateReadyAction => '完成更新';
+
+  @override
+  String get updateReadyDismissTooltip => '暂不更新';
+
+  @override
   String updateAvailableTitle(Object version) {
     return '发现新版本 — $version';
   }

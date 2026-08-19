@@ -257,6 +257,9 @@
     }
   },
   "settingsOpenDownloadPage": "Open download page",
+  "settingsUpdateReady": "A new version is downloaded and ready.",
+  "updateReadyAction": "Complete update",
+  "updateReadyDismissTooltip": "Dismiss",
   "updateAvailableTitle": "Update available — {version}",
   "@updateAvailableTitle": {
     "placeholders": {

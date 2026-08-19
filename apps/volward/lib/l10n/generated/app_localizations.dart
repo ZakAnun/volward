@@ -788,6 +788,24 @@ abstract class AppLocalizations {
   /// **'Open download page'**
   String get settingsOpenDownloadPage;
 
+  /// No description provided for @settingsUpdateReady.
+  ///
+  /// In en, this message translates to:
+  /// **'A new version is downloaded and ready.'**
+  String get settingsUpdateReady;
+
+  /// No description provided for @updateReadyAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete update'**
+  String get updateReadyAction;
+
+  /// No description provided for @updateReadyDismissTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get updateReadyDismissTooltip;
+
   /// No description provided for @updateAvailableTitle.
   ///
   /// In en, this message translates to:

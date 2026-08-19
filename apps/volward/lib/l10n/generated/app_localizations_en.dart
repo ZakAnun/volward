@@ -428,6 +428,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsOpenDownloadPage => 'Open download page';
 
   @override
+  String get settingsUpdateReady => 'A new version is downloaded and ready.';
+
+  @override
+  String get updateReadyAction => 'Complete update';
+
+  @override
+  String get updateReadyDismissTooltip => 'Dismiss';
+
+  @override
   String updateAvailableTitle(Object version) {
     return 'Update available — $version';
   }
