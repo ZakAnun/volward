@@ -21,10 +21,8 @@ String? normalizeSha256(String? raw) {
 }
 
 String? parseSha256Checksum(String text, {required String assetName}) {
-  final lines = text
-      .replaceAll('\r\n', '\n')
-      .replaceAll('\r', '\n')
-      .split('\n');
+  final lines =
+      text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
   String? onlyChecksum;
   for (final line in lines) {
     final checksum = normalizeSha256(line);

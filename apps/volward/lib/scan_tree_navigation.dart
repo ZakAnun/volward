@@ -12,8 +12,7 @@ List<ScanTreeNode> toggleColumnSelection(
   ScanTreeNode node,
 ) {
   final prefix = currentChain.take(columnIndex).toList(growable: true);
-  final alreadySelected =
-      columnIndex < currentChain.length &&
+  final alreadySelected = columnIndex < currentChain.length &&
       currentChain[columnIndex].path == node.path;
   if (!alreadySelected) prefix.add(node);
   return prefix;

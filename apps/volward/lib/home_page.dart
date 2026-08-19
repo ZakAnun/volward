@@ -610,7 +610,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<ScanTreeNode> _largestItemsFor(String targetPath) {
     final snapshot = _s.lastSnapshot;
     final tree = snapshot?.tree;
-    if (snapshot == null || tree == null || !_snapshotMatchesTarget(targetPath)) {
+    if (snapshot == null ||
+        tree == null ||
+        !_snapshotMatchesTarget(targetPath)) {
       _largestItemsCacheKey = null;
       _largestItemCandidates = const [];
       return const [];

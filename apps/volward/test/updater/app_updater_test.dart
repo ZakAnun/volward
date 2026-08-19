@@ -99,8 +99,7 @@ ReleaseInfo _release({String tag = 'v0.0.2', List<ReleaseAsset>? assets}) {
     version: '0.0.2',
     htmlUrl: 'https://github.com/ZakAnun/volward/releases/tag/$tag',
     body: 'Release notes line 1\nline 2',
-    assets:
-        assets ??
+    assets: assets ??
         const [
           ReleaseAsset(
             name: 'volward-v0.0.2-macos-arm64.zip',

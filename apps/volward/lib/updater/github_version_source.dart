@@ -203,9 +203,8 @@ class GitHubVersionSource implements VersionSource {
     await streamed.stream.drain<void>();
 
     final location = streamed.headers['location'];
-    final redirected = (location == null || location.isEmpty)
-        ? null
-        : uri.resolve(location);
+    final redirected =
+        (location == null || location.isEmpty) ? null : uri.resolve(location);
     final tagUrl = redirected ?? streamed.request?.url ?? uri;
     // Some environments still land on 200 with the final URL after a proxy.
     if (streamed.statusCode != 302 &&
