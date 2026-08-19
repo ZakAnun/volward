@@ -1,0 +1,36 @@
+---
+import type { FeatureCopy } from '../lib/site';
+
+interface Props {
+  title: string;
+  subtitle: string;
+  lead: string;
+  features: FeatureCopy[];
+}
+
+const { title, subtitle, lead, features } = Astro.props;
+---
+
+<section id="features" class="feature-story">
+  <div class="shell feature-story-shell">
+    <div class="feature-story-head">
+      <p class="section-label">{title}</p>
+      <div class="feature-story-intro">
+        <h2 class="feature-story-title">{subtitle}</h2>
+        <p class="lede feature-story-lead">{lead}</p>
+      </div>
+    </div>
+
+    <div class="feature-summary-list">
+      {features.map((feature, index) => (
+        <article class="feature-summary-item">
+          <span class="feature-summary-index">0{index + 1}</span>
+          <div>
+            <h3>{feature.title}</h3>
+            <p>{feature.body}</p>
+          </div>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>

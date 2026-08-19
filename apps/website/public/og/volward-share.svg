@@ -1,0 +1,15 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#0066CC"/>
+  <rect x="72" y="72" width="1056" height="486" rx="48" fill="#0057B3"/>
+  <rect x="112" y="112" width="406" height="406" rx="88" fill="#F5F9FF"/>
+  <path d="M206 300C218 283 241 281 255 295L312 373L368 295C382 281 405 283 417 300L348 395C338 409 317 409 307 395L206 300Z" fill="#2997FF"/>
+  <path d="M208 188C220 173 241 171 255 184L311 261L368 184C382 171 404 173 416 188L348 283C338 297 317 297 307 283L208 188Z" fill="#34C759"/>
+  <rect x="146" y="424" width="238" height="26" rx="13" fill="#DDEFFF"/>
+  <rect x="146" y="468" width="182" height="18" rx="9" fill="#DDEFFF"/>
+  <path d="M916 188H970C995 188 1014 208 1014 232V398C1014 422 995 442 970 442H916V188Z" fill="#F5F9FF"/>
+  <path d="M848 250H916V330H848C826 330 808 312 808 290C808 268 826 250 848 250Z" fill="#DDEFFF"/>
+  <path d="M848 330H916V442H848C826 442 808 424 808 402C808 380 826 362 848 362H916" fill="#DDEFFF"/>
+  <text x="572" y="266" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="84" font-weight="700" letter-spacing="0">Volward</text>
+  <text x="572" y="336" fill="#DDEFFF" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif" font-size="34" font-weight="500" letter-spacing="0">See what is taking space.</text>
+  <text x="572" y="384" fill="#DDEFFF" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif" font-size="34" font-weight="500" letter-spacing="0">Preview first. Delete safely.</text>
+</svg>

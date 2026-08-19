@@ -1,0 +1,40 @@
+---
+import type { ReleaseLog } from '../lib/release-logs';
+
+interface Props {
+  title: string;
+  items: ReleaseLog[];
+}
+
+const { title, items } = Astro.props;
+---
+
+{items.length > 0 && (
+  <section class="release-notes-section">
+    <div class="shell release-notes-shell">
+      <div class="release-notes-copy">
+        <p class="section-label">{title}</p>
+      </div>
+      <div class="release-log-panel">
+        {items.map((release) => (
+          <a
+            class="release-log-item"
+            href={release.href}
+            data-release-log-link
+            data-release-title={release.title}
+          >
+            <div class="release-log-header">
+              <strong>{release.title}</strong>
+              <time datetime={release.publishedAt}>{release.displayDate}</time>
+            </div>
+            <ul>
+              {release.summary.map((line) => (
+                <li>{line}</li>
+              ))}
+            </ul>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+)}
