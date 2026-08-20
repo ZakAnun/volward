@@ -840,23 +840,40 @@ class _BrowseCard extends StatelessWidget {
           // Compact mode: keep original stacked layout
           final details = Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-            child: summary.categories.isEmpty
-                ? Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      summary.hasCompletedScan
-                          ? l10n.homeFolderEmpty
-                          : l10n.homeLargestItemsEmpty,
-                      style: context.vwFinePrint.copyWith(
-                        color: _onDashboard.withValues(alpha: 0.42),
-                      ),
-                    ),
-                  )
-                : CategoryBreakdown(
-                    categories: summary.categories,
-                    enabled: !summary.scanning,
-                    onSelectCategory: onSelectCategory,
-                  ),
+            child: summary.scanning && summary.categories.isEmpty
+                // Scanning with no categories: show skeleton
+                ? _buildCategorySkeleton()
+                : summary.scanning
+                    // Scanning with categories: show breakdown + skeleton overlay
+                    ? Stack(
+                        children: [
+                          CategoryBreakdown(
+                            categories: summary.categories,
+                            enabled: false,
+                            onSelectCategory: onSelectCategory,
+                          ),
+                          Positioned.fill(
+                            child: _buildCategorySkeleton(),
+                          ),
+                        ],
+                      )
+                    : summary.categories.isEmpty
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              summary.hasCompletedScan
+                                  ? l10n.homeFolderEmpty
+                                  : l10n.homeLargestItemsEmpty,
+                              style: context.vwFinePrint.copyWith(
+                                color: _onDashboard.withValues(alpha: 0.42),
+                              ),
+                            ),
+                          )
+                        : CategoryBreakdown(
+                            categories: summary.categories,
+                            enabled: true,
+                            onSelectCategory: onSelectCategory,
+                          ),
           );
           final actions = KeyedSubtree(
             key: StorageStewardHome.actionsKey,
@@ -1108,7 +1125,7 @@ class _BrowseCard extends StatelessWidget {
     return Container(
       // Semi-opaque background to cover underlying content
       decoration: BoxDecoration(
-        color: _glass(0.12),
+        color: _dashboardSoft, // Use solid background instead of glass
         borderRadius: BorderRadius.circular(12),
       ),
       padding: const EdgeInsets.all(8),
