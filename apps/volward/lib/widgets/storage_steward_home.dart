@@ -1129,15 +1129,15 @@ class _BrowseCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < 3; i++) ...[
-                  Row(
+                  const Row(
                     children: [
-                      const SkeletonLoader(width: 12, height: 12, borderRadius: 3),
-                      const SizedBox(width: 8),
-                      const Expanded(
+                      SkeletonLoader(width: 12, height: 12, borderRadius: 3),
+                      SizedBox(width: 8),
+                      Expanded(
                         child: SkeletonLoader(width: double.infinity, height: 14, borderRadius: 4),
                       ),
-                      const SizedBox(width: 8),
-                      const SkeletonLoader(width: 40, height: 14, borderRadius: 4),
+                      SizedBox(width: 8),
+                      SkeletonLoader(width: 40, height: 14, borderRadius: 4),
                     ],
                   ),
                   if (i < 2) const SizedBox(height: 8),
@@ -1795,7 +1795,7 @@ const _browseButtonHeight = _dashboardControlHeight; // 36.0
 
 double _rightColumnHeight(StorageHomeSummary summary) {
   // Capacity panel intrinsic height
-  final capacityHeight = _capacityPanelPaddingTop +
+  const capacityHeight = _capacityPanelPaddingTop +
       _capacityPathHeight +
       _capacityPathBottomGap +
       _capacityUsedHeight +
@@ -1818,7 +1818,7 @@ double _rightColumnHeight(StorageHomeSummary summary) {
       largestBodyHeight;
 
   // Browse card intrinsic height (new vertical layout in wide mode)
-  final browseHeight = _browsePanelPadding +
+  const browseHeight = _browsePanelPadding +
       _browseTopRowHeight +
       _browseTopRowBottomGap +
       _browseCategoryBreakdownHeight +
