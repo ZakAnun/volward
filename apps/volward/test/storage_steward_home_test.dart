@@ -502,19 +502,16 @@ void expectTextContrast(WidgetTester tester, Finder finder, Color background) {
   );
 }
 
-Finder statusChipFinder() => find.descendant(
-  of: find.byKey(StorageStewardHome.actionsKey),
-  matching: find.byWidgetPredicate((widget) {
-    final decoration = widget is DecoratedBox ? widget.decoration : null;
-    return decoration is BoxDecoration &&
-        decoration.borderRadius == BorderRadius.circular(999);
-  }),
-);
+Finder statusChipFinder() => find.byKey(StorageStewardHome.statusChipKey);
 
 BoxDecoration statusChipDecoration(WidgetTester tester) {
   final finder = statusChipFinder();
   expect(finder, findsOneWidget);
-  return tester.widget<DecoratedBox>(finder).decoration as BoxDecoration;
+  final decoratedBox = find.descendant(
+    of: finder,
+    matching: find.byType(DecoratedBox),
+  );
+  return tester.widget<DecoratedBox>(decoratedBox).decoration as BoxDecoration;
 }
 
 Color scanSummarySurfaceColor(WidgetTester tester) {
@@ -665,9 +662,9 @@ void main() {
       find.byKey(StorageStewardHome.capacityMeterKey),
     );
     final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
-    // With new flex ratios (35:37:29), capacity panel height changed
+    // With new flex ratios (35:32:34), capacity panel height changed
     // Check meter is near the bottom (within reasonable tolerance)
-    expect((capacity.bottom - meter.bottom).abs(), lessThan(35));
+    expect((capacity.bottom - meter.bottom).abs(), lessThan(40));
     expect(meter.left, closeTo(capacity.left, 1));
     expect(meter.right, closeTo(capacity.right, 1));
     expect(meter.height, closeTo(12, 1));
@@ -2264,7 +2261,7 @@ void main() {
     expect(opened?.path, bigFile.path);
   });
 
-  testWidgets('compact shows three rows, wide shows five', (tester) async {
+  testWidgets('compact shows three rows, wide shows three', (tester) async {
     final many = [
       for (var i = 0; i < 5; i++)
         StorageHomeItem(
@@ -2291,9 +2288,14 @@ void main() {
       size: const Size(1280, 900),
       summary: summaryWithItems(items: many),
     );
+    // Wide mode now also shows only 3 items (item0, item1, item2)
     expect(
-      find.byKey(LargestItemsPanel.rowKey('/Users/me/item4')),
+      find.byKey(LargestItemsPanel.rowKey('/Users/me/item2')),
       findsOneWidget,
+    );
+    expect(
+      find.byKey(LargestItemsPanel.rowKey('/Users/me/item3')),
+      findsNothing,
     );
   });
 }

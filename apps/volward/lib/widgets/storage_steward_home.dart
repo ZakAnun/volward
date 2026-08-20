@@ -35,10 +35,10 @@ const _targetTileGap = 10.0;
 
 // Flex ratios for right panel derived from typical intrinsic heights
 // Capacity: ~206px, Largest (5 items): ~217px, Browse (horizontal): ~174px
-// Ratios 35:37:29 give proportional distribution close to these intrinsics
+// Ratios 35:32:34 keep capacity unchanged, give browse more room, trim largest
 const _capacityFlex = 35;
-const _largestFlex = 37;
-const _browseFlex = 29;
+const _largestFlex = 32;
+const _browseFlex = 34;
 
 Color _glass(double whiteAlpha) => dashboardGlass(whiteAlpha);
 
@@ -108,6 +108,7 @@ class StorageStewardHome extends StatelessWidget {
   static const boardKey = Key('storage-overview-board');
   static const browseCardKey = Key('storage-overview-browse-card');
   static const categoryPieKey = CategoryBreakdown.pieKey;
+  static const statusChipKey = Key('storage-overview-status-chip');
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
   static const recentFoldersKey = Key('storage-overview-recent-folders');
@@ -600,7 +601,7 @@ class _MainPane extends StatelessWidget {
     );
     final largest = LargestItemsPanel(
       summary: summary,
-      maxItems: compact ? 3 : 5,
+      maxItems: 3, // Reduced from 5 to save vertical space
       onOpenItem: onOpenItem,
     );
     final composition = _BrowseCard(
@@ -672,9 +673,9 @@ class _StatPanel extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.fromLTRB(
                     compact ? 18 : 22,
+                    compact ? 18 : 20, // Reduced from 22
                     compact ? 18 : 22,
-                    compact ? 18 : 22,
-                    compact ? 16 : 18,
+                    compact ? 16 : 16, // Reduced from 18
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -691,7 +692,7 @@ class _StatPanel extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8), // Reduced from 10
                       Text(
                         used,
                         maxLines: 1,
@@ -710,7 +711,7 @@ class _StatPanel extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.72),
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16), // Reduced from 18
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -732,7 +733,7 @@ class _StatPanel extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!compact) const SizedBox(height: 12),
+                if (!compact) const SizedBox(height: 10), // Reduced from 12
                 _HeroMeter(summary: summary),
               ],
             ),
@@ -833,69 +834,209 @@ class _BrowseCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final stackedCard = compact || constraints.maxWidth < 280;
-        final details = Padding(
-          padding: EdgeInsets.fromLTRB(20, 18, stackedCard ? 20 : 12, 18),
-          child: summary.categories.isEmpty
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    summary.hasCompletedScan
-                        ? l10n.homeFolderEmpty
-                        : l10n.homeLargestItemsEmpty,
+
+        if (stackedCard) {
+          // Compact mode: keep original stacked layout
+          final details = Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: summary.categories.isEmpty
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      summary.hasCompletedScan
+                          ? l10n.homeFolderEmpty
+                          : l10n.homeLargestItemsEmpty,
+                      style: context.vwFinePrint.copyWith(
+                        color: _onDashboard.withValues(alpha: 0.42),
+                      ),
+                    ),
+                  )
+                : CategoryBreakdown(
+                    categories: summary.categories,
+                    enabled: !summary.scanning,
+                    onSelectCategory: onSelectCategory,
+                  ),
+          );
+          final actions = KeyedSubtree(
+            key: StorageStewardHome.actionsKey,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _StatusChip(
+                    key: StorageStewardHome.statusChipKey,
+                    label: _overviewStatus(context, summary),
+                    tone: _statusChipTone(summary),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    summary.lastScannedAtMs == null
+                        ? l10n.homeNeverScanned
+                        : l10n.homeLastScan(
+                            _formatScanTime(context, summary.lastScannedAtMs!),
+                          ),
+                    maxLines: 2,
                     style: context.vwFinePrint.copyWith(
-                      color: _onDashboard.withValues(alpha: 0.42),
+                      color: Colors.white.withValues(alpha: 0.58),
                     ),
                   ),
-                )
-              : CategoryBreakdown(
-                  categories: summary.categories,
-                  enabled: !summary.scanning,
-                  onSelectCategory: onSelectCategory,
-                ),
-        );
-        final actions = KeyedSubtree(
-          key: StorageStewardHome.actionsKey,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              stackedCard ? 20 : 0,
-              stackedCard ? 0 : 18,
-              20,
-              18,
+                  if (summary.reclaimableBytes != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.homeReclaimable(
+                        formatStorageBytes(summary.reclaimableBytes),
+                      ),
+                      style: context.vwFinePrint.copyWith(color: _onDashboard),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      width: 168,
+                      child: FocusTraversalOrder(
+                        order: const NumericFocusOrder(_browseFocusOrder),
+                        child: _DashboardActionButton(
+                          key: StorageStewardHome.browseKey,
+                          label: l10n.homeBrowseFiles,
+                          icon: Icons.folder_outlined,
+                          primary: false,
+                          onPressed: onBrowse,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      width: 168,
+                      child: FocusTraversalOrder(
+                        order: const NumericFocusOrder(_scanFocusOrder),
+                        child: _DashboardActionButton(
+                          key: StorageStewardHome.scanActionKey,
+                          label: scanLabel,
+                          icon: summary.scanning
+                              ? Icons.stop_circle_outlined
+                              : Icons.radar_outlined,
+                          primary: true,
+                          semanticColor: summary.scanning
+                              ? context.volward.danger
+                              : null,
+                          onPressed: scanCallback,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            child: stackedCard
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+          );
+
+          return KeyedSubtree(
+            key: StorageStewardHome.browseCardKey,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: _glass(0.08),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [details, actions],
+              ),
+            ),
+          );
+        }
+
+        // Wide mode: new vertical layout
+        // Top: Last scan + Status chip
+        // Middle: Category breakdown (pie chart)
+        // Bottom: Buttons
+        return KeyedSubtree(
+          key: StorageStewardHome.browseCardKey,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _glass(0.08),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16), // Reduced from 18
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Top row: Last scan on left, Status chip on right
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Expanded(
+                        child: Text(
+                          summary.lastScannedAtMs == null
+                              ? l10n.homeNeverScanned
+                              : l10n.homeLastScan(
+                                  _formatScanTime(context, summary.lastScannedAtMs!),
+                                ),
+                          maxLines: 2,
+                          style: context.vwFinePrint.copyWith(
+                            color: Colors.white.withValues(alpha: 0.72),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       _StatusChip(
+                        key: StorageStewardHome.statusChipKey,
                         label: _overviewStatus(context, summary),
                         tone: _statusChipTone(summary),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        summary.lastScannedAtMs == null
-                            ? l10n.homeNeverScanned
-                            : l10n.homeLastScan(
-                                _formatScanTime(context, summary.lastScannedAtMs!),
-                              ),
-                        maxLines: 2,
-                        style: context.vwFinePrint.copyWith(
-                          color: Colors.white.withValues(alpha: 0.58),
+                    ],
+                  ),
+                  const SizedBox(height: 10), // Reduced from 12
+                  // Middle: Category breakdown (pie chart + legend)
+                  if (summary.categories.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          summary.hasCompletedScan
+                              ? l10n.homeFolderEmpty
+                              : l10n.homeLargestItemsEmpty,
+                          style: context.vwFinePrint.copyWith(
+                            color: _onDashboard.withValues(alpha: 0.42),
+                          ),
                         ),
                       ),
-                      if (summary.reclaimableBytes != null) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          l10n.homeReclaimable(
-                            formatStorageBytes(summary.reclaimableBytes),
-                          ),
-                          style: context.vwFinePrint.copyWith(color: _onDashboard),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: SizedBox(
-                          width: 168,
+                    )
+                  else
+                    Expanded(
+                      child: CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: !summary.scanning,
+                        onSelectCategory: onSelectCategory,
+                      ),
+                    ),
+                  if (summary.reclaimableBytes != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      l10n.homeReclaimable(
+                        formatStorageBytes(summary.reclaimableBytes),
+                      ),
+                      textAlign: TextAlign.center,
+                      style: context.vwFinePrint.copyWith(
+                        color: _onDashboard.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10), // Reduced from 12
+                  // Bottom: Buttons
+                  KeyedSubtree(
+                    key: StorageStewardHome.actionsKey,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 140,
                           child: FocusTraversalOrder(
                             order: const NumericFocusOrder(_browseFocusOrder),
                             child: _DashboardActionButton(
@@ -907,12 +1048,9 @@ class _BrowseCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: SizedBox(
-                          width: 168,
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 140,
                           child: FocusTraversalOrder(
                             order: const NumericFocusOrder(_scanFocusOrder),
                             child: _DashboardActionButton(
@@ -929,103 +1067,12 @@ class _BrowseCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  )
-                : SizedBox(
-                    width: 290,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _StatusChip(
-                          label: _overviewStatus(context, summary),
-                          tone: _statusChipTone(summary),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          summary.lastScannedAtMs == null
-                              ? l10n.homeNeverScanned
-                              : l10n.homeLastScan(
-                                  _formatScanTime(context, summary.lastScannedAtMs!),
-                                ),
-                          maxLines: 2,
-                          style: context.vwFinePrint.copyWith(
-                            color: Colors.white.withValues(alpha: 0.58),
-                          ),
-                        ),
-                        if (summary.reclaimableBytes != null) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            l10n.homeReclaimable(
-                              formatStorageBytes(summary.reclaimableBytes),
-                            ),
-                            style: context.vwFinePrint.copyWith(color: _onDashboard),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 140,
-                              child: FocusTraversalOrder(
-                                order: const NumericFocusOrder(_browseFocusOrder),
-                                child: _DashboardActionButton(
-                                  key: StorageStewardHome.browseKey,
-                                  label: l10n.homeBrowseFiles,
-                                  icon: Icons.folder_outlined,
-                                  primary: false,
-                                  onPressed: onBrowse,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            SizedBox(
-                              width: 140,
-                              child: FocusTraversalOrder(
-                                order: const NumericFocusOrder(_scanFocusOrder),
-                                child: _DashboardActionButton(
-                                  key: StorageStewardHome.scanActionKey,
-                                  label: scanLabel,
-                                  icon: summary.scanning
-                                      ? Icons.stop_circle_outlined
-                                      : Icons.radar_outlined,
-                                  primary: true,
-                                  semanticColor: summary.scanning
-                                      ? context.volward.danger
-                                      : null,
-                                  onPressed: scanCallback,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),
-          ),
-        );
-
-        return KeyedSubtree(
-          key: StorageStewardHome.browseCardKey,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _glass(0.08),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ],
+              ),
             ),
-            child: stackedCard
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [details, actions],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: details),
-                      actions,
-                    ],
-                  ),
           ),
         );
       },
@@ -1036,7 +1083,7 @@ class _BrowseCard extends StatelessWidget {
 enum _StatusChipTone { neutral, live, cached }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, required this.tone});
+  const _StatusChip({super.key, required this.label, required this.tone});
 
   final String label;
   final _StatusChipTone tone;
@@ -1644,44 +1691,48 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
 
 // Right panel component height constants for intrinsic calculation
 // Capacity panel (_StatPanel with !compact)
-const _capacityPanelPadding = 18.0 * 2; // top + bottom
-const _capacityTitleHeight = 17.0; // "Disk Capacity" text line height
-const _capacityTitleBottomGap = 10.0;
-const _capacityUsedHeight = 52.0; // Large display number at fontSize 52
-const _capacityUsedBottomGap = 8.0; // Gap after large number
-const _capacityUsedLabelHeight = 14.0; // "used" fine print
-const _capacityUsedLabelBottomGap = 20.0; // Gap before metrics row
-const _capacityMetricsHeight = 52.0; // Row with Total/Available metrics (2 columns, with padding)
-const _capacityMetricsBottomGap = 12.0; // Gap before meter
+// Actual structure: Padding(22+18) + [path + SizedBox(10) + used + SizedBox(6) + label + SizedBox(18) + metrics] + SizedBox(12) + meter
+const _capacityPanelPaddingTop = 20.0; // Reduced from 22
+const _capacityPanelPaddingBottom = 16.0; // Reduced from 18
+const _capacityPathHeight = 17.0; // Path text line
+const _capacityPathBottomGap = 8.0; // Reduced from 10
+const _capacityUsedHeight = 52.0; // Large number fontSize 52 with height: 0.92 = ~48px actual
+const _capacityUsedBottomGap = 6.0; // SizedBox after used number
+const _capacityUsedLabelHeight = 17.0; // "used" text line
+const _capacityUsedLabelBottomGap = 16.0; // Reduced from 18
+const _capacityMetricsHeight = 52.0; // Row with Total/Available (2 columns)
+const _capacityMetricsBottomGap = 10.0; // Reduced from 12
 const _capacityMeterHeight = 12.0;
 
-// Largest items panel (LargestItemsPanel with maxItems=5)
-const _largestPanelPadding = 18.0 * 2;
+// Largest items panel (LargestItemsPanel with maxItems=3, reduced from 5)
+const _largestPanelPadding = 18.0 * 2; // Reduced from 36
 const _largestHeaderHeight = 17.0;
-const _largestHeaderBottomGap = 12.0;
+const _largestHeaderBottomGap = 10.0; // Reduced from 12
 const _largestItemHeight = 29.0;
-const _largestItemCount = 5; // Wide mode shows 5 items
+const _largestItemCount = 3; // Reduced from 5 to save ~58px
 const _largestEmptyBodyHeight = 89.0; // Empty state text height with padding
 
-// Browse card (_BrowseCard with !stackedCard, horizontal buttons)
-const _browsePanelPadding = 18.0 * 2;
-const _browseStatusChipHeight = 24.0;
-const _browseChipBottomGap = 8.0;
-const _browseTimestampHeight = 28.0; // 2 lines max for last scan text
-const _browseReclaimableHeight = 20.0; // Single line reclaimable bytes
-const _browseTextBottomGap = 30.0; // Gap before button row
+// Browse card (_BrowseCard with new vertical layout in wide mode)
+// Structure: padding(16) + [lastScan row with status chip] + gap(10) + CategoryBreakdown + gap(8) + reclaimable + gap(10) + buttons + padding(16)
+const _browsePanelPadding = 16.0 * 2; // Reduced from 18*2
+const _browseTopRowHeight = 28.0; // Last scan text (max 2 lines) with status chip on same row
+const _browseTopRowBottomGap = 10.0; // Reduced from 12
+const _browseCategoryBreakdownHeight = 70.0; // Reduced from 80, pie chart + legend (estimated, flexible)
+const _browseReclaimableHeight = 17.0; // Single line reclaimable text
+const _browseReclaimableBottomGap = 10.0; // Reduced from 12
 const _browseButtonHeight = _dashboardControlHeight; // 36.0
 
 double _rightColumnHeight(StorageHomeSummary summary) {
   // Capacity panel intrinsic height
-  final capacityHeight = _capacityPanelPadding +
-      _capacityTitleHeight +
-      _capacityTitleBottomGap +
+  final capacityHeight = _capacityPanelPaddingTop +
+      _capacityPathHeight +
+      _capacityPathBottomGap +
       _capacityUsedHeight +
       _capacityUsedBottomGap +
       _capacityUsedLabelHeight +
       _capacityUsedLabelBottomGap +
       _capacityMetricsHeight +
+      _capacityPanelPaddingBottom +
       _capacityMetricsBottomGap +
       _capacityMeterHeight;
 
@@ -1695,13 +1746,13 @@ double _rightColumnHeight(StorageHomeSummary summary) {
       _largestHeaderBottomGap +
       largestBodyHeight;
 
-  // Browse card intrinsic height (horizontal buttons in wide mode)
+  // Browse card intrinsic height (new vertical layout in wide mode)
   final browseHeight = _browsePanelPadding +
-      _browseStatusChipHeight +
-      _browseChipBottomGap +
-      _browseTimestampHeight +
+      _browseTopRowHeight +
+      _browseTopRowBottomGap +
+      _browseCategoryBreakdownHeight +
       _browseReclaimableHeight +
-      _browseTextBottomGap +
+      _browseReclaimableBottomGap +
       _browseButtonHeight;
 
   // Two gaps between three panels
