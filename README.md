@@ -102,8 +102,6 @@ volward/
 
 所有 release 资产都会附带对应的 `.sha256` 校验文件；应用内更新会验证后再安装。`.sha256` 文件本身不用来运行。
 
-桌面端 GitHub Release 与官网首次联合发布，按 [`docs/first-release-guide.md`](docs/first-release-guide.md) 执行。
-
 ### 首次运行绕过系统警告
 
 macOS 未签名应用：

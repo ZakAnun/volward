@@ -47,8 +47,6 @@ python3 -m http.server 8080 --directory dist
 
 ## 部署
 
-首次同时发布桌面端 GitHub Release 与官网时，按 [`../../docs/first-release-guide.md`](../../docs/first-release-guide.md) 执行。
-
 本地构建后部署：
 
 ```bash

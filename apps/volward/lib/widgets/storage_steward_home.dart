@@ -33,6 +33,13 @@ const _sidebarLogoGap = 18.0;
 const _targetTileHeight = 44.0;
 const _targetTileGap = 10.0;
 
+// Flex ratios for right panel derived from typical intrinsic heights
+// Capacity: ~206px, Largest (5 items): ~217px, Browse (horizontal): ~174px
+// Ratios 35:37:29 give proportional distribution close to these intrinsics
+const _capacityFlex = 35;
+const _largestFlex = 37;
+const _browseFlex = 29;
+
 Color _glass(double whiteAlpha) => dashboardGlass(whiteAlpha);
 
 Color _dashboardAccent(BuildContext context, double alpha) {
@@ -608,11 +615,11 @@ class _MainPane extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(flex: 35, child: capacity),
+          Expanded(flex: _capacityFlex, child: capacity),
           const SizedBox(height: _panelGap),
-          Expanded(flex: 37, child: largest),
+          Expanded(flex: _largestFlex, child: largest),
           const SizedBox(height: _panelGap),
-          Expanded(flex: 29, child: composition),
+          Expanded(flex: _browseFlex, child: composition),
         ],
       );
     }
@@ -1635,24 +1642,72 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
   return recent;
 }
 
+// Right panel component height constants for intrinsic calculation
+// Capacity panel (_StatPanel with !compact)
+const _capacityPanelPadding = 18.0 * 2; // top + bottom
+const _capacityTitleHeight = 17.0; // "Disk Capacity" text line height
+const _capacityTitleBottomGap = 10.0;
+const _capacityUsedHeight = 52.0; // Large display number at fontSize 52
+const _capacityUsedBottomGap = 8.0; // Gap after large number
+const _capacityUsedLabelHeight = 14.0; // "used" fine print
+const _capacityUsedLabelBottomGap = 20.0; // Gap before metrics row
+const _capacityMetricsHeight = 52.0; // Row with Total/Available metrics (2 columns, with padding)
+const _capacityMetricsBottomGap = 12.0; // Gap before meter
+const _capacityMeterHeight = 12.0;
+
+// Largest items panel (LargestItemsPanel with maxItems=5)
+const _largestPanelPadding = 18.0 * 2;
+const _largestHeaderHeight = 17.0;
+const _largestHeaderBottomGap = 12.0;
+const _largestItemHeight = 29.0;
+const _largestItemCount = 5; // Wide mode shows 5 items
+const _largestEmptyBodyHeight = 89.0; // Empty state text height with padding
+
+// Browse card (_BrowseCard with !stackedCard, horizontal buttons)
+const _browsePanelPadding = 18.0 * 2;
+const _browseStatusChipHeight = 24.0;
+const _browseChipBottomGap = 8.0;
+const _browseTimestampHeight = 28.0; // 2 lines max for last scan text
+const _browseReclaimableHeight = 20.0; // Single line reclaimable bytes
+const _browseTextBottomGap = 30.0; // Gap before button row
+const _browseButtonHeight = _dashboardControlHeight; // 36.0
+
 double _rightColumnHeight(StorageHomeSummary summary) {
-  // Calculate based on flex ratios to match actual layout
-  // Flex ratios are 35:37:29 (total 101)
-  // Use a reference height and scale proportionally
+  // Capacity panel intrinsic height
+  final capacityHeight = _capacityPanelPadding +
+      _capacityTitleHeight +
+      _capacityTitleBottomGap +
+      _capacityUsedHeight +
+      _capacityUsedBottomGap +
+      _capacityUsedLabelHeight +
+      _capacityUsedLabelBottomGap +
+      _capacityMetricsHeight +
+      _capacityMetricsBottomGap +
+      _capacityMeterHeight;
 
-  // Capacity panel: flex 35
-  const capacityBase = 202.0;
+  // Largest items panel intrinsic height
+  final largestItemCount = summary.largestItems.take(_largestItemCount).length;
+  final largestBodyHeight = largestItemCount > 0
+      ? largestItemCount * _largestItemHeight
+      : _largestEmptyBodyHeight;
+  final largestHeight = _largestPanelPadding +
+      _largestHeaderHeight +
+      _largestHeaderBottomGap +
+      largestBodyHeight;
 
-  // Largest items panel: flex 37
-  const largestBase = 211.0;
-
-  // Browse card: flex 29
-  const browseBase = 166.0;
+  // Browse card intrinsic height (horizontal buttons in wide mode)
+  final browseHeight = _browsePanelPadding +
+      _browseStatusChipHeight +
+      _browseChipBottomGap +
+      _browseTimestampHeight +
+      _browseReclaimableHeight +
+      _browseTextBottomGap +
+      _browseButtonHeight;
 
   // Two gaps between three panels
-  const panelGaps = 14.0 * 2;
+  const panelGaps = _panelGap * 2;
 
-  return capacityBase + largestBase + browseBase + panelGaps;
+  return capacityHeight + largestHeight + browseHeight + panelGaps;
 }
 
 String _formatScanTime(BuildContext context, int millisecondsSinceEpoch) {
