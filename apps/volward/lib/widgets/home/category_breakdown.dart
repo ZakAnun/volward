@@ -32,6 +32,10 @@ class CategoryBreakdown extends StatelessWidget {
           fraction: total == 0 ? 0 : category.count / total,
         ),
     ];
+
+    // Use two-column layout when 4+ categories to save vertical space
+    final useTwoColumns = categories.length >= 4;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -42,21 +46,83 @@ class CategoryBreakdown extends StatelessWidget {
         ),
         const SizedBox(width: 14),
         Expanded(
+          child: useTwoColumns
+              ? _buildTwoColumnLegend(total)
+              : _buildSingleColumnLegend(total),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSingleColumnLegend(int total) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < categories.length; i++)
+          CategoryLegendRow(
+            category: categories[i],
+            color: categoryColor(categories[i].name),
+            percentLabel: percentLabel(categories[i].count, total),
+            enabled: enabled,
+            onSelect:
+                !enabled ||
+                    onSelectCategory == null ||
+                    categories[i].name == homeOtherCategoryName
+                ? null
+                : () => onSelectCategory!(categories[i].name),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTwoColumnLegend(int total) {
+    final leftCount = (categories.length / 2).ceil();
+    final leftCategories = categories.take(leftCount).toList();
+    final rightCategories = categories.skip(leftCount).toList();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              for (var i = 0; i < categories.length; i++)
+              for (final category in leftCategories)
                 CategoryLegendRow(
-                  category: categories[i],
-                  color: categoryColor(categories[i].name),
-                  percentLabel: percentLabel(categories[i].count, total),
+                  category: category,
+                  color: categoryColor(category.name),
+                  percentLabel: percentLabel(category.count, total),
                   enabled: enabled,
                   onSelect:
                       !enabled ||
                           onSelectCategory == null ||
-                          categories[i].name == homeOtherCategoryName
+                          category.name == homeOtherCategoryName
                       ? null
-                      : () => onSelectCategory!(categories[i].name),
+                      : () => onSelectCategory!(category.name),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final category in rightCategories)
+                CategoryLegendRow(
+                  category: category,
+                  color: categoryColor(category.name),
+                  percentLabel: percentLabel(category.count, total),
+                  enabled: enabled,
+                  onSelect:
+                      !enabled ||
+                          onSelectCategory == null ||
+                          category.name == homeOtherCategoryName
+                      ? null
+                      : () => onSelectCategory!(category.name),
                 ),
             ],
           ),

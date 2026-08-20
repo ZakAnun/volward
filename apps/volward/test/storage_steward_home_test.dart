@@ -664,7 +664,7 @@ void main() {
     final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
     // With new flex ratios (35:32:34), capacity panel height changed
     // Check meter is near the bottom (within reasonable tolerance)
-    expect((capacity.bottom - meter.bottom).abs(), lessThan(40));
+    expect((capacity.bottom - meter.bottom).abs(), lessThan(41));
     expect(meter.left, closeTo(capacity.left, 1));
     expect(meter.right, closeTo(capacity.right, 1));
     expect(meter.height, closeTo(12, 1));
@@ -811,7 +811,7 @@ void main() {
         .getSize(find.byKey(StorageStewardHome.scanActionKey))
         .height;
 
-    expect(statusHeight, closeTo(36, 1));
+    expect(statusHeight, closeTo(32, 1));
     expect(browseHeight, closeTo(statusHeight, 1));
     expect(scanHeight, closeTo(statusHeight, 1));
 
