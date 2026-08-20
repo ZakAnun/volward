@@ -1016,20 +1016,24 @@ class _BrowseCard extends StatelessWidget {
                         onSelectCategory: onSelectCategory,
                       ),
                     ),
-                  if (summary.reclaimableBytes != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      l10n.homeReclaimable(
-                        formatStorageBytes(summary.reclaimableBytes),
-                      ),
-                      textAlign: TextAlign.center,
-                      style: context.vwFinePrint.copyWith(
-                        color: _onDashboard.withValues(alpha: 0.72),
-                      ),
-                    ),
-                  ],
+                  // Fixed-height reclaimable space (always present to prevent button jump)
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 17, // Fixed height for reclaimable text line
+                    child: summary.reclaimableBytes != null
+                        ? Text(
+                            l10n.homeReclaimable(
+                              formatStorageBytes(summary.reclaimableBytes),
+                            ),
+                            textAlign: TextAlign.center,
+                            style: context.vwFinePrint.copyWith(
+                              color: _onDashboard.withValues(alpha: 0.72),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   const SizedBox(height: 10), // Reduced from 12
-                  // Bottom: Buttons
+                  // Bottom: Buttons (fixed at bottom)
                   KeyedSubtree(
                     key: StorageStewardHome.actionsKey,
                     child: Row(
