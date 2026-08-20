@@ -1638,7 +1638,7 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
 double _rightColumnHeight(StorageHomeSummary summary) {
   // Capacity panel intrinsic
   const capacityPadding = 18.0 * 2; // top + bottom
-  const capacityContent = 172.0; // measured: title + meter + spacing
+  const capacityContent = 170.0; // measured: title + meter + spacing
   final capacityHeight = capacityPadding + capacityContent;
 
   // Largest items panel intrinsic
@@ -1666,7 +1666,10 @@ double _rightColumnHeight(StorageHomeSummary summary) {
   // Two gaps between three panels
   const panelGaps = 14.0 * 2;
 
-  return capacityHeight + largestHeight + browseHeight + panelGaps;
+  // Add buffer to prevent overflow from flex layout rounding at various viewport heights
+  const flexBuffer = 8.0;
+
+  return capacityHeight + largestHeight + browseHeight + panelGaps + flexBuffer;
 }
 
 String _formatScanTime(BuildContext context, int millisecondsSinceEpoch) {
