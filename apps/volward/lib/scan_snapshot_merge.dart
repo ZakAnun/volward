@@ -33,8 +33,7 @@ Map<String, dynamic> mergeSubtreeIntoSnapshot({
   // Start from the snapshot's existing flat entries, override with subtree
   // entries (fresh data wins on id collision), then apply path-based cleanup
   // for authoritative (peek) merges.
-  final oldFlat =
-      (snapshot['entries'] as List?)
+  final oldFlat = (snapshot['entries'] as List?)
           ?.whereType<Map>()
           .map(
             (e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
@@ -141,8 +140,8 @@ ScanSnapshotState mergeSubtreeIntoSnapshotState({
     reclaimableEstimateBytes: replacementIsAuthoritative
         ? _reclaimableFromTree(mergedTree)
         : snapshot.reclaimableEstimateBytes -
-              _reclaimableFromTree(oldSubtree) +
-              _reclaimableFromTree(newSubtree),
+            _reclaimableFromTree(oldSubtree) +
+            _reclaimableFromTree(newSubtree),
     tree: mergedTree,
     entryCount: summary.entryCount,
     categoryCounts: summary.categoryCounts,
@@ -208,8 +207,7 @@ ScanTreeNode _replaceNodeAtPath(
   var found = false;
   for (final child in node.children) {
     final childPath = child.path;
-    final isOnPath =
-        childPath.isNotEmpty &&
+    final isOnPath = childPath.isNotEmpty &&
         (targetPath == childPath ||
             targetPath.startsWith(
               childPath.endsWith('/') ? childPath : '$childPath/',
@@ -337,8 +335,7 @@ ScanSnapshotSummary _applyDelta({
     entryCount: baseEntryCount - oldSummary.entryCount + newSummary.entryCount,
     categoryCounts: Map.unmodifiable(categoryCounts),
     deletableCategoryCounts: Map.unmodifiable(deletableCategoryCounts),
-    deletableCount:
-        baseDeletableCount -
+    deletableCount: baseDeletableCount -
         oldSummary.deletableCount +
         newSummary.deletableCount,
   );

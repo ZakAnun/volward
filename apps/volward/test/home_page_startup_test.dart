@@ -215,7 +215,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
 
     expect(session.previewCalls, 1);
     expect(session.expectedPreviewGeneration, session.rootSwitchGeneration);
@@ -266,7 +266,7 @@ void main() {
 
     await tester.pumpWidget(_shell(oldSession, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     await tester.pump();
     final staleAction = tester
         .widget<StorageStewardHome>(find.byType(StorageStewardHome))
@@ -274,7 +274,7 @@ void main() {
 
     await tester.pumpWidget(_shell(newSession, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     expect(
       tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
       isNull,
@@ -298,15 +298,13 @@ void main() {
     tester,
   ) async {
     final completedPreview = Completer<void>()..complete();
-    final session =
-        _PendingPreviewSession(
-            root: '/',
-            previewGate: completedPreview,
-            failPreview: true,
-          )
-          ..sessionStateFileForTest = File(
-            '${Directory.systemTemp.path}/volward-startup-preview-error.json',
-          );
+    final session = _PendingPreviewSession(
+      root: '/',
+      previewGate: completedPreview,
+      failPreview: true,
+    )..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-startup-preview-error.json',
+      );
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);
@@ -314,7 +312,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     await tester.pump();
 
     expect(session.previewCalls, 1);
@@ -347,12 +345,12 @@ void main() {
 
     await tester.pumpWidget(_shell(oldSession, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     expect(oldSession.previewCalls, 1);
 
     await tester.pumpWidget(_shell(newSession, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     expect(newSession.previewCalls, 1);
 
     oldPreview.complete();
@@ -431,7 +429,7 @@ void main() {
       ),
     );
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     await tester.pump();
 
     expect(session.previewCalls, 1);
@@ -495,7 +493,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
 
     expect(session.previewCalls, 1);
     expect(find.byType(StorageStewardHome), findsOneWidget);
@@ -524,7 +522,7 @@ void main() {
       ),
     );
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     expect(overviewProvider.selectedPaths, ['/']);
     expect(
       tester
@@ -584,13 +582,13 @@ void main() {
       ),
     );
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
     expect(overviewProvider.requests, hasLength(1));
 
     await tester.pumpWidget(const SizedBox.shrink());
     overviewProvider.requests.single.complete(_overviewData('Late Disk'));
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
 
     expect(tester.takeException(), isNull);
   });

@@ -28,23 +28,22 @@ class VolwardThemeSettings extends ChangeNotifier {
 
   Color get accentColor => Color(_accentValue);
 
-  VolwardLocalePreference get localePreference =>
-      _localePreferenceIndex >= 0 &&
+  VolwardLocalePreference get localePreference => _localePreferenceIndex >= 0 &&
           _localePreferenceIndex < VolwardLocalePreference.values.length
       ? VolwardLocalePreference.values[_localePreferenceIndex]
       : VolwardLocalePreference.system;
 
   Locale? get localeOverride => switch (localePreference) {
-    VolwardLocalePreference.system => null,
-    VolwardLocalePreference.zh => const Locale('zh'),
-    VolwardLocalePreference.en => const Locale('en'),
-  };
+        VolwardLocalePreference.system => null,
+        VolwardLocalePreference.zh => const Locale('zh'),
+        VolwardLocalePreference.en => const Locale('en'),
+      };
 
   ThemeMode get themeMode => switch (preference) {
-    VolwardThemePreference.system => ThemeMode.system,
-    VolwardThemePreference.light => ThemeMode.light,
-    VolwardThemePreference.dark => ThemeMode.dark,
-  };
+        VolwardThemePreference.system => ThemeMode.system,
+        VolwardThemePreference.light => ThemeMode.light,
+        VolwardThemePreference.dark => ThemeMode.dark,
+      };
 
   Future<void> load() async {
     final file = settingsFileForTest ?? _settingsFile();

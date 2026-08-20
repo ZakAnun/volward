@@ -260,7 +260,7 @@ Widget _shell(
   VolwardThemeSettings themeSettings,
   AppUpdater updater, {
   Future<String?> Function({required String confirmButtonText})?
-  directoryPicker,
+      directoryPicker,
   StorageOverviewProvider storageOverviewProvider =
       const MethodChannelStorageOverviewProvider(),
 }) {

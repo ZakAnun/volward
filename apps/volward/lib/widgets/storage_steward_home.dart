@@ -233,7 +233,8 @@ class _HeroVisual extends StatelessWidget {
                         child: ConstrainedBox(
                           key: StorageStewardHome.boardKey,
                           constraints: BoxConstraints(
-                            minHeight: math.max(_wideDashboardHeight(summary), viewport.maxHeight),
+                            minHeight: math.max(_wideDashboardHeight(summary),
+                                viewport.maxHeight),
                           ),
                           child: board,
                         ),
@@ -474,10 +475,9 @@ class _Sidebar extends StatelessWidget {
     final selectedPath = summary.selectedLocation?.path ?? '';
     final selectedCustom =
         summary.selectedLocation?.kind == StorageLocationKind.custom
-        ? summary.selectedLocation
-        : null;
-    final recentMenuLocation =
-        selectedCustom ??
+            ? summary.selectedLocation
+            : null;
+    final recentMenuLocation = selectedCustom ??
         (recentLocations.isNotEmpty ? recentLocations.first : null);
     final recentMenuChoices = [
       if (selectedCustom != null) selectedCustom,
@@ -489,8 +489,7 @@ class _Sidebar extends StatelessWidget {
     Widget targetTile(int index) {
       final location = targetLocations[index];
       final selected = _samePath(location.path, selectedPath);
-      final choices =
-          location.kind == StorageLocationKind.custom &&
+      final choices = location.kind == StorageLocationKind.custom &&
               recentMenuChoices.length > 1
           ? recentMenuChoices
           : const <StorageLocationInfo>[];
@@ -514,8 +513,7 @@ class _Sidebar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final recentFallback =
-              recentMenuLocation != null &&
+          final recentFallback = recentMenuLocation != null &&
               !targetLocations.any(
                 (location) => _samePath(location.path, recentMenuLocation.path),
               );
@@ -551,11 +549,9 @@ class _Sidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: _sidebarLogoGap),
-                for (
-                  var index = 0;
-                  index < targetLocations.length;
-                  index++
-                ) ...[
+                for (var index = 0;
+                    index < targetLocations.length;
+                    index++) ...[
                   targetTile(index),
                   if (index < targetLocations.length - 1)
                     const SizedBox(height: _targetTileGap),
@@ -782,9 +778,8 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = summary.hasUsableCapacity
-        ? summary.selectedVolume?.usedFraction
-        : null;
+    final progress =
+        summary.hasUsableCapacity ? summary.selectedVolume?.usedFraction : null;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,
@@ -829,8 +824,8 @@ class _BrowseCard extends StatelessWidget {
     final scanLabel = summary.scanning
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
-        ? l10n.homeRescan
-        : l10n.homeStartScan;
+            ? l10n.homeRescan
+            : l10n.homeStartScan;
     final scanCallback = summary.scanning ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -838,13 +833,14 @@ class _BrowseCard extends StatelessWidget {
 
         if (stackedCard) {
           // Compact mode: keep original stacked layout
+          final showSkeleton = summary.scanning || summary.overview.loading;
           final details = Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-            child: summary.scanning && summary.categories.isEmpty
-                // Scanning with no categories: show skeleton
+            child: showSkeleton && summary.categories.isEmpty
+                // Loading/scanning with no categories: show skeleton
                 ? _buildCategorySkeleton()
-                : summary.scanning
-                    // Scanning with categories: show breakdown + skeleton overlay
+                : showSkeleton
+                    // Loading/scanning with categories: show breakdown + skeleton overlay
                     ? Stack(
                         children: [
                           CategoryBreakdown(
@@ -939,9 +935,6 @@ class _BrowseCard extends StatelessWidget {
                               ? Icons.stop_circle_outlined
                               : Icons.radar_outlined,
                           primary: true,
-                          semanticColor: summary.scanning
-                              ? context.volward.danger
-                              : null,
                           onPressed: scanCallback,
                         ),
                       ),
@@ -994,7 +987,8 @@ class _BrowseCard extends StatelessWidget {
                           summary.lastScannedAtMs == null
                               ? l10n.homeNeverScanned
                               : l10n.homeLastScan(
-                                  _formatScanTime(context, summary.lastScannedAtMs!),
+                                  _formatScanTime(
+                                      context, summary.lastScannedAtMs!),
                                 ),
                           maxLines: 2,
                           style: context.vwFinePrint.copyWith(
@@ -1011,12 +1005,13 @@ class _BrowseCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10), // Reduced from 12
-                  // Middle: Category breakdown, skeleton (scanning), or empty hint
-                  if (summary.scanning && summary.categories.isEmpty)
-                    // Scanning with no categories yet: show skeleton only
+                  // Middle: Category breakdown, skeleton (loading/scanning), or empty hint
+                  if ((summary.scanning || summary.overview.loading) &&
+                      summary.categories.isEmpty)
+                    // Loading/scanning with no categories yet: show skeleton only
                     Expanded(child: _buildCategorySkeleton())
-                  else if (summary.scanning)
-                    // Scanning with existing categories: show breakdown + skeleton overlay
+                  else if (summary.scanning || summary.overview.loading)
+                    // Loading/scanning with existing categories: show breakdown + skeleton overlay
                     Expanded(
                       child: Stack(
                         children: [
@@ -1101,9 +1096,6 @@ class _BrowseCard extends StatelessWidget {
                                   ? Icons.stop_circle_outlined
                                   : Icons.radar_outlined,
                               primary: true,
-                              semanticColor: summary.scanning
-                                  ? context.volward.danger
-                                  : null,
                               onPressed: scanCallback,
                             ),
                           ),
@@ -1122,49 +1114,86 @@ class _BrowseCard extends StatelessWidget {
 
   /// Builds a skeleton loader mimicking the category breakdown layout
   Widget _buildCategorySkeleton() {
-    return Container(
-      // Semi-opaque background to cover underlying content
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final needsCompactLayout = constraints.maxHeight < 96;
+        return _CategorySkeletonContent(
+          compact: needsCompactLayout,
+        );
+      },
+    );
+  }
+}
+
+class _CategorySkeletonContent extends StatelessWidget {
+  const _CategorySkeletonContent({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    // Match real CategoryBreakdown layout: pie chart stays 72x72 (square)
+    const pieSize = 72.0;
+    final rowGap = compact ? 3.0 : 5.0;
+    final markerSize = compact ? 8.0 : 12.0;
+    final lineHeight = compact ? 8.0 : 12.0;
+
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: _dashboardSoft, // Use solid background instead of glass
+        color: _dashboardSoft,
         borderRadius: BorderRadius.circular(12),
       ),
-      padding: const EdgeInsets.all(8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Skeleton pie chart
-          const SkeletonLoader(
-            width: 72,
-            height: 72,
-            borderRadius: 36,
-            animate: false, // Disable animation to avoid test timeouts
-          ),
-          const SizedBox(width: 14),
-          // Skeleton legend rows - flexible to fit available space
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < 3; i++) ...[
-                  const Row(
-                    children: [
-                      SkeletonLoader(width: 12, height: 12, borderRadius: 3, animate: false),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: SkeletonLoader(width: double.infinity, height: 12, borderRadius: 4, animate: false),
-                      ),
-                      SizedBox(width: 8),
-                      SkeletonLoader(width: 40, height: 12, borderRadius: 4, animate: false),
-                    ],
-                  ),
-                  if (i < 2) const SizedBox(height: 5),
-                ],
-              ],
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SkeletonLoader(
+              width: pieSize,
+              height: pieSize,
+              borderRadius: pieSize / 2,
+              animate: false,
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < 3; i++) ...[
+                    Row(
+                      children: [
+                        SkeletonLoader(
+                          width: markerSize,
+                          height: markerSize,
+                          borderRadius: 3,
+                          animate: false,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SkeletonLoader(
+                            width: double.infinity,
+                            height: lineHeight,
+                            borderRadius: 4,
+                            animate: false,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SkeletonLoader(
+                          width: 40,
+                          height: lineHeight,
+                          borderRadius: 4,
+                          animate: false,
+                        ),
+                      ],
+                    ),
+                    if (i < 2) SizedBox(height: rowGap),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1194,8 +1223,8 @@ class _StatusChip extends StatelessWidget {
     final foreground = switch (tone) {
       _StatusChipTone.live => _liveChipText,
       _StatusChipTone.cached => _highestContrastForeground(
-        Color.alphaBlend(fill, parentBackground),
-      ),
+          Color.alphaBlend(fill, parentBackground),
+        ),
       _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.84),
     };
     return SizedBox(
@@ -1334,8 +1363,8 @@ class _DashboardActionButton extends StatelessWidget {
     final actionColor = semanticColor ?? context.volward.primary;
     final background = enabled
         ? primary
-              ? actionColor
-              : Colors.white.withValues(alpha: 0.08)
+            ? actionColor
+            : Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
@@ -1442,9 +1471,8 @@ class _TargetMenuTile extends StatelessWidget {
         ),
       ),
       child: Tooltip(
-        message: recentFallback
-            ? context.l10n.homeRecentFolders
-            : location.path,
+        message:
+            recentFallback ? context.l10n.homeRecentFolders : location.path,
         child: hasMenu
             ? KeyedSubtree(
                 key: tileKey,
@@ -1731,20 +1759,17 @@ double _wideDashboardHeight(StorageHomeSummary summary) {
   final recentLocations = _recentCustomLocations(summary);
   final selectedCustom =
       summary.selectedLocation?.kind == StorageLocationKind.custom
-      ? summary.selectedLocation
-      : null;
-  final recentMenuLocation =
-      selectedCustom ??
+          ? summary.selectedLocation
+          : null;
+  final recentMenuLocation = selectedCustom ??
       (recentLocations.isNotEmpty ? recentLocations.first : null);
-  final hasRecentFallback =
-      recentMenuLocation != null &&
+  final hasRecentFallback = recentMenuLocation != null &&
       !targetLocations.any(
         (location) => _samePath(location.path, recentMenuLocation.path),
       );
   final visibleTargets = targetLocations.length + (hasRecentFallback ? 1 : 0);
 
-  final sidebarHeight =
-      _sidebarPadding * 2 +
+  final sidebarHeight = _sidebarPadding * 2 +
       _sidebarLogoHeight +
       _sidebarLogoGap +
       visibleTargets * _targetTileHeight +
@@ -1786,7 +1811,8 @@ const _capacityPanelPaddingTop = 20.0; // Reduced from 22
 const _capacityPanelPaddingBottom = 16.0; // Reduced from 18
 const _capacityPathHeight = 17.0; // Path text line
 const _capacityPathBottomGap = 8.0; // Reduced from 10
-const _capacityUsedHeight = 52.0; // Large number fontSize 52 with height: 0.92 = ~48px actual
+const _capacityUsedHeight =
+    52.0; // Large number fontSize 52 with height: 0.92 = ~48px actual
 const _capacityUsedBottomGap = 6.0; // SizedBox after used number
 const _capacityUsedLabelHeight = 17.0; // "used" text line
 const _capacityUsedLabelBottomGap = 16.0; // Reduced from 18
@@ -1805,9 +1831,11 @@ const _largestEmptyBodyHeight = 89.0; // Empty state text height with padding
 // Browse card (_BrowseCard with new vertical layout in wide mode)
 // Structure: padding(16) + [lastScan row with status chip] + gap(10) + CategoryBreakdown + gap(8) + reclaimable + gap(10) + buttons + padding(16)
 const _browsePanelPadding = 16.0 * 2; // Reduced from 18*2
-const _browseTopRowHeight = 28.0; // Last scan text (max 2 lines) with status chip on same row
+const _browseTopRowHeight =
+    28.0; // Last scan text (max 2 lines) with status chip on same row
 const _browseTopRowBottomGap = 10.0; // Reduced from 12
-const _browseCategoryBreakdownHeight = 70.0; // Reduced from 80, pie chart + legend (estimated, flexible)
+const _browseCategoryBreakdownHeight =
+    70.0; // Reduced from 80, pie chart + legend (estimated, flexible)
 const _browseReclaimableHeight = 17.0; // Single line reclaimable text
 const _browseReclaimableBottomGap = 10.0; // Reduced from 12
 const _browseButtonHeight = _dashboardControlHeight; // 36.0

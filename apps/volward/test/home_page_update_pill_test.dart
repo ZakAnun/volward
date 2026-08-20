@@ -227,7 +227,7 @@ void main() {
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     // Trigger the postFrameCallback that starts checkAndPrefetch.
     await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
 
     // Use runAsync to allow the real async operations to complete.
     await tester.runAsync(() => updater.checkAndPrefetch());
@@ -259,7 +259,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pumpAndSettle();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
 
     expect(updater.status.failureKind, UpdateFailureKind.integrity);
     expect(find.byType(AlertDialog), findsNothing);
