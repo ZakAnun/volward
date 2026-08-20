@@ -26,11 +26,6 @@ const _scanFocusOrder = 10002.0;
 const _settingsFocusOrder = 10003.0;
 const _dashboardControlHeight = 36.0;
 const _wideSidebarWidth = 216.0;
-// Right panel needs minimum height for three blocks plus board bottom padding:
-// capacity ~120px + gap 14px + largest ~150px + gap 14px + composition ~150px + bottom padding 22px
-// Plus extra buffer for content variations = ~658px
-// Use sidebar height as baseline, but ensure right panel fits without overflow.
-const _minRightPanelHeight = 658.0;
 const _panelGap = 14.0;
 const _sidebarPadding = 18.0;
 const _sidebarLogoHeight = 104.0;
@@ -229,7 +224,7 @@ class _HeroVisual extends StatelessWidget {
                         child: ConstrainedBox(
                           key: StorageStewardHome.boardKey,
                           constraints: BoxConstraints(
-                            minHeight: viewport.maxHeight,
+                            minHeight: math.max(_wideDashboardHeight(summary), viewport.maxHeight),
                           ),
                           child: board,
                         ),
@@ -382,11 +377,10 @@ class _WideBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dashboardHeight = _wideDashboardHeight(summary);
     return SizedBox(
-      height: dashboardHeight,
+      height: _wideDashboardHeight(summary),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: _wideSidebarWidth,
@@ -616,9 +610,9 @@ class _MainPane extends StatelessWidget {
         children: [
           Expanded(flex: 35, child: capacity),
           const SizedBox(height: _panelGap),
-          Expanded(flex: 40, child: largest),
+          Expanded(flex: 37, child: largest),
           const SizedBox(height: _panelGap),
-          Expanded(flex: 38, child: composition),
+          Expanded(flex: 29, child: composition),
         ],
       );
     }
@@ -731,7 +725,7 @@ class _StatPanel extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!compact) const Spacer(),
+                if (!compact) const SizedBox(height: 12),
                 _HeroMeter(summary: summary),
               ],
             ),
@@ -861,78 +855,147 @@ class _BrowseCard extends StatelessWidget {
               20,
               18,
             ),
-            child: SizedBox(
-              width: stackedCard ? null : 168,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _StatusChip(
-                    label: _overviewStatus(context, summary),
-                    tone: _statusChipTone(summary),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    summary.lastScannedAtMs == null
-                        ? l10n.homeNeverScanned
-                        : l10n.homeLastScan(
-                            _formatScanTime(context, summary.lastScannedAtMs!),
+            child: stackedCard
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _StatusChip(
+                        label: _overviewStatus(context, summary),
+                        tone: _statusChipTone(summary),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        summary.lastScannedAtMs == null
+                            ? l10n.homeNeverScanned
+                            : l10n.homeLastScan(
+                                _formatScanTime(context, summary.lastScannedAtMs!),
+                              ),
+                        maxLines: 2,
+                        style: context.vwFinePrint.copyWith(
+                          color: Colors.white.withValues(alpha: 0.58),
+                        ),
+                      ),
+                      if (summary.reclaimableBytes != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          l10n.homeReclaimable(
+                            formatStorageBytes(summary.reclaimableBytes),
                           ),
-                    maxLines: 2,
-                    style: context.vwFinePrint.copyWith(
-                      color: Colors.white.withValues(alpha: 0.58),
-                    ),
-                  ),
-                  if (summary.reclaimableBytes != null) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      l10n.homeReclaimable(
-                        formatStorageBytes(summary.reclaimableBytes),
-                      ),
-                      style: context.vwFinePrint.copyWith(color: _onDashboard),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: SizedBox(
-                      width: 168,
-                      child: FocusTraversalOrder(
-                        order: const NumericFocusOrder(_browseFocusOrder),
-                        child: _DashboardActionButton(
-                          key: StorageStewardHome.browseKey,
-                          label: l10n.homeBrowseFiles,
-                          icon: Icons.folder_outlined,
-                          primary: false,
-                          onPressed: onBrowse,
+                          style: context.vwFinePrint.copyWith(color: _onDashboard),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: SizedBox(
+                          width: 168,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(_browseFocusOrder),
+                            child: _DashboardActionButton(
+                              key: StorageStewardHome.browseKey,
+                              label: l10n.homeBrowseFiles,
+                              icon: Icons.folder_outlined,
+                              primary: false,
+                              onPressed: onBrowse,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: SizedBox(
-                      width: 168,
-                      child: FocusTraversalOrder(
-                        order: const NumericFocusOrder(_scanFocusOrder),
-                        child: _DashboardActionButton(
-                          key: StorageStewardHome.scanActionKey,
-                          label: scanLabel,
-                          icon: summary.scanning
-                              ? Icons.stop_circle_outlined
-                              : Icons.radar_outlined,
-                          primary: true,
-                          semanticColor: summary.scanning
-                              ? context.volward.danger
-                              : null,
-                          onPressed: scanCallback,
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: SizedBox(
+                          width: 168,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(_scanFocusOrder),
+                            child: _DashboardActionButton(
+                              key: StorageStewardHome.scanActionKey,
+                              label: scanLabel,
+                              icon: summary.scanning
+                                  ? Icons.stop_circle_outlined
+                                  : Icons.radar_outlined,
+                              primary: true,
+                              semanticColor: summary.scanning
+                                  ? context.volward.danger
+                                  : null,
+                              onPressed: scanCallback,
+                            ),
+                          ),
                         ),
                       ),
+                    ],
+                  )
+                : SizedBox(
+                    width: 290,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _StatusChip(
+                          label: _overviewStatus(context, summary),
+                          tone: _statusChipTone(summary),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          summary.lastScannedAtMs == null
+                              ? l10n.homeNeverScanned
+                              : l10n.homeLastScan(
+                                  _formatScanTime(context, summary.lastScannedAtMs!),
+                                ),
+                          maxLines: 2,
+                          style: context.vwFinePrint.copyWith(
+                            color: Colors.white.withValues(alpha: 0.58),
+                          ),
+                        ),
+                        if (summary.reclaimableBytes != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            l10n.homeReclaimable(
+                              formatStorageBytes(summary.reclaimableBytes),
+                            ),
+                            style: context.vwFinePrint.copyWith(color: _onDashboard),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 140,
+                              child: FocusTraversalOrder(
+                                order: const NumericFocusOrder(_browseFocusOrder),
+                                child: _DashboardActionButton(
+                                  key: StorageStewardHome.browseKey,
+                                  label: l10n.homeBrowseFiles,
+                                  icon: Icons.folder_outlined,
+                                  primary: false,
+                                  onPressed: onBrowse,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              width: 140,
+                              child: FocusTraversalOrder(
+                                order: const NumericFocusOrder(_scanFocusOrder),
+                                child: _DashboardActionButton(
+                                  key: StorageStewardHome.scanActionKey,
+                                  label: scanLabel,
+                                  icon: summary.scanning
+                                      ? Icons.stop_circle_outlined
+                                      : Icons.radar_outlined,
+                                  primary: true,
+                                  semanticColor: summary.scanning
+                                      ? context.volward.danger
+                                      : null,
+                                  onPressed: scanCallback,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
           ),
         );
 
@@ -1519,17 +1582,7 @@ List<StorageLocationInfo> _targetLocations(StorageHomeSummary summary) {
 }
 
 double _wideDashboardHeight(StorageHomeSummary summary) {
-  final visibleTargets = _visibleTargetCount(summary);
-  final sidebarHeight =
-      _sidebarPadding * 2 +
-      _sidebarLogoHeight +
-      _sidebarLogoGap +
-      visibleTargets * _targetTileHeight +
-      math.max(0, visibleTargets - 1) * _targetTileGap;
-  return math.max(_minRightPanelHeight, sidebarHeight);
-}
-
-int _visibleTargetCount(StorageHomeSummary summary) {
+  // Sidebar height
   final targetLocations = _targetLocations(summary);
   final recentLocations = _recentCustomLocations(summary);
   final selectedCustom =
@@ -1544,7 +1597,19 @@ int _visibleTargetCount(StorageHomeSummary summary) {
       !targetLocations.any(
         (location) => _samePath(location.path, recentMenuLocation.path),
       );
-  return targetLocations.length + (hasRecentFallback ? 1 : 0);
+  final visibleTargets = targetLocations.length + (hasRecentFallback ? 1 : 0);
+
+  final sidebarHeight =
+      _sidebarPadding * 2 +
+      _sidebarLogoHeight +
+      _sidebarLogoGap +
+      visibleTargets * _targetTileHeight +
+      math.max(0, visibleTargets - 1) * _targetTileGap;
+
+  // Right column height
+  final rightColumnHeight = _rightColumnHeight(summary);
+
+  return math.max(sidebarHeight, rightColumnHeight);
 }
 
 List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
@@ -1568,6 +1633,40 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
     }
   }
   return recent;
+}
+
+double _rightColumnHeight(StorageHomeSummary summary) {
+  // Capacity panel intrinsic
+  const capacityPadding = 18.0 * 2; // top + bottom
+  const capacityContent = 170.0; // measured: title + meter + spacing
+  final capacityHeight = capacityPadding + capacityContent;
+
+  // Largest items panel intrinsic
+  const largestPadding = 18.0 * 2;
+  const largestHeader = 17.0;
+  const largestGap = 12.0;
+  const largestRowHeight = 29.0;
+  final largestItemCount = summary.largestItems.take(5).length;
+  final largestBodyHeight = largestItemCount > 0
+      ? largestItemCount * largestRowHeight
+      : 66.0; // empty state
+  final largestHeight = largestPadding + largestHeader + largestGap + largestBodyHeight;
+
+  // Browse card intrinsic (horizontal buttons)
+  const browsePadding = 18.0 * 2;
+  const browseChip = 24.0;
+  const browseGap1 = 8.0;
+  const browseTimestamp = 28.0; // 2 lines
+  const browseReclaimable = 20.0;
+  const browseGap2 = 10.0;
+  const browseButtons = 36.0;
+  final browseHeight = browsePadding + browseChip + browseGap1 +
+      browseTimestamp + browseReclaimable + browseGap2 + browseButtons;
+
+  // Two gaps between three panels
+  const panelGaps = 14.0 * 2;
+
+  return capacityHeight + largestHeight + browseHeight + panelGaps;
 }
 
 String _formatScanTime(BuildContext context, int millisecondsSinceEpoch) {

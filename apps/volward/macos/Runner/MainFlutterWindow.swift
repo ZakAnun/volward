@@ -181,6 +181,8 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    self.contentMinSize = NSSize(width: 900, height: 700)
+
     let channel = FlutterMethodChannel(
       name: "com.volward/macos_settings",
       binaryMessenger: flutterViewController.engine.binaryMessenger
