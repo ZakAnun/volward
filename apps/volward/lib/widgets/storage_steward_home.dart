@@ -1105,40 +1105,48 @@ class _BrowseCard extends StatelessWidget {
 
   /// Builds a skeleton loader mimicking the category breakdown layout
   Widget _buildCategorySkeleton() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Skeleton pie chart
-        const SkeletonLoader(
-          width: 72,
-          height: 72,
-          borderRadius: 36,
-        ),
-        const SizedBox(width: 14),
-        // Skeleton legend rows
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < 3; i++) ...[
-                Row(
-                  children: [
-                    const SkeletonLoader(width: 12, height: 12, borderRadius: 3),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: SkeletonLoader(width: double.infinity, height: 14, borderRadius: 4),
-                    ),
-                    const SizedBox(width: 8),
-                    const SkeletonLoader(width: 40, height: 14, borderRadius: 4),
-                  ],
-                ),
-                if (i < 2) const SizedBox(height: 8),
-              ],
-            ],
+    return Container(
+      // Semi-opaque background to cover underlying content
+      decoration: BoxDecoration(
+        color: _glass(0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Skeleton pie chart
+          const SkeletonLoader(
+            width: 72,
+            height: 72,
+            borderRadius: 36,
           ),
-        ),
-      ],
+          const SizedBox(width: 14),
+          // Skeleton legend rows
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < 3; i++) ...[
+                  Row(
+                    children: [
+                      const SkeletonLoader(width: 12, height: 12, borderRadius: 3),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: SkeletonLoader(width: double.infinity, height: 14, borderRadius: 4),
+                      ),
+                      const SizedBox(width: 8),
+                      const SkeletonLoader(width: 40, height: 14, borderRadius: 4),
+                    ],
+                  ),
+                  if (i < 2) const SizedBox(height: 8),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
