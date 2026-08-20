@@ -26,11 +26,11 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1200),
       vsync: this,
     )..repeat();
     _animation = Tween<double>(begin: -1.0, end: 2.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _controller, curve: Curves.linear),
     );
   }
 
@@ -55,14 +55,14 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 colors: [
-                  Colors.white.withValues(alpha: 0.12),
-                  Colors.white.withValues(alpha: 0.20),
-                  Colors.white.withValues(alpha: 0.12),
+                  Colors.white.withValues(alpha: 0.10),
+                  Colors.white.withValues(alpha: 0.28),
+                  Colors.white.withValues(alpha: 0.10),
                 ],
                 stops: [
-                  (_animation.value - 0.3).clamp(0.0, 1.0),
+                  (_animation.value - 0.2).clamp(0.0, 1.0),
                   _animation.value.clamp(0.0, 1.0),
-                  (_animation.value + 0.3).clamp(0.0, 1.0),
+                  (_animation.value + 0.2).clamp(0.0, 1.0),
                 ],
               ),
             ),
