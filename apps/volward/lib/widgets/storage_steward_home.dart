@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
+import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'home/category_breakdown.dart';
 import 'home/dashboard_theme.dart';
@@ -352,7 +353,7 @@ class _HeroTopbar extends StatelessWidget {
     }
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(AppleSpacing.lg, 18, 16, 14),
+      padding: const EdgeInsets.fromLTRB(AppleSpacing.lg, 18, 16, 14),
       child: Row(
         children: [
           Expanded(child: brand),
@@ -835,7 +836,7 @@ class _BrowseCard extends StatelessWidget {
           // Compact mode: keep original stacked layout
           final showSkeleton = summary.scanning || summary.overview.loading;
           final details = Padding(
-            padding: EdgeInsets.fromLTRB(
+            padding: const EdgeInsets.fromLTRB(
               AppleSpacing.lg,
               18,
               AppleSpacing.lg,
@@ -879,7 +880,7 @@ class _BrowseCard extends StatelessWidget {
           final actions = KeyedSubtree(
             key: StorageStewardHome.actionsKey,
             child: Padding(
-              padding: EdgeInsets.fromLTRB(
+              padding: const EdgeInsets.fromLTRB(
                 AppleSpacing.lg,
                 0,
                 AppleSpacing.lg,
@@ -984,7 +985,12 @@ class _BrowseCard extends StatelessWidget {
               border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(16), // Reduced from 18
+              padding: const EdgeInsets.fromLTRB(
+                AppleSpacing.lg,
+                16,
+                AppleSpacing.lg,
+                16,
+              ), // Match LargestItemsPanel horizontal padding
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1158,7 +1164,7 @@ class _CategorySkeletonContent extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            SkeletonLoader(
+            const SkeletonLoader(
               width: pieSize,
               height: pieSize,
               borderRadius: pieSize / 2,
@@ -1358,19 +1364,17 @@ class _DashboardActionButton extends StatelessWidget {
     required this.icon,
     required this.primary,
     required this.onPressed,
-    this.semanticColor,
   });
 
   final String label;
   final IconData icon;
   final bool primary;
   final VoidCallback? onPressed;
-  final Color? semanticColor;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    final actionColor = semanticColor ?? context.volward.primary;
+    final actionColor = context.volward.primary;
     final background = enabled
         ? primary
             ? actionColor

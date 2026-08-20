@@ -115,6 +115,40 @@ class StorageHomeSummary {
 
   bool get hasUsableCapacity => _hasUsableCapacity(selectedVolume);
 
+  StorageHomeSummary copyWith({
+    StorageOverviewData? overview,
+    StorageLocationInfo? selectedLocation,
+    StorageVolumeInfo? selectedVolume,
+    bool? scanning,
+    bool? hasCompletedScan,
+    int? reclaimableBytes,
+    int? lastScannedAtMs,
+    double? scanProgress,
+    String? scanPhase,
+    int? scannedBytes,
+    List<StorageHomeCategorySummary>? categories,
+    List<StorageHomeItem>? largestItems,
+    StorageLocationInfo? pinnedCustomLocation,
+    List<StorageLocationInfo>? recentCustomLocations,
+  }) {
+    return StorageHomeSummary(
+      overview: overview ?? this.overview,
+      selectedLocation: selectedLocation ?? this.selectedLocation,
+      selectedVolume: selectedVolume ?? this.selectedVolume,
+      scanning: scanning ?? this.scanning,
+      hasCompletedScan: hasCompletedScan ?? this.hasCompletedScan,
+      reclaimableBytes: reclaimableBytes ?? this.reclaimableBytes,
+      lastScannedAtMs: lastScannedAtMs ?? this.lastScannedAtMs,
+      scanProgress: scanProgress ?? this.scanProgress,
+      scanPhase: scanPhase ?? this.scanPhase,
+      scannedBytes: scannedBytes ?? this.scannedBytes,
+      categories: categories ?? this.categories,
+      largestItems: largestItems ?? this.largestItems,
+      pinnedCustomLocation: pinnedCustomLocation ?? this.pinnedCustomLocation,
+      recentCustomLocations: recentCustomLocations ?? this.recentCustomLocations,
+    );
+  }
+
   factory StorageHomeSummary.fromInputs({
     required StorageOverviewData overview,
     required String targetPath,

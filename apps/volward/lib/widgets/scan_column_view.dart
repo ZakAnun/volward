@@ -432,8 +432,12 @@ class _FinderColumn extends StatelessWidget {
                   addAutomaticKeepAlives: false,
                   addRepaintBoundaries: false,
                   addSemanticIndexes: false,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppleSpacing.lg,
+                    AppleSpacing.xxs,
+                    AppleSpacing.lg,
+                    AppleSpacing.xxs,
+                  ),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final node = items[index];
@@ -615,7 +619,7 @@ class _FinderColumnPainter extends CustomPainter {
 
   static const double _rowHeight = 28;
   static const double _verticalPadding = AppleSpacing.xxs;
-  static const double _leftPadding = AppleSpacing.xs;
+  static const double _leftPadding = AppleSpacing.lg;
   static const double _iconSize = 16;
   static const double _gap = AppleSpacing.xxs;
   static const double _trailingWidth = 54;
@@ -885,7 +889,7 @@ class _FinderRow extends StatelessWidget {
         child: SizedBox(
           height: 28,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.xs),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               children: [
                 Icon(

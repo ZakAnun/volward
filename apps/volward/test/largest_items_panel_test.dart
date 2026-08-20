@@ -136,7 +136,11 @@ void main() {
   testWidgets('scanning shows progress instead of rows', (tester) async {
     await pumpPanel(
       tester,
-      summary: summaryWithItems(items: const [bigFile], scanning: true),
+      summary: summaryWithItems(
+        items: const [bigFile],
+        scanning: true,
+        hasCompletedScan: false,
+      ).copyWith(scanProgress: 0.5),
     );
 
     expect(find.byKey(LargestItemsPanel.progressKey), findsOneWidget);
