@@ -10,6 +10,7 @@ import '../theme/volward_tokens.dart';
 import 'home/category_breakdown.dart';
 import 'home/dashboard_theme.dart';
 import 'home/largest_items_panel.dart';
+import 'home/skeleton_loader.dart';
 import 'volward_logo.dart';
 
 const _dashboardInk = kDashboardInk;
@@ -1010,10 +1011,19 @@ class _BrowseCard extends StatelessWidget {
                     )
                   else
                     Expanded(
-                      child: CategoryBreakdown(
-                        categories: summary.categories,
-                        enabled: !summary.scanning,
-                        onSelectCategory: onSelectCategory,
+                      child: Stack(
+                        children: [
+                          CategoryBreakdown(
+                            categories: summary.categories,
+                            enabled: !summary.scanning,
+                            onSelectCategory: onSelectCategory,
+                          ),
+                          // Show skeleton overlay during scanning
+                          if (summary.scanning)
+                            Positioned.fill(
+                              child: _buildCategorySkeleton(),
+                            ),
+                        ],
                       ),
                     ),
                   // Fixed-height reclaimable space (always present to prevent button jump)
@@ -1080,6 +1090,45 @@ class _BrowseCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Builds a skeleton loader mimicking the category breakdown layout
+  Widget _buildCategorySkeleton() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Skeleton pie chart
+        const SkeletonLoader(
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+        ),
+        const SizedBox(width: 14),
+        // Skeleton legend rows
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < 3; i++) ...[
+                Row(
+                  children: [
+                    const SkeletonLoader(width: 12, height: 12, borderRadius: 3),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: SkeletonLoader(width: double.infinity, height: 14, borderRadius: 4),
+                    ),
+                    const SizedBox(width: 8),
+                    const SkeletonLoader(width: 40, height: 14, borderRadius: 4),
+                  ],
+                ),
+                if (i < 2) const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
