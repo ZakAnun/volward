@@ -1139,10 +1139,11 @@ class _BrowseCard extends StatelessWidget {
             borderRadius: 36,
           ),
           const SizedBox(width: 14),
-          // Skeleton legend rows
+          // Skeleton legend rows - flexible to fit available space
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < 3; i++) ...[
@@ -1151,13 +1152,13 @@ class _BrowseCard extends StatelessWidget {
                       SkeletonLoader(width: 12, height: 12, borderRadius: 3),
                       SizedBox(width: 8),
                       Expanded(
-                        child: SkeletonLoader(width: double.infinity, height: 14, borderRadius: 4),
+                        child: SkeletonLoader(width: double.infinity, height: 12, borderRadius: 4),
                       ),
                       SizedBox(width: 8),
-                      SkeletonLoader(width: 40, height: 14, borderRadius: 4),
+                      SkeletonLoader(width: 40, height: 12, borderRadius: 4),
                     ],
                   ),
-                  if (i < 2) const SizedBox(height: 8),
+                  if (i < 2) const SizedBox(height: 6),
                 ],
               ],
             ),
