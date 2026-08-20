@@ -72,7 +72,13 @@ class LargestItemsPanel extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, List<StorageHomeItem> items) {
-    if (summary.scanning) return _progress(context);
+    // Show progress bar only during an active scan (scanProgress != null).
+    // During cache restore scanning=true but scanProgress=null — fall through
+    // to the skeleton rows so the panel stays consistent with the rest of the UI.
+    if (summary.scanning && summary.scanProgress != null) {
+      return _progress(context);
+    }
+    if (summary.scanning) return _empty(context);
     if (items.isNotEmpty) return _rows(context, items);
     return _empty(context);
   }

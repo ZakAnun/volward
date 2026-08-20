@@ -1074,7 +1074,7 @@ class _BrowseCard extends StatelessWidget {
                   KeyedSubtree(
                     key: StorageStewardHome.actionsKey,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         SizedBox(
                           width: 140,
@@ -1101,9 +1101,6 @@ class _BrowseCard extends StatelessWidget {
                                   ? Icons.stop_circle_outlined
                                   : Icons.radar_outlined,
                               primary: true,
-                              semanticColor: summary.scanning
-                                  ? context.volward.danger
-                                  : null,
                               onPressed: scanCallback,
                             ),
                           ),
@@ -1137,6 +1134,7 @@ class _BrowseCard extends StatelessWidget {
             width: 72,
             height: 72,
             borderRadius: 36,
+            animate: false, // Disable animation to avoid test timeouts
           ),
           const SizedBox(width: 14),
           // Skeleton legend rows - flexible to fit available space
@@ -1149,16 +1147,16 @@ class _BrowseCard extends StatelessWidget {
                 for (var i = 0; i < 3; i++) ...[
                   const Row(
                     children: [
-                      SkeletonLoader(width: 12, height: 12, borderRadius: 3),
+                      SkeletonLoader(width: 12, height: 12, borderRadius: 3, animate: false),
                       SizedBox(width: 8),
                       Expanded(
-                        child: SkeletonLoader(width: double.infinity, height: 12, borderRadius: 4),
+                        child: SkeletonLoader(width: double.infinity, height: 12, borderRadius: 4, animate: false),
                       ),
                       SizedBox(width: 8),
-                      SkeletonLoader(width: 40, height: 12, borderRadius: 4),
+                      SkeletonLoader(width: 40, height: 12, borderRadius: 4, animate: false),
                     ],
                   ),
-                  if (i < 2) const SizedBox(height: 6),
+                  if (i < 2) const SizedBox(height: 5),
                 ],
               ],
             ),

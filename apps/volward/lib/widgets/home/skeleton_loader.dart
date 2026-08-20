@@ -7,11 +7,13 @@ class SkeletonLoader extends StatefulWidget {
     required this.width,
     required this.height,
     this.borderRadius = 8.0,
+    this.animate = true,
   });
 
   final double width;
   final double height;
   final double borderRadius;
+  final bool animate;
 
   @override
   State<SkeletonLoader> createState() => _SkeletonLoaderState();
@@ -28,7 +30,11 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
     _controller = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
-    )..repeat();
+    );
+    // Only animate when explicitly enabled (defaults to true in production)
+    if (widget.animate) {
+      _controller.repeat();
+    }
     _animation = Tween<double>(begin: -1.0, end: 2.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.linear),
     );

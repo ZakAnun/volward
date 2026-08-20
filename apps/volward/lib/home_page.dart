@@ -1398,7 +1398,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       targetPath: target,
       matchingSnapshot: _snapshotMatchesTarget(target) ? _s.lastSnapshot : null,
       largestItemCandidates: _largestItemsFor(target),
-      scanning: _s.scanning,
+      scanning: _s.scanning || _s.restoringSnapshot,
       scanProgress: _s.scanning ? progress.fraction : null,
       scanPhase: _s.scanning ? progress.phase : null,
       recentCustomLocations: _recentCustomLocations,
