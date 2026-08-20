@@ -175,10 +175,10 @@ class _HeroVisual extends StatelessWidget {
   Widget build(BuildContext context) {
     final board = Padding(
       padding: EdgeInsets.fromLTRB(
-        compact ? 16 : 22,
+        compact ? 16 : AppleSpacing.lg,
         0,
-        compact ? 16 : 22,
-        compact ? 16 : 22,
+        compact ? 16 : AppleSpacing.lg,
+        compact ? 16 : AppleSpacing.lg,
       ),
       child: compact
           ? _CompactBoard(
@@ -352,7 +352,7 @@ class _HeroTopbar extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 16, 14),
+      padding: EdgeInsets.fromLTRB(AppleSpacing.lg, 18, 16, 14),
       child: Row(
         children: [
           Expanded(child: brand),
@@ -669,9 +669,9 @@ class _StatPanel extends StatelessWidget {
               children: [
                 Padding(
                   padding: EdgeInsets.fromLTRB(
-                    compact ? 18 : 22,
+                    compact ? 18 : AppleSpacing.lg,
                     compact ? 18 : 20, // Reduced from 22
-                    compact ? 18 : 22,
+                    compact ? 18 : AppleSpacing.lg,
                     compact ? 16 : 16, // Reduced from 18
                   ),
                   child: Column(
@@ -835,7 +835,12 @@ class _BrowseCard extends StatelessWidget {
           // Compact mode: keep original stacked layout
           final showSkeleton = summary.scanning || summary.overview.loading;
           final details = Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            padding: EdgeInsets.fromLTRB(
+              AppleSpacing.lg,
+              18,
+              AppleSpacing.lg,
+              18,
+            ),
             child: showSkeleton && summary.categories.isEmpty
                 // Loading/scanning with no categories: show skeleton
                 ? _buildCategorySkeleton()
@@ -874,7 +879,12 @@ class _BrowseCard extends StatelessWidget {
           final actions = KeyedSubtree(
             key: StorageStewardHome.actionsKey,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              padding: EdgeInsets.fromLTRB(
+                AppleSpacing.lg,
+                0,
+                AppleSpacing.lg,
+                18,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
