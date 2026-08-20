@@ -55,9 +55,9 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 colors: [
-                  Colors.white.withValues(alpha: 0.08),
                   Colors.white.withValues(alpha: 0.12),
-                  Colors.white.withValues(alpha: 0.08),
+                  Colors.white.withValues(alpha: 0.20),
+                  Colors.white.withValues(alpha: 0.12),
                 ],
                 stops: [
                   (_animation.value - 0.3).clamp(0.0, 1.0),
