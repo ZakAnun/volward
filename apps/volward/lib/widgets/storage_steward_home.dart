@@ -1101,6 +1101,9 @@ class _BrowseCard extends StatelessWidget {
                                   ? Icons.stop_circle_outlined
                                   : Icons.radar_outlined,
                               primary: true,
+                              semanticColor: summary.scanning
+                                  ? context.volward.danger
+                                  : null,
                               onPressed: scanCallback,
                             ),
                           ),
