@@ -610,6 +610,25 @@ void main() {
     }
   });
 
+  testWidgets('default window shows full dashboard without overflow', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      size: const Size(1000, 720),
+      summary: completedSummary,
+    );
+
+    final viewport = tester.getRect(
+      find.byKey(StorageStewardHome.contentViewportKey),
+    );
+    final board = tester.getRect(
+      find.byKey(StorageStewardHome.boardKey),
+    );
+
+    expect(board.height, closeTo(viewport.height, 1));
+  });
+
   testWidgets('capacity meter sits at the bottom of the disk card', (
     tester,
   ) async {

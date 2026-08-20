@@ -1638,7 +1638,7 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
 double _rightColumnHeight(StorageHomeSummary summary) {
   // Capacity panel intrinsic
   const capacityPadding = 18.0 * 2; // top + bottom
-  const capacityContent = 170.0; // measured: title + meter + spacing
+  const capacityContent = 172.0; // measured: title + meter + spacing
   final capacityHeight = capacityPadding + capacityContent;
 
   // Largest items panel intrinsic
