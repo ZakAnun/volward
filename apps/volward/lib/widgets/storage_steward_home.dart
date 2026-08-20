@@ -1636,40 +1636,23 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
 }
 
 double _rightColumnHeight(StorageHomeSummary summary) {
-  // Capacity panel intrinsic
-  const capacityPadding = 18.0 * 2; // top + bottom
-  const capacityContent = 170.0; // measured: title + meter + spacing
-  final capacityHeight = capacityPadding + capacityContent;
+  // Calculate based on flex ratios to match actual layout
+  // Flex ratios are 35:37:29 (total 101)
+  // Use a reference height and scale proportionally
 
-  // Largest items panel intrinsic
-  const largestPadding = 18.0 * 2;
-  const largestHeader = 17.0;
-  const largestGap = 12.0;
-  const largestRowHeight = 29.0;
-  final largestItemCount = summary.largestItems.take(5).length;
-  final largestBodyHeight = largestItemCount > 0
-      ? largestItemCount * largestRowHeight
-      : 66.0; // empty state
-  final largestHeight = largestPadding + largestHeader + largestGap + largestBodyHeight;
+  // Capacity panel: flex 35
+  const capacityBase = 202.0;
 
-  // Browse card intrinsic (horizontal buttons)
-  const browsePadding = 18.0 * 2;
-  const browseChip = 24.0;
-  const browseGap1 = 8.0;
-  const browseTimestamp = 28.0; // 2 lines
-  const browseReclaimable = 20.0;
-  const browseGap2 = 10.0;
-  const browseButtons = 36.0;
-  final browseHeight = browsePadding + browseChip + browseGap1 +
-      browseTimestamp + browseReclaimable + browseGap2 + browseButtons;
+  // Largest items panel: flex 37
+  const largestBase = 211.0;
+
+  // Browse card: flex 29
+  const browseBase = 166.0;
 
   // Two gaps between three panels
   const panelGaps = 14.0 * 2;
 
-  // Add buffer to prevent overflow from flex layout rounding at various viewport heights
-  const flexBuffer = 8.0;
-
-  return capacityHeight + largestHeight + browseHeight + panelGaps + flexBuffer;
+  return capacityBase + largestBase + browseBase + panelGaps;
 }
 
 String _formatScanTime(BuildContext context, int millisecondsSinceEpoch) {
