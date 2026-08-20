@@ -994,8 +994,27 @@ class _BrowseCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10), // Reduced from 12
-                  // Middle: Category breakdown (pie chart + legend)
-                  if (summary.categories.isEmpty)
+                  // Middle: Category breakdown, skeleton (scanning), or empty hint
+                  if (summary.scanning && summary.categories.isEmpty)
+                    // Scanning with no categories yet: show skeleton only
+                    Expanded(child: _buildCategorySkeleton())
+                  else if (summary.scanning)
+                    // Scanning with existing categories: show breakdown + skeleton overlay
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          CategoryBreakdown(
+                            categories: summary.categories,
+                            enabled: false,
+                            onSelectCategory: onSelectCategory,
+                          ),
+                          Positioned.fill(
+                            child: _buildCategorySkeleton(),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (summary.categories.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
@@ -1011,19 +1030,10 @@ class _BrowseCard extends StatelessWidget {
                     )
                   else
                     Expanded(
-                      child: Stack(
-                        children: [
-                          CategoryBreakdown(
-                            categories: summary.categories,
-                            enabled: !summary.scanning,
-                            onSelectCategory: onSelectCategory,
-                          ),
-                          // Show skeleton overlay during scanning
-                          if (summary.scanning)
-                            Positioned.fill(
-                              child: _buildCategorySkeleton(),
-                            ),
-                        ],
+                      child: CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: true,
+                        onSelectCategory: onSelectCategory,
                       ),
                     ),
                   // Fixed-height reclaimable space (always present to prevent button jump)
