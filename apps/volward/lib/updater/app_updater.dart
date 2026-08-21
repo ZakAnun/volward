@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'asset_resolver.dart';
+import 'checksum.dart';
 import 'downloader.dart';
 import 'platform_installer.dart';
 import 'update_models.dart';
@@ -57,6 +58,11 @@ class AppUpdater extends ChangeNotifier {
 
   bool _dismissedThisSession = false;
 
+  /// Guards against concurrent operations. Each top-level method sets this on
+  /// entry and clears it in a finally block. A second call that arrives while
+  /// an operation is already in flight returns early rather than racing.
+  bool _inFlight = false;
+
   /// True while a downloaded package is waiting and the user has not dismissed
   /// the home-page pill this session.
   bool get showsReadyBanner =>
@@ -75,8 +81,12 @@ class AppUpdater extends ChangeNotifier {
   }
 
   Future<void> check({required bool userInitiated}) async {
-    _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
+    // Silently skip if an operation is already in flight — a background prefetch
+    // and a manual check could otherwise race and interleave their status writes.
+    if (_inFlight) return;
+    _inFlight = true;
     try {
+      _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
       final local = await localVersion();
       final release = await _versionSource.fetchLatest();
       if (!isRemoteNewer(remoteTag: release.tagName, localVersion: local)) {
@@ -167,12 +177,18 @@ class AppUpdater extends ChangeNotifier {
           errorMessage: error.toString(),
         ),
       );
+    } finally {
+      _inFlight = false;
     }
   }
 
   /// Fetches and verifies the package, then parks at
   /// [UpdatePhase.readyToInstall]. Never installs.
   Future<void> downloadOnly() async {
+    // A concurrent call — e.g. the user clicking "Update now" while a
+    // background prefetch is already downloading — would race to write the
+    // status and potentially create two temp directories. Guard against it.
+    if (_inFlight) return;
     if (_status.phase != UpdatePhase.available) {
       throw StateError(
         'Cannot download update while phase is ${_status.phase.name}',
@@ -184,8 +200,9 @@ class AppUpdater extends ChangeNotifier {
       throw StateError('No available update to download');
     }
 
+    _inFlight = true;
+    final tempDirectory = _tempDirectoryBuilder();
     try {
-      final tempDirectory = _tempDirectoryBuilder();
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.downloading,
@@ -219,6 +236,12 @@ class AppUpdater extends ChangeNotifier {
       );
     } catch (error, stackTrace) {
       debugPrint('AppUpdater.downloadOnly failed: $error\n$stackTrace');
+      // Best-effort cleanup: a failed download leaves an empty or partial file
+      // and the temp directory behind. Remove it so successive retries don't
+      // accumulate orphaned `volward_update_*` dirs.
+      try {
+        await tempDirectory.delete(recursive: true);
+      } catch (_) {}
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.error,
@@ -228,6 +251,8 @@ class AppUpdater extends ChangeNotifier {
           errorMessage: error.toString(),
         ),
       );
+    } finally {
+      _inFlight = false;
     }
   }
 
@@ -236,6 +261,10 @@ class AppUpdater extends ChangeNotifier {
   /// On the happy path this does not return — the platform installer exits the
   /// process.
   Future<void> installDownloaded() async {
+    if (_inFlight) return;
+    // Precondition checks throw synchronously before touching any state —
+    // same contract as downloadOnly() — so callers get a clear programmer error
+    // rather than an opaque error-phase transition.
     if (_status.phase != UpdatePhase.readyToInstall) {
       throw StateError(
         'Cannot install update while phase is ${_status.phase.name}',
@@ -247,8 +276,24 @@ class AppUpdater extends ChangeNotifier {
     if (release == null || file == null) {
       throw StateError('No downloaded update to install');
     }
-
+    _inFlight = true;
     try {
+      // Re-verify the downloaded file before handing it to the installer.
+      // The downloader already checked the hash, but the window between
+      // download and install is nonzero and the file sits in a temp directory
+      // that is world-readable on most platforms.
+      if (asset != null) {
+        final expected = asset.sha256;
+        if (expected != null && expected.isNotEmpty) {
+          final actual = await sha256File(file);
+          if (actual != expected) {
+            throw UpdateIntegrityException(
+              'SHA-256 mismatch before install for ${asset.name}: '
+              'expected $expected, got $actual',
+            );
+          }
+        }
+      }
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.installing,
@@ -270,6 +315,8 @@ class AppUpdater extends ChangeNotifier {
           errorMessage: error.toString(),
         ),
       );
+    } finally {
+      _inFlight = false;
     }
   }
 

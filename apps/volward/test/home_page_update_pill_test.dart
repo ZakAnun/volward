@@ -206,14 +206,18 @@ void main() {
     addTearDown(updater.dispose);
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
-    // Trigger the postFrameCallback that starts checkAndPrefetch.
-    await tester.pump();
+    // The postFrameCallback fires on the first pump. Run it inside runAsync so
+    // the home page's implicit checkAndPrefetch() — which does real I/O
+    // (directory.create, writeAsBytesSync) — can complete without getting stuck
+    // in the fake-async zone.
+    await tester.runAsync(() async {
+      await tester.pump();
+      // Yield so the unawaited checkAndPrefetch() future drains fully.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
     expect(tester.takeException(), isNull);
 
-    // Use runAsync to allow the real async operations to complete.
-    await tester.runAsync(() => updater.checkAndPrefetch());
-
-    // Pump to rebuild with the new state.
+    // Rebuild widgets with the new updater state.
     await tester.pump();
 
     expect(find.byType(AlertDialog), findsNothing);

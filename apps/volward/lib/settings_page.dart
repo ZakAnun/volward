@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'l10n/l10n.dart';
@@ -293,27 +295,24 @@ class _SettingsPageState extends State<SettingsPage> {
                               spacing: AppleSpacing.sm,
                               runSpacing: AppleSpacing.sm,
                               children: [
-                                // A prefetched package is waiting: the only
-                                // sensible action is finishing the install, so
-                                // don't offer a re-check that would re-download.
+                                // A prefetched package is waiting. Show both the
+                                // install button and a re-check button so a newer
+                                // release published after the prefetch can still be
+                                // discovered and supersede the parked download.
                                 if (status.phase == UpdatePhase.readyToInstall)
                                   AppleButton(
                                     label: l10n.updateReadyAction,
-                                    onPressed: () =>
-                                        widget.updater.installDownloaded(),
-                                  )
-                                else
+                                    onPressed: () => unawaited(
+                                      widget.updater.installDownloaded(),
+                                    ),
+                                  ),
+                                if (status.phase != UpdatePhase.checking &&
+                                    status.phase != UpdatePhase.downloading &&
+                                    status.phase != UpdatePhase.installing)
                                   AppleButton(
                                     label: l10n.settingsCheckForUpdates,
                                     variant: AppleButtonVariant.pearl,
-                                    onPressed:
-                                        status.phase == UpdatePhase.checking ||
-                                            status.phase ==
-                                                UpdatePhase.downloading ||
-                                            status.phase ==
-                                                UpdatePhase.installing
-                                        ? null
-                                        : () => _checkForUpdates(context),
+                                    onPressed: () => _checkForUpdates(context),
                                   ),
                                 if (status.phase == UpdatePhase.available)
                                   AppleButton(

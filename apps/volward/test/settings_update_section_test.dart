@@ -197,11 +197,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Complete update'), findsOneWidget);
-    expect(find.text('Check for updates'), findsNothing);
+    // Both buttons are visible when readyToInstall: "Complete update" triggers
+    // the install; "Check for updates" lets the user look for a newer release.
+    expect(find.text('Check for updates'), findsOneWidget);
     expect(find.text('A new version is downloaded and ready.'), findsOneWidget);
 
-    await tester.tap(find.text('Complete update'));
-    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Complete update'));
+      await tester
+          .pump(); // deliver the tap — starts unawaited installDownloaded()
+      // sha256File does real I/O; yield to let it complete before the test ends.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(); // process notifyListeners from status change
     expect(installer.calls, 1);
   });
 

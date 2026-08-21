@@ -150,8 +150,14 @@ void main() {
     await tester.runAsync(() => updater.checkAndPrefetch());
     await tester.pump();
 
-    await tester.tap(find.byKey(UpdateReadyPill.actionKey));
-    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(UpdateReadyPill.actionKey));
+      await tester
+          .pump(); // deliver the tap — starts unawaited installDownloaded()
+      // sha256File does real I/O; yield to let it complete before the test ends.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(); // process notifyListeners from status change
 
     expect(find.byType(AlertDialog), findsNothing);
     expect(installer.calls, 1);

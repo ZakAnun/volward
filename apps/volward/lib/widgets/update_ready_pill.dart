@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
@@ -42,7 +44,7 @@ class UpdateReadyPill extends StatelessWidget {
                 InkWell(
                   key: actionKey,
                   borderRadius: BorderRadius.circular(AppleRadius.pill),
-                  onTap: () => updater.installDownloaded(),
+                  onTap: () => unawaited(updater.installDownloaded()),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
                       AppleSpacing.md,
