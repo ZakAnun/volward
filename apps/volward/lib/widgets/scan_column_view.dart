@@ -434,12 +434,10 @@ class _FinderColumn extends StatelessWidget {
               addAutomaticKeepAlives: false,
               addRepaintBoundaries: false,
               addSemanticIndexes: false,
-              padding: const EdgeInsets.fromLTRB(
-                AppleSpacing.lg,
-                AppleSpacing.xxs,
-                AppleSpacing.lg,
-                AppleSpacing.xxs,
-              ),
+              // Vertical only: the horizontal inset lives inside
+              // `_FinderRow`, below its ColoredBox, so a selected row's
+              // highlight spans the full column width.
+              padding: const EdgeInsets.symmetric(vertical: AppleSpacing.xxs),
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final node = items[index];
@@ -622,9 +620,15 @@ class _FinderColumnPainter extends CustomPainter {
     required this.style,
   }) : super(repaint: scrollController);
 
+  // This painter duplicates the widget path's layout, so each constant below
+  // has a twin that must move with it. `_rowHeight` is `_FinderColumn`'s
+  // itemExtent and `_verticalPadding` its ListView padding; the rest mirror
+  // `_FinderRow` — its inset moved inside the row's ColoredBox so a selection
+  // highlight spans the full column, which is why the horizontal inset is no
+  // longer on `_FinderColumn` at all.
   static const double _rowHeight = 28;
   static const double _verticalPadding = AppleSpacing.xxs;
-  static const double _leftPadding = AppleSpacing.lg;
+  static const double _leftPadding = AppleSpacing.sm;
   static const double _iconSize = 16;
   static const double _gap = AppleSpacing.xxs;
   static const double _trailingWidth = 54;
@@ -895,7 +899,13 @@ class _FinderRow extends StatelessWidget {
         child: SizedBox(
           height: 28,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            // Inside the ColoredBox so the highlight reaches both column
+            // edges. AppleSpacing.sm is ScanFilterBar's own container inset,
+            // which puts this icon on the same x as the `All` chip above.
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppleSpacing.sm,
+              vertical: 2,
+            ),
             child: Row(
               children: [
                 Icon(

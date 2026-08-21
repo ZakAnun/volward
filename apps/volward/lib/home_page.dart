@@ -1598,12 +1598,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// Max width every page section is centered within, so the browse column
+  /// view and the chrome above it share one measuring stick.
+  static const double _contentMaxWidth = 880;
+
   // Section wrapper with tighter page rhythm.
   Widget _pad(Widget child, {EdgeInsets? padding}) {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880),
+        constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
         child: Padding(
           padding:
               padding ??
@@ -1620,22 +1624,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Like [_pad] but fills remaining vertical space (for column browser).
+  ///
+  /// Structurally identical to [_pad] on the horizontal axis — cap the width
+  /// first, then pad inside the cap — so the browser's outer edge lands on the
+  /// same x as the content of every section above it. Padding applied outside
+  /// the cap drifts by `(width - _contentMaxWidth) / 2`, reaching a full
+  /// [AppleSpacing.lg] once the window passes the cap plus both insets.
+  ///
+  /// The trade is browsing width: the browser now gets
+  /// `_contentMaxWidth` minus the insets rather than the full cap, so a wide
+  /// window shows one fewer whole column. Alignment with the chrome won out;
+  /// if that column is ever needed back, widen the cap for both — do not
+  /// un-align the browser.
   Widget _padExpanded(Widget child, {required EdgeInsets padding}) {
-    return Padding(
-      padding: padding,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxW = constraints.maxWidth;
-          final maxH = constraints.maxHeight;
-          if (!maxH.isFinite || maxH <= 0) {
-            return const SizedBox.shrink();
-          }
-          final width = maxW > 880 ? 880.0 : maxW;
-          return Align(
-            alignment: Alignment.topCenter,
-            child: SizedBox(width: width, height: maxH, child: child),
-          );
-        },
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+        child: Padding(
+          padding: padding,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxH = constraints.maxHeight;
+              if (!maxH.isFinite || maxH <= 0) {
+                return const SizedBox.shrink();
+              }
+              return SizedBox(
+                width: constraints.maxWidth,
+                height: maxH,
+                child: child,
+              );
+            },
+          ),
+        ),
       ),
     );
   }
