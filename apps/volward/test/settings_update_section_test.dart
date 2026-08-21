@@ -29,7 +29,7 @@ class _Source implements VersionSource {
   Future<ReleaseInfo> fetchLatest() async => release;
 }
 
-class _NoopDownloader implements Downloader {
+class _Downloader implements Downloader {
   @override
   Future<String?> resolveExpectedSha256(ReleaseAsset asset) async {
     final sha = asset.sha256;
@@ -45,8 +45,11 @@ class _NoopDownloader implements Downloader {
     ReleaseAsset asset, {
     required Directory directory,
     DownloadProgress? onProgress,
-  }) {
-    throw UnsupportedError('unused');
+  }) async {
+    await directory.create(recursive: true);
+    final file = File('${directory.path}/${asset.name}');
+    await file.writeAsBytes([1, 2, 3]);
+    return file;
   }
 }
 
@@ -55,7 +58,26 @@ class _NoopUrls implements UrlOpener {
   Future<bool> open(String url) async => true;
 }
 
-AppUpdater _updater({required String local, required String remoteTag}) {
+class _AutoInstaller implements PlatformInstaller {
+  int calls = 0;
+
+  @override
+  bool get canAutoInstall => true;
+
+  @override
+  Future<void> installAndRelaunch({
+    required File downloaded,
+    required ReleaseInfo release,
+  }) async {
+    calls++;
+  }
+}
+
+AppUpdater _updater({
+  required String local,
+  required String remoteTag,
+  PlatformInstaller installer = const UnsupportedInstaller(),
+}) {
   final version = remoteTag.startsWith('v') || remoteTag.startsWith('V')
       ? remoteTag.substring(1)
       : remoteTag;
@@ -78,8 +100,8 @@ AppUpdater _updater({required String local, required String remoteTag}) {
         ],
       ),
     ),
-    downloader: _NoopDownloader(),
-    installer: const UnsupportedInstaller(),
+    downloader: _Downloader(),
+    installer: installer,
     urlOpener: _NoopUrls(),
     os: 'macos',
     abi: Abi.macosArm64,
@@ -129,5 +151,101 @@ void main() {
     expect(updater.status.phase, UpdatePhase.upToDate);
     // Inline status + toast both use the same copy.
     expect(find.text("You're up to date."), findsWidgets);
+  });
+
+  testWidgets('readyToInstall replaces the check button with complete update', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    addTearDown(themeSettings.dispose);
+    final installer = _AutoInstaller();
+    final updater = _updater(
+      local: '0.0.1',
+      remoteTag: 'v0.0.2',
+      installer: installer,
+    );
+    addTearDown(updater.dispose);
+    // The real flow is: startup prefetch finishes, then the user opens
+    // settings — so land at `readyToInstall` before the first render.
+    // `runAsync` is required because the prefetch does real file I/O, which
+    // the fake-async test zone cannot drive.
+    await tester.runAsync(() => updater.checkAndPrefetch());
+    expect(updater.status.phase, UpdatePhase.readyToInstall);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: SettingsPage(
+          themeSettings: themeSettings,
+          session: VolwardSession.test(),
+          deletableOnly: false,
+          onDeletableOnlyChanged: (_) {},
+          updater: updater,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Complete update'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Complete update'), findsOneWidget);
+    // Both buttons are visible when readyToInstall: "Complete update" triggers
+    // the install; "Check for updates" lets the user look for a newer release.
+    expect(find.text('Check for updates'), findsOneWidget);
+    expect(find.text('A new version is downloaded and ready.'), findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Complete update'));
+      await tester
+          .pump(); // deliver the tap — starts unawaited installDownloaded()
+      // sha256File does real I/O; yield to let it complete before the test ends.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(); // process notifyListeners from status change
+    expect(installer.calls, 1);
+  });
+
+  testWidgets('other phases keep the check button and hide complete update', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    addTearDown(themeSettings.dispose);
+    final updater = _updater(local: '0.0.1', remoteTag: 'v0.0.1');
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: SettingsPage(
+          themeSettings: themeSettings,
+          session: VolwardSession.test(),
+          deletableOnly: false,
+          onDeletableOnlyChanged: (_) {},
+          updater: updater,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Check for updates'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check for updates'), findsOneWidget);
+    expect(find.text('Complete update'), findsNothing);
   });
 }

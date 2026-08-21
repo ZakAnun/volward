@@ -6,10 +6,12 @@ import 'package:intl/intl.dart';
 import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
+import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'home/category_breakdown.dart';
 import 'home/dashboard_theme.dart';
 import 'home/largest_items_panel.dart';
+import 'home/skeleton_loader.dart';
 import 'volward_logo.dart';
 
 const _dashboardInk = kDashboardInk;
@@ -24,19 +26,21 @@ const _chooseFolderFocusOrder = 10000.0;
 const _browseFocusOrder = 10001.0;
 const _scanFocusOrder = 10002.0;
 const _settingsFocusOrder = 10003.0;
-const _dashboardControlHeight = 36.0;
+const _dashboardControlHeight = 32.0; // Reduced from 36 to save vertical space
 const _wideSidebarWidth = 216.0;
-// Right panel needs minimum height for three blocks plus board bottom padding:
-// capacity ~120px + gap 14px + largest ~150px + gap 14px + composition ~150px + bottom padding 22px
-// Plus extra buffer for content variations = ~658px
-// Use sidebar height as baseline, but ensure right panel fits without overflow.
-const _minRightPanelHeight = 658.0;
 const _panelGap = 14.0;
 const _sidebarPadding = 18.0;
 const _sidebarLogoHeight = 104.0;
 const _sidebarLogoGap = 18.0;
 const _targetTileHeight = 44.0;
 const _targetTileGap = 10.0;
+
+// Flex ratios for the right panel. They track the intrinsic heights summed at
+// the bottom of this file (capacity is the tallest, browse next, largest
+// smallest), rounded so capacity keeps its content whole.
+const _capacityFlex = 35;
+const _largestFlex = 32;
+const _browseFlex = 34;
 
 Color _glass(double whiteAlpha) => dashboardGlass(whiteAlpha);
 
@@ -106,6 +110,7 @@ class StorageStewardHome extends StatelessWidget {
   static const boardKey = Key('storage-overview-board');
   static const browseCardKey = Key('storage-overview-browse-card');
   static const categoryPieKey = CategoryBreakdown.pieKey;
+  static const statusChipKey = Key('storage-overview-status-chip');
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
   static const recentFoldersKey = Key('storage-overview-recent-folders');
@@ -171,10 +176,10 @@ class _HeroVisual extends StatelessWidget {
   Widget build(BuildContext context) {
     final board = Padding(
       padding: EdgeInsets.fromLTRB(
-        compact ? 16 : 22,
+        compact ? 16 : AppleSpacing.lg,
         0,
-        compact ? 16 : 22,
-        compact ? 16 : 22,
+        compact ? 16 : AppleSpacing.lg,
+        compact ? 16 : AppleSpacing.lg,
       ),
       child: compact
           ? _CompactBoard(
@@ -229,7 +234,10 @@ class _HeroVisual extends StatelessWidget {
                         child: ConstrainedBox(
                           key: StorageStewardHome.boardKey,
                           constraints: BoxConstraints(
-                            minHeight: viewport.maxHeight,
+                            minHeight: math.max(
+                              _wideDashboardHeight(summary, context),
+                              viewport.maxHeight,
+                            ),
                           ),
                           child: board,
                         ),
@@ -347,7 +355,12 @@ class _HeroTopbar extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 16, 14),
+      padding: const EdgeInsets.fromLTRB(
+        AppleSpacing.lg,
+        18,
+        AppleSpacing.lg,
+        14,
+      ),
       child: Row(
         children: [
           Expanded(child: brand),
@@ -382,11 +395,10 @@ class _WideBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dashboardHeight = _wideDashboardHeight(summary);
     return SizedBox(
-      height: dashboardHeight,
+      height: _wideDashboardHeight(summary, context),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: _wideSidebarWidth,
@@ -599,7 +611,9 @@ class _MainPane extends StatelessWidget {
     );
     final largest = LargestItemsPanel(
       summary: summary,
-      maxItems: compact ? 3 : 5,
+      // Same constant the intrinsic-height sum below budgets rows for; a
+      // literal here would drift from it.
+      maxItems: _largestItemCount,
       onOpenItem: onOpenItem,
     );
     final composition = _BrowseCard(
@@ -614,11 +628,11 @@ class _MainPane extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(flex: 35, child: capacity),
+          Expanded(flex: _capacityFlex, child: capacity),
           const SizedBox(height: _panelGap),
-          Expanded(flex: 40, child: largest),
+          Expanded(flex: _largestFlex, child: largest),
           const SizedBox(height: _panelGap),
-          Expanded(flex: 38, child: composition),
+          Expanded(flex: _browseFlex, child: composition),
         ],
       );
     }
@@ -670,10 +684,10 @@ class _StatPanel extends StatelessWidget {
               children: [
                 Padding(
                   padding: EdgeInsets.fromLTRB(
-                    compact ? 18 : 22,
-                    compact ? 18 : 22,
-                    compact ? 18 : 22,
-                    compact ? 16 : 18,
+                    compact ? 18 : AppleSpacing.lg,
+                    compact ? 18 : 20, // Reduced from 22
+                    compact ? 18 : AppleSpacing.lg,
+                    compact ? 16 : 16, // Reduced from 18
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -690,7 +704,7 @@ class _StatPanel extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8), // Reduced from 10
                       Text(
                         used,
                         maxLines: 1,
@@ -709,7 +723,7 @@ class _StatPanel extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.72),
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16), // Reduced from 18
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -731,7 +745,11 @@ class _StatPanel extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!compact) const Spacer(),
+                // Wide mode gives this panel a flex-bounded height, so the
+                // meter is pinned to the card's bottom edge like every
+                // neighbouring panel. Compact mode scrolls (unbounded height),
+                // where a Spacer would assert — hence the fixed gap there.
+                if (!compact) const Spacer() else const SizedBox(height: 10),
                 _HeroMeter(summary: summary),
               ],
             ),
@@ -823,50 +841,73 @@ class _BrowseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scanLabel = summary.scanning
+    // Restoring a cached snapshot also sets `scanning` so the dashboard reads
+    // as busy, but there is no scan to cancel — keying the label off
+    // `scanning` there produced a permanently disabled "Cancel Scan".
+    final scanLabel = summary.canCancelScan
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
         ? l10n.homeRescan
         : l10n.homeStartScan;
-    final scanCallback = summary.scanning ? onCancelScan : onScan;
+    final scanCallback = summary.canCancelScan ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
         final stackedCard = compact || constraints.maxWidth < 280;
-        final details = Padding(
-          padding: EdgeInsets.fromLTRB(20, 18, stackedCard ? 20 : 12, 18),
-          child: summary.categories.isEmpty
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    summary.hasCompletedScan
-                        ? l10n.homeFolderEmpty
-                        : l10n.homeLargestItemsEmpty,
-                    style: context.vwFinePrint.copyWith(
-                      color: _onDashboard.withValues(alpha: 0.42),
-                    ),
-                  ),
-                )
-              : CategoryBreakdown(
-                  categories: summary.categories,
-                  enabled: !summary.scanning,
-                  onSelectCategory: onSelectCategory,
-                ),
-        );
-        final actions = KeyedSubtree(
-          key: StorageStewardHome.actionsKey,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              stackedCard ? 20 : 0,
-              stackedCard ? 0 : 18,
-              20,
+
+        if (stackedCard) {
+          // Compact mode: keep original stacked layout
+          final showSkeleton = summary.scanning || summary.overview.loading;
+          final details = Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppleSpacing.lg,
+              18,
+              AppleSpacing.lg,
               18,
             ),
-            child: SizedBox(
-              width: stackedCard ? null : 168,
+            child: showSkeleton && summary.categories.isEmpty
+                // Loading/scanning with no categories: show skeleton
+                ? _buildCategorySkeleton()
+                : showSkeleton
+                // Partial results are real data — show them, greyed out to read
+                // as in-progress. An opaque skeleton on top would build the
+                // breakdown and then hide it.
+                ? CategoryBreakdown(
+                    categories: summary.categories,
+                    enabled: false,
+                    onSelectCategory: onSelectCategory,
+                  )
+                : summary.categories.isEmpty
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      summary.hasCompletedScan
+                          ? l10n.homeFolderEmpty
+                          : l10n.homeLargestItemsEmpty,
+                      style: context.vwFinePrint.copyWith(
+                        color: _onDashboard.withValues(alpha: 0.42),
+                      ),
+                    ),
+                  )
+                : CategoryBreakdown(
+                    categories: summary.categories,
+                    enabled: true,
+                    onSelectCategory: onSelectCategory,
+                  ),
+          );
+          final actions = KeyedSubtree(
+            key: StorageStewardHome.actionsKey,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppleSpacing.lg,
+                0,
+                AppleSpacing.lg,
+                18,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _StatusChip(
+                    key: StorageStewardHome.statusChipKey,
                     label: _overviewStatus(context, summary),
                     tone: _statusChipTone(summary),
                   ),
@@ -918,11 +959,11 @@ class _BrowseCard extends StatelessWidget {
                         child: _DashboardActionButton(
                           key: StorageStewardHome.scanActionKey,
                           label: scanLabel,
-                          icon: summary.scanning
+                          icon: summary.canCancelScan
                               ? Icons.stop_circle_outlined
                               : Icons.radar_outlined,
                           primary: true,
-                          semanticColor: summary.scanning
+                          semanticColor: summary.canCancelScan
                               ? context.volward.danger
                               : null,
                           onPressed: scanCallback,
@@ -933,9 +974,28 @@ class _BrowseCard extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        );
+          );
 
+          return KeyedSubtree(
+            key: StorageStewardHome.browseCardKey,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: _glass(0.08),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [details, actions],
+              ),
+            ),
+          );
+        }
+
+        // Wide mode: new vertical layout
+        // Top: Last scan + Status chip
+        // Middle: Category breakdown (pie chart)
+        // Bottom: Buttons
         return KeyedSubtree(
           key: StorageStewardHome.browseCardKey,
           child: DecoratedBox(
@@ -944,21 +1004,227 @@ class _BrowseCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
-            child: stackedCard
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [details, actions],
-                  )
-                : Row(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppleSpacing.lg,
+                16,
+                AppleSpacing.lg,
+                16,
+              ), // Match LargestItemsPanel horizontal padding
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Top row: Last scan on left, Status chip on right
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: details),
-                      actions,
+                      Expanded(
+                        child: Text(
+                          summary.lastScannedAtMs == null
+                              ? l10n.homeNeverScanned
+                              : l10n.homeLastScan(
+                                  _formatScanTime(
+                                    context,
+                                    summary.lastScannedAtMs!,
+                                  ),
+                                ),
+                          maxLines: 2,
+                          style: context.vwFinePrint.copyWith(
+                            color: Colors.white.withValues(alpha: 0.72),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _StatusChip(
+                        key: StorageStewardHome.statusChipKey,
+                        label: _overviewStatus(context, summary),
+                        tone: _statusChipTone(summary),
+                      ),
                     ],
                   ),
+                  const SizedBox(height: 10), // Reduced from 12
+                  // Middle: Category breakdown, skeleton (loading/scanning), or empty hint
+                  if ((summary.scanning || summary.overview.loading) &&
+                      summary.categories.isEmpty)
+                    // Loading/scanning with no categories yet: show skeleton only
+                    Expanded(child: _buildCategorySkeleton())
+                  else if (summary.scanning || summary.overview.loading)
+                    // Partial results are real data — show them, greyed out to
+                    // read as in-progress. An opaque skeleton on top would
+                    // build the breakdown and then hide it.
+                    Expanded(
+                      child: CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: false,
+                        onSelectCategory: onSelectCategory,
+                      ),
+                    )
+                  else if (summary.categories.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          summary.hasCompletedScan
+                              ? l10n.homeFolderEmpty
+                              : l10n.homeLargestItemsEmpty,
+                          style: context.vwFinePrint.copyWith(
+                            color: _onDashboard.withValues(alpha: 0.42),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: true,
+                        onSelectCategory: onSelectCategory,
+                      ),
+                    ),
+                  // Fixed-height reclaimable space (always present to prevent button jump)
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: _finePrintLineHeight(context),
+                    child: summary.reclaimableBytes != null
+                        ? Text(
+                            l10n.homeReclaimable(
+                              formatStorageBytes(summary.reclaimableBytes),
+                            ),
+                            textAlign: TextAlign.center,
+                            style: context.vwFinePrint.copyWith(
+                              color: _onDashboard.withValues(alpha: 0.72),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  const SizedBox(height: 10), // Reduced from 12
+                  // Bottom: Buttons (fixed at bottom)
+                  KeyedSubtree(
+                    key: StorageStewardHome.actionsKey,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        SizedBox(
+                          width: 140,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(_browseFocusOrder),
+                            child: _DashboardActionButton(
+                              key: StorageStewardHome.browseKey,
+                              label: l10n.homeBrowseFiles,
+                              icon: Icons.folder_outlined,
+                              primary: false,
+                              onPressed: onBrowse,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 140,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(_scanFocusOrder),
+                            child: _DashboardActionButton(
+                              key: StorageStewardHome.scanActionKey,
+                              label: scanLabel,
+                              icon: summary.canCancelScan
+                                  ? Icons.stop_circle_outlined
+                                  : Icons.radar_outlined,
+                              primary: true,
+                              semanticColor: summary.canCancelScan
+                                  ? context.volward.danger
+                                  : null,
+                              onPressed: scanCallback,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+
+  /// Builds a skeleton loader mimicking the category breakdown layout
+  Widget _buildCategorySkeleton() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final needsCompactLayout = constraints.maxHeight < 96;
+        return _CategorySkeletonContent(compact: needsCompactLayout);
+      },
+    );
+  }
+}
+
+class _CategorySkeletonContent extends StatelessWidget {
+  const _CategorySkeletonContent({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    // Match real CategoryBreakdown layout: pie chart stays 72x72 (square)
+    const pieSize = 72.0;
+    final rowGap = compact ? 3.0 : 5.0;
+    final markerSize = compact ? 8.0 : 12.0;
+    final lineHeight = compact ? 8.0 : 12.0;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _dashboardSoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SkeletonLoader(
+              width: pieSize,
+              height: pieSize,
+              borderRadius: pieSize / 2,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < 3; i++) ...[
+                    Row(
+                      children: [
+                        SkeletonLoader(
+                          width: markerSize,
+                          height: markerSize,
+                          borderRadius: 3,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SkeletonLoader(
+                            width: double.infinity,
+                            height: lineHeight,
+                            borderRadius: 4,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SkeletonLoader(
+                          width: 40,
+                          height: lineHeight,
+                          borderRadius: 4,
+                        ),
+                      ],
+                    ),
+                    if (i < 2) SizedBox(height: rowGap),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -966,7 +1232,7 @@ class _BrowseCard extends StatelessWidget {
 enum _StatusChipTone { neutral, live, cached }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, required this.tone});
+  const _StatusChip({super.key, required this.label, required this.tone});
 
   final String label;
   final _StatusChipTone tone;
@@ -1119,6 +1385,9 @@ class _DashboardActionButton extends StatelessWidget {
   final IconData icon;
   final bool primary;
   final VoidCallback? onPressed;
+
+  /// Overrides the accent for an action whose meaning is not "proceed" —
+  /// Cancel Scan uses [VolwardColors.danger]. Null keeps the primary accent.
   final Color? semanticColor;
 
   @override
@@ -1518,18 +1787,8 @@ List<StorageLocationInfo> _targetLocations(StorageHomeSummary summary) {
   return locations;
 }
 
-double _wideDashboardHeight(StorageHomeSummary summary) {
-  final visibleTargets = _visibleTargetCount(summary);
-  final sidebarHeight =
-      _sidebarPadding * 2 +
-      _sidebarLogoHeight +
-      _sidebarLogoGap +
-      visibleTargets * _targetTileHeight +
-      math.max(0, visibleTargets - 1) * _targetTileGap;
-  return math.max(_minRightPanelHeight, sidebarHeight);
-}
-
-int _visibleTargetCount(StorageHomeSummary summary) {
+double _wideDashboardHeight(StorageHomeSummary summary, BuildContext context) {
+  // Sidebar height
   final targetLocations = _targetLocations(summary);
   final recentLocations = _recentCustomLocations(summary);
   final selectedCustom =
@@ -1544,7 +1803,19 @@ int _visibleTargetCount(StorageHomeSummary summary) {
       !targetLocations.any(
         (location) => _samePath(location.path, recentMenuLocation.path),
       );
-  return targetLocations.length + (hasRecentFallback ? 1 : 0);
+  final visibleTargets = targetLocations.length + (hasRecentFallback ? 1 : 0);
+
+  final sidebarHeight =
+      _sidebarPadding * 2 +
+      _sidebarLogoHeight +
+      _sidebarLogoGap +
+      visibleTargets * _targetTileHeight +
+      math.max(0, visibleTargets - 1) * _targetTileGap;
+
+  // Right column height
+  final rightColumnHeight = _rightColumnHeight(summary, context);
+
+  return math.max(sidebarHeight, rightColumnHeight);
 }
 
 List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
@@ -1568,6 +1839,96 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
     }
   }
   return recent;
+}
+
+// Right panel component heights, summed by [_rightColumnHeight] to size the
+// wide dashboard. Each constant mirrors a real widget or gap — when you change
+// one of those, change its twin here or the board grows a scrollbar.
+//
+// Capacity panel — _StatPanel with !compact. Its structure is
+// Padding(top 20, bottom 16) wrapping
+// [path, gap 8, used, gap 6, label, gap 16, metrics], then gap 10, then meter.
+const _capacityPanelPaddingTop = 20.0;
+const _capacityPanelPaddingBottom = 16.0;
+const _capacityPathBottomGap = 8.0;
+const _capacityUsedHeight = 52.0; // fontSize 52 at height 0.92 measures ~48
+const _capacityUsedBottomGap = 6.0;
+const _capacityUsedLabelBottomGap = 16.0;
+const _capacityMetricsHeight = 52.0; // Row with Total/Available (2 columns)
+const _capacityMetricsBottomGap = 10.0;
+const _capacityMeterHeight = 12.0;
+
+// Largest items panel — LargestItemsPanel, capped at [_largestItemCount] rows
+// in wide mode.
+const _largestPanelPadding = 18.0 * 2;
+const _largestHeaderBottomGap = 10.0;
+const _largestItemHeight = 29.0;
+const _largestItemCount = 3;
+const _largestEmptyBodyHeight = 89.0; // Empty state text height with padding
+
+// Browse card — _BrowseCard's vertical wide-mode layout:
+// padding(16) + last-scan row with status chip + gap(10) + CategoryBreakdown
+// + gap(8) + reclaimable + gap(10) + buttons + padding(16).
+const _browsePanelPadding = 16.0 * 2;
+const _browseTopRowHeight = 28.0; // Last scan text (max 2 lines) + status chip
+const _browseTopRowBottomGap = 10.0;
+// The pie declares Size.square(72) and the legend rides beside it, so this is
+// the pie's own height — budgeting less squashes the chart.
+const _browseCategoryBreakdownHeight = 72.0;
+const _browseReclaimableHeightBase =
+    17.0; // Single line reclaimable text (finePrint)
+const _browseReclaimableBottomGap = 10.0;
+const _browseButtonHeight = _dashboardControlHeight;
+
+/// Returns text-scale-adjusted heights for single-line finePrint (12px * ~1.42)
+/// labels. All layout prediction constants ending in `…Base` are at scale=1.0;
+/// multiply by this factor when computing [_rightColumnHeight].
+double _finePrintLineHeight(BuildContext context) {
+  final scale = MediaQuery.textScalerOf(context).scale(12.0) / 12.0;
+  return _browseReclaimableHeightBase * scale;
+}
+
+double _rightColumnHeight(StorageHomeSummary summary, BuildContext context) {
+  final textLineH = _finePrintLineHeight(context);
+  // Capacity panel intrinsic height
+  final capacityHeight =
+      _capacityPanelPaddingTop +
+      textLineH + // path (finePrint)
+      _capacityPathBottomGap +
+      _capacityUsedHeight +
+      _capacityUsedBottomGap +
+      textLineH + // "used" label (finePrint)
+      _capacityUsedLabelBottomGap +
+      _capacityMetricsHeight +
+      _capacityPanelPaddingBottom +
+      _capacityMetricsBottomGap +
+      _capacityMeterHeight;
+
+  // Largest items panel intrinsic height
+  final largestItemCount = summary.largestItems.take(_largestItemCount).length;
+  final largestBodyHeight = largestItemCount > 0
+      ? largestItemCount * _largestItemHeight
+      : _largestEmptyBodyHeight;
+  final largestHeight =
+      _largestPanelPadding +
+      textLineH + // header (finePrint)
+      _largestHeaderBottomGap +
+      largestBodyHeight;
+
+  // Browse card intrinsic height (new vertical layout in wide mode)
+  final browseHeight =
+      _browsePanelPadding +
+      _browseTopRowHeight +
+      _browseTopRowBottomGap +
+      _browseCategoryBreakdownHeight +
+      textLineH + // reclaimable (finePrint)
+      _browseReclaimableBottomGap +
+      _browseButtonHeight;
+
+  // Two gaps between three panels
+  const panelGaps = _panelGap * 2;
+
+  return capacityHeight + largestHeight + browseHeight + panelGaps;
 }
 
 String _formatScanTime(BuildContext context, int millisecondsSinceEpoch) {

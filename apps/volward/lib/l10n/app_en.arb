@@ -234,7 +234,6 @@
     }
   },
   "settingsUpdateNow": "Update now",
-  "settingsUpdateLater": "Later",
   "settingsDownloadingUpdate": "Downloading update… {percent}%",
   "@settingsDownloadingUpdate": {
     "placeholders": {
@@ -256,20 +255,12 @@
       "error": {}
     }
   },
+  "settingsAutoDownloadUpdatesTitle": "Download updates in background",
+  "settingsAutoDownloadUpdatesDescription": "Automatically download updates so they're ready to install.",
   "settingsOpenDownloadPage": "Open download page",
-  "updateAvailableTitle": "Update available — {version}",
-  "@updateAvailableTitle": {
-    "placeholders": {
-      "version": {}
-    }
-  },
-  "updateAvailableMessage": "{notes}",
-  "@updateAvailableMessage": {
-    "placeholders": {
-      "notes": {}
-    }
-  },
-  "updateNotesUnavailable": "A newer Volward release is ready to install.",
+  "settingsUpdateReady": "A new version is downloaded and ready.",
+  "updateReadyAction": "Complete update",
+  "updateReadyDismissTooltip": "Dismiss",
   "homeOverviewLive": "Live disk data",
   "homeOverviewCached": "Cached disk data",
   "homeOverviewLoading": "Reading disk…",

@@ -1,9 +1,12 @@
+import 'dart:io';
+
 enum UpdatePhase {
   idle,
   checking,
   upToDate,
   available,
   downloading,
+  readyToInstall,
   installing,
   error,
 }
@@ -80,6 +83,7 @@ class UpdateStatus {
     this.progress,
     this.errorMessage,
     this.failureKind,
+    this.downloadedFile,
   });
 
   final UpdatePhase phase;
@@ -88,6 +92,10 @@ class UpdateStatus {
   final double? progress; // 0.0–1.0 while downloading
   final String? errorMessage;
   final UpdateFailureKind? failureKind;
+
+  /// The verified package on disk. Non-null only in [UpdatePhase.readyToInstall]
+  /// and [UpdatePhase.installing].
+  final File? downloadedFile;
 
   static const idle = UpdateStatus(phase: UpdatePhase.idle);
 }

@@ -385,6 +385,52 @@ void main() {
     expect(find.byType(StorageStewardHome), findsNothing);
   });
 
+  testWidgets('column browser shares its outer edges with the chrome above', (
+    tester,
+  ) async {
+    final session = _Session(exposePreview: true)
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-mode-browser-edges.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(tester, _shell(session, themeSettings, updater));
+    await _openLastScan(tester);
+    await tester.pump();
+
+    // Below the content cap plus both insets the two padding orderings
+    // coincide and every assertion here passes trivially, so pin the width
+    // this test depends on rather than trusting _pumpHome to keep it.
+    expect(tester.view.physicalSize.width / tester.view.devicePixelRatio, 1280);
+
+    final chrome = tester.getRect(find.byType(ScanFilterBar));
+    final browser = tester.getRect(find.byType(ScanColumnView));
+
+    expect(browser.left, chrome.left);
+    expect(browser.right, chrome.right);
+
+    // With the outer edges shared, the first column's icon lines up with the
+    // `All` chip's outer edge because both carry the same AppleSpacing.sm
+    // container inset.
+    final chip = find.byWidgetPredicate(
+      (w) => w.runtimeType.toString() == '_FilterChip',
+    );
+    // Scoped to the browser: the preview card below also draws Icons.folder,
+    // and at this width its icon lands on the same x, so an unscoped finder
+    // would still pass with an empty browser.
+    final icon = find.descendant(
+      of: find.byType(ScanColumnView),
+      matching: find.byIcon(Icons.folder),
+    );
+    expect(tester.any(chip), isTrue);
+    expect(tester.any(icon), isTrue);
+    expect(tester.getRect(icon.first).left, tester.getRect(chip.first).left);
+  });
+
   testWidgets('panel waits for startup root resolution before folder pick', (
     tester,
   ) async {

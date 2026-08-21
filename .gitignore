@@ -18,6 +18,7 @@ apps/volward/.pub/
 apps/website/node_modules/
 apps/website/.astro/
 apps/website/dist/
+apps/website/aptabase.json
 frontend_review_*_report_*.md
 
 # macOS / iOS

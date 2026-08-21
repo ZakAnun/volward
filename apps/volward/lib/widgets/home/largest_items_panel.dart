@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
 import '../../storage_home_summary.dart';
+import '../../theme/apple_tokens.dart';
 import '../../theme/volward_tokens.dart';
 import 'dashboard_theme.dart';
 
@@ -34,7 +35,12 @@ class LargestItemsPanel extends StatelessWidget {
       child: DecoratedBox(
         decoration: dashboardPanelDecoration(),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          padding: const EdgeInsets.fromLTRB(
+            AppleSpacing.lg,
+            18,
+            AppleSpacing.lg,
+            18,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -72,7 +78,13 @@ class LargestItemsPanel extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, List<StorageHomeItem> items) {
-    if (summary.scanning) return _progress(context);
+    // Show progress bar only during an active scan (scanProgress != null).
+    // During cache restore scanning=true but scanProgress=null — fall through
+    // to the skeleton rows so the panel stays consistent with the rest of the UI.
+    if (summary.scanning && summary.scanProgress != null) {
+      return _progress(context);
+    }
+    if (summary.scanning) return _empty(context);
     if (items.isNotEmpty) return _rows(context, items);
     return _empty(context);
   }

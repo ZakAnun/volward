@@ -5,12 +5,6 @@ incoming_site_url="${SITE_URL:-}"
 incoming_aptabase_host="${APTABASE_HOST:-}"
 incoming_aptabase_web_key="${APTABASE_WEB_KEY:-}"
 
-if [[ -f "$HOME/.zshrc" ]]; then
-  set +u
-  source "$HOME/.zshrc" || true
-  set -u
-fi
-
 if [[ -n "$incoming_site_url" ]]; then
   export SITE_URL="$incoming_site_url"
 fi
@@ -26,9 +20,9 @@ fi
 export SITE_URL="${SITE_URL:-http://localhost:4321}"
 export APTABASE_HOST="${APTABASE_HOST:-https://analytics.volwardapp.com}"
 
-if [[ -n "${APTABASE_WEB_KEY:-}" ]]; then
-  export APTABASE_WEB_KEY
-fi
+# shellcheck source=resolve_aptabase_web.sh
+source "$(cd "$(dirname "$0")" && pwd)/resolve_aptabase_web.sh"
+resolve_aptabase_web
 
 if [[ "${1:-}" == "--" ]]; then
   shift

@@ -743,7 +743,8 @@ main {
 
 .hero-actions-side {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  justify-content: end;
   gap: 8px;
   align-items: center;
 }
@@ -761,6 +762,8 @@ main {
   font-weight: 700;
   white-space: nowrap;
   grid-column: 1 / -1;
+  /* Only the action buttons follow the container's end alignment */
+  justify-self: stretch;
 }
 
 .hero-scan-note,
@@ -769,6 +772,7 @@ main {
   font-size: 0.72rem;
   line-height: 1.25;
   min-width: 0;
+  justify-self: stretch;
 }
 
 .hero-reclaim-note {
@@ -777,7 +781,7 @@ main {
 
 .hero-action-button {
   justify-content: center;
-  min-width: 0;
+  min-width: 118px;
   gap: 8px;
   min-height: 36px;
   padding: 0 10px;

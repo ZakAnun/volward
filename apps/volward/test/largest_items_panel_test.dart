@@ -59,6 +59,7 @@ void main() {
     bool scanning = false,
     bool hasCompletedScan = true,
     int? scannedBytes,
+    double? scanProgress,
   }) {
     return StorageHomeSummary(
       overview: overview,
@@ -67,6 +68,7 @@ void main() {
       scanning: scanning,
       hasCompletedScan: hasCompletedScan,
       scannedBytes: scannedBytes,
+      scanProgress: scanProgress,
       largestItems: items,
     );
   }
@@ -136,7 +138,12 @@ void main() {
   testWidgets('scanning shows progress instead of rows', (tester) async {
     await pumpPanel(
       tester,
-      summary: summaryWithItems(items: const [bigFile], scanning: true),
+      summary: summaryWithItems(
+        items: const [bigFile],
+        scanning: true,
+        hasCompletedScan: false,
+        scanProgress: 0.5,
+      ),
     );
 
     expect(find.byKey(LargestItemsPanel.progressKey), findsOneWidget);

@@ -752,12 +752,6 @@ abstract class AppLocalizations {
   /// **'Update now'**
   String get settingsUpdateNow;
 
-  /// No description provided for @settingsUpdateLater.
-  ///
-  /// In en, this message translates to:
-  /// **'Later'**
-  String get settingsUpdateLater;
-
   /// No description provided for @settingsDownloadingUpdate.
   ///
   /// In en, this message translates to:
@@ -782,29 +776,41 @@ abstract class AppLocalizations {
   /// **'Update failed: {error}'**
   String settingsUpdateActionError(Object error);
 
+  /// No description provided for @settingsAutoDownloadUpdatesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download updates in background'**
+  String get settingsAutoDownloadUpdatesTitle;
+
+  /// No description provided for @settingsAutoDownloadUpdatesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically download updates so they\'re ready to install.'**
+  String get settingsAutoDownloadUpdatesDescription;
+
   /// No description provided for @settingsOpenDownloadPage.
   ///
   /// In en, this message translates to:
   /// **'Open download page'**
   String get settingsOpenDownloadPage;
 
-  /// No description provided for @updateAvailableTitle.
+  /// No description provided for @settingsUpdateReady.
   ///
   /// In en, this message translates to:
-  /// **'Update available — {version}'**
-  String updateAvailableTitle(Object version);
+  /// **'A new version is downloaded and ready.'**
+  String get settingsUpdateReady;
 
-  /// No description provided for @updateAvailableMessage.
+  /// No description provided for @updateReadyAction.
   ///
   /// In en, this message translates to:
-  /// **'{notes}'**
-  String updateAvailableMessage(Object notes);
+  /// **'Complete update'**
+  String get updateReadyAction;
 
-  /// No description provided for @updateNotesUnavailable.
+  /// No description provided for @updateReadyDismissTooltip.
   ///
   /// In en, this message translates to:
-  /// **'A newer Volward release is ready to install.'**
-  String get updateNotesUnavailable;
+  /// **'Dismiss'**
+  String get updateReadyDismissTooltip;
 
   /// No description provided for @homeOverviewLive.
   ///

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/scan_tree.dart';
 import 'package:volward/snapshot_query.dart';
+import 'package:volward/theme/apple_tokens.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 import 'package:volward/widgets/scan_filter_bar.dart';
@@ -38,6 +39,119 @@ void main() {
     );
 
     expect(find.text('Visible folder'), findsOneWidget);
+  });
+
+  testWidgets('a row fills its column while its icon keeps the chip inset', (
+    tester,
+  ) async {
+    final root = ScanTreeNode(name: 'root', path: '/root', isDirectory: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            height: 240,
+            width: 480,
+            child: ScanColumnView(
+              root: root,
+              visibleChildren: const [
+                SnapshotNodeRecord(
+                  name: 'Alpha',
+                  path: '/root/alpha',
+                  isDirectory: true,
+                  sizeBytes: 0,
+                ),
+              ],
+              selectionChain: const [],
+              onSelect: (_) {},
+              formatBytes: (b) => '${b ?? 0} B',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final row = find.byWidgetPredicate(
+      (w) => w.runtimeType.toString() == '_FinderRow',
+    );
+    expect(row, findsOneWidget);
+
+    // Every column carries the inset, so the first one puts its icon on the
+    // same x as the `All` chip's outer edge in the filter bar above — see the
+    // cross-widget assertion in home_page_content_mode_test.dart.
+    final view = tester.getRect(find.byType(ScanColumnView));
+    final icon = tester.getRect(find.byIcon(Icons.folder));
+    expect(icon.left - view.left, AppleSpacing.sm);
+
+    // The inset sits inside the row's ColoredBox, so the row itself still
+    // spans the full column and a selection highlight fills it edge to edge.
+    expect(tester.getSize(row).width, 220);
+  });
+
+  testWidgets('the painted column path matches the widget path geometry', (
+    tester,
+  ) async {
+    // Past `_paintedColumnThreshold` (240 items) ScanColumnView swaps the
+    // ListView for a CustomPainter that re-implements the row layout by hand.
+    // Nothing in the type system keeps the two in sync, so assert the painter
+    // reproduces the numbers the widget-path test above pins down.
+    final root = ScanTreeNode(
+      name: 'root',
+      path: '/root',
+      isDirectory: true,
+      children: List.generate(
+        300,
+        (i) => ScanTreeNode(
+          name: 'file_$i.txt',
+          path: '/root/file_$i.txt',
+          isDirectory: false,
+          sizeBytes: 1024,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            height: 240,
+            width: 480,
+            child: ScanColumnView(
+              root: root,
+              // A file, so selecting it does not open a second column and the
+              // painter below is unambiguously the first one's.
+              selectionChain: [root.children.first],
+              onSelect: (_) {},
+              formatBytes: (b) => '${b ?? 0} B',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final painted = find.byWidgetPredicate(
+      (w) =>
+          w is CustomPaint &&
+          w.painter.runtimeType.toString() == '_FinderColumnPainter',
+    );
+    expect(painted, findsOneWidget);
+
+    expect(
+      tester.renderObject(painted),
+      paints
+        // Selected row 0 spans the full column, same as `_FinderRow`'s
+        // ColoredBox — top is the ListView's matching vertical padding. The
+        // painter only emits this rect for a non-transparent background, so
+        // its presence also proves the row reads as selected.
+        ..rect(rect: const Rect.fromLTWH(0, AppleSpacing.xxs, 220, 28))
+        // ...and its icon carries the same `AppleSpacing.sm` inset, centred in
+        // the 28px row (`(28 - 16) / 2 = 6`).
+        ..paragraph(
+          offset: const Offset(AppleSpacing.sm, AppleSpacing.xxs + 6),
+        ),
+    );
   });
 
   testWidgets('ScanColumnView folder tap invokes onSelect', (tester) async {

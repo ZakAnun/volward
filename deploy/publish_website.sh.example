@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOST="${DEPLOY_HOST:?set DEPLOY_HOST}"
-REMOTE_DIR="${DEPLOY_REMOTE_DIR:-/var/www/volward-web}"
-
-bash "$ROOT/scripts/website_build.sh"
-rsync -av --delete "$ROOT/apps/website/dist/" "$HOST:$REMOTE_DIR/"
