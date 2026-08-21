@@ -14,6 +14,13 @@ apps/volward/.flutter-plugins-dependencies
 apps/volward/.pub-cache/
 apps/volward/.pub/
 
+# Website (Astro)
+apps/website/node_modules/
+apps/website/.astro/
+apps/website/dist/
+apps/website/aptabase.json
+frontend_review_*_report_*.md
+
 # macOS / iOS
 apps/volward/macos/Pods/
 apps/volward/macos/Flutter/ephemeral/

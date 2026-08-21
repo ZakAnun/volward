@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'asset_resolver.dart';
+import 'checksum.dart';
 import 'downloader.dart';
 import 'platform_installer.dart';
 import 'update_models.dart';
@@ -56,31 +57,36 @@ class AppUpdater extends ChangeNotifier {
   UpdateStatus get status => _status;
 
   bool _dismissedThisSession = false;
-  bool get shouldPromptOnStartup =>
-      !_dismissedThisSession && _status.phase == UpdatePhase.available;
+
+  /// Guards against concurrent operations. Each top-level method sets this on
+  /// entry and clears it in a finally block. A second call that arrives while
+  /// an operation is already in flight returns early rather than racing.
+  bool _inFlight = false;
+
+  /// True while a downloaded package is waiting and the user has not dismissed
+  /// the home-page pill this session.
+  bool get showsReadyBanner =>
+      !_dismissedThisSession && _status.phase == UpdatePhase.readyToInstall;
+
+  /// Hides the home-page pill for this session. Deliberately leaves [_status]
+  /// alone: the downloaded package stays installable from the settings page.
+  void dismissReadyToInstall() {
+    _dismissedThisSession = true;
+    notifyListeners();
+  }
 
   String? _cachedLocalVersion;
   Future<String> localVersion() async {
     return _cachedLocalVersion ??= await _localVersionReader.currentVersion();
   }
 
-  void dismissAvailable() {
-    _dismissedThisSession = true;
-    if (_status.phase == UpdatePhase.available) {
-      _setStatus(UpdateStatus.idle);
-    }
-  }
-
-  void dismissErrorPrompt() {
-    _dismissedThisSession = true;
-    if (_status.phase == UpdatePhase.error) {
-      _setStatus(UpdateStatus.idle);
-    }
-  }
-
   Future<void> check({required bool userInitiated}) async {
-    _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
+    // Silently skip if an operation is already in flight — a background prefetch
+    // and a manual check could otherwise race and interleave their status writes.
+    if (_inFlight) return;
+    _inFlight = true;
     try {
+      _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
       final local = await localVersion();
       final release = await _versionSource.fetchLatest();
       if (!isRemoteNewer(remoteTag: release.tagName, localVersion: local)) {
@@ -171,23 +177,32 @@ class AppUpdater extends ChangeNotifier {
           errorMessage: error.toString(),
         ),
       );
+    } finally {
+      _inFlight = false;
     }
   }
 
-  Future<void> downloadAndInstall() async {
+  /// Fetches and verifies the package, then parks at
+  /// [UpdatePhase.readyToInstall]. Never installs.
+  Future<void> downloadOnly() async {
+    // A concurrent call — e.g. the user clicking "Update now" while a
+    // background prefetch is already downloading — would race to write the
+    // status and potentially create two temp directories. Guard against it.
+    if (_inFlight) return;
     if (_status.phase != UpdatePhase.available) {
       throw StateError(
-        'Cannot install update while phase is ${_status.phase.name}',
+        'Cannot download update while phase is ${_status.phase.name}',
       );
     }
     final release = _status.release;
     final asset = _status.matchedAsset;
     if (release == null || asset == null) {
-      throw StateError('No available update to install');
+      throw StateError('No available update to download');
     }
 
+    _inFlight = true;
+    final tempDirectory = _tempDirectoryBuilder();
     try {
-      final tempDirectory = _tempDirectoryBuilder();
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.downloading,
@@ -212,26 +227,113 @@ class AppUpdater extends ChangeNotifier {
       );
       _setStatus(
         UpdateStatus(
-          phase: UpdatePhase.installing,
+          phase: UpdatePhase.readyToInstall,
           release: release,
           matchedAsset: asset,
           progress: 1,
+          downloadedFile: file,
         ),
       );
-      await _installer.installAndRelaunch(downloaded: file, release: release);
     } catch (error, stackTrace) {
-      debugPrint('AppUpdater.downloadAndInstall failed: $error\n$stackTrace');
-      final failureKind = _failureKindForInstallError(error);
+      debugPrint('AppUpdater.downloadOnly failed: $error\n$stackTrace');
+      // Best-effort cleanup: a failed download leaves an empty or partial file
+      // and the temp directory behind. Remove it so successive retries don't
+      // accumulate orphaned `volward_update_*` dirs.
+      try {
+        await tempDirectory.delete(recursive: true);
+      } catch (_) {}
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.error,
           release: release,
           matchedAsset: asset,
-          failureKind: failureKind,
+          failureKind: _failureKindForInstallError(error),
           errorMessage: error.toString(),
         ),
       );
+    } finally {
+      _inFlight = false;
     }
+  }
+
+  /// Replaces the app with the already-downloaded package and relaunches.
+  ///
+  /// On the happy path this does not return — the platform installer exits the
+  /// process.
+  Future<void> installDownloaded() async {
+    if (_inFlight) return;
+    // Precondition checks throw synchronously before touching any state —
+    // same contract as downloadOnly() — so callers get a clear programmer error
+    // rather than an opaque error-phase transition.
+    if (_status.phase != UpdatePhase.readyToInstall) {
+      throw StateError(
+        'Cannot install update while phase is ${_status.phase.name}',
+      );
+    }
+    final release = _status.release;
+    final asset = _status.matchedAsset;
+    final file = _status.downloadedFile;
+    if (release == null || file == null) {
+      throw StateError('No downloaded update to install');
+    }
+    _inFlight = true;
+    try {
+      // Re-verify the downloaded file before handing it to the installer.
+      // The downloader already checked the hash, but the window between
+      // download and install is nonzero and the file sits in a temp directory
+      // that is world-readable on most platforms.
+      if (asset != null) {
+        final expected = asset.sha256;
+        if (expected != null && expected.isNotEmpty) {
+          final actual = await sha256File(file);
+          if (actual != expected) {
+            throw UpdateIntegrityException(
+              'SHA-256 mismatch before install for ${asset.name}: '
+              'expected $expected, got $actual',
+            );
+          }
+        }
+      }
+      _setStatus(
+        UpdateStatus(
+          phase: UpdatePhase.installing,
+          release: release,
+          matchedAsset: asset,
+          progress: 1,
+          downloadedFile: file,
+        ),
+      );
+      await _installer.installAndRelaunch(downloaded: file, release: release);
+    } catch (error, stackTrace) {
+      debugPrint('AppUpdater.installDownloaded failed: $error\n$stackTrace');
+      _setStatus(
+        UpdateStatus(
+          phase: UpdatePhase.error,
+          release: release,
+          matchedAsset: asset,
+          failureKind: _failureKindForInstallError(error),
+          errorMessage: error.toString(),
+        ),
+      );
+    } finally {
+      _inFlight = false;
+    }
+  }
+
+  /// One-shot download + install, used by the settings page's "Update now".
+  Future<void> downloadAndInstall() async {
+    await downloadOnly();
+    if (_status.phase != UpdatePhase.readyToInstall) return;
+    await installDownloaded();
+  }
+
+  /// Startup path: check silently, and if a newer release exists, fetch it in
+  /// the background so the home page can offer a one-tap install. Never throws
+  /// and never installs.
+  Future<void> checkAndPrefetch() async {
+    await check(userInitiated: false);
+    if (_status.phase != UpdatePhase.available) return;
+    await downloadOnly();
   }
 
   UpdateFailureKind _failureKindForInstallError(Object error) {

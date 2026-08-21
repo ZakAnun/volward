@@ -70,6 +70,9 @@ class _FakeDownloader implements Downloader {
 
 class _FakeInstaller implements PlatformInstaller {
   bool installed = false;
+  File? lastDownloaded;
+  ReleaseInfo? lastRelease;
+  Object? error;
 
   @override
   bool get canAutoInstall => true;
@@ -79,6 +82,9 @@ class _FakeInstaller implements PlatformInstaller {
     required File downloaded,
     required ReleaseInfo release,
   }) async {
+    if (error != null) throw error!;
+    lastDownloaded = downloaded;
+    lastRelease = release;
     installed = true;
   }
 }
@@ -282,22 +288,6 @@ void main() {
     },
   );
 
-  test('dismissAvailable suppresses startup prompt flag', () async {
-    final updater = buildUpdater();
-    await updater.check(userInitiated: false);
-    expect(updater.shouldPromptOnStartup, isTrue);
-    updater.dismissAvailable();
-    expect(updater.shouldPromptOnStartup, isFalse);
-    expect(updater.status.phase, UpdatePhase.idle);
-  });
-
-  test('dismissAvailable does not wipe a non-available phase', () async {
-    final updater = buildUpdater(local: '0.0.2');
-    await updater.check(userInitiated: true);
-    updater.dismissAvailable();
-    expect(updater.status.phase, UpdatePhase.upToDate);
-  });
-
   test('openDownloadPage opens html_url', () async {
     final urls = _FakeUrls();
     final updater = buildUpdater(urls: urls);
@@ -337,10 +327,147 @@ void main() {
     },
   );
 
-  test('dismissErrorPrompt clears an error for the session', () async {
-    final updater = buildUpdater(installer: const UnsupportedInstaller());
-    await updater.check(userInitiated: false);
-    updater.dismissErrorPrompt();
-    expect(updater.status.phase, UpdatePhase.idle);
+  test('downloadOnly parks at readyToInstall without installing', () async {
+    final installer = _FakeInstaller();
+    final updater = buildUpdater(installer: installer);
+    await updater.check(userInitiated: true);
+
+    await updater.downloadOnly();
+
+    expect(updater.status.phase, UpdatePhase.readyToInstall);
+    expect(updater.status.downloadedFile, isNotNull);
+    expect(installer.installed, isFalse);
   });
+
+  test('downloadOnly rejects a non-available phase', () async {
+    final updater = buildUpdater(local: '0.0.2');
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.upToDate);
+    expect(updater.downloadOnly(), throwsStateError);
+  });
+
+  test('downloadOnly classifies transport failures as download', () async {
+    final installer = _FakeInstaller();
+    final downloader = _FakeDownloader()..error = Exception('socket closed');
+    final updater = buildUpdater(installer: installer, downloader: downloader);
+    await updater.check(userInitiated: true);
+
+    await updater.downloadOnly();
+
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.download);
+    expect(installer.installed, isFalse);
+  });
+
+  test('downloadOnly classifies checksum failures as integrity', () async {
+    final installer = _FakeInstaller();
+    final downloader = _FakeDownloader()
+      ..error = const UpdateIntegrityException('bad checksum');
+    final updater = buildUpdater(installer: installer, downloader: downloader);
+    await updater.check(userInitiated: true);
+
+    await updater.downloadOnly();
+
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.integrity);
+    expect(installer.installed, isFalse);
+  });
+
+  test('installDownloaded hands the package to the installer', () async {
+    final installer = _FakeInstaller();
+    final downloader = _FakeDownloader();
+    final updater = buildUpdater(installer: installer, downloader: downloader);
+    await updater.check(userInitiated: true);
+    await updater.downloadOnly();
+
+    await updater.installDownloaded();
+
+    expect(installer.installed, isTrue);
+    expect(installer.lastDownloaded?.path, downloader.lastFile?.path);
+    expect(installer.lastRelease?.version, '0.0.2');
+  });
+
+  test('installDownloaded rejects a non-readyToInstall phase', () async {
+    final updater = buildUpdater();
+    await updater.check(userInitiated: true);
+    expect(updater.status.phase, UpdatePhase.available);
+    expect(updater.installDownloaded(), throwsStateError);
+  });
+
+  test('installDownloaded classifies installer failures as install', () async {
+    final installer = _FakeInstaller()..error = Exception('copy failed');
+    final updater = buildUpdater(installer: installer);
+    await updater.check(userInitiated: true);
+    await updater.downloadOnly();
+
+    await updater.installDownloaded();
+
+    expect(updater.status.phase, UpdatePhase.error);
+    expect(updater.status.failureKind, UpdateFailureKind.install);
+  });
+
+  test(
+    'checkAndPrefetch downloads a newer release but never installs',
+    () async {
+      final installer = _FakeInstaller();
+      final updater = buildUpdater(installer: installer);
+
+      await updater.checkAndPrefetch();
+
+      expect(updater.status.phase, UpdatePhase.readyToInstall);
+      expect(updater.status.downloadedFile, isNotNull);
+      expect(updater.showsReadyBanner, isTrue);
+      expect(installer.installed, isFalse);
+    },
+  );
+
+  test('checkAndPrefetch skips the download when already up to date', () async {
+    final downloader = _FakeDownloader();
+    final updater = buildUpdater(local: '0.0.2', downloader: downloader);
+
+    await updater.checkAndPrefetch();
+
+    expect(updater.status.phase, UpdatePhase.upToDate);
+    expect(downloader.lastFile, isNull);
+    expect(updater.showsReadyBanner, isFalse);
+  });
+
+  test('checkAndPrefetch stays silent on network failure', () async {
+    final updater = buildUpdater(
+      source: _FakeSource(null, error: Exception('offline')),
+    );
+
+    await updater.checkAndPrefetch();
+
+    expect(updater.status.phase, UpdatePhase.idle);
+    expect(updater.showsReadyBanner, isFalse);
+  });
+
+  test(
+    'checkAndPrefetch surfaces unsupportedRuntime without a banner',
+    () async {
+      final updater = buildUpdater(installer: const UnsupportedInstaller());
+
+      await updater.checkAndPrefetch();
+
+      expect(updater.status.phase, UpdatePhase.error);
+      expect(updater.status.failureKind, UpdateFailureKind.unsupportedRuntime);
+      expect(updater.showsReadyBanner, isFalse);
+    },
+  );
+
+  test(
+    'dismissReadyToInstall hides the banner but keeps the package',
+    () async {
+      final updater = buildUpdater();
+      await updater.checkAndPrefetch();
+      expect(updater.showsReadyBanner, isTrue);
+
+      updater.dismissReadyToInstall();
+
+      expect(updater.showsReadyBanner, isFalse);
+      expect(updater.status.phase, UpdatePhase.readyToInstall);
+      expect(updater.status.downloadedFile, isNotNull);
+    },
+  );
 }

@@ -26,6 +26,7 @@
   "filterCategoryTemp": "临时文件",
   "filterCategoryMedia": "媒体",
   "filterCategorySystem": "系统",
+  "homeCategoryOther": "其他",
   "sortSizeDesc": "大小 ↓",
   "sortSizeAsc": "大小 ↑",
   "sortNameAsc": "名称",
@@ -233,7 +234,6 @@
     }
   },
   "settingsUpdateNow": "立即更新",
-  "settingsUpdateLater": "稍后",
   "settingsDownloadingUpdate": "正在下载更新… {percent}%",
   "@settingsDownloadingUpdate": {
     "placeholders": {
@@ -255,20 +255,73 @@
       "error": {}
     }
   },
+  "settingsAutoDownloadUpdatesTitle": "后台下载更新",
+  "settingsAutoDownloadUpdatesDescription": "自动下载更新，以便随时安装。",
   "settingsOpenDownloadPage": "打开下载页",
-  "updateAvailableTitle": "发现新版本 — {version}",
-  "@updateAvailableTitle": {
+  "settingsUpdateReady": "新版本已下载完成，可随时更新。",
+  "updateReadyAction": "完成更新",
+  "updateReadyDismissTooltip": "暂不更新",
+  "homeOverviewLive": "实时磁盘数据",
+  "homeOverviewCached": "缓存磁盘数据",
+  "homeOverviewLoading": "正在读取磁盘…",
+  "homeOverviewUnavailable": "暂时无法读取磁盘容量",
+  "homeCapacityUsed": "已使用",
+  "homeCapacityTotal": "总容量",
+  "homeCapacityAvailable": "可用",
+  "homeCapacitySemantics": "已使用 {used}，总容量 {total}，可用 {available}",
+  "@homeCapacitySemantics": {
     "placeholders": {
-      "version": {}
+      "used": {"type": "String"},
+      "total": {"type": "String"},
+      "available": {"type": "String"}
     }
   },
-  "updateAvailableMessage": "{notes}",
-  "@updateAvailableMessage": {
+  "homeScanTargets": "扫描范围",
+  "homeLocationHome": "主目录",
+  "homeLocationApplications": "应用程序",
+  "homeLocationDesktop": "桌面",
+  "homeLocationDownloads": "下载",
+  "homeLocationDocuments": "文稿",
+  "homeLocationVolume": "磁盘 {name}",
+  "@homeLocationVolume": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeLocationCustom": "{name}",
+  "@homeLocationCustom": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeChooseFolder": "选择文件夹",
+  "homeCurrentTarget": "当前目标",
+  "homeRecentFolders": "最近目录",
+  "homeLastScan": "上次扫描 {time}",
+  "@homeLastScan": {
+    "placeholders": {"time": {"type": "String"}}
+  },
+  "homeNeverScanned": "尚未扫描",
+  "homeReclaimable": "可回收 {size}",
+  "@homeReclaimable": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeScannedSize": "目录占用 {size}",
+  "@homeScannedSize": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeLargestItems": "最占空间的项目",
+  "homeLargestItemsTotal": "共 {size}",
+  "@homeLargestItemsTotal": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeLargestItemsEmpty": "扫描后显示",
+  "homeFolderEmpty": "此文件夹为空",
+  "homeLargestItemsSemantics": "第 {rank} 项，共 {count} 项：{name}，{size}",
+  "@homeLargestItemsSemantics": {
     "placeholders": {
-      "notes": {}
+      "name": {"type": "String"},
+      "size": {"type": "String"},
+      "rank": {"type": "int"},
+      "count": {"type": "int"}
     }
   },
-  "updateNotesUnavailable": "有新的 Volward 版本可以安装。",
   "aiAnalysisTitle": "AI 磁盘分析",
   "aiPreCheckSafeTitle": "{count} 项已预判为可安全移除",
   "@aiPreCheckSafeTitle": {
@@ -395,5 +448,9 @@
       }
     }
   },
-  "back": "返回"
+  "back": "返回",
+  "homeBrowseFiles": "浏览文件",
+  "homeStartScan": "开始扫描",
+  "homeRescan": "重新扫描",
+  "homeCancelScan": "取消扫描"
 }

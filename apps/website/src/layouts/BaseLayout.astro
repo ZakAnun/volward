@@ -1,0 +1,28 @@
+---
+import Analytics from '../components/Analytics.astro';
+import Head from '../components/Head.astro';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description: string;
+  canonical: string;
+  lang: 'en' | 'zh';
+  image?: string;
+  alternates?: Array<{ lang: string; href: string }>;
+}
+
+const { title, description, canonical, lang, image, alternates } = Astro.props;
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <Head title={title} description={description} canonical={canonical} lang={lang} image={image} alternates={alternates} />
+  </head>
+  <body>
+    <slot />
+    <Analytics />
+  </body>
+</html>

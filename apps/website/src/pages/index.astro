@@ -1,0 +1,70 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import ReleaseNotes from '../components/ReleaseNotes.astro';
+import DownloadCards from '../components/DownloadCards.astro';
+import Footer from '../components/Footer.astro';
+import { GITHUB_RELEASES_URL, PAGE_COPY } from '../lib/site';
+import { resolveDownloads } from '../lib/release-downloads';
+import { resolveReleaseLogs } from '../lib/release-logs';
+
+const copy = PAGE_COPY.en;
+const downloads = await resolveDownloads('en', { logger: console });
+const releaseLogs = await resolveReleaseLogs('en', { logger: console });
+const heroMetaItems = downloads.map((item) => item.label);
+const canonical = new URL('./', Astro.site?.href ?? 'http://localhost:4321').href;
+---
+
+<BaseLayout
+  title={copy.title}
+  description={copy.description}
+  canonical={canonical}
+  lang="en"
+  alternates={[{ lang: 'zh', href: `${canonical}zh/` }]}
+>
+  <Nav
+    homeHref="/"
+    homeAriaLabel="Volward home"
+    navAriaLabel="Primary"
+    featuresLabel={copy.navFeatures}
+    downloadLabel={copy.navDownload}
+    localeToggleHref="/zh/"
+    localeToggleLabel={copy.localeToggle}
+    logoSrc="/branding/volward-logo.svg"
+  />
+
+  <main>
+    <Hero
+      eyebrow={copy.heroEyebrow}
+      title={copy.heroTitle}
+      lead={copy.heroLead}
+      ctaPrimary={copy.ctaDownload}
+      ctaPrimaryHref="#download"
+      ctaSecondary={copy.ctaLearn}
+      ctaSecondaryHref="#features"
+      wordmarkSrc="/branding/volward-wordmark.png"
+      logoSrc="/branding/volward-logo.png"
+      dashboard={copy.heroDashboard}
+      metaItems={heroMetaItems}
+    />
+    <Features
+      title={copy.navFeatures}
+      subtitle={copy.featureSectionTitle}
+      lead={copy.featureSectionLead}
+      features={copy.features}
+    />
+    <DownloadCards
+      title={copy.downloadTitle}
+      lead={copy.downloadLead}
+      items={downloads}
+      latestHref={GITHUB_RELEASES_URL}
+      latestLabel={copy.downloadAllReleases}
+      downloadPlatformAriaLabel={copy.downloadPlatformAriaLabel}
+    />
+    <ReleaseNotes title={copy.releaseLogTitle} items={releaseLogs} />
+  </main>
+
+  <Footer copy={copy.footerCopy} versionText={copy.footerVersion} unsignedText={copy.footerUnsigned} version="" />
+</BaseLayout>

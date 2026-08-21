@@ -670,6 +670,17 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: AppleSpacing.xs),
               _SettingsCard(
                 tokens: v,
+                child: _SettingsSwitch(
+                  title: l10n.settingsAutoDownloadUpdatesTitle,
+                  subtitle: l10n.settingsAutoDownloadUpdatesDescription,
+                  value: widget.themeSettings.autoDownloadUpdates,
+                  enabled: true,
+                  onChanged: widget.themeSettings.setAutoDownloadUpdates,
+                ),
+              ),
+              const SizedBox(height: AppleSpacing.sm),
+              _SettingsCard(
+                tokens: v,
                 child: ListenableBuilder(
                   listenable: widget.updater,
                   builder: (context, _) {
@@ -714,6 +725,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                 l10n.settingsInstallingUpdate,
                                 style: context.vwFinePrint,
                               )
+                            else if (status.phase == UpdatePhase.readyToInstall)
+                              Text(
+                                l10n.settingsUpdateReady,
+                                style: context.vwFinePrint,
+                              )
                             else if (status.phase == UpdatePhase.error)
                               Text(
                                 formatUpdateStatusError(l10n, status),
@@ -724,17 +740,25 @@ class _SettingsPageState extends State<SettingsPage> {
                               spacing: AppleSpacing.sm,
                               runSpacing: AppleSpacing.sm,
                               children: [
-                                AppleButton(
-                                  label: l10n.settingsCheckForUpdates,
-                                  variant: AppleButtonVariant.pearl,
-                                  onPressed:
-                                      status.phase == UpdatePhase.checking ||
-                                          status.phase ==
-                                              UpdatePhase.downloading ||
-                                          status.phase == UpdatePhase.installing
-                                      ? null
-                                      : () => _checkForUpdates(context),
-                                ),
+                                // A prefetched package is waiting. Show both the
+                                // install button and a re-check button so a newer
+                                // release published after the prefetch can still be
+                                // discovered and supersede the parked download.
+                                if (status.phase == UpdatePhase.readyToInstall)
+                                  AppleButton(
+                                    label: l10n.updateReadyAction,
+                                    onPressed: () => unawaited(
+                                      widget.updater.installDownloaded(),
+                                    ),
+                                  ),
+                                if (status.phase != UpdatePhase.checking &&
+                                    status.phase != UpdatePhase.downloading &&
+                                    status.phase != UpdatePhase.installing)
+                                  AppleButton(
+                                    label: l10n.settingsCheckForUpdates,
+                                    variant: AppleButtonVariant.pearl,
+                                    onPressed: () => _checkForUpdates(context),
+                                  ),
                                 if (status.phase == UpdatePhase.available)
                                   AppleButton(
                                     label: l10n.settingsUpdateNow,

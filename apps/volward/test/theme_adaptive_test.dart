@@ -14,6 +14,6 @@ void main() {
     );
     expect(find.text('ok'), findsOneWidget);
     final theme = Theme.of(tester.element(find.text('ok')));
-    expect(theme.visualDensity, isNotNull);
+    expect(theme.visualDensity, VisualDensity.adaptivePlatformDensity);
   });
 }

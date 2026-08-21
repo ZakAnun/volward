@@ -254,6 +254,12 @@ abstract class AppLocalizations {
   /// **'System'**
   String get filterCategorySystem;
 
+  /// No description provided for @homeCategoryOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get homeCategoryOther;
+
   /// No description provided for @sortSizeDesc.
   ///
   /// In en, this message translates to:
@@ -746,12 +752,6 @@ abstract class AppLocalizations {
   /// **'Update now'**
   String get settingsUpdateNow;
 
-  /// No description provided for @settingsUpdateLater.
-  ///
-  /// In en, this message translates to:
-  /// **'Later'**
-  String get settingsUpdateLater;
-
   /// No description provided for @settingsDownloadingUpdate.
   ///
   /// In en, this message translates to:
@@ -776,29 +776,214 @@ abstract class AppLocalizations {
   /// **'Update failed: {error}'**
   String settingsUpdateActionError(Object error);
 
+  /// No description provided for @settingsAutoDownloadUpdatesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download updates in background'**
+  String get settingsAutoDownloadUpdatesTitle;
+
+  /// No description provided for @settingsAutoDownloadUpdatesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically download updates so they\'re ready to install.'**
+  String get settingsAutoDownloadUpdatesDescription;
+
   /// No description provided for @settingsOpenDownloadPage.
   ///
   /// In en, this message translates to:
   /// **'Open download page'**
   String get settingsOpenDownloadPage;
 
-  /// No description provided for @updateAvailableTitle.
+  /// No description provided for @settingsUpdateReady.
   ///
   /// In en, this message translates to:
-  /// **'Update available — {version}'**
-  String updateAvailableTitle(Object version);
+  /// **'A new version is downloaded and ready.'**
+  String get settingsUpdateReady;
 
-  /// No description provided for @updateAvailableMessage.
+  /// No description provided for @updateReadyAction.
   ///
   /// In en, this message translates to:
-  /// **'{notes}'**
-  String updateAvailableMessage(Object notes);
+  /// **'Complete update'**
+  String get updateReadyAction;
 
-  /// No description provided for @updateNotesUnavailable.
+  /// No description provided for @updateReadyDismissTooltip.
   ///
   /// In en, this message translates to:
-  /// **'A newer Volward release is ready to install.'**
-  String get updateNotesUnavailable;
+  /// **'Dismiss'**
+  String get updateReadyDismissTooltip;
+
+  /// No description provided for @homeOverviewLive.
+  ///
+  /// In en, this message translates to:
+  /// **'Live disk data'**
+  String get homeOverviewLive;
+
+  /// No description provided for @homeOverviewCached.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached disk data'**
+  String get homeOverviewCached;
+
+  /// No description provided for @homeOverviewLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading disk…'**
+  String get homeOverviewLoading;
+
+  /// No description provided for @homeOverviewUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Disk capacity unavailable'**
+  String get homeOverviewUnavailable;
+
+  /// No description provided for @homeCapacityUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Used'**
+  String get homeCapacityUsed;
+
+  /// No description provided for @homeCapacityTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Total capacity'**
+  String get homeCapacityTotal;
+
+  /// No description provided for @homeCapacityAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get homeCapacityAvailable;
+
+  /// No description provided for @homeCapacitySemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} used of {total}, {available} available'**
+  String homeCapacitySemantics(String used, String total, String available);
+
+  /// No description provided for @homeScanTargets.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan range'**
+  String get homeScanTargets;
+
+  /// No description provided for @homeLocationHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get homeLocationHome;
+
+  /// No description provided for @homeLocationApplications.
+  ///
+  /// In en, this message translates to:
+  /// **'Applications'**
+  String get homeLocationApplications;
+
+  /// No description provided for @homeLocationDesktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop'**
+  String get homeLocationDesktop;
+
+  /// No description provided for @homeLocationDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get homeLocationDownloads;
+
+  /// No description provided for @homeLocationDocuments.
+  ///
+  /// In en, this message translates to:
+  /// **'Documents'**
+  String get homeLocationDocuments;
+
+  /// No description provided for @homeLocationVolume.
+  ///
+  /// In en, this message translates to:
+  /// **'Disk {name}'**
+  String homeLocationVolume(String name);
+
+  /// No description provided for @homeLocationCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}'**
+  String homeLocationCustom(String name);
+
+  /// No description provided for @homeChooseFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Folder'**
+  String get homeChooseFolder;
+
+  /// No description provided for @homeCurrentTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Current target'**
+  String get homeCurrentTarget;
+
+  /// No description provided for @homeRecentFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Folders'**
+  String get homeRecentFolders;
+
+  /// No description provided for @homeLastScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Last scan {time}'**
+  String homeLastScan(String time);
+
+  /// No description provided for @homeNeverScanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Not scanned yet'**
+  String get homeNeverScanned;
+
+  /// No description provided for @homeReclaimable.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} reclaimable'**
+  String homeReclaimable(String size);
+
+  /// No description provided for @homeScannedSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} scanned'**
+  String homeScannedSize(String size);
+
+  /// No description provided for @homeLargestItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Largest items'**
+  String get homeLargestItems;
+
+  /// No description provided for @homeLargestItemsTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} total'**
+  String homeLargestItemsTotal(String size);
+
+  /// No description provided for @homeLargestItemsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Shown after scanning'**
+  String get homeLargestItemsEmpty;
+
+  /// No description provided for @homeFolderEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder is empty'**
+  String get homeFolderEmpty;
+
+  /// No description provided for @homeLargestItemsSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, {size}, {rank} of {count}'**
+  String homeLargestItemsSemantics(
+    String name,
+    String size,
+    int rank,
+    int count,
+  );
 
   /// No description provided for @aiAnalysisTitle.
   ///
@@ -1099,6 +1284,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back'**
   String get back;
+
+  /// No description provided for @homeBrowseFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse Files'**
+  String get homeBrowseFiles;
+
+  /// No description provided for @homeStartScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Scan'**
+  String get homeStartScan;
+
+  /// No description provided for @homeRescan.
+  ///
+  /// In en, this message translates to:
+  /// **'Rescan'**
+  String get homeRescan;
+
+  /// No description provided for @homeCancelScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel Scan'**
+  String get homeCancelScan;
 }
 
 class _AppLocalizationsDelegate

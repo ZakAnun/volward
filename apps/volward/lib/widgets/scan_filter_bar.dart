@@ -38,6 +38,7 @@ class ScanFilterBar extends StatelessWidget {
     required this.sortMode,
     required this.onSortChanged,
     required this.scanning,
+    this.presentCategories = const {'Cache', 'Temp', 'Media', 'System'},
   });
 
   /// Only the categories that classify.rs actually emits, plus null == All.
@@ -56,6 +57,7 @@ class ScanFilterBar extends StatelessWidget {
   final ScanSortMode sortMode;
   final ValueChanged<ScanSortMode> onSortChanged;
   final bool scanning;
+  final Set<String> presentCategories;
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +78,7 @@ class ScanFilterBar extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final chips = <Widget>[
-                for (final value in categoryOptions)
+                for (final value in _visibleCategoryOptions)
                   Padding(
                     padding: const EdgeInsets.only(right: AppleSpacing.xxs),
                     child: _FilterChip(
@@ -115,6 +117,16 @@ class ScanFilterBar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Iterable<String?> get _visibleCategoryOptions sync* {
+    yield null;
+    for (final value in categoryOptions) {
+      if (value == null) continue;
+      if (value == categoryFilter || presentCategories.contains(value)) {
+        yield value;
+      }
+    }
   }
 
   String _categoryLabel(BuildContext context, String? value) {

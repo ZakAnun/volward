@@ -15,6 +15,7 @@ class VolwardThemeSettings extends ChangeNotifier {
   int _preferenceIndex = VolwardThemePreference.system.index;
   int _localePreferenceIndex = VolwardLocalePreference.system.index;
   int _accentValue = VolwardTokens.defaultAccent.toARGB32();
+  bool _autoDownloadUpdates = true;
 
   /// Overrides disk path in tests.
   @visibleForTesting
@@ -27,6 +28,8 @@ class VolwardThemeSettings extends ChangeNotifier {
       )];
 
   Color get accentColor => Color(_accentValue);
+
+  bool get autoDownloadUpdates => _autoDownloadUpdates;
 
   VolwardLocalePreference get localePreference =>
       _localePreferenceIndex >= 0 &&
@@ -58,6 +61,8 @@ class VolwardThemeSettings extends ChangeNotifier {
       _localePreferenceIndex =
           (map['locale_preference'] as num?)?.toInt() ?? _localePreferenceIndex;
       _accentValue = (map['accent_color'] as num?)?.toInt() ?? _accentValue;
+      _autoDownloadUpdates =
+          (map['auto_download_updates'] as bool?) ?? _autoDownloadUpdates;
       _preferenceIndex = _preferenceIndex.clamp(
         0,
         VolwardThemePreference.values.length - 1,
@@ -119,6 +124,22 @@ class VolwardThemeSettings extends ChangeNotifier {
     }
   }
 
+  Future<void> setAutoDownloadUpdates(bool value) async {
+    if (_autoDownloadUpdates == value) return;
+    final previous = _autoDownloadUpdates;
+    _autoDownloadUpdates = value;
+    notifyListeners();
+    try {
+      await _persist();
+    } catch (e, st) {
+      _autoDownloadUpdates = previous;
+      notifyListeners();
+      debugPrint(
+        'VolwardThemeSettings: setAutoDownloadUpdates persist failed: $e\n$st',
+      );
+    }
+  }
+
   Future<void> _persist() async {
     try {
       final file = settingsFileForTest ?? _settingsFile();
@@ -133,6 +154,7 @@ class VolwardThemeSettings extends ChangeNotifier {
       existing['theme_preference'] = _preferenceIndex;
       existing['locale_preference'] = _localePreferenceIndex;
       existing['accent_color'] = _accentValue;
+      existing['auto_download_updates'] = _autoDownloadUpdates;
       await file.writeAsString(jsonEncode(existing));
     } catch (e, st) {
       debugPrint('VolwardThemeSettings: persist failed: $e\n$st');

@@ -26,6 +26,7 @@
   "filterCategoryTemp": "Temp",
   "filterCategoryMedia": "Media",
   "filterCategorySystem": "System",
+  "homeCategoryOther": "Other",
   "sortSizeDesc": "Size ↓",
   "sortSizeAsc": "Size ↑",
   "sortNameAsc": "Name",
@@ -233,7 +234,6 @@
     }
   },
   "settingsUpdateNow": "Update now",
-  "settingsUpdateLater": "Later",
   "settingsDownloadingUpdate": "Downloading update… {percent}%",
   "@settingsDownloadingUpdate": {
     "placeholders": {
@@ -255,20 +255,73 @@
       "error": {}
     }
   },
+  "settingsAutoDownloadUpdatesTitle": "Download updates in background",
+  "settingsAutoDownloadUpdatesDescription": "Automatically download updates so they're ready to install.",
   "settingsOpenDownloadPage": "Open download page",
-  "updateAvailableTitle": "Update available — {version}",
-  "@updateAvailableTitle": {
+  "settingsUpdateReady": "A new version is downloaded and ready.",
+  "updateReadyAction": "Complete update",
+  "updateReadyDismissTooltip": "Dismiss",
+  "homeOverviewLive": "Live disk data",
+  "homeOverviewCached": "Cached disk data",
+  "homeOverviewLoading": "Reading disk…",
+  "homeOverviewUnavailable": "Disk capacity unavailable",
+  "homeCapacityUsed": "Used",
+  "homeCapacityTotal": "Total capacity",
+  "homeCapacityAvailable": "Available",
+  "homeCapacitySemantics": "{used} used of {total}, {available} available",
+  "@homeCapacitySemantics": {
     "placeholders": {
-      "version": {}
+      "used": {"type": "String"},
+      "total": {"type": "String"},
+      "available": {"type": "String"}
     }
   },
-  "updateAvailableMessage": "{notes}",
-  "@updateAvailableMessage": {
+  "homeScanTargets": "Scan range",
+  "homeLocationHome": "Home",
+  "homeLocationApplications": "Applications",
+  "homeLocationDesktop": "Desktop",
+  "homeLocationDownloads": "Downloads",
+  "homeLocationDocuments": "Documents",
+  "homeLocationVolume": "Disk {name}",
+  "@homeLocationVolume": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeLocationCustom": "{name}",
+  "@homeLocationCustom": {
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "homeChooseFolder": "Choose Folder",
+  "homeCurrentTarget": "Current target",
+  "homeRecentFolders": "Recent Folders",
+  "homeLastScan": "Last scan {time}",
+  "@homeLastScan": {
+    "placeholders": {"time": {"type": "String"}}
+  },
+  "homeNeverScanned": "Not scanned yet",
+  "homeReclaimable": "{size} reclaimable",
+  "@homeReclaimable": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeScannedSize": "{size} scanned",
+  "@homeScannedSize": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeLargestItems": "Largest items",
+  "homeLargestItemsTotal": "{size} total",
+  "@homeLargestItemsTotal": {
+    "placeholders": {"size": {"type": "String"}}
+  },
+  "homeLargestItemsEmpty": "Shown after scanning",
+  "homeFolderEmpty": "This folder is empty",
+  "homeLargestItemsSemantics": "{name}, {size}, {rank} of {count}",
+  "@homeLargestItemsSemantics": {
     "placeholders": {
-      "notes": {}
+      "name": {"type": "String"},
+      "size": {"type": "String"},
+      "rank": {"type": "int"},
+      "count": {"type": "int"}
     }
   },
-  "updateNotesUnavailable": "A newer Volward release is ready to install.",
   "aiAnalysisTitle": "AI Disk Analysis",
   "aiPreCheckSafeTitle": "{count} items pre-identified as safe to remove",
   "@aiPreCheckSafeTitle": {
@@ -395,5 +448,9 @@
       }
     }
   },
-  "back": "Back"
+  "back": "Back",
+  "homeBrowseFiles": "Browse Files",
+  "homeStartScan": "Start Scan",
+  "homeRescan": "Rescan",
+  "homeCancelScan": "Cancel Scan"
 }

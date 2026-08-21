@@ -1,0 +1,32 @@
+<svg width="1480" height="520" viewBox="0 0 1480 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="76" y1="34" x2="418" y2="474" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F3F9FD"/>
+    </linearGradient>
+    <linearGradient id="leftBeam" x1="132" y1="120" x2="282" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5AC8FA"/>
+      <stop offset="1" stop-color="#4AB4F1"/>
+    </linearGradient>
+    <linearGradient id="rightBeam" x1="398" y1="120" x2="248" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2997FF"/>
+      <stop offset="1" stop-color="#0066CC"/>
+    </linearGradient>
+    <filter id="shadow" x="42" y="28" width="428" height="436" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#0D2A3D" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="68" y="48" width="392" height="392" rx="92" fill="url(#bg)"/>
+  </g>
+  <path d="M158 294H378C392 294 404 306 404 320V384C404 399 392 411 378 411H166C152 411 140 399 140 384V320C140 306 152 294 166 294H158Z" fill="#EAF7FF" stroke="#A9DFFF" stroke-width="5"/>
+  <path d="M166 332H330" stroke="#98D8F8" stroke-width="7" stroke-linecap="round"/>
+  <path d="M349 332H378" stroke="#98D8F8" stroke-width="7" stroke-linecap="round"/>
+  <path d="M163 136C173 122 193 122 204 135L285 252C293 263 292 278 284 288L259 322L135 161L163 136Z" fill="url(#leftBeam)"/>
+  <path d="M336 135C347 122 367 122 377 136L405 161L281 322L256 288C248 278 247 263 255 252L336 135Z" fill="url(#rightBeam)"/>
+  <path d="M322 382C339 397 367 396 383 378" stroke="#34C759" stroke-width="13" stroke-linecap="round"/>
+  <path d="M379 366L397 371L391 389" stroke="#34C759" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="538" y="286" fill="#1D1D1F" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="118" font-weight="700" letter-spacing="0">Volward</text>
+</svg>

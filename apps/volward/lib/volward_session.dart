@@ -29,6 +29,26 @@ class ScanCancelledException implements Exception {
   String toString() => message;
 }
 
+enum _RootSwitchContinuation { previewOnly, forcePeek, fullScan }
+
+@immutable
+class ScanProgressViewState {
+  const ScanProgressViewState({this.phase, this.fraction});
+
+  final String? phase;
+  final double? fraction;
+
+  @override
+  bool operator ==(Object other) {
+    return other is ScanProgressViewState &&
+        other.phase == phase &&
+        other.fraction == fraction;
+  }
+
+  @override
+  int get hashCode => Object.hash(phase, fraction);
+}
+
 class _ScanProgressBand {
   const _ScanProgressBand({
     required this.start,
@@ -130,6 +150,8 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic>? _lastDeleteReport;
   Map<String, dynamic>? _scanProgress;
   List<String> _scanRoots = [];
+  String? _lastCustomRoot;
+  List<String> _recentCustomRoots = [];
   bool _incrementalScan = false;
   final Set<String> _selectedEntryIds = {};
   final Set<String> _peekInFlight = {};
@@ -148,6 +170,7 @@ class VolwardSession extends ChangeNotifier {
   // Monotonic token for root switches. If the user picks folders quickly, only
   // the latest preview/scan handoff may update the visible snapshot.
   int _rootSwitchGeneration = 0;
+  int _rootSwitchRequestGeneration = 0;
 
   // ── Catalog-backed current-directory state (Design §6.1) ──────────────────
   // Tracks the currently browsed directory path for targeted refresh.
@@ -171,6 +194,8 @@ class VolwardSession extends ChangeNotifier {
   // scan phase + elapsed time so it advances smoothly without walking the
   // full tree on every checkpoint.
   final ValueNotifier<double?> scannedFractionNotifier = ValueNotifier(null);
+  final ValueNotifier<ScanProgressViewState> scanProgressNotifier =
+      ValueNotifier(const ScanProgressViewState());
   SendPort? _workerCancelPort;
   Timer? _scanElapsedTimer;
   DateTime? _scanStartedAt;
@@ -189,6 +214,9 @@ class VolwardSession extends ChangeNotifier {
   deleteRunnerForTest;
   @visibleForTesting
   Future<void> Function(String path)? directoryRefreshRunnerForTest;
+  @visibleForTesting
+  Future<List<Map<String, dynamic>>> Function(String path)?
+  scanRootPreviewReaderForTest;
 
   Completer<ScanSnapshotState?>? _activeScanCompleter;
   StreamSubscription<dynamic>? _scanProgressSub;
@@ -273,10 +301,22 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic>? get lastDeleteReport => _lastDeleteReport;
   Map<String, dynamic>? get scanProgress => _scanProgress;
   List<String> get scanRoots => List.unmodifiable(_scanRoots);
+  String? get lastCustomRoot => _recentCustomRoots.isNotEmpty
+      ? _recentCustomRoots.first
+      : _lastCustomRoot;
+  List<String> get recentCustomRoots => List.unmodifiable(
+    _recentCustomRoots.isNotEmpty
+        ? _recentCustomRoots
+        : [
+            if (_lastCustomRoot != null && _lastCustomRoot!.isNotEmpty)
+              _lastCustomRoot!,
+          ],
+  );
   bool get incrementalScan => _incrementalScan;
   Set<String> get selectedEntryIds => Set.unmodifiable(_selectedEntryIds);
 
   int get snapshotVersion => _snapshotVersion;
+  int get rootSwitchGeneration => _rootSwitchGeneration;
 
   Set<String> get invalidatedPrefixes => Set.unmodifiable(_invalidatedPrefixes);
 
@@ -371,6 +411,13 @@ class VolwardSession extends ChangeNotifier {
     _savingPhaseStartedAt = null;
     _lastNativeProgressNotifyAt = null;
     _lastNativeProgressPhase = null;
+    _publishScanProgress();
+  }
+
+  @visibleForTesting
+  void updateScanProgressForTest(Map<String, dynamic> progress) {
+    _scanProgress = Map<String, dynamic>.from(progress);
+    _publishScanProgress();
   }
 
   @visibleForTesting
@@ -416,10 +463,17 @@ class VolwardSession extends ChangeNotifier {
 
   /// Pushes [scannedFraction] into [scannedFractionNotifier] only when the
   /// value actually changes — keeps progress-bar rebuilds cheap.
-  void _publishScannedFraction() {
-    final next = scannedFraction;
-    if (scannedFractionNotifier.value != next) {
-      scannedFractionNotifier.value = next;
+  void _publishScanProgress() {
+    final fraction = scannedFraction;
+    if (scannedFractionNotifier.value != fraction) {
+      scannedFractionNotifier.value = fraction;
+    }
+    final next = ScanProgressViewState(
+      phase: _scanning ? (_scanProgress?['phase']?.toString()) : null,
+      fraction: fraction,
+    );
+    if (scanProgressNotifier.value != next) {
+      scanProgressNotifier.value = next;
     }
   }
 
@@ -470,13 +524,14 @@ class VolwardSession extends ChangeNotifier {
   void _startScanElapsedTimer() {
     _scanStartedAt = DateTime.now();
     scanElapsedNotifier.value = scanElapsedLabel;
+    _publishScanProgress();
     _scanElapsedTimer?.cancel();
     _scanElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_scanning) {
         // Only update the elapsed label — don't fire a full notifyListeners()
         // which would rebuild the entire page on every tick.
         scanElapsedNotifier.value = scanElapsedLabel;
-        _publishScannedFraction();
+        _publishScanProgress();
       }
     });
   }
@@ -528,7 +583,7 @@ class VolwardSession extends ChangeNotifier {
     _transientFinalizeCount++;
     _clearScanTransientState();
     _stopScanElapsedTimer();
-    _publishScannedFraction();
+    _publishScanProgress();
   }
 
   @visibleForTesting
@@ -582,7 +637,7 @@ class VolwardSession extends ChangeNotifier {
       if (_scanProgress?['paths_seen'] != null && pathsSeen == null)
         'paths_seen': _scanProgress!['paths_seen'],
     };
-    _publishScannedFraction();
+    _publishScanProgress();
     _notifyListeners();
   }
 
@@ -656,6 +711,7 @@ class VolwardSession extends ChangeNotifier {
         );
       }
       _ready = true;
+      await loadSessionStateIfNeeded();
       await restoreCachedSnapshotIfNeeded();
     } catch (e, st) {
       _initError = '$e';
@@ -705,18 +761,62 @@ class VolwardSession extends ChangeNotifier {
     return '';
   }
 
+  Future<void> validateScanRoot(String path) async {
+    final normalized = ScanTreeBuilder.normalizeRoot(path);
+    final probe = rootExistsForTest;
+    if (probe != null) {
+      if (!probe(normalized)) {
+        throw FileSystemException('Scan target does not exist', normalized);
+      }
+      return;
+    }
+
+    final directory = Directory(normalized);
+    if (!await directory.exists()) {
+      throw FileSystemException('Scan target does not exist', normalized);
+    }
+    try {
+      await directory.list(followLinks: false).take(1).drain<void>();
+    } on FileSystemException {
+      rethrow;
+    } catch (error) {
+      throw FileSystemException(
+        'Scan target is not accessible: $error',
+        normalized,
+      );
+    }
+  }
+
   @visibleForTesting
   Future<String> resolveStartupRootForTest() => resolveStartupRoot();
 
+  bool get _hasAuthoritativeSnapshot {
+    final snapshot = _lastSnapshot;
+    if (snapshot == null || snapshot.snapshotId.startsWith('preview-')) {
+      return false;
+    }
+    final treePath = snapshot.tree?.path;
+    if (treePath == null || treePath.isEmpty) return false;
+    return ScanTreeBuilder.normalizeRoot(treePath) ==
+        ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot());
+  }
+
+  String _preferredRestoreRoot() {
+    return _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
+  }
+
   /// Reload the last on-disk snapshot into memory (after hot reload / restart).
+  /// Preview stubs from [previewTarget] do not count as a loaded scan.
   Future<void> restoreCachedSnapshotIfNeeded() async {
-    if (!_ready || _engine == null || _lastSnapshot != null || _scanning) {
+    if (!_ready || _hasAuthoritativeSnapshot || _scanning) {
       return;
     }
     final inFlight = _cacheRestoreCompleter;
     if (inFlight != null) {
       await inFlight.future;
-      return;
+      if (_hasAuthoritativeSnapshot || _scanning || !_ready) {
+        return;
+      }
     }
 
     final completer = Completer<void>();
@@ -733,22 +833,25 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _restoreCachedSnapshot() async {
-    if (!_ready || _engine == null || _scanning) return;
+  Future<bool> _restoreCachedSnapshot() async {
+    if (!_ready || _scanning) return false;
     await loadSessionStateIfNeeded();
     final generation = ++_cacheRestoreGeneration;
 
-    final preferredRoot = _scanRoots.isNotEmpty
-        ? _scanRoots.first
-        : _defaultScanRoot();
+    final preferredRoot = _preferredRestoreRoot();
     final path = await SnapshotCache.latestSnapshotPath(
       preferredRoot: preferredRoot,
     );
-    if (path == null) return;
-    if (generation != _cacheRestoreGeneration) return;
+    if (path == null) return false;
+    if (generation != _cacheRestoreGeneration) return false;
+    if (ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot()) !=
+        ScanTreeBuilder.normalizeRoot(preferredRoot)) {
+      return false;
+    }
 
     _restoringSnapshot = true;
     notifyListeners();
+    var restoredSnapshot = false;
     try {
       ScanSnapshotState? restored;
       if (hasIndexApi) {
@@ -757,7 +860,7 @@ class VolwardSession extends ChangeNotifier {
         // legacy snapshots do not block Flutter's main isolate.
         restored = await _restoreIndexCache(path, generation);
         if (generation != _cacheRestoreGeneration) {
-          return;
+          return false;
         }
       }
       if (restored == null) {
@@ -769,16 +872,23 @@ class VolwardSession extends ChangeNotifier {
               'VolwardSession: skip Dart snapshot restore for oversized cache '
               '$path (${size ~/ (1024 * 1024)} MB)',
             );
-            return;
+            return false;
           }
         } catch (_) {
-          return;
+          return false;
         }
         restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
       }
-      if (restored == null) return;
-      if (generation != _cacheRestoreGeneration) return;
+      if (restored == null) return false;
+      if (generation != _cacheRestoreGeneration) return false;
+      final restoredRoot = restored.tree?.path;
+      if (restoredRoot == null ||
+          ScanTreeBuilder.normalizeRoot(restoredRoot) !=
+              ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot())) {
+        return false;
+      }
       _lastSnapshot = restored;
+      restoredSnapshot = true;
       _logSnapshotMemoryState('restore');
       debugPrint('VolwardSession: restored cached snapshot from $path');
     } catch (e, st) {
@@ -787,6 +897,7 @@ class VolwardSession extends ChangeNotifier {
       _restoringSnapshot = false;
       _notifyListeners();
     }
+    return restoredSnapshot;
   }
 
   Future<ScanSnapshotState?> _restoreIndexCache(
@@ -912,6 +1023,27 @@ class VolwardSession extends ChangeNotifier {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return;
       final map = Map<String, dynamic>.from(decoded);
+      final customRoots = <String>[];
+      final rawCustomRoots = map['last_custom_roots'];
+      if (rawCustomRoots is List) {
+        for (final root in rawCustomRoots) {
+          final normalized = ScanTreeBuilder.normalizeRoot(root.toString());
+          if (normalized.isNotEmpty && !customRoots.contains(normalized)) {
+            customRoots.add(normalized);
+          }
+        }
+      }
+      final customRoot = map['last_custom_root']?.toString() ?? '';
+      if (customRoot.isNotEmpty) {
+        final normalized = ScanTreeBuilder.normalizeRoot(customRoot);
+        if (normalized.isNotEmpty && !customRoots.contains(normalized)) {
+          customRoots.add(normalized);
+        }
+      }
+      if (customRoots.isNotEmpty) {
+        _recentCustomRoots = customRoots.take(_maxRecentCustomRoots).toList();
+        _lastCustomRoot = _recentCustomRoots.first;
+      }
       final roots = map['scan_roots'];
       if (roots is! List) return;
       final loadedRoots = roots
@@ -941,7 +1073,13 @@ class VolwardSession extends ChangeNotifier {
       await file.parent.create(recursive: true);
       final tmpFile = File('${file.path}.tmp');
       await tmpFile.writeAsString(
-        jsonEncode(<String, dynamic>{'scan_roots': _scanRoots}),
+        jsonEncode(<String, dynamic>{
+          'scan_roots': _scanRoots,
+          if (recentCustomRoots.isNotEmpty) ...{
+            'last_custom_root': recentCustomRoots.first,
+            'last_custom_roots': recentCustomRoots,
+          },
+        }),
       );
       await tmpFile.rename(file.path);
     } catch (e, st) {
@@ -1000,6 +1138,37 @@ class VolwardSession extends ChangeNotifier {
     _notifyListeners();
   }
 
+  void setLastCustomRoot(String? path) {
+    rememberCustomRoot(path);
+  }
+
+  static const int _maxRecentCustomRoots = 5;
+
+  void rememberCustomRoot(String? path) {
+    final normalized = path == null || path.isEmpty
+        ? null
+        : ScanTreeBuilder.normalizeRoot(path);
+    if (normalized == null) {
+      if (_lastCustomRoot == null && _recentCustomRoots.isEmpty) return;
+      _lastCustomRoot = null;
+      _recentCustomRoots = [];
+      unawaited(_persistSessionState());
+      return;
+    }
+    if (_recentCustomRoots.isNotEmpty &&
+        _recentCustomRoots.first == normalized) {
+      return;
+    }
+    final next = <String>[
+      normalized,
+      for (final root in _recentCustomRoots)
+        if (root != normalized) root,
+    ];
+    _recentCustomRoots = next.take(_maxRecentCustomRoots).toList();
+    _lastCustomRoot = normalized;
+    unawaited(_persistSessionState());
+  }
+
   void clearScanRoots() {
     _scanRoots = [];
     _currentDirectoryPath = null;
@@ -1015,14 +1184,45 @@ class VolwardSession extends ChangeNotifier {
   ///
   /// * Re-selecting the same root while a scan is already running keeps that
   ///   scan alive and only refreshes the visible preview.
-  Future<void> switchScanRoot(String? path) async {
-    final generation = ++_rootSwitchGeneration;
+  ///
+  /// Callers can set [startFullScan] to false to prepare and preview the root
+  /// without automatically starting a fresh full scan.
+  Future<void> switchScanRoot(
+    String? path, {
+    bool startFullScan = true,
+    bool validateBeforeSwitch = false,
+  }) async {
+    final requestGeneration = ++_rootSwitchRequestGeneration;
     final newRoots = path != null ? [path] : <String>[];
     final newRoot = ScanTreeBuilder.normalizeRoot(path ?? _defaultScanRoot());
+    List<Map<String, dynamic>>? preparedPreview;
+    if (validateBeforeSwitch && path != null) {
+      try {
+        await validateScanRoot(newRoot);
+        preparedPreview = await _readTargetPreview(
+          newRoot,
+          throwOnFailure: true,
+        );
+      } catch (_) {
+        if (requestGeneration != _rootSwitchRequestGeneration) return;
+        rethrow;
+      }
+      if (requestGeneration != _rootSwitchRequestGeneration) return;
+    }
+
+    final generation = ++_rootSwitchGeneration;
     final currentRoot = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
     );
     final keepRunningScan = _scanning && newRoot == currentRoot;
+    final _RootSwitchContinuation continuation;
+    if (!startFullScan) {
+      continuation = _RootSwitchContinuation.previewOnly;
+    } else if (keepRunningScan) {
+      continuation = _RootSwitchContinuation.forcePeek;
+    } else {
+      continuation = _RootSwitchContinuation.fullScan;
+    }
 
     // User-selected scan root (folder picker / root switch). Skip null clears and
     // launch-time [setScanRoots] so startup restore is not counted.
@@ -1060,7 +1260,8 @@ class VolwardSession extends ChangeNotifier {
       _previewThenContinueRootSwitch(
         generation,
         newRoot: newRoot,
-        startFullScan: !keepRunningScan,
+        continuation: continuation,
+        preparedPreview: preparedPreview,
       ),
     );
   }
@@ -1068,17 +1269,36 @@ class VolwardSession extends ChangeNotifier {
   Future<void> _previewThenContinueRootSwitch(
     int generation, {
     required String newRoot,
-    required bool startFullScan,
+    required _RootSwitchContinuation continuation,
+    List<Map<String, dynamic>>? preparedPreview,
   }) async {
-    await previewTarget(expectedGeneration: generation);
+    final restored = await _restoreCachedSnapshot();
     if (generation != _rootSwitchGeneration) return;
-    if (startFullScan) {
-      await _waitForScanIdle(generation);
-      if (generation != _rootSwitchGeneration) return;
-      // Fire-and-forget — errors surface via _lastError / notifyListeners.
-      unawaited(_runScanAutostart(generation));
+    if (restored) {
+      _targetPreviewLoading = false;
+      _targetPreviewStartedAt = null;
+      _notifyListeners();
+    } else if (preparedPreview == null) {
+      await previewTarget(expectedGeneration: generation);
     } else {
-      unawaited(peekScan(newRoot, force: true));
+      await _applyTargetPreview(
+        newRoot,
+        preparedPreview,
+        expectedGeneration: generation,
+      );
+    }
+    if (generation != _rootSwitchGeneration) return;
+    switch (continuation) {
+      case _RootSwitchContinuation.previewOnly:
+        return;
+      case _RootSwitchContinuation.forcePeek:
+        unawaited(peekScan(newRoot, force: true));
+        return;
+      case _RootSwitchContinuation.fullScan:
+        await _waitForScanIdle(generation);
+        if (generation != _rootSwitchGeneration) return;
+        // Fire-and-forget — errors surface via _lastError / notifyListeners.
+        unawaited(_runScanAutostart(generation));
     }
   }
 
@@ -1106,18 +1326,32 @@ class VolwardSession extends ChangeNotifier {
   /// quick_list_dir yet (old build) — callers fall back to the pre-scan
   /// section in that case.
   Future<void> previewTarget({int? expectedGeneration}) async {
-    if (!_ready || _engine == null) return;
-    if (!VolwardNativeBridge.instance.hasQuickListApi) {
+    final root = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    final entries = await _readTargetPreview(root);
+    if (entries == null) {
       _clearTargetPreviewLoading(expectedGeneration);
       return;
     }
 
-    final root = ScanTreeBuilder.normalizeRoot(
-      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    await _applyTargetPreview(
+      root,
+      entries,
+      expectedGeneration: expectedGeneration,
     );
-    List<Map<String, dynamic>> entries;
+  }
+
+  Future<List<Map<String, dynamic>>?> _readTargetPreview(
+    String root, {
+    bool throwOnFailure = false,
+  }) async {
     try {
-      entries = await Isolate.run(() {
+      final testReader = scanRootPreviewReaderForTest;
+      if (testReader != null) return await testReader(root);
+      if (!_ready || _engine == null) return null;
+      if (!VolwardNativeBridge.instance.hasQuickListApi) return null;
+      return await Isolate.run(() {
         final bridge = VolwardNativeBridge.open();
         final engine = bridge.createEngine();
         try {
@@ -1128,10 +1362,16 @@ class VolwardSession extends ChangeNotifier {
       });
     } catch (e, st) {
       debugPrint('VolwardSession: previewTarget failed: $e\n$st');
-      _clearTargetPreviewLoading(expectedGeneration);
-      return;
+      if (throwOnFailure) rethrow;
+      return null;
     }
+  }
 
+  Future<void> _applyTargetPreview(
+    String root,
+    List<Map<String, dynamic>> entries, {
+    int? expectedGeneration,
+  }) async {
     if (expectedGeneration != null &&
         expectedGeneration != _rootSwitchGeneration) {
       return;
@@ -1547,6 +1787,7 @@ class VolwardSession extends ChangeNotifier {
           final phase = m['phase']?.toString();
           _touchScanActivity(phase: phase);
           _scanProgress = Map<String, dynamic>.from(m)..remove('type');
+          _publishScanProgress();
           _notifyListeners();
         } else if (type == 'checkpoint') {
           final path = m['snapshot_path']?.toString();
@@ -2110,6 +2351,9 @@ class VolwardSession extends ChangeNotifier {
     if (!_ready || _engine == null) {
       throw StateError('Native engine not ready');
     }
+    if (!_scanning || _scanCancelRequested) {
+      throw ScanCancelledException();
+    }
     final bridge = VolwardNativeBridge.instance;
     final startResult = bridge.startScanAsyncWithOptions(
       _engine!,
@@ -2128,11 +2372,7 @@ class VolwardSession extends ChangeNotifier {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (!_scanning || _scanCancelRequested) {
         bridge.cancelScan(_engine!);
-        // Wait for the native worker to exit so the next scan can start
-        // cleanly on the shared main engine.
-        while (bridge.isScanRunning(_engine!)) {
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-        }
+        await _waitForNativeScanToStop(bridge);
         throw ScanCancelledException();
       }
       final progress = bridge.getLastProgress(_engine!);
@@ -2140,10 +2380,11 @@ class VolwardSession extends ChangeNotifier {
         final phase = progress['phase']?.toString();
         _touchScanActivity(phase: phase);
         _scanProgress = progress;
+        _publishScanProgress();
         _notifyNativeProgressIfNeeded(phase);
       }
     }
-    if (_scanCancelRequested) {
+    if (_scanCancelRequested || !_scanning) {
       throw ScanCancelledException();
     }
 
@@ -2159,6 +2400,17 @@ class VolwardSession extends ChangeNotifier {
       );
     }
     return ScanSnapshotState.fromIndexSummary(summary);
+  }
+
+  /// Bound the native shutdown wait so a cancelled `runScan()` cannot hang
+  /// forever if `isScanRunning` never clears.
+  Future<void> _waitForNativeScanToStop(VolwardNativeBridge bridge) async {
+    final engine = _engine;
+    if (engine == null) return;
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    while (bridge.isScanRunning(engine) && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
   }
 
   void _notifyNativeProgressIfNeeded(String? phase) {
@@ -2349,6 +2601,7 @@ class VolwardSession extends ChangeNotifier {
     }
     scanElapsedNotifier.dispose();
     scannedFractionNotifier.dispose();
+    scanProgressNotifier.dispose();
     final engine = _engine;
     if (engine != null) {
       VolwardNativeBridge.instance.freeEngine(engine);

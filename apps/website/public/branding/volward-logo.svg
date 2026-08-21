@@ -1,0 +1,32 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="168" y1="104" x2="840" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F3F9FD"/>
+    </linearGradient>
+    <linearGradient id="leftBeam" x1="264" y1="216" x2="512" y2="622" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5AC8FA"/>
+      <stop offset="1" stop-color="#4AB4F1"/>
+    </linearGradient>
+    <linearGradient id="rightBeam" x1="760" y1="216" x2="512" y2="622" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2997FF"/>
+      <stop offset="1" stop-color="#0066CC"/>
+    </linearGradient>
+    <filter id="shadow" x="52" y="56" width="920" height="928" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#0D2A3D" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="82" y="82" width="860" height="860" rx="204" fill="url(#bg)"/>
+  </g>
+
+  <path d="M284 304C297 286 323 283 339 297L512 559L477 598L248 328L284 304Z" fill="url(#leftBeam)"/>
+  <path d="M740 304C727 286 701 283 685 297L512 559L547 598L776 328L740 304Z" fill="url(#rightBeam)"/>
+
+  <path d="M245 620H779C795 620 809 634 809 650V734C809 757 791 775 768 775H256C233 775 215 757 215 734V650C215 634 229 620 245 620Z" fill="#EAF7FF" stroke="#A9DFFF" stroke-width="8"/>
+  <path d="M276 692H532" stroke="#98D8F8" stroke-width="12" stroke-linecap="round"/>
+  <path d="M610 692H732" stroke="#98D8F8" stroke-width="12" stroke-linecap="round"/>
+  <path d="M598 738C627 764 673 763 701 736" stroke="#34C759" stroke-width="26" stroke-linecap="round"/>
+  <path d="M697 707L731 717L721 751" stroke="#34C759" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

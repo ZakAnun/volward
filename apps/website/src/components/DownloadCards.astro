@@ -1,0 +1,215 @@
+---
+import type { DownloadAsset } from '../lib/site';
+
+interface Props {
+  title: string;
+  lead: string;
+  items: DownloadAsset[];
+  latestHref: string;
+  latestLabel: string;
+  downloadPlatformAriaLabel: string;
+}
+
+const { title, lead, items, latestHref, latestLabel, downloadPlatformAriaLabel } = Astro.props;
+const downloadsById = new Map(items.map((item) => [item.id, item]));
+const macosDownloads = ['macos-arm64', 'macos-x64']
+  .map((id) => downloadsById.get(id))
+  .filter((item): item is DownloadAsset => Boolean(item));
+const windowsDownload = downloadsById.get('windows-x64');
+const linuxDownload = downloadsById.get('linux-appimage');
+
+type PlatformDownloadRow = {
+  id: string;
+  label: string;
+  href: string;
+  options: Pick<DownloadAsset, 'id' | 'href' | 'fileName'>[];
+};
+
+const platformRows: PlatformDownloadRow[] = [
+  {
+    id: 'macos',
+    label: 'macOS',
+    href: latestHref,
+    options: macosDownloads.map(({ id, href, fileName }) => ({ id, href, fileName })),
+  },
+  windowsDownload && {
+    id: 'windows',
+    label: 'Windows',
+    href: latestHref,
+    options: [{ id: windowsDownload.id, href: windowsDownload.href, fileName: windowsDownload.fileName }],
+  },
+  linuxDownload && {
+    id: 'linux',
+    label: 'Linux',
+    href: latestHref,
+    options: [{ id: linuxDownload.id, href: linuxDownload.href, fileName: linuxDownload.fileName }],
+  },
+].filter((row): row is PlatformDownloadRow => Boolean(row));
+---
+
+<section id="download" class="download-section">
+  <div class="shell">
+    <p class="section-label">{title}</p>
+    <p class="lede download-lead">{lead}</p>
+
+    <div class="download-panel" data-download-panel>
+      {platformRows.map((item) => (
+        <a
+          class="download-row"
+          href={item.href}
+          aria-label={downloadPlatformAriaLabel.replace('{platform}', item.label)}
+          data-download-row
+          data-download-platform={item.id}
+          data-download-fallback-href={latestHref}
+          data-download-options={JSON.stringify(item.options)}
+        >
+          <span class="download-os-icon" aria-hidden="true">
+            {item.id === 'macos' && (
+              <svg viewBox="0 0 24 24" role="img">
+                <path d="M16.2 2.4c.1 1.3-.4 2.5-1.2 3.5-.9 1-2.2 1.7-3.4 1.6-.1-1.3.5-2.5 1.3-3.4.9-1 2.3-1.7 3.3-1.7Z" />
+                <path d="M20.3 17.1c-.5 1.2-.8 1.7-1.5 2.8-1 1.5-2.3 3.3-4 3.3-1.5 0-1.9-1-3.9-1s-2.5 1-4 1c-1.7 0-3-1.6-4-3.1C.2 16 .1 11.2 1.8 8.5c1.1-1.7 2.8-2.7 4.4-2.7 1.7 0 2.7 1 4.1 1 1.3 0 2.1-1 4.1-1 1.5 0 3.1.8 4.1 2.1-3.6 2-3 7.1.8 9.2Z" />
+              </svg>
+            )}
+            {item.id === 'windows' && (
+              <svg viewBox="0 0 24 24" role="img">
+                <path d="M3 5.1 10.7 4v7.3H3V5.1Zm8.8-1.3L21 2.5v8.8h-9.2V3.8ZM3 12.7h7.7V20L3 18.9v-6.2Zm8.8 0H21v8.8l-9.2-1.3v-7.5Z" />
+              </svg>
+            )}
+            {item.id === 'linux' && (
+              <svg viewBox="0 0 24 24" role="img">
+                <path d="M12 2.2c-2.9 0-4.8 2.6-4.8 6.1 0 1.6-.5 2.8-1.2 4.1-.8 1.4-1.8 3-1.8 5.4 0 2.3 2.3 3.9 5.4 3.9.9 0 1.6-.2 2.4-.7.8.5 1.5.7 2.4.7 3.1 0 5.4-1.6 5.4-3.9 0-2.4-1-4-1.8-5.4-.7-1.3-1.2-2.5-1.2-4.1 0-3.5-1.9-6.1-4.8-6.1Zm-1.6 5.2c.5 0 .9.5.9 1.1s-.4 1.1-.9 1.1-.9-.5-.9-1.1.4-1.1.9-1.1Zm3.2 0c.5 0 .9.5.9 1.1s-.4 1.1-.9 1.1-.9-.5-.9-1.1.4-1.1.9-1.1ZM9.1 14.1c.7.4 1.7.6 2.9.6s2.2-.2 2.9-.6c-.2 1.5-1.3 2.7-2.9 2.7s-2.7-1.2-2.9-2.7Z" />
+              </svg>
+            )}
+          </span>
+          <strong>{item.label}</strong>
+        </a>
+      ))}
+    </div>
+
+    <p class="download-footnote">
+      <a href={latestHref}>{latestLabel}</a>
+    </p>
+  </div>
+</section>
+
+<script>
+  import {
+    detectDownloadTargetId,
+    initializeDownloadTargets,
+    resolveDownloadHref,
+    type BrowserDownloadPlatformInfo,
+  } from '../lib/platform-download';
+  import { GITHUB_REPO } from '../lib/site';
+  import {
+    resolveReleaseDownloadOptions,
+    type GitHubReleaseAssets,
+    type ReleaseDownloadOption,
+  } from '../lib/release-assets';
+
+  type DownloadNavigator = {
+    platform?: string;
+    userAgent?: string;
+    userAgentData?: {
+      platform?: string;
+      getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string; platform?: string }>;
+    };
+  };
+
+  async function readDownloadPlatformInfo(): Promise<BrowserDownloadPlatformInfo> {
+    const nav = navigator as DownloadNavigator;
+    const uaData = nav.userAgentData;
+    let architecture: string | undefined;
+    let userAgentDataPlatform = uaData?.platform;
+
+    try {
+      const highEntropy = await uaData?.getHighEntropyValues?.(['architecture', 'platform']);
+      architecture = highEntropy?.architecture;
+      userAgentDataPlatform = highEntropy?.platform ?? userAgentDataPlatform;
+    } catch {
+      architecture = undefined;
+    }
+
+    return {
+      userAgentDataPlatform,
+      platform: nav.platform,
+      userAgent: nav.userAgent,
+      architecture,
+    };
+  }
+
+  type DownloadOption = {
+    id: string;
+    href: string;
+    fileName: string;
+  };
+
+  function readDownloadOptions(row: HTMLAnchorElement): DownloadOption[] {
+    try {
+      const options = JSON.parse(row.dataset.downloadOptions ?? '[]') as DownloadOption[];
+      return options.filter((option) => option.id && option.href && option.fileName);
+    } catch {
+      return [];
+    }
+  }
+
+  function writeDownloadOptions(row: HTMLAnchorElement, options: DownloadOption[]) {
+    row.dataset.downloadOptions = JSON.stringify(options);
+  }
+
+  function updateDownloadOptions(options: ReleaseDownloadOption[]) {
+    if (options.length === 0) {
+      return;
+    }
+
+    const latestById = new Map(options.map((option) => [option.id, option]));
+    const rows = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-download-row]'));
+
+    rows.forEach((row) => {
+      const mergedOptions = readDownloadOptions(row).map((option) => latestById.get(option.id) ?? option);
+      writeDownloadOptions(row, mergedOptions);
+    });
+  }
+
+  function applyDownloadTarget(targetId: string | undefined) {
+    const rows = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-download-row]'));
+
+    rows.forEach((row) => {
+      const options = readDownloadOptions(row);
+      row.href = resolveDownloadHref(options, targetId, row.dataset.downloadFallbackHref ?? row.href);
+    });
+  }
+
+  async function fetchLatestDownloadOptions(): Promise<ReleaseDownloadOption[]> {
+    const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as Partial<GitHubReleaseAssets>;
+
+    if (typeof payload.tag_name !== 'string' || !Array.isArray(payload.assets)) {
+      return [];
+    }
+
+    return resolveReleaseDownloadOptions({
+      tag_name: payload.tag_name,
+      assets: payload.assets.filter(
+        (asset): asset is GitHubReleaseAssets['assets'][number] =>
+          typeof asset?.name === 'string' && typeof asset?.browser_download_url === 'string',
+      ),
+    });
+  }
+
+  void initializeDownloadTargets({
+    detectTarget: async () => detectDownloadTargetId(await readDownloadPlatformInfo()),
+    refreshOptions: fetchLatestDownloadOptions,
+    updateOptions: updateDownloadOptions,
+    applyTarget: applyDownloadTarget,
+  });
+</script>
