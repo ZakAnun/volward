@@ -234,8 +234,10 @@ class _HeroVisual extends StatelessWidget {
                         child: ConstrainedBox(
                           key: StorageStewardHome.boardKey,
                           constraints: BoxConstraints(
-                            minHeight: math.max(_wideDashboardHeight(summary),
-                                viewport.maxHeight),
+                            minHeight: math.max(
+                              _wideDashboardHeight(summary),
+                              viewport.maxHeight,
+                            ),
                           ),
                           child: board,
                         ),
@@ -476,9 +478,10 @@ class _Sidebar extends StatelessWidget {
     final selectedPath = summary.selectedLocation?.path ?? '';
     final selectedCustom =
         summary.selectedLocation?.kind == StorageLocationKind.custom
-            ? summary.selectedLocation
-            : null;
-    final recentMenuLocation = selectedCustom ??
+        ? summary.selectedLocation
+        : null;
+    final recentMenuLocation =
+        selectedCustom ??
         (recentLocations.isNotEmpty ? recentLocations.first : null);
     final recentMenuChoices = [
       if (selectedCustom != null) selectedCustom,
@@ -490,7 +493,8 @@ class _Sidebar extends StatelessWidget {
     Widget targetTile(int index) {
       final location = targetLocations[index];
       final selected = _samePath(location.path, selectedPath);
-      final choices = location.kind == StorageLocationKind.custom &&
+      final choices =
+          location.kind == StorageLocationKind.custom &&
               recentMenuChoices.length > 1
           ? recentMenuChoices
           : const <StorageLocationInfo>[];
@@ -514,7 +518,8 @@ class _Sidebar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final recentFallback = recentMenuLocation != null &&
+          final recentFallback =
+              recentMenuLocation != null &&
               !targetLocations.any(
                 (location) => _samePath(location.path, recentMenuLocation.path),
               );
@@ -550,9 +555,11 @@ class _Sidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: _sidebarLogoGap),
-                for (var index = 0;
-                    index < targetLocations.length;
-                    index++) ...[
+                for (
+                  var index = 0;
+                  index < targetLocations.length;
+                  index++
+                ) ...[
                   targetTile(index),
                   if (index < targetLocations.length - 1)
                     const SizedBox(height: _targetTileGap),
@@ -779,8 +786,9 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress =
-        summary.hasUsableCapacity ? summary.selectedVolume?.usedFraction : null;
+    final progress = summary.hasUsableCapacity
+        ? summary.selectedVolume?.usedFraction
+        : null;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,
@@ -825,8 +833,8 @@ class _BrowseCard extends StatelessWidget {
     final scanLabel = summary.scanning
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
-            ? l10n.homeRescan
-            : l10n.homeStartScan;
+        ? l10n.homeRescan
+        : l10n.homeStartScan;
     final scanCallback = summary.scanning ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -846,36 +854,34 @@ class _BrowseCard extends StatelessWidget {
                 // Loading/scanning with no categories: show skeleton
                 ? _buildCategorySkeleton()
                 : showSkeleton
-                    // Loading/scanning with categories: show breakdown + skeleton overlay
-                    ? Stack(
-                        children: [
-                          CategoryBreakdown(
-                            categories: summary.categories,
-                            enabled: false,
-                            onSelectCategory: onSelectCategory,
-                          ),
-                          Positioned.fill(
-                            child: _buildCategorySkeleton(),
-                          ),
-                        ],
-                      )
-                    : summary.categories.isEmpty
-                        ? Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              summary.hasCompletedScan
-                                  ? l10n.homeFolderEmpty
-                                  : l10n.homeLargestItemsEmpty,
-                              style: context.vwFinePrint.copyWith(
-                                color: _onDashboard.withValues(alpha: 0.42),
-                              ),
-                            ),
-                          )
-                        : CategoryBreakdown(
-                            categories: summary.categories,
-                            enabled: true,
-                            onSelectCategory: onSelectCategory,
-                          ),
+                // Loading/scanning with categories: show breakdown + skeleton overlay
+                ? Stack(
+                    children: [
+                      CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: false,
+                        onSelectCategory: onSelectCategory,
+                      ),
+                      Positioned.fill(child: _buildCategorySkeleton()),
+                    ],
+                  )
+                : summary.categories.isEmpty
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      summary.hasCompletedScan
+                          ? l10n.homeFolderEmpty
+                          : l10n.homeLargestItemsEmpty,
+                      style: context.vwFinePrint.copyWith(
+                        color: _onDashboard.withValues(alpha: 0.42),
+                      ),
+                    ),
+                  )
+                : CategoryBreakdown(
+                    categories: summary.categories,
+                    enabled: true,
+                    onSelectCategory: onSelectCategory,
+                  ),
           );
           final actions = KeyedSubtree(
             key: StorageStewardHome.actionsKey,
@@ -1004,7 +1010,9 @@ class _BrowseCard extends StatelessWidget {
                               ? l10n.homeNeverScanned
                               : l10n.homeLastScan(
                                   _formatScanTime(
-                                      context, summary.lastScannedAtMs!),
+                                    context,
+                                    summary.lastScannedAtMs!,
+                                  ),
                                 ),
                           maxLines: 2,
                           style: context.vwFinePrint.copyWith(
@@ -1036,9 +1044,7 @@ class _BrowseCard extends StatelessWidget {
                             enabled: false,
                             onSelectCategory: onSelectCategory,
                           ),
-                          Positioned.fill(
-                            child: _buildCategorySkeleton(),
-                          ),
+                          Positioned.fill(child: _buildCategorySkeleton()),
                         ],
                       ),
                     )
@@ -1133,9 +1139,7 @@ class _BrowseCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final needsCompactLayout = constraints.maxHeight < 96;
-        return _CategorySkeletonContent(
-          compact: needsCompactLayout,
-        );
+        return _CategorySkeletonContent(compact: needsCompactLayout);
       },
     );
   }
@@ -1239,8 +1243,8 @@ class _StatusChip extends StatelessWidget {
     final foreground = switch (tone) {
       _StatusChipTone.live => _liveChipText,
       _StatusChipTone.cached => _highestContrastForeground(
-          Color.alphaBlend(fill, parentBackground),
-        ),
+        Color.alphaBlend(fill, parentBackground),
+      ),
       _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.84),
     };
     return SizedBox(
@@ -1377,8 +1381,8 @@ class _DashboardActionButton extends StatelessWidget {
     final actionColor = context.volward.primary;
     final background = enabled
         ? primary
-            ? actionColor
-            : Colors.white.withValues(alpha: 0.08)
+              ? actionColor
+              : Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
@@ -1485,8 +1489,9 @@ class _TargetMenuTile extends StatelessWidget {
         ),
       ),
       child: Tooltip(
-        message:
-            recentFallback ? context.l10n.homeRecentFolders : location.path,
+        message: recentFallback
+            ? context.l10n.homeRecentFolders
+            : location.path,
         child: hasMenu
             ? KeyedSubtree(
                 key: tileKey,
@@ -1773,17 +1778,20 @@ double _wideDashboardHeight(StorageHomeSummary summary) {
   final recentLocations = _recentCustomLocations(summary);
   final selectedCustom =
       summary.selectedLocation?.kind == StorageLocationKind.custom
-          ? summary.selectedLocation
-          : null;
-  final recentMenuLocation = selectedCustom ??
+      ? summary.selectedLocation
+      : null;
+  final recentMenuLocation =
+      selectedCustom ??
       (recentLocations.isNotEmpty ? recentLocations.first : null);
-  final hasRecentFallback = recentMenuLocation != null &&
+  final hasRecentFallback =
+      recentMenuLocation != null &&
       !targetLocations.any(
         (location) => _samePath(location.path, recentMenuLocation.path),
       );
   final visibleTargets = targetLocations.length + (hasRecentFallback ? 1 : 0);
 
-  final sidebarHeight = _sidebarPadding * 2 +
+  final sidebarHeight =
+      _sidebarPadding * 2 +
       _sidebarLogoHeight +
       _sidebarLogoGap +
       visibleTargets * _targetTileHeight +
@@ -1856,7 +1864,8 @@ const _browseButtonHeight = _dashboardControlHeight; // 36.0
 
 double _rightColumnHeight(StorageHomeSummary summary) {
   // Capacity panel intrinsic height
-  const capacityHeight = _capacityPanelPaddingTop +
+  const capacityHeight =
+      _capacityPanelPaddingTop +
       _capacityPathHeight +
       _capacityPathBottomGap +
       _capacityUsedHeight +
@@ -1873,13 +1882,15 @@ double _rightColumnHeight(StorageHomeSummary summary) {
   final largestBodyHeight = largestItemCount > 0
       ? largestItemCount * _largestItemHeight
       : _largestEmptyBodyHeight;
-  final largestHeight = _largestPanelPadding +
+  final largestHeight =
+      _largestPanelPadding +
       _largestHeaderHeight +
       _largestHeaderBottomGap +
       largestBodyHeight;
 
   // Browse card intrinsic height (new vertical layout in wide mode)
-  const browseHeight = _browsePanelPadding +
+  const browseHeight =
+      _browsePanelPadding +
       _browseTopRowHeight +
       _browseTopRowBottomGap +
       _browseCategoryBreakdownHeight +

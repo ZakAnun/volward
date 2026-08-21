@@ -452,16 +452,16 @@ final invalidLiveSummary = StorageHomeSummary(
 );
 
 Finder targetTiles() => find.byWidgetPredicate((widget) {
-      final key = widget.key;
-      return widget is InkWell &&
-          key is ValueKey<String> &&
-          key.value.startsWith('storage-target-');
-    });
+  final key = widget.key;
+  return widget is InkWell &&
+      key is ValueKey<String> &&
+      key.value.startsWith('storage-target-');
+});
 
 Finder capacityMeterFill() => find.descendant(
-      of: find.byKey(StorageStewardHome.capacityMeterKey),
-      matching: find.byType(FractionallySizedBox),
-    );
+  of: find.byKey(StorageStewardHome.capacityMeterKey),
+  matching: find.byType(FractionallySizedBox),
+);
 
 ({Rect targets, Rect capacity, Rect scan}) homeGeometry(WidgetTester tester) {
   return (
@@ -484,10 +484,12 @@ void expectButtonSemantics(SemanticsNode node, {required bool enabled}) {
 double contrastRatio(Color first, Color second) {
   final firstLuminance = first.computeLuminance();
   final secondLuminance = second.computeLuminance();
-  final lighter =
-      firstLuminance > secondLuminance ? firstLuminance : secondLuminance;
-  final darker =
-      firstLuminance > secondLuminance ? secondLuminance : firstLuminance;
+  final lighter = firstLuminance > secondLuminance
+      ? firstLuminance
+      : secondLuminance;
+  final darker = firstLuminance > secondLuminance
+      ? secondLuminance
+      : firstLuminance;
   return (lighter + 0.05) / (darker + 0.05);
 }
 
@@ -636,9 +638,7 @@ void main() {
     final viewport = tester.getRect(
       find.byKey(StorageStewardHome.contentViewportKey),
     );
-    final board = tester.getRect(
-      find.byKey(StorageStewardHome.boardKey),
-    );
+    final board = tester.getRect(find.byKey(StorageStewardHome.boardKey));
 
     expect(board.height, closeTo(viewport.height, 1));
   });
@@ -787,8 +787,9 @@ void main() {
     final tokens = Theme.of(
       tester.element(find.byKey(StorageStewardHome.capacityMeterKey)),
     ).extension<VolwardTokens>()!;
-    final gradient = (fillDecoration.decoration as BoxDecoration).gradient!
-        as LinearGradient;
+    final gradient =
+        (fillDecoration.decoration as BoxDecoration).gradient!
+            as LinearGradient;
     expect(gradient.colors, [
       Color.lerp(tokens.primary, Colors.white, 0.46),
       Color.lerp(tokens.primary, Colors.black, 0.06),
@@ -801,21 +802,29 @@ void main() {
     await pumpOverview(tester, onScan: () {});
 
     final statusHeight = tester.getSize(statusChipFinder()).height;
-    final browseHeight =
-        tester.getSize(find.byKey(StorageStewardHome.browseKey)).height;
-    final scanHeight =
-        tester.getSize(find.byKey(StorageStewardHome.scanActionKey)).height;
+    final browseHeight = tester
+        .getSize(find.byKey(StorageStewardHome.browseKey))
+        .height;
+    final scanHeight = tester
+        .getSize(find.byKey(StorageStewardHome.scanActionKey))
+        .height;
 
     expect(statusHeight, closeTo(32, 1));
     expect(browseHeight, closeTo(statusHeight, 1));
     expect(scanHeight, closeTo(statusHeight, 1));
 
-    final statusFont =
-        tester.widget<Text>(find.text('Live disk data')).style!.fontSize;
-    final browseFont =
-        tester.widget<Text>(find.text('Browse Files')).style!.fontSize;
-    final scanFont =
-        tester.widget<Text>(find.text('Start Scan')).style!.fontSize;
+    final statusFont = tester
+        .widget<Text>(find.text('Live disk data'))
+        .style!
+        .fontSize;
+    final browseFont = tester
+        .widget<Text>(find.text('Browse Files'))
+        .style!
+        .fontSize;
+    final scanFont = tester
+        .widget<Text>(find.text('Start Scan'))
+        .style!
+        .fontSize;
     expect(browseFont, statusFont);
     expect(scanFont, statusFont);
   });
@@ -2075,8 +2084,7 @@ void main() {
         Size(640, 600),
         Size(620, 600),
       ]) {
-        testWidgets(
-            'no overflow $locale $brightness '
+        testWidgets('no overflow $locale $brightness '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(
             tester,
@@ -2102,8 +2110,7 @@ void main() {
         Size(700, 600),
         Size(620, 600),
       ]) {
-        testWidgets(
-            'long platform data does not overflow '
+        testWidgets('long platform data does not overflow '
             '$platformLabel ${locale.languageCode} '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(

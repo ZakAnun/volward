@@ -107,8 +107,7 @@ void main() {
       await file.delete();
     });
 
-    test('loadSessionStateIfNeeded ignores empty session state files',
-        () async {
+    test('loadSessionStateIfNeeded ignores empty session state files', () async {
       final session = VolwardSession.test();
       final file = File(
         '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',
@@ -137,8 +136,7 @@ void main() {
       await file.delete();
     });
 
-    test('switchScanRoot to a default root keeps the last custom root',
-        () async {
+    test('switchScanRoot to a default root keeps the last custom root', () async {
       final session = VolwardSession.test();
       final file = File(
         '${Directory.systemTemp.path}/volward-session-${DateTime.now().microsecondsSinceEpoch}.json',

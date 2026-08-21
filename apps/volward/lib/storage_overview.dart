@@ -121,8 +121,8 @@ class StorageOverviewData {
     this.selectedVolumeId,
     this.loading = false,
     this.errorCode,
-  })  : volumes = List<StorageVolumeInfo>.unmodifiable(volumes),
-        locations = List<StorageLocationInfo>.unmodifiable(locations);
+  }) : volumes = List<StorageVolumeInfo>.unmodifiable(volumes),
+       locations = List<StorageLocationInfo>.unmodifiable(locations);
 
   const StorageOverviewData._({
     required this.volumes,
@@ -133,22 +133,22 @@ class StorageOverviewData {
   });
 
   const StorageOverviewData.loading()
-      : this._(
-          volumes: const <StorageVolumeInfo>[],
-          locations: const <StorageLocationInfo>[],
-          selectedVolumeId: null,
-          loading: true,
-          errorCode: null,
-        );
+    : this._(
+        volumes: const <StorageVolumeInfo>[],
+        locations: const <StorageLocationInfo>[],
+        selectedVolumeId: null,
+        loading: true,
+        errorCode: null,
+      );
 
   const StorageOverviewData.unavailable([String? errorCode])
-      : this._(
-          volumes: const <StorageVolumeInfo>[],
-          locations: const <StorageLocationInfo>[],
-          selectedVolumeId: null,
-          loading: false,
-          errorCode: errorCode,
-        );
+    : this._(
+        volumes: const <StorageVolumeInfo>[],
+        locations: const <StorageLocationInfo>[],
+        selectedVolumeId: null,
+        loading: false,
+        errorCode: errorCode,
+      );
 
   final List<StorageVolumeInfo> volumes;
   final List<StorageLocationInfo> locations;
@@ -165,15 +165,15 @@ class StorageOverviewData {
 
   StorageVolumeInfo? volumeForPath(String path) {
     final normalized = ScanTreeBuilder.normalizeRoot(path);
-    final candidates = volumes.where((volume) {
-      final root = ScanTreeBuilder.normalizeRoot(volume.rootPath);
-      return isUnderFsRoot(normalized, root);
-    }).toList()
-      ..sort((a, b) {
-        final aRoot = ScanTreeBuilder.normalizeRoot(a.rootPath);
-        final bRoot = ScanTreeBuilder.normalizeRoot(b.rootPath);
-        return bRoot.length.compareTo(aRoot.length);
-      });
+    final candidates =
+        volumes.where((volume) {
+          final root = ScanTreeBuilder.normalizeRoot(volume.rootPath);
+          return isUnderFsRoot(normalized, root);
+        }).toList()..sort((a, b) {
+          final aRoot = ScanTreeBuilder.normalizeRoot(a.rootPath);
+          final bRoot = ScanTreeBuilder.normalizeRoot(b.rootPath);
+          return bRoot.length.compareTo(aRoot.length);
+        });
     return candidates.isEmpty ? selectedVolume : candidates.first;
   }
 

@@ -8,9 +8,9 @@ class MacosInstaller implements PlatformInstaller {
     String? resolvedExecutable,
     Future<ProcessResult> Function(String, List<String>)? run,
     void Function(int code)? exitProcess,
-  })  : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
-        _run = run ?? Process.run,
-        _exitProcess = exitProcess ?? exit;
+  }) : _resolvedExecutable = resolvedExecutable ?? Platform.resolvedExecutable,
+       _run = run ?? Process.run,
+       _exitProcess = exitProcess ?? exit;
 
   final String _resolvedExecutable;
   final Future<ProcessResult> Function(String, List<String>) _run;

@@ -77,7 +77,8 @@ void volwardScanIsolate(List<dynamic> args) {
   } catch (e, st) {
     progressPort.send(<String, dynamic>{
       'type': 'error',
-      'error': 'Native bridge failed to start: $e\n$st\n'
+      'error':
+          'Native bridge failed to start: $e\n$st\n'
           'Rebuild the native Rust library for this platform, then fully restart the app.',
     });
     return;

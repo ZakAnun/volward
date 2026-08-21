@@ -298,13 +298,15 @@ void main() {
     tester,
   ) async {
     final completedPreview = Completer<void>()..complete();
-    final session = _PendingPreviewSession(
-      root: '/',
-      previewGate: completedPreview,
-      failPreview: true,
-    )..sessionStateFileForTest = File(
-        '${Directory.systemTemp.path}/volward-startup-preview-error.json',
-      );
+    final session =
+        _PendingPreviewSession(
+            root: '/',
+            previewGate: completedPreview,
+            failPreview: true,
+          )
+          ..sessionStateFileForTest = File(
+            '${Directory.systemTemp.path}/volward-startup-preview-error.json',
+          );
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);

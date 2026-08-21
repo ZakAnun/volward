@@ -35,9 +35,10 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
     if (widget.animate) {
       _controller.repeat();
     }
-    _animation = Tween<double>(begin: -1.0, end: 2.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.linear),
-    );
+    _animation = Tween<double>(
+      begin: -1.0,
+      end: 2.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
   }
 
   @override

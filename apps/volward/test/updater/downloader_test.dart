@@ -112,14 +112,14 @@ void main() {
         return http.Response.bytes([1], 206);
       });
 
-      final reachable =
-          await HttpDownloader(client: client).isDownloadReachable(
-        const ReleaseAsset(
-          name: 'package.zip',
-          downloadUrl: 'https://example.invalid/package.zip',
-          sizeBytes: 3,
-        ),
-      );
+      final reachable = await HttpDownloader(client: client)
+          .isDownloadReachable(
+            const ReleaseAsset(
+              name: 'package.zip',
+              downloadUrl: 'https://example.invalid/package.zip',
+              sizeBytes: 3,
+            ),
+          );
 
       expect(reachable, isTrue);
     },

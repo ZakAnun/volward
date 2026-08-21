@@ -23,12 +23,12 @@ class AppUpdater extends ChangeNotifier {
     required this.os,
     required this.abi,
     required Directory Function() tempDirectoryBuilder,
-  })  : _localVersionReader = localVersionReader,
-        _versionSource = versionSource,
-        _downloader = downloader,
-        _installer = installer,
-        _urlOpener = urlOpener,
-        _tempDirectoryBuilder = tempDirectoryBuilder;
+  }) : _localVersionReader = localVersionReader,
+       _versionSource = versionSource,
+       _downloader = downloader,
+       _installer = installer,
+       _urlOpener = urlOpener,
+       _tempDirectoryBuilder = tempDirectoryBuilder;
 
   factory AppUpdater.test({String localVersion = '0.0.0'}) {
     return AppUpdater(
@@ -329,12 +329,12 @@ class _TestVersionSource implements VersionSource {
 
   @override
   Future<ReleaseInfo> fetchLatest() async => ReleaseInfo(
-        tagName: 'v$version',
-        version: version,
-        htmlUrl: 'https://example.invalid/releases/latest',
-        body: '',
-        assets: const [],
-      );
+    tagName: 'v$version',
+    version: version,
+    htmlUrl: 'https://example.invalid/releases/latest',
+    body: '',
+    assets: const [],
+  );
 }
 
 class _TestDownloader implements Downloader {
