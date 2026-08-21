@@ -1875,7 +1875,8 @@ const _browseTopRowBottomGap = 10.0;
 // The pie declares Size.square(72) and the legend rides beside it, so this is
 // the pie's own height — budgeting less squashes the chart.
 const _browseCategoryBreakdownHeight = 72.0;
-const _browseReclaimableHeightBase = 17.0; // Single line reclaimable text (finePrint)
+const _browseReclaimableHeightBase =
+    17.0; // Single line reclaimable text (finePrint)
 const _browseReclaimableBottomGap = 10.0;
 const _browseButtonHeight = _dashboardControlHeight;
 
