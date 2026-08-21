@@ -35,9 +35,9 @@ const _sidebarLogoGap = 18.0;
 const _targetTileHeight = 44.0;
 const _targetTileGap = 10.0;
 
-// Flex ratios for right panel derived from typical intrinsic heights
-// Capacity: ~206px, Largest (5 items): ~217px, Browse (horizontal): ~174px
-// Ratios 35:32:34 keep capacity unchanged, give browse more room, trim largest
+// Flex ratios for the right panel. They track the intrinsic heights summed at
+// the bottom of this file (capacity is the tallest, browse next, largest
+// smallest), rounded so capacity keeps its content whole.
 const _capacityFlex = 35;
 const _largestFlex = 32;
 const _browseFlex = 34;
@@ -355,7 +355,12 @@ class _HeroTopbar extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppleSpacing.lg, 18, 16, 14),
+      padding: const EdgeInsets.fromLTRB(
+        AppleSpacing.lg,
+        18,
+        AppleSpacing.lg,
+        14,
+      ),
       child: Row(
         children: [
           Expanded(child: brand),
@@ -606,7 +611,9 @@ class _MainPane extends StatelessWidget {
     );
     final largest = LargestItemsPanel(
       summary: summary,
-      maxItems: 3, // Reduced from 5 to save vertical space
+      // Same constant the intrinsic-height sum below budgets rows for; a
+      // literal here would drift from it.
+      maxItems: _largestItemCount,
       onOpenItem: onOpenItem,
     );
     final composition = _BrowseCard(
@@ -738,7 +745,11 @@ class _StatPanel extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!compact) const SizedBox(height: 10), // Reduced from 12
+                // Wide mode gives this panel a flex-bounded height, so the
+                // meter is pinned to the card's bottom edge like every
+                // neighbouring panel. Compact mode scrolls (unbounded height),
+                // where a Spacer would assert — hence the fixed gap there.
+                if (!compact) const Spacer() else const SizedBox(height: 10),
                 _HeroMeter(summary: summary),
               ],
             ),
@@ -830,12 +841,15 @@ class _BrowseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scanLabel = summary.scanning
+    // Restoring a cached snapshot also sets `scanning` so the dashboard reads
+    // as busy, but there is no scan to cancel — keying the label off
+    // `scanning` there produced a permanently disabled "Cancel Scan".
+    final scanLabel = summary.canCancelScan
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
         ? l10n.homeRescan
         : l10n.homeStartScan;
-    final scanCallback = summary.scanning ? onCancelScan : onScan;
+    final scanCallback = summary.canCancelScan ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
         final stackedCard = compact || constraints.maxWidth < 280;
@@ -854,16 +868,13 @@ class _BrowseCard extends StatelessWidget {
                 // Loading/scanning with no categories: show skeleton
                 ? _buildCategorySkeleton()
                 : showSkeleton
-                // Loading/scanning with categories: show breakdown + skeleton overlay
-                ? Stack(
-                    children: [
-                      CategoryBreakdown(
-                        categories: summary.categories,
-                        enabled: false,
-                        onSelectCategory: onSelectCategory,
-                      ),
-                      Positioned.fill(child: _buildCategorySkeleton()),
-                    ],
+                // Partial results are real data — show them, greyed out to read
+                // as in-progress. An opaque skeleton on top would build the
+                // breakdown and then hide it.
+                ? CategoryBreakdown(
+                    categories: summary.categories,
+                    enabled: false,
+                    onSelectCategory: onSelectCategory,
                   )
                 : summary.categories.isEmpty
                 ? Align(
@@ -948,10 +959,13 @@ class _BrowseCard extends StatelessWidget {
                         child: _DashboardActionButton(
                           key: StorageStewardHome.scanActionKey,
                           label: scanLabel,
-                          icon: summary.scanning
+                          icon: summary.canCancelScan
                               ? Icons.stop_circle_outlined
                               : Icons.radar_outlined,
                           primary: true,
+                          semanticColor: summary.canCancelScan
+                              ? context.volward.danger
+                              : null,
                           onPressed: scanCallback,
                         ),
                       ),
@@ -1035,17 +1049,14 @@ class _BrowseCard extends StatelessWidget {
                     // Loading/scanning with no categories yet: show skeleton only
                     Expanded(child: _buildCategorySkeleton())
                   else if (summary.scanning || summary.overview.loading)
-                    // Loading/scanning with existing categories: show breakdown + skeleton overlay
+                    // Partial results are real data — show them, greyed out to
+                    // read as in-progress. An opaque skeleton on top would
+                    // build the breakdown and then hide it.
                     Expanded(
-                      child: Stack(
-                        children: [
-                          CategoryBreakdown(
-                            categories: summary.categories,
-                            enabled: false,
-                            onSelectCategory: onSelectCategory,
-                          ),
-                          Positioned.fill(child: _buildCategorySkeleton()),
-                        ],
+                      child: CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: false,
+                        onSelectCategory: onSelectCategory,
                       ),
                     )
                   else if (summary.categories.isEmpty)
@@ -1114,10 +1125,13 @@ class _BrowseCard extends StatelessWidget {
                             child: _DashboardActionButton(
                               key: StorageStewardHome.scanActionKey,
                               label: scanLabel,
-                              icon: summary.scanning
+                              icon: summary.canCancelScan
                                   ? Icons.stop_circle_outlined
                                   : Icons.radar_outlined,
                               primary: true,
+                              semanticColor: summary.canCancelScan
+                                  ? context.volward.danger
+                                  : null,
                               onPressed: scanCallback,
                             ),
                           ),
@@ -1172,7 +1186,6 @@ class _CategorySkeletonContent extends StatelessWidget {
               width: pieSize,
               height: pieSize,
               borderRadius: pieSize / 2,
-              animate: false,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1187,7 +1200,6 @@ class _CategorySkeletonContent extends StatelessWidget {
                           width: markerSize,
                           height: markerSize,
                           borderRadius: 3,
-                          animate: false,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1195,7 +1207,6 @@ class _CategorySkeletonContent extends StatelessWidget {
                             width: double.infinity,
                             height: lineHeight,
                             borderRadius: 4,
-                            animate: false,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1203,7 +1214,6 @@ class _CategorySkeletonContent extends StatelessWidget {
                           width: 40,
                           height: lineHeight,
                           borderRadius: 4,
-                          animate: false,
                         ),
                       ],
                     ),
@@ -1368,6 +1378,7 @@ class _DashboardActionButton extends StatelessWidget {
     required this.icon,
     required this.primary,
     required this.onPressed,
+    this.semanticColor,
   });
 
   final String label;
@@ -1375,10 +1386,14 @@ class _DashboardActionButton extends StatelessWidget {
   final bool primary;
   final VoidCallback? onPressed;
 
+  /// Overrides the accent for an action whose meaning is not "proceed" —
+  /// Cancel Scan uses [VolwardColors.danger]. Null keeps the primary accent.
+  final Color? semanticColor;
+
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    final actionColor = context.volward.primary;
+    final actionColor = semanticColor ?? context.volward.primary;
     final background = enabled
         ? primary
               ? actionColor
@@ -1826,41 +1841,46 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
   return recent;
 }
 
-// Right panel component height constants for intrinsic calculation
-// Capacity panel (_StatPanel with !compact)
-// Actual structure: Padding(22+18) + [path + SizedBox(10) + used + SizedBox(6) + label + SizedBox(18) + metrics] + SizedBox(12) + meter
-const _capacityPanelPaddingTop = 20.0; // Reduced from 22
-const _capacityPanelPaddingBottom = 16.0; // Reduced from 18
+// Right panel component heights, summed by [_rightColumnHeight] to size the
+// wide dashboard. Each constant mirrors a real widget or gap — when you change
+// one of those, change its twin here or the board grows a scrollbar.
+//
+// Capacity panel — _StatPanel with !compact. Its structure is
+// Padding(top 20, bottom 16) wrapping
+// [path, gap 8, used, gap 6, label, gap 16, metrics], then gap 10, then meter.
+const _capacityPanelPaddingTop = 20.0;
+const _capacityPanelPaddingBottom = 16.0;
 const _capacityPathHeight = 17.0; // Path text line
-const _capacityPathBottomGap = 8.0; // Reduced from 10
-const _capacityUsedHeight =
-    52.0; // Large number fontSize 52 with height: 0.92 = ~48px actual
-const _capacityUsedBottomGap = 6.0; // SizedBox after used number
+const _capacityPathBottomGap = 8.0;
+const _capacityUsedHeight = 52.0; // fontSize 52 at height 0.92 measures ~48
+const _capacityUsedBottomGap = 6.0;
 const _capacityUsedLabelHeight = 17.0; // "used" text line
-const _capacityUsedLabelBottomGap = 16.0; // Reduced from 18
+const _capacityUsedLabelBottomGap = 16.0;
 const _capacityMetricsHeight = 52.0; // Row with Total/Available (2 columns)
-const _capacityMetricsBottomGap = 10.0; // Reduced from 12
+const _capacityMetricsBottomGap = 10.0;
 const _capacityMeterHeight = 12.0;
 
-// Largest items panel (LargestItemsPanel with maxItems=3, reduced from 5)
-const _largestPanelPadding = 18.0 * 2; // Reduced from 36
+// Largest items panel — LargestItemsPanel, capped at [_largestItemCount] rows
+// in wide mode.
+const _largestPanelPadding = 18.0 * 2;
 const _largestHeaderHeight = 17.0;
-const _largestHeaderBottomGap = 10.0; // Reduced from 12
+const _largestHeaderBottomGap = 10.0;
 const _largestItemHeight = 29.0;
-const _largestItemCount = 3; // Reduced from 5 to save ~58px
+const _largestItemCount = 3;
 const _largestEmptyBodyHeight = 89.0; // Empty state text height with padding
 
-// Browse card (_BrowseCard with new vertical layout in wide mode)
-// Structure: padding(16) + [lastScan row with status chip] + gap(10) + CategoryBreakdown + gap(8) + reclaimable + gap(10) + buttons + padding(16)
-const _browsePanelPadding = 16.0 * 2; // Reduced from 18*2
-const _browseTopRowHeight =
-    28.0; // Last scan text (max 2 lines) with status chip on same row
-const _browseTopRowBottomGap = 10.0; // Reduced from 12
-const _browseCategoryBreakdownHeight =
-    70.0; // Reduced from 80, pie chart + legend (estimated, flexible)
+// Browse card — _BrowseCard's vertical wide-mode layout:
+// padding(16) + last-scan row with status chip + gap(10) + CategoryBreakdown
+// + gap(8) + reclaimable + gap(10) + buttons + padding(16).
+const _browsePanelPadding = 16.0 * 2;
+const _browseTopRowHeight = 28.0; // Last scan text (max 2 lines) + status chip
+const _browseTopRowBottomGap = 10.0;
+// The pie declares Size.square(72) and the legend rides beside it, so this is
+// the pie's own height — budgeting less squashes the chart.
+const _browseCategoryBreakdownHeight = 72.0;
 const _browseReclaimableHeight = 17.0; // Single line reclaimable text
-const _browseReclaimableBottomGap = 10.0; // Reduced from 12
-const _browseButtonHeight = _dashboardControlHeight; // 36.0
+const _browseReclaimableBottomGap = 10.0;
+const _browseButtonHeight = _dashboardControlHeight;
 
 double _rightColumnHeight(StorageHomeSummary summary) {
   // Capacity panel intrinsic height

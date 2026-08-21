@@ -16,25 +16,6 @@ import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 
-// Helper to check if exception is a small acceptable overflow due to flex rounding
-bool _isAcceptableOverflow(dynamic exception) {
-  if (exception == null) return true;
-  if (exception is! FlutterError) return false;
-
-  final message = exception.toString();
-  if (!message.contains('RenderFlex overflowed by')) return false;
-
-  // Extract overflow pixels from message like "overflowed by 6.4 pixels"
-  final match = RegExp(r'overflowed by ([\d.]+) pixels').firstMatch(message);
-  if (match == null) return false;
-
-  final pixels = double.tryParse(match.group(1) ?? '');
-  if (pixels == null) return false;
-
-  // Accept overflow less than 10 pixels (flex layout rounding at default test viewport)
-  return pixels < 10.0;
-}
-
 StorageOverviewData _overviewData(String volumeName) {
   return StorageOverviewData(
     selectedVolumeId: '/',
@@ -215,7 +196,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
 
     expect(session.previewCalls, 1);
     expect(session.expectedPreviewGeneration, session.rootSwitchGeneration);
@@ -266,7 +247,7 @@ void main() {
 
     await tester.pumpWidget(_shell(oldSession, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     await tester.pump();
     final staleAction = tester
         .widget<StorageStewardHome>(find.byType(StorageStewardHome))
@@ -274,7 +255,7 @@ void main() {
 
     await tester.pumpWidget(_shell(newSession, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     expect(
       tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
       isNull,
@@ -314,7 +295,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     await tester.pump();
 
     expect(session.previewCalls, 1);
@@ -347,12 +328,12 @@ void main() {
 
     await tester.pumpWidget(_shell(oldSession, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     expect(oldSession.previewCalls, 1);
 
     await tester.pumpWidget(_shell(newSession, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     expect(newSession.previewCalls, 1);
 
     oldPreview.complete();
@@ -398,7 +379,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+      expect(tester.takeException(), isNull);
 
       expect(session.previewCalls, 1);
       // The branded home stays reachable during startup loading.
@@ -431,7 +412,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     await tester.pump();
 
     expect(session.previewCalls, 1);
@@ -466,7 +447,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+      expect(tester.takeException(), isNull);
 
       // No valid root → preview is never started, branded home stays available.
       expect(session.previewCalls, 0);
@@ -495,7 +476,7 @@ void main() {
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
 
     expect(session.previewCalls, 1);
     expect(find.byType(StorageStewardHome), findsOneWidget);
@@ -524,7 +505,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     expect(overviewProvider.selectedPaths, ['/']);
     expect(
       tester
@@ -584,13 +565,13 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
     expect(overviewProvider.requests, hasLength(1));
 
     await tester.pumpWidget(const SizedBox.shrink());
     overviewProvider.requests.single.complete(_overviewData('Late Disk'));
     await tester.pump();
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
 
     expect(tester.takeException(), isNull);
   });

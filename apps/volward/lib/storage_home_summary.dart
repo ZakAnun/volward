@@ -6,6 +6,12 @@ import 'storage_overview.dart';
 
 const homeNamedCategoryOrder = ['Cache', 'Temp', 'Media', 'System'];
 const homeOtherCategoryName = 'Other';
+
+/// How many "largest items" the summary carries.
+///
+/// The dashboard renders fewer than this (see `_largestItemCount` in
+/// `storage_steward_home.dart`); the extra rows are headroom for a caller that
+/// wants a longer list, not rows anyone is expected to see today.
 const homeLargestItemLimit = 5;
 
 int? _finiteInt(Object? value) {
@@ -87,6 +93,7 @@ class StorageHomeSummary {
     required this.selectedVolume,
     required this.scanning,
     required this.hasCompletedScan,
+    this.restoringSnapshot = false,
     this.reclaimableBytes,
     this.lastScannedAtMs,
     this.scanProgress,
@@ -103,6 +110,12 @@ class StorageHomeSummary {
   final StorageVolumeInfo? selectedVolume;
   final bool scanning;
   final bool hasCompletedScan;
+
+  /// True while a cached snapshot is being read back from disk.
+  ///
+  /// Restore also sets [scanning] so the dashboard reads as busy, but there is
+  /// no scan to cancel and no progress to report — see [canCancelScan].
+  final bool restoringSnapshot;
   final int? reclaimableBytes;
   final int? lastScannedAtMs;
   final double? scanProgress;
@@ -115,46 +128,19 @@ class StorageHomeSummary {
 
   bool get hasUsableCapacity => _hasUsableCapacity(selectedVolume);
 
-  StorageHomeSummary copyWith({
-    StorageOverviewData? overview,
-    StorageLocationInfo? selectedLocation,
-    StorageVolumeInfo? selectedVolume,
-    bool? scanning,
-    bool? hasCompletedScan,
-    int? reclaimableBytes,
-    int? lastScannedAtMs,
-    double? scanProgress,
-    String? scanPhase,
-    int? scannedBytes,
-    List<StorageHomeCategorySummary>? categories,
-    List<StorageHomeItem>? largestItems,
-    StorageLocationInfo? pinnedCustomLocation,
-    List<StorageLocationInfo>? recentCustomLocations,
-  }) {
-    return StorageHomeSummary(
-      overview: overview ?? this.overview,
-      selectedLocation: selectedLocation ?? this.selectedLocation,
-      selectedVolume: selectedVolume ?? this.selectedVolume,
-      scanning: scanning ?? this.scanning,
-      hasCompletedScan: hasCompletedScan ?? this.hasCompletedScan,
-      reclaimableBytes: reclaimableBytes ?? this.reclaimableBytes,
-      lastScannedAtMs: lastScannedAtMs ?? this.lastScannedAtMs,
-      scanProgress: scanProgress ?? this.scanProgress,
-      scanPhase: scanPhase ?? this.scanPhase,
-      scannedBytes: scannedBytes ?? this.scannedBytes,
-      categories: categories ?? this.categories,
-      largestItems: largestItems ?? this.largestItems,
-      pinnedCustomLocation: pinnedCustomLocation ?? this.pinnedCustomLocation,
-      recentCustomLocations:
-          recentCustomLocations ?? this.recentCustomLocations,
-    );
-  }
+  /// Whether the primary action should offer to cancel.
+  ///
+  /// Guards the one place [scanning] is too broad: during a snapshot restore
+  /// the dashboard is busy but nothing is cancellable, so offering "cancel"
+  /// there produces a permanently disabled button.
+  bool get canCancelScan => scanning && !restoringSnapshot;
 
   factory StorageHomeSummary.fromInputs({
     required StorageOverviewData overview,
     required String targetPath,
     required bool scanning,
     required double? scanProgress,
+    bool restoringSnapshot = false,
     String? scanPhase,
     ScanSnapshotState? matchingSnapshot,
     List<ScanTreeNode> largestItemCandidates = const [],
@@ -296,6 +282,7 @@ class StorageHomeSummary {
       selectedLocation: selectedLocation,
       selectedVolume: selectedVolume,
       scanning: scanning,
+      restoringSnapshot: restoringSnapshot,
       hasCompletedScan: completedScan,
       reclaimableBytes: reclaimableBytes,
       lastScannedAtMs: snapshotMatches

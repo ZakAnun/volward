@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// A simple skeleton loading indicator with subtle shimmer animation
+/// A skeleton placeholder with a shimmer sweep.
+///
+/// [animate] exists for tests: a repeating controller never settles, so
+/// `pumpAndSettle` on a screen showing one would time out.
 class SkeletonLoader extends StatefulWidget {
   const SkeletonLoader({
     super.key,
@@ -21,24 +24,33 @@ class SkeletonLoader extends StatefulWidget {
 
 class _SkeletonLoaderState extends State<SkeletonLoader>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
+  late final AnimationController _controller = AnimationController(
+    duration: const Duration(milliseconds: 1200),
+    vsync: this,
+  );
+  late final Animation<double> _animation = Tween<double>(
+    begin: -1.0,
+    end: 2.0,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1200),
-      vsync: this,
-    );
-    // Only animate when explicitly enabled (defaults to true in production)
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(SkeletonLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate != oldWidget.animate) _syncAnimation();
+  }
+
+  void _syncAnimation() {
     if (widget.animate) {
       _controller.repeat();
+    } else {
+      _controller.stop();
     }
-    _animation = Tween<double>(
-      begin: -1.0,
-      end: 2.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
   }
 
   @override
@@ -55,11 +67,12 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
       child: AnimatedBuilder(
         animation: _animation,
         builder: (context, child) {
-          return Container(
+          return DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(widget.borderRadius),
-              // Base color: always visible as a solid shape
-              color: Colors.white.withValues(alpha: 0.12),
+              // The dim end stops are the base fill — a `color` alongside a
+              // `gradient` would be ignored by BoxDecoration entirely, so the
+              // block stays visible even at rest through these.
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,

@@ -13,25 +13,6 @@ import 'package:volward/widgets/home/largest_items_panel.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 import 'package:volward/widgets/volward_logo.dart';
 
-// Helper to check if exception is a small acceptable overflow due to flex rounding
-bool _isAcceptableOverflow(dynamic exception) {
-  if (exception == null) return true;
-  if (exception is! FlutterError) return false;
-
-  final message = exception.toString();
-  if (!message.contains('RenderFlex overflowed by')) return false;
-
-  // Extract overflow pixels from message like "overflowed by 5.3 pixels"
-  final match = RegExp(r'overflowed by ([\d.]+) pixels').firstMatch(message);
-  if (match == null) return false;
-
-  final pixels = double.tryParse(match.group(1) ?? '');
-  if (pixels == null) return false;
-
-  // Accept overflow less than 6 pixels (flex layout rounding at certain viewport heights)
-  return pixels < 6.0;
-}
-
 const downloads = StorageLocationInfo(
   id: 'downloads',
   name: 'Downloads',
@@ -660,9 +641,10 @@ void main() {
       find.byKey(StorageStewardHome.capacityMeterKey),
     );
     final largest = tester.getRect(find.byKey(LargestItemsPanel.panelKey));
-    // With new flex ratios (35:32:34), capacity panel height changed
-    // Check meter is near the bottom (within reasonable tolerance)
-    expect((capacity.bottom - meter.bottom).abs(), lessThan(41));
+    // Pinned, not merely "somewhere near the bottom": the panel is taller than
+    // its content in wide mode, so a loose tolerance here hid up to 137px of
+    // dead space below the meter at 1920x1080.
+    expect(meter.bottom, closeTo(capacity.bottom, 1));
     expect(meter.left, closeTo(capacity.left, 1));
     expect(meter.right, closeTo(capacity.right, 1));
     expect(meter.height, closeTo(12, 1));
@@ -1000,14 +982,14 @@ void main() {
   ) async {
     await pumpOverview(tester, size: const Size(720, 700));
     // Accept small overflow due to flex rounding at this viewport size
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
 
     var targets = tester.getRect(find.byKey(StorageStewardHome.targetsKey));
     var capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
     expect(targets.right, lessThan(capacity.left));
 
     await pumpOverview(tester, size: const Size(719, 700));
-    expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+    expect(tester.takeException(), isNull);
 
     targets = tester.getRect(find.byKey(StorageStewardHome.targetsKey));
     capacity = tester.getRect(find.byKey(StorageStewardHome.capacityKey));
@@ -1043,7 +1025,7 @@ void main() {
       for (final size in const [Size(1280, 800), Size(780, 700)]) {
         await pumpOverview(tester, size: size, summary: summary);
         // Accept small overflow due to flex rounding at 780x700
-        expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+        expect(tester.takeException(), isNull);
 
         final geometry = homeGeometry(tester);
         expect(geometry.targets.right, lessThan(geometry.capacity.left));
@@ -1051,7 +1033,7 @@ void main() {
       }
 
       await pumpOverview(tester, size: const Size(700, 700), summary: summary);
-      expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+      expect(tester.takeException(), isNull);
 
       final geometry = homeGeometry(tester);
       expect(geometry.targets.bottom, lessThanOrEqualTo(geometry.capacity.top));
@@ -1250,41 +1232,70 @@ void main() {
     }
   });
 
-  testWidgets('cancel scan action uses primary theme color with contrast', (
+  testWidgets('cancel scan action uses danger with contrast', (tester) async {
+    // Both layouts: the wide board and _BrowseCard render the CTA separately,
+    // and an earlier refactor dropped the danger accent from the wide one
+    // without anything failing.
+    for (final size in [const Size(1280, 800), const Size(620, 600)]) {
+      for (final brightness in Brightness.values) {
+        await pumpOverview(
+          tester,
+          size: size,
+          summary: scanningSummary,
+          brightness: brightness,
+          onCancelScan: () {},
+        );
+
+        final action = find.byKey(StorageStewardHome.scanActionKey);
+        final material = tester.widget<Material>(
+          find.descendant(of: action, matching: find.byType(Material)),
+        );
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: action,
+            matching: find.byIcon(Icons.stop_circle_outlined),
+          ),
+        );
+        final label = tester.widget<Text>(
+          find.descendant(of: action, matching: find.text('Cancel Scan')),
+        );
+        final tokens = Theme.of(
+          tester.element(action),
+        ).extension<VolwardTokens>()!;
+
+        expect(
+          material.color,
+          tokens.danger,
+          reason: 'cancel is destructive at ${size.width.toInt()}px',
+        );
+        expect(
+          (material.shape! as StadiumBorder).side.color,
+          tokens.danger,
+          reason: 'border tracks the fill at ${size.width.toInt()}px',
+        );
+        expect(icon.color, label.style!.color);
+        expect(
+          contrastRatio(label.style!.color!, material.color!),
+          greaterThanOrEqualTo(4.5),
+        );
+      }
+    }
+  });
+
+  testWidgets('a scan that has not started keeps the primary accent', (
     tester,
   ) async {
-    for (final brightness in Brightness.values) {
-      await pumpOverview(
-        tester,
-        summary: scanningSummary,
-        brightness: brightness,
-        onCancelScan: () {},
-      );
+    // The other half of the pair: semanticColor must stay null when the CTA
+    // means "proceed", or every dashboard shows a red Start Scan.
+    await pumpOverview(tester, onScan: () {});
 
-      final action = find.byKey(StorageStewardHome.scanActionKey);
-      final material = tester.widget<Material>(
-        find.descendant(of: action, matching: find.byType(Material)),
-      );
-      final icon = tester.widget<Icon>(
-        find.descendant(
-          of: action,
-          matching: find.byIcon(Icons.stop_circle_outlined),
-        ),
-      );
-      final label = tester.widget<Text>(
-        find.descendant(of: action, matching: find.text('Cancel Scan')),
-      );
-      final tokens = Theme.of(
-        tester.element(action),
-      ).extension<VolwardTokens>()!;
+    final action = find.byKey(StorageStewardHome.scanActionKey);
+    final material = tester.widget<Material>(
+      find.descendant(of: action, matching: find.byType(Material)),
+    );
+    final tokens = Theme.of(tester.element(action)).extension<VolwardTokens>()!;
 
-      expect(material.color, tokens.primary);
-      expect(icon.color, label.style!.color);
-      expect(
-        contrastRatio(label.style!.color!, material.color!),
-        greaterThanOrEqualTo(4.5),
-      );
-    }
+    expect(material.color, tokens.primary);
   });
 
   testWidgets('home canvas follows the selected accent gradient', (
@@ -1831,6 +1842,37 @@ void main() {
     expect(cancels, 1);
   });
 
+  testWidgets('restoring a snapshot still offers to scan, not to cancel', (
+    tester,
+  ) async {
+    // A cold launch with a cached snapshot sets `scanning` so the dashboard
+    // reads as busy, but there is no scan behind it. Keying the CTA off
+    // `scanning` alone put a permanently disabled "Cancel Scan" on screen for
+    // the whole restore.
+    var scans = 0;
+    var cancels = 0;
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: readySummary.overview,
+        selectedLocation: readySummary.selectedLocation,
+        selectedVolume: readySummary.selectedVolume,
+        scanning: true,
+        restoringSnapshot: true,
+        hasCompletedScan: false,
+      ),
+      onScan: () => scans++,
+      onCancelScan: () => cancels++,
+    );
+
+    expect(find.text('Cancel Scan'), findsNothing);
+    expect(find.text('Start Scan'), findsOneWidget);
+
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(scans, 1);
+    expect(cancels, 0);
+  });
+
   testWidgets('disabled scan targets and folder action absorb real taps', (
     tester,
   ) async {
@@ -2093,7 +2135,7 @@ void main() {
             brightness: brightness,
           );
           await tester.pump();
-          expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+          expect(tester.takeException(), isNull);
         });
       }
     }
@@ -2122,7 +2164,7 @@ void main() {
           );
           await tester.pump();
 
-          expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+          expect(tester.takeException(), isNull);
           expect(find.byTooltip(longPath), findsOneWidget);
 
           final scanAction = find.byKey(StorageStewardHome.scanActionKey);
@@ -2135,7 +2177,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(scanAction.hitTestable(), findsOneWidget);
-          expect(_isAcceptableOverflow(tester.takeException()), isTrue);
+          expect(tester.takeException(), isNull);
         });
       }
     }

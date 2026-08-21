@@ -18,6 +18,15 @@ class CategoryBreakdown extends StatelessWidget {
 
   static const pieKey = Key('storage-overview-category-pie');
 
+  /// Narrowest legend column that still fits a row's widest realistic content:
+  /// an ellipsised label, a seven-digit file count, and a percent. Below this
+  /// the two-column split costs more than the vertical space it saves, so the
+  /// legend stacks instead.
+  static const _minLegendColumnWidth = 176.0;
+
+  /// Gap between the two legend columns.
+  static const _columnGap = 8.0;
+
   final List<StorageHomeCategorySummary> categories;
   final bool enabled;
   final ValueChanged<String>? onSelectCategory;
@@ -33,9 +42,6 @@ class CategoryBreakdown extends StatelessWidget {
         ),
     ];
 
-    // Use two-column layout when 4+ categories to save vertical space
-    final useTwoColumns = categories.length >= 4;
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -46,9 +52,21 @@ class CategoryBreakdown extends StatelessWidget {
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: useTwoColumns
-              ? _buildTwoColumnLegend(total)
-              : _buildSingleColumnLegend(total),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Two columns save vertical space once there are 4+ categories,
+              // but only where each column is still wide enough to hold a row.
+              // Splitting unconditionally overflowed by up to 102px in the
+              // compact dashboard.
+              final useTwoColumns =
+                  categories.length >= 4 &&
+                  (constraints.maxWidth - _columnGap) / 2 >=
+                      _minLegendColumnWidth;
+              return useTwoColumns
+                  ? _buildTwoColumnLegend(total)
+                  : _buildSingleColumnLegend(total);
+            },
+          ),
         ),
       ],
     );
@@ -105,7 +123,7 @@ class CategoryBreakdown extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: _columnGap),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -227,47 +245,71 @@ class CategoryLegendRow extends StatelessWidget {
             child: ExcludeSemantics(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: enabled ? 1 : 0.42),
-                        shape: BoxShape.circle,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: enabled ? 1 : 0.42),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const SizedBox(width: 8, height: 8),
                       ),
-                      child: const SizedBox(width: 8, height: 8),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.vwFinePrint.copyWith(
-                          color: kOnDashboard.withValues(
-                            alpha: enabled ? 0.84 : 0.42,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.vwFinePrint.copyWith(
+                            color: kOnDashboard.withValues(
+                              alpha: enabled ? 0.84 : 0.42,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      count,
-                      style: context.vwFinePrint.copyWith(
-                        color: kOnDashboard.withValues(
-                          alpha: enabled ? 0.64 : 0.36,
+                      const SizedBox(width: 8),
+                      // The label ellipsises to nothing, but the numbers do
+                      // not — a seven-digit count on a narrow column pushed
+                      // the row past its width. Cap the pair at half the row
+                      // so the count is the thing that gives, and only once
+                      // the label has already collapsed.
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: constraints.maxWidth / 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                count,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.vwFinePrint.copyWith(
+                                  color: kOnDashboard.withValues(
+                                    alpha: enabled ? 0.64 : 0.36,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              percentLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              style: context.vwFinePrint.copyWith(
+                                color: kOnDashboard.withValues(
+                                  alpha: enabled ? 0.64 : 0.36,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      percentLabel,
-                      style: context.vwFinePrint.copyWith(
-                        color: kOnDashboard.withValues(
-                          alpha: enabled ? 0.64 : 0.36,
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

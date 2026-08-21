@@ -181,7 +181,11 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
-    self.contentMinSize = NSSize(width: 900, height: 700)
+    // The smallest content box the dashboard is tested at (see the responsive
+    // sweeps in storage_steward_home_test.dart). 900x700 was larger than the
+    // usable area of a 1024x640 scaled display, so the window could not be
+    // opened at all there.
+    self.contentMinSize = NSSize(width: 620, height: 600)
 
     let channel = FlutterMethodChannel(
       name: "com.volward/macos_settings",

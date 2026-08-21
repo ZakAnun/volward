@@ -59,6 +59,7 @@ void main() {
     bool scanning = false,
     bool hasCompletedScan = true,
     int? scannedBytes,
+    double? scanProgress,
   }) {
     return StorageHomeSummary(
       overview: overview,
@@ -67,6 +68,7 @@ void main() {
       scanning: scanning,
       hasCompletedScan: hasCompletedScan,
       scannedBytes: scannedBytes,
+      scanProgress: scanProgress,
       largestItems: items,
     );
   }
@@ -140,7 +142,8 @@ void main() {
         items: const [bigFile],
         scanning: true,
         hasCompletedScan: false,
-      ).copyWith(scanProgress: 0.5),
+        scanProgress: 0.5,
+      ),
     );
 
     expect(find.byKey(LargestItemsPanel.progressKey), findsOneWidget);
