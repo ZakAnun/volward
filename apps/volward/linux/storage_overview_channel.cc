@@ -476,9 +476,10 @@ void method_call_cb(FlMethodChannel*, FlMethodCall* call, gpointer) {
 
 void register_storage_overview_channel(FlView* view) {
   FlEngine* engine = fl_view_get_engine(view);
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
       fl_engine_get_binary_messenger(engine), "com.volward/storage_overview",
-      FL_METHOD_CODEC(fl_standard_method_codec_get_instance()));
+      FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(channel, method_call_cb, nullptr,
                                             nullptr);
   g_object_set_data_full(G_OBJECT(view), "volward-storage-overview-channel",
