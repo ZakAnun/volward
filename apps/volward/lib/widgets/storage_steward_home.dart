@@ -235,7 +235,7 @@ class _HeroVisual extends StatelessWidget {
                           key: StorageStewardHome.boardKey,
                           constraints: BoxConstraints(
                             minHeight: math.max(
-                              _wideDashboardHeight(summary),
+                              _wideDashboardHeight(summary, context),
                               viewport.maxHeight,
                             ),
                           ),
@@ -396,7 +396,7 @@ class _WideBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: _wideDashboardHeight(summary),
+      height: _wideDashboardHeight(summary, context),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1084,7 +1084,7 @@ class _BrowseCard extends StatelessWidget {
                   // Fixed-height reclaimable space (always present to prevent button jump)
                   const SizedBox(height: 8),
                   SizedBox(
-                    height: 17, // Fixed height for reclaimable text line
+                    height: _finePrintLineHeight(context),
                     child: summary.reclaimableBytes != null
                         ? Text(
                             l10n.homeReclaimable(
@@ -1787,7 +1787,7 @@ List<StorageLocationInfo> _targetLocations(StorageHomeSummary summary) {
   return locations;
 }
 
-double _wideDashboardHeight(StorageHomeSummary summary) {
+double _wideDashboardHeight(StorageHomeSummary summary, BuildContext context) {
   // Sidebar height
   final targetLocations = _targetLocations(summary);
   final recentLocations = _recentCustomLocations(summary);
@@ -1813,7 +1813,7 @@ double _wideDashboardHeight(StorageHomeSummary summary) {
       math.max(0, visibleTargets - 1) * _targetTileGap;
 
   // Right column height
-  final rightColumnHeight = _rightColumnHeight(summary);
+  final rightColumnHeight = _rightColumnHeight(summary, context);
 
   return math.max(sidebarHeight, rightColumnHeight);
 }
@@ -1850,11 +1850,9 @@ List<StorageLocationInfo> _recentCustomLocations(StorageHomeSummary summary) {
 // [path, gap 8, used, gap 6, label, gap 16, metrics], then gap 10, then meter.
 const _capacityPanelPaddingTop = 20.0;
 const _capacityPanelPaddingBottom = 16.0;
-const _capacityPathHeight = 17.0; // Path text line
 const _capacityPathBottomGap = 8.0;
 const _capacityUsedHeight = 52.0; // fontSize 52 at height 0.92 measures ~48
 const _capacityUsedBottomGap = 6.0;
-const _capacityUsedLabelHeight = 17.0; // "used" text line
 const _capacityUsedLabelBottomGap = 16.0;
 const _capacityMetricsHeight = 52.0; // Row with Total/Available (2 columns)
 const _capacityMetricsBottomGap = 10.0;
@@ -1863,7 +1861,6 @@ const _capacityMeterHeight = 12.0;
 // Largest items panel — LargestItemsPanel, capped at [_largestItemCount] rows
 // in wide mode.
 const _largestPanelPadding = 18.0 * 2;
-const _largestHeaderHeight = 17.0;
 const _largestHeaderBottomGap = 10.0;
 const _largestItemHeight = 29.0;
 const _largestItemCount = 3;
@@ -1878,19 +1875,28 @@ const _browseTopRowBottomGap = 10.0;
 // The pie declares Size.square(72) and the legend rides beside it, so this is
 // the pie's own height — budgeting less squashes the chart.
 const _browseCategoryBreakdownHeight = 72.0;
-const _browseReclaimableHeight = 17.0; // Single line reclaimable text
+const _browseReclaimableHeightBase = 17.0; // Single line reclaimable text (finePrint)
 const _browseReclaimableBottomGap = 10.0;
 const _browseButtonHeight = _dashboardControlHeight;
 
-double _rightColumnHeight(StorageHomeSummary summary) {
+/// Returns text-scale-adjusted heights for single-line finePrint (12px * ~1.42)
+/// labels. All layout prediction constants ending in `…Base` are at scale=1.0;
+/// multiply by this factor when computing [_rightColumnHeight].
+double _finePrintLineHeight(BuildContext context) {
+  final scale = MediaQuery.textScalerOf(context).scale(12.0) / 12.0;
+  return _browseReclaimableHeightBase * scale;
+}
+
+double _rightColumnHeight(StorageHomeSummary summary, BuildContext context) {
+  final textLineH = _finePrintLineHeight(context);
   // Capacity panel intrinsic height
-  const capacityHeight =
+  final capacityHeight =
       _capacityPanelPaddingTop +
-      _capacityPathHeight +
+      textLineH + // path (finePrint)
       _capacityPathBottomGap +
       _capacityUsedHeight +
       _capacityUsedBottomGap +
-      _capacityUsedLabelHeight +
+      textLineH + // "used" label (finePrint)
       _capacityUsedLabelBottomGap +
       _capacityMetricsHeight +
       _capacityPanelPaddingBottom +
@@ -1904,17 +1910,17 @@ double _rightColumnHeight(StorageHomeSummary summary) {
       : _largestEmptyBodyHeight;
   final largestHeight =
       _largestPanelPadding +
-      _largestHeaderHeight +
+      textLineH + // header (finePrint)
       _largestHeaderBottomGap +
       largestBodyHeight;
 
   // Browse card intrinsic height (new vertical layout in wide mode)
-  const browseHeight =
+  final browseHeight =
       _browsePanelPadding +
       _browseTopRowHeight +
       _browseTopRowBottomGap +
       _browseCategoryBreakdownHeight +
-      _browseReclaimableHeight +
+      textLineH + // reclaimable (finePrint)
       _browseReclaimableBottomGap +
       _browseButtonHeight;
 

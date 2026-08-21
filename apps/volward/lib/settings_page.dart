@@ -236,6 +236,17 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: AppleSpacing.xs),
               _SettingsCard(
                 tokens: v,
+                child: _SettingsSwitch(
+                  title: l10n.settingsAutoDownloadUpdatesTitle,
+                  subtitle: l10n.settingsAutoDownloadUpdatesDescription,
+                  value: widget.themeSettings.autoDownloadUpdates,
+                  enabled: true,
+                  onChanged: widget.themeSettings.setAutoDownloadUpdates,
+                ),
+              ),
+              const SizedBox(height: AppleSpacing.sm),
+              _SettingsCard(
+                tokens: v,
                 child: ListenableBuilder(
                   listenable: widget.updater,
                   builder: (context, _) {

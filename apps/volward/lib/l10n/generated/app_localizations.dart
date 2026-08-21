@@ -776,6 +776,18 @@ abstract class AppLocalizations {
   /// **'Update failed: {error}'**
   String settingsUpdateActionError(Object error);
 
+  /// No description provided for @settingsAutoDownloadUpdatesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download updates in background'**
+  String get settingsAutoDownloadUpdatesTitle;
+
+  /// No description provided for @settingsAutoDownloadUpdatesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically download updates so they\'re ready to install.'**
+  String get settingsAutoDownloadUpdatesDescription;
+
   /// No description provided for @settingsOpenDownloadPage.
   ///
   /// In en, this message translates to:

@@ -255,6 +255,8 @@
       "error": {}
     }
   },
+  "settingsAutoDownloadUpdatesTitle": "Download updates in background",
+  "settingsAutoDownloadUpdatesDescription": "Automatically download updates so they're ready to install.",
   "settingsOpenDownloadPage": "Open download page",
   "settingsUpdateReady": "A new version is downloaded and ready.",
   "updateReadyAction": "Complete update",

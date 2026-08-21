@@ -173,7 +173,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _subscribedSession.addListener(_onSessionChanged);
     _scheduleSessionStartup(_subscribedSession);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(widget.updater.checkAndPrefetch());
+      if (widget.themeSettings.autoDownloadUpdates) {
+        unawaited(widget.updater.checkAndPrefetch());
+      }
     });
   }
 

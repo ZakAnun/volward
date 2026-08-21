@@ -255,6 +255,8 @@
       "error": {}
     }
   },
+  "settingsAutoDownloadUpdatesTitle": "后台下载更新",
+  "settingsAutoDownloadUpdatesDescription": "自动下载更新，以便随时安装。",
   "settingsOpenDownloadPage": "打开下载页",
   "settingsUpdateReady": "新版本已下载完成，可随时更新。",
   "updateReadyAction": "完成更新",

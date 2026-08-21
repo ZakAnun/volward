@@ -399,6 +399,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settingsAutoDownloadUpdatesTitle => '后台下载更新';
+
+  @override
+  String get settingsAutoDownloadUpdatesDescription => '自动下载更新，以便随时安装。';
+
+  @override
   String get settingsOpenDownloadPage => '打开下载页';
 
   @override

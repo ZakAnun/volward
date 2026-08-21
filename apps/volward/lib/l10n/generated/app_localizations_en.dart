@@ -422,6 +422,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsAutoDownloadUpdatesTitle =>
+      'Download updates in background';
+
+  @override
+  String get settingsAutoDownloadUpdatesDescription =>
+      'Automatically download updates so they\'re ready to install.';
+
+  @override
   String get settingsOpenDownloadPage => 'Open download page';
 
   @override
