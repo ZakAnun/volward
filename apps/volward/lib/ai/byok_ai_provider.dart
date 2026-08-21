@@ -14,16 +14,15 @@ const _kRequestTimeout = Duration(seconds: 90);
 class ByokAiProvider implements AiProvider {
   ByokAiProvider({
     required this.apiKey,
-    AiContract? contract,
+    this.contract,
     http.Client? client,
     this.requestTimeout = _kRequestTimeout,
-  }) : _contract = contract,
-       _client = client ?? http.Client(),
+  }) : _client = client ?? http.Client(),
        _ownsClient = client == null;
 
   final String apiKey;
   final Duration requestTimeout;
-  final AiContract? _contract;
+  final AiContract? contract;
   final http.Client _client;
   final bool _ownsClient;
 
@@ -31,7 +30,7 @@ class ByokAiProvider implements AiProvider {
   String get model => 'deepseek-v4-flash';
 
   AiContract _resolveContract() {
-    final injected = _contract;
+    final injected = contract;
     if (injected != null) return injected;
     final session = VolwardSession.instance;
     if (session == null) {
