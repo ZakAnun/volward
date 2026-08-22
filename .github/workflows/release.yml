@@ -60,9 +60,14 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
+            exit 1
+          fi
+          if [ -z "$VOLWARD_API_BASE" ]; then
+            echo "Missing repository secret: VOLWARD_API_BASE"
             exit 1
           fi
           # Nested Rust dylib is ad-hoc signed in macos/build_rust.sh (required on
@@ -70,7 +75,8 @@ jobs:
           # as Dart entrypoints ("Target file CODE_SIGN_IDENTITY=- not found").
           flutter build macos --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            --dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE"
 
       - name: Verify macOS bundle
         env:
@@ -173,15 +179,21 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         shell: bash
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
+          if [ -z "$VOLWARD_API_BASE" ]; then
+            echo "Missing repository secret: VOLWARD_API_BASE"
+            exit 1
+          fi
           flutter build windows --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            --dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE"
 
       - name: Copy DLL to release bundle
         shell: bash
@@ -321,14 +333,20 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
+          if [ -z "$VOLWARD_API_BASE" ]; then
+            echo "Missing repository secret: VOLWARD_API_BASE"
+            exit 1
+          fi
           flutter build linux --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            --dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE"
 
       - name: Copy .so to bundle/lib
         run: |

@@ -278,6 +278,7 @@ mod tests {
             child_count: None,
             extension: Some(".dat".into()),
             member_paths: vec![],
+            delete_member_paths: vec![],
         });
         let k1 = compute_result_cache_key("/Users/x/Downloads/", &stats, 999, 40, &set);
         let k2 = compute_result_cache_key("/Users/x/Downloads", &stats, 999, 40, &set);
@@ -301,6 +302,7 @@ mod tests {
             child_count: None,
             extension: None,
             member_paths: vec![],
+            delete_member_paths: vec![],
         });
         let mut set_b = empty_set();
         set_b.candidates.push(AiCandidate {
@@ -310,6 +312,7 @@ mod tests {
             child_count: None,
             extension: None,
             member_paths: vec![],
+            delete_member_paths: vec![],
         });
         let k_a = compute_result_cache_key("/Users/x", &stats, 1, 0, &set_a);
         let k_b = compute_result_cache_key("/Users/x", &stats, 1, 0, &set_b);

@@ -24,6 +24,8 @@ pub struct AiCandidate {
     /// hold unrelated (classified or user) data.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub member_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub delete_member_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -122,6 +124,7 @@ impl AiCandidateBuilder {
                 child_count: None,
                 extension: ext,
                 member_paths: vec![],
+                delete_member_paths: vec![],
             });
         }
     }
@@ -145,8 +148,9 @@ impl AiCandidateBuilder {
             if children.len() >= threshold {
                 let child_count = children.len();
                 let total_size: u64 = children.iter().map(|c| c.size_bytes).sum();
-                // Prefer the largest members when capping so delete still
-                // targets the bulk of reclaimable bytes.
+                let delete_member_paths: Vec<String> =
+                    children.iter().map(|c| c.path.clone()).collect();
+                // Prefer the largest members when capping the model/UI list.
                 if children.len() > DEFAULT_MAX_MEMBER_PATHS {
                     children.sort_by(|a, b| {
                         b.size_bytes
@@ -164,6 +168,7 @@ impl AiCandidateBuilder {
                     child_count: Some(child_count),
                     extension: None,
                     member_paths,
+                    delete_member_paths,
                 });
             } else {
                 self.raw_unknown.append(&mut children);
@@ -241,6 +246,7 @@ impl AiCandidateBuilder {
                 child_count: None,
                 extension: ext,
                 member_paths: vec![],
+                delete_member_paths: vec![],
             });
         }
         b.raw_file_count = b.raw_unknown.len();
@@ -385,12 +391,16 @@ mod tests {
             set.candidates[0].member_paths.len(),
             DEFAULT_MAX_MEMBER_PATHS
         );
+        assert_eq!(set.candidates[0].delete_member_paths.len(), 250);
         // Largest members kept first (file_249 = 250 bytes).
         assert!(set.candidates[0]
             .member_paths
             .contains(&"/Users/x/huge_dir/file_249.dat".to_string()));
         assert!(!set.candidates[0]
             .member_paths
+            .contains(&"/Users/x/huge_dir/file_000.dat".to_string()));
+        assert!(set.candidates[0]
+            .delete_member_paths
             .contains(&"/Users/x/huge_dir/file_000.dat".to_string()));
     }
 

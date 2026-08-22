@@ -618,11 +618,7 @@ void main() {
   testWidgets('compact overview exposes the AI action without overflow', (
     tester,
   ) async {
-    await pumpOverview(
-      tester,
-      size: const Size(600, 1400),
-      onOpenAi: () {},
-    );
+    await pumpOverview(tester, size: const Size(600, 1400), onOpenAi: () {});
 
     expect(find.byKey(StorageStewardHome.aiActionKey), findsOneWidget);
     expect(
@@ -653,12 +649,14 @@ void main() {
     var folderSelections = 0;
     var aiOpens = 0;
     var browseOpens = 0;
+    var scanStarts = 0;
     await pumpOverview(
       tester,
       onSelectTarget: (_) => targetSelections++,
       onChooseFolder: () => folderSelections++,
       onOpenAi: () => aiOpens++,
       onBrowse: () => browseOpens++,
+      onScan: () => scanStarts++,
       interactionsLocked: true,
     );
 
@@ -666,11 +664,13 @@ void main() {
     await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
     await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
     await tester.tap(find.byKey(StorageStewardHome.browseKey));
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
 
     expect(targetSelections, 0);
     expect(folderSelections, 0);
     expect(aiOpens, 0);
     expect(browseOpens, 0);
+    expect(scanStarts, 0);
   });
 
   testWidgets('locked semantics hide mutable controls but keep Settings', (
@@ -701,6 +701,10 @@ void main() {
       );
       expectButtonSemantics(
         tester.getSemantics(find.bySemanticsLabel('Browse Files')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('Start Scan')),
         enabled: false,
       );
       expectButtonSemantics(
@@ -1523,6 +1527,24 @@ void main() {
     await tester.pump();
 
     expect(selectedCategory, isNull);
+  });
+
+  testWidgets('locked overview disables scan and cancel actions', (
+    tester,
+  ) async {
+    var scanCalls = 0;
+    var cancelCalls = 0;
+    await pumpOverview(
+      tester,
+      summary: scanningSummary,
+      interactionsLocked: true,
+      onScan: () => scanCalls++,
+      onCancelScan: () => cancelCalls++,
+    );
+
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(scanCalls, 0);
+    expect(cancelCalls, 0);
   });
 
   testWidgets('built-in targets render and selection stays independent', (

@@ -145,14 +145,15 @@ class StorageStewardHome extends StatelessWidget {
           summary: summary,
           compact: compact,
           onBrowse: onBrowse,
-          onChooseFolder:
-              interactionsLocked || summary.scanning ? null : onChooseFolder,
+          onChooseFolder: interactionsLocked || summary.scanning
+              ? null
+              : onChooseFolder,
           onSelectTarget: interactionsLocked ? null : onSelectTarget,
-          onScan: onScan,
-          onCancelScan: onCancelScan,
+          onScan: interactionsLocked ? null : onScan,
+          onCancelScan: interactionsLocked ? null : onCancelScan,
           onOpenSettings: onOpenSettings,
-          onSelectCategory: onSelectCategory,
-          onOpenItem: onOpenItem,
+          onSelectCategory: interactionsLocked ? null : onSelectCategory,
+          onOpenItem: interactionsLocked ? null : onOpenItem,
           onOpenAi: onOpenAi,
           mainPaneOverride: mainPaneOverride,
           interactionsLocked: interactionsLocked,
@@ -451,7 +452,8 @@ class _WideBoard extends StatelessWidget {
           Expanded(
             child: KeyedSubtree(
               key: StorageStewardHome.mainPaneKey,
-              child: mainPaneOverride ??
+              child:
+                  mainPaneOverride ??
                   _MainPane(
                     summary: summary,
                     compact: false,
@@ -1072,7 +1074,7 @@ class _BrowseCard extends StatelessWidget {
                           semanticColor: summary.canCancelScan
                               ? context.volward.danger
                               : null,
-                          onPressed: scanCallback,
+                          onPressed: interactionsLocked ? null : scanCallback,
                         ),
                       ),
                     ),
@@ -1238,8 +1240,9 @@ class _BrowseCard extends StatelessWidget {
                                     icon: Icons.auto_awesome_outlined,
                                     primary: false,
                                     accentOutline: true,
-                                    onPressed:
-                                        interactionsLocked ? null : onOpenAi,
+                                    onPressed: interactionsLocked
+                                        ? null
+                                        : onOpenAi,
                                   ),
                                 ),
                               ),
@@ -1261,7 +1264,9 @@ class _BrowseCard extends StatelessWidget {
                               semanticColor: summary.canCancelScan
                                   ? context.volward.danger
                                   : null,
-                              onPressed: scanCallback,
+                              onPressed: interactionsLocked
+                                  ? null
+                                  : scanCallback,
                             ),
                           ),
                         ),
@@ -1527,14 +1532,14 @@ class _DashboardActionButton extends StatelessWidget {
     final actionColor = semanticColor ?? context.volward.primary;
     final background = enabled
         ? primary
-            ? actionColor
-            : Colors.white.withValues(alpha: 0.08)
+              ? actionColor
+              : Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
         : enabled && accentOutline
-            ? actionColor
-            : _onDashboard.withValues(alpha: enabled ? 1 : 0.42);
+        ? actionColor
+        : _onDashboard.withValues(alpha: enabled ? 1 : 0.42);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       excludeFromSemantics: true,

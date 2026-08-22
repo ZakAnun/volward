@@ -12,6 +12,7 @@ abstract interface class AiAnalysisGateway {
   bool saveResult(String snapshotId, String resultJson);
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? snapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
   });
@@ -52,6 +53,7 @@ class ProductionAiAnalysisGateway implements AiAnalysisGateway {
   @override
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? snapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
   }) {
@@ -59,6 +61,7 @@ class ProductionAiAnalysisGateway implements AiAnalysisGateway {
     if (current == null) throw StateError('Native session unavailable');
     return current.deleteEntries(
       targets,
+      expectedSnapshotId: snapshotId,
       dryRun: dryRun,
       rescanAfterDelete: rescanAfterDelete,
     );

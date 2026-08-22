@@ -107,6 +107,7 @@ class _HomeAiGateway implements AiAnalysisGateway {
   final deleteCalls =
       <({List<String> targets, bool dryRun, bool rescanAfterDelete})>[];
   final deleteResponses = <Future<Map<String, dynamic>>>[];
+  final snapshotIds = <String?>[];
   int saveCalls = 0;
 
   @override
@@ -136,9 +137,11 @@ class _HomeAiGateway implements AiAnalysisGateway {
   @override
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? snapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
   }) async {
+    snapshotIds.add(snapshotId);
     deleteCalls.add((
       targets: List.of(targets),
       dryRun: dryRun,
@@ -524,26 +527,27 @@ void main() {
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     final deleteGate = Completer<Map<String, dynamic>>();
-    final gateway = _HomeAiGateway(
-      candidates: Future<String?>.value(_homeDeleteCandidates),
-    )
-      ..mode = AiMode.byok
-      ..provider = _HomeResultProvider(
-        Future.value(const [
-          AiVerdict(
-            path: '/tmp/home-cache',
-            verdict: 'safe_to_remove',
-            confidence: 'high',
-            reason: 'Build cache',
-          ),
-        ]),
-      )
-      ..deleteResponses.add(Future.value({
-        'deleted_count': 1,
-        'freed_bytes': 100,
-        'failed_paths': const [],
-      }))
-      ..deleteResponses.add(deleteGate.future);
+    final gateway =
+        _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
+          ..mode = AiMode.byok
+          ..provider = _HomeResultProvider(
+            Future.value(const [
+              AiVerdict(
+                path: '/tmp/home-cache',
+                verdict: 'safe_to_remove',
+                confidence: 'high',
+                reason: 'Build cache',
+              ),
+            ]),
+          )
+          ..deleteResponses.add(
+            Future.value({
+              'deleted_count': 1,
+              'freed_bytes': 100,
+              'failed_paths': const [],
+            }),
+          )
+          ..deleteResponses.add(deleteGate.future);
     final session = _Session(aiSessionApi: true)
       ..snapshotForTest = _completedSnapshot();
     var pickerCalls = 0;
@@ -584,6 +588,7 @@ void main() {
     expect(session.switchedRoot, isNull);
     expect(pickerCalls, 0);
     expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsOneWidget);
+    expect(gateway.snapshotIds, ['cached-scan', 'cached-scan']);
 
     deleteGate.complete({
       'deleted_count': 1,
@@ -602,11 +607,10 @@ void main() {
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     final analysisGate = Completer<List<AiVerdict>>();
-    final gateway = _HomeAiGateway(
-      candidates: Future<String?>.value(_homeDeleteCandidates),
-    )
-      ..mode = AiMode.byok
-      ..provider = _HomeResultProvider(analysisGate.future);
+    final gateway =
+        _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
+          ..mode = AiMode.byok
+          ..provider = _HomeResultProvider(analysisGate.future);
     final session = _Session(aiSessionApi: true)
       ..snapshotForTest = _completedSnapshot()
       ..rootExistsForTest = ((_) => true);

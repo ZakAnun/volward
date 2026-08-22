@@ -35,6 +35,18 @@ VERSION="${VERSION_RAW%%+*}"
 echo "📦 Version: $VERSION (from $VERSION_RAW)"
 echo ""
 
+if [[ -z "${VOLWARD_API_BASE:-}" ]]; then
+  if [[ "${ALLOW_UNCONFIGURED_PLATFORM:-}" == "1" ]]; then
+    VOLWARD_API_BASE=""
+  else
+    echo "❌ VOLWARD_API_BASE is required for release builds"
+    echo "Set it to the deployed Platform API base, for example https://api.example.com/v1."
+    echo "Use ALLOW_UNCONFIGURED_PLATFORM=1 only for local experiments."
+    exit 1
+  fi
+fi
+VOLWARD_DEFINE_ARGS=(--dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE")
+
 # Create build directory
 mkdir -p "$BUILD_DIR"
 
@@ -99,7 +111,8 @@ build_macos() {
   rm -rf build/macos
 
   # Build .app bundle (Xcode Run Script phase invokes macos/build_rust.sh)
-  fvm flutter build macos --release "${APTABASE_DEFINE_ARGS[@]}"
+  fvm flutter build macos --release \
+    "${APTABASE_DEFINE_ARGS[@]}" "${VOLWARD_DEFINE_ARGS[@]}"
 
   # Copy to build directory
   APP_BUNDLE="$APP_DIR/build/macos/Build/Products/Release/volward.app"
@@ -148,9 +161,11 @@ build_windows() {
 
   # Build (same Aptabase defines as macOS/Linux — required unless ALLOW_NOOP_ANALYTICS=1)
   if command -v fvm >/dev/null 2>&1; then
-    fvm flutter build windows --release "${APTABASE_DEFINE_ARGS[@]}"
+    fvm flutter build windows --release \
+      "${APTABASE_DEFINE_ARGS[@]}" "${VOLWARD_DEFINE_ARGS[@]}"
   else
-    flutter build windows --release "${APTABASE_DEFINE_ARGS[@]}"
+    flutter build windows --release \
+      "${APTABASE_DEFINE_ARGS[@]}" "${VOLWARD_DEFINE_ARGS[@]}"
   fi
 
   # Copy to build directory
@@ -209,9 +224,11 @@ build_linux() {
 
   # Build (same Aptabase defines as macOS/Windows — required unless ALLOW_NOOP_ANALYTICS=1)
   if command -v fvm >/dev/null 2>&1; then
-    fvm flutter build linux --release "${APTABASE_DEFINE_ARGS[@]}"
+    fvm flutter build linux --release \
+      "${APTABASE_DEFINE_ARGS[@]}" "${VOLWARD_DEFINE_ARGS[@]}"
   else
-    flutter build linux --release "${APTABASE_DEFINE_ARGS[@]}"
+    flutter build linux --release \
+      "${APTABASE_DEFINE_ARGS[@]}" "${VOLWARD_DEFINE_ARGS[@]}"
   fi
 
   # Create tarball

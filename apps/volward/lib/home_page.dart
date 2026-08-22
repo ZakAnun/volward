@@ -443,6 +443,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _onSessionChanged() {
+    final currentSnapshotId = _s.lastSnapshot?.snapshotId;
+    if (_activeAiSnapshotId != null &&
+        !_aiDeleteInProgress &&
+        currentSnapshotId != null &&
+        currentSnapshotId != _activeAiSnapshotId) {
+      _closeHomeAi(restoreFocus: false);
+    }
     final deletingChanged = _lastDeleting != _s.deleting;
     _lastDeleting = _s.deleting;
     final refreshingDirectoryCount = _s.refreshingDirectoryPaths.length;
@@ -1475,6 +1482,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   VoidCallback? get _scanStartAction {
+    if (_activeAiSnapshotId != null || _aiDeleteInProgress) return null;
     if (!_canStartScan) return null;
     final session = _s;
     final generation = _scanStartGeneration;
@@ -2026,7 +2034,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             onSelectTarget: (location) =>
                                 unawaited(_prepareHomeTarget(location.path)),
                             onScan: _scanStartAction,
-                            onCancelScan: _s.scanning ? _s.cancelScan : null,
+                            onCancelScan:
+                                _activeAiSnapshotId == null &&
+                                    !_aiDeleteInProgress &&
+                                    _s.scanning
+                                ? _s.cancelScan
+                                : null,
                             onOpenSettings: _openSettings,
                             onSelectCategory: _openHomeCategory,
                             onOpenItem: (item) =>

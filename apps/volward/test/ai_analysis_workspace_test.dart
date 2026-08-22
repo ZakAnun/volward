@@ -84,21 +84,9 @@ class _ThrowingProvider implements AiProvider {
 String _candidatePayload({
   List<Map<String, Object?>> preClassified = const [],
   List<Map<String, Object?>> unknownCandidates = const [
-    {
-      'path': '/tmp/safe.cache',
-      'size_bytes': 100,
-      'is_dir': false,
-    },
-    {
-      'path': '/tmp/review.log',
-      'size_bytes': 200,
-      'is_dir': false,
-    },
-    {
-      'path': '/tmp/keep.db',
-      'size_bytes': 300,
-      'is_dir': false,
-    },
+    {'path': '/tmp/safe.cache', 'size_bytes': 100, 'is_dir': false},
+    {'path': '/tmp/review.log', 'size_bytes': 200, 'is_dir': false},
+    {'path': '/tmp/keep.db', 'size_bytes': 300, 'is_dir': false},
   ],
   int estimatedTokens = 640,
   bool hasExistingResult = true,
@@ -161,6 +149,7 @@ class _FakeGateway implements AiAnalysisGateway {
   @override
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? snapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
   }) async {
@@ -204,6 +193,7 @@ class _GatewaySession extends VolwardSession {
   @override
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? expectedSnapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
     String? refreshPath,
@@ -388,6 +378,28 @@ void main() {
       expect(candidate.toJson()['member_paths'], candidate.memberPaths);
     });
 
+    test(
+      'AiCandidate keeps complete delete members separate from bounded members',
+      () {
+        final candidate = AiCandidate.fromJson({
+          'path': '/Users/x/big_dir',
+          'size_bytes': 2500,
+          'is_dir': true,
+          'member_paths': ['/Users/x/big_dir/a.dat'],
+          'delete_member_paths': [
+            '/Users/x/big_dir/a.dat',
+            '/Users/x/big_dir/b.dat',
+          ],
+        });
+        expect(candidate.memberPaths, ['/Users/x/big_dir/a.dat']);
+        expect(candidate.deleteMemberPaths, hasLength(2));
+        expect(
+          candidate.toJson()['delete_member_paths'],
+          candidate.deleteMemberPaths,
+        );
+      },
+    );
+
     test('AiCandidate without member_paths defaults to empty', () {
       final candidate = AiCandidate.fromJson({
         'path': '/tmp/foo.xyz',
@@ -515,48 +527,48 @@ void main() {
     );
   });
 
-  testWidgets('valid cache loads inline and invalid cache remains in precheck',
-      (
-    tester,
-  ) async {
-    final validGateway = _FakeGateway()
-      ..candidatesJson = _candidatePayload()
-      ..cache['cache-key'] = jsonEncode({
-        'entries': [
-          {
-            'path': '/tmp/safe.cache',
-            'size_bytes': 100,
-            'verdict': 'safe_to_remove',
-            'confidence': 'high',
-            'reason': 'Rebuildable cache',
-          },
-        ],
-      });
-    await tester.pumpWidget(_workspaceShell(validGateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
-    );
-    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await tester.pumpAndSettle();
-    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+  testWidgets(
+    'valid cache loads inline and invalid cache remains in precheck',
+    (tester) async {
+      final validGateway = _FakeGateway()
+        ..candidatesJson = _candidatePayload()
+        ..cache['cache-key'] = jsonEncode({
+          'entries': [
+            {
+              'path': '/tmp/safe.cache',
+              'size_bytes': 100,
+              'verdict': 'safe_to_remove',
+              'confidence': 'high',
+              'reason': 'Rebuildable cache',
+            },
+          ],
+        });
+      await tester.pumpWidget(_workspaceShell(validGateway));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+      );
+      await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
 
-    final invalidGateway = _FakeGateway()
-      ..candidatesJson = _candidatePayload()
-      ..cache['cache-key'] = 'not-json';
-    await tester.pumpWidget(_workspaceShell(invalidGateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
-    );
-    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await tester.pumpAndSettle();
-    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
-    expect(
-      find.text('Could not load the previous AI result.'),
-      findsOneWidget,
-    );
-  });
+      final invalidGateway = _FakeGateway()
+        ..candidatesJson = _candidatePayload()
+        ..cache['cache-key'] = 'not-json';
+      await tester.pumpWidget(_workspaceShell(invalidGateway));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+      );
+      await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
+      expect(
+        find.text('Could not load the previous AI result.'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('privacy decline stays in precheck and accept starts analysis', (
     tester,
@@ -604,9 +616,7 @@ void main() {
 
   testWidgets('selection summary tracks count and bytes', (tester) async {
     await _openResults(tester, _FakeGateway());
-    await tester.tap(
-      find.widgetWithText(CheckboxListTile, '/tmp/review.log'),
-    );
+    await tester.tap(find.widgetWithText(CheckboxListTile, '/tmp/review.log'));
     await tester.pump();
     expect(find.text('2 selected · 300 B'), findsOneWidget);
   });
@@ -657,11 +667,7 @@ void main() {
         })
         ..deleteResponses.add(deleteGate.future);
       final deleting = <bool>[];
-      await _openResults(
-        tester,
-        gateway,
-        onDeletingChanged: deleting.add,
-      );
+      await _openResults(tester, gateway, onDeletingChanged: deleting.add);
 
       await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
       await _pumpUntilFound(tester, find.byType(AlertDialog));
@@ -745,8 +751,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsOneWidget);
-    expect(find.text('1 items could not be removed · 150 B freed'),
-        findsOneWidget);
+    expect(
+      find.text('1 items could not be removed · 150 B freed'),
+      findsOneWidget,
+    );
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('Return to Overview'), findsOneWidget);
 
@@ -802,15 +810,9 @@ void main() {
     final missingKeyGateway = _FakeGateway()
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(
-      _workspaceShell(
-        missingKeyGateway,
-        onOpenSettings: () => settingsCalls++,
-      ),
+      _workspaceShell(missingKeyGateway, onOpenSettings: () => settingsCalls++),
     );
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.settingsKey),
-    );
+    await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.settingsKey));
     await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
 
     final zeroQuotaGateway = _FakeGateway()
@@ -821,25 +823,16 @@ void main() {
       )
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(
-      _workspaceShell(
-        zeroQuotaGateway,
-        onOpenSettings: () => settingsCalls++,
-      ),
+      _workspaceShell(zeroQuotaGateway, onOpenSettings: () => settingsCalls++),
     );
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.settingsKey),
-    );
+    await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.settingsKey));
     await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
 
     final expiredGateway = _FakeGateway()
       ..provider = _ThrowingProvider(StateError('session_expired'))
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(
-      _workspaceShell(
-        expiredGateway,
-        onOpenSettings: () => settingsCalls++,
-      ),
+      _workspaceShell(expiredGateway, onOpenSettings: () => settingsCalls++),
     );
     await _pumpUntilFound(
       tester,

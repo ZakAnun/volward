@@ -1908,9 +1908,7 @@ class VolwardSession extends ChangeNotifier {
   }
 
   bool get hasAiSessionApi =>
-      _ready &&
-      _engine != null &&
-      VolwardNativeBridge.instance.hasAiSessionApi;
+      _ready && _engine != null && VolwardNativeBridge.instance.hasAiSessionApi;
 
   bool get hasAiContractApi =>
       _ready && VolwardNativeBridge.instance.hasAiContractApi;
@@ -1959,7 +1957,10 @@ class VolwardSession extends ChangeNotifier {
   String? buildAiCandidatesJson(String snapshotId) {
     final engine = _engine;
     if (!_ready || engine == null) return null;
-    return VolwardNativeBridge.instance.buildAiCandidatesJson(engine, snapshotId);
+    return VolwardNativeBridge.instance.buildAiCandidatesJson(
+      engine,
+      snapshotId,
+    );
   }
 
   /// Prefer async native build so huge scans don't freeze the UI isolate.
@@ -2017,6 +2018,7 @@ class VolwardSession extends ChangeNotifier {
 
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? expectedSnapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
     String? refreshPath,
@@ -2029,6 +2031,9 @@ class VolwardSession extends ChangeNotifier {
     final snapshotId = _lastSnapshot?.snapshotId;
     if (snapshotId == null || snapshotId.isEmpty) {
       throw StateError('No scan snapshot — run a scan first');
+    }
+    if (expectedSnapshotId != null && expectedSnapshotId != snapshotId) {
+      throw StateError('Snapshot changed — refresh the analysis and try again');
     }
 
     _deleting = true;

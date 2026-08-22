@@ -13,13 +13,9 @@ class PlatformAiProvider implements AiProvider {
     http.Client? client,
     String? baseUrl,
     this.requestTimeout = _kPlatformTimeout,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null,
-        baseUrl = baseUrl ??
-            const String.fromEnvironment(
-              'VOLWARD_API_BASE',
-              defaultValue: 'https://api.yourdomain.com/v1',
-            );
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null,
+       baseUrl = baseUrl ?? PlatformAuthStore.defaultBaseUrl;
 
   final String token;
   final String baseUrl;
@@ -36,6 +32,7 @@ class PlatformAiProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async {
+    _ensureConfigured();
     final res = await _client
         .get(
           Uri.parse('$baseUrl/ai/quota'),
@@ -48,14 +45,14 @@ class PlatformAiProvider implements AiProvider {
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final remaining = (body['credits_remaining'] as num?)?.toInt() ?? 0;
-    final total =
-        (body['credits_total'] as num?)?.toInt() ?? remaining;
+    final total = (body['credits_total'] as num?)?.toInt() ?? remaining;
     lastCreditsRemaining = remaining;
     return AiQuotaInfo(creditsRemaining: remaining, creditsTotal: total);
   }
 
   @override
   Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    _ensureConfigured();
     final payload = {
       'candidates': candidates
           .map(
@@ -98,6 +95,12 @@ class PlatformAiProvider implements AiProvider {
         .whereType<Map>()
         .map((e) => AiVerdict.fromJson(Map<String, dynamic>.from(e)))
         .toList();
+  }
+
+  void _ensureConfigured() {
+    if (baseUrl.trim().isEmpty) {
+      throw StateError('platform_api_unconfigured');
+    }
   }
 
   Future<void> _mapErrorStatus(int status) async {

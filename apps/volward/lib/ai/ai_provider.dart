@@ -29,6 +29,10 @@ class AiCandidate {
   /// delete these member files instead.
   final List<String> memberPaths;
 
+  /// Complete concrete paths used for deletion. This remains separate from
+  /// the bounded model/UI member list.
+  final List<String> deleteMemberPaths;
+
   const AiCandidate({
     required this.path,
     required this.sizeBytes,
@@ -36,18 +40,24 @@ class AiCandidate {
     this.childCount,
     this.extension,
     this.memberPaths = const [],
+    this.deleteMemberPaths = const [],
   });
   factory AiCandidate.fromJson(Map<String, dynamic> j) {
     final raw = j['member_paths'];
+    final rawDelete = j['delete_member_paths'];
+    final memberPaths = raw is List
+        ? raw.whereType<String>().toList(growable: false)
+        : const <String>[];
     return AiCandidate(
       path: j['path'] as String,
       sizeBytes: j['size_bytes'] as int,
       isDir: j['is_dir'] as bool? ?? false,
       childCount: j['child_count'] as int?,
       extension: j['extension'] as String?,
-      memberPaths: raw is List
-          ? raw.whereType<String>().toList(growable: false)
-          : const [],
+      memberPaths: memberPaths,
+      deleteMemberPaths: rawDelete is List
+          ? rawDelete.whereType<String>().toList(growable: false)
+          : memberPaths,
     );
   }
   Map<String, dynamic> toJson() => {
@@ -57,6 +67,7 @@ class AiCandidate {
     if (childCount != null) 'child_count': childCount,
     if (extension != null) 'extension': extension,
     if (memberPaths.isNotEmpty) 'member_paths': memberPaths,
+    if (deleteMemberPaths.isNotEmpty) 'delete_member_paths': deleteMemberPaths,
   };
 }
 

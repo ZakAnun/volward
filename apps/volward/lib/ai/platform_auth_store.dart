@@ -19,10 +19,10 @@ class PlatformUser {
   final int credits;
 
   factory PlatformUser.fromJson(Map<String, dynamic> j) => PlatformUser(
-        userId: (j['user_id'] ?? j['id'] ?? '') as String,
-        email: (j['email'] ?? '') as String,
-        credits: (j['credits'] as num?)?.toInt() ?? 0,
-      );
+    userId: (j['user_id'] ?? j['id'] ?? '') as String,
+    email: (j['email'] ?? '') as String,
+    credits: (j['credits'] as num?)?.toInt() ?? 0,
+  );
 }
 
 /// Device + user JWT store for Volward Platform mode.
@@ -37,13 +37,11 @@ class PlatformAuthStore {
 
   static const defaultBaseUrl = String.fromEnvironment(
     'VOLWARD_API_BASE',
-    defaultValue: 'https://api.yourdomain.com/v1',
+    defaultValue: '',
   );
 
   final _secure = const FlutterSecureStorage(
-    mOptions: MacOsOptions(
-      useDataProtectionKeyChain: false,
-    ),
+    mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
   http.Client? _client;
@@ -66,7 +64,14 @@ class PlatformAuthStore {
     debugUserToken = token;
   }
 
-  String get _base => _baseUrlOverride ?? defaultBaseUrl;
+  String get _base {
+    final value = _baseUrlOverride ?? defaultBaseUrl;
+    if (value.trim().isEmpty) {
+      throw StateError('platform_api_unconfigured');
+    }
+    return value;
+  }
+
   http.Client get _http => _client ?? http.Client();
 
   Future<String?> userToken() async {
@@ -106,10 +111,10 @@ class PlatformAuthStore {
     final platform = Platform.isMacOS
         ? 'macos'
         : Platform.isWindows
-            ? 'windows'
-            : Platform.isLinux
-                ? 'linux'
-                : 'unknown';
+        ? 'windows'
+        : Platform.isLinux
+        ? 'linux'
+        : 'unknown';
 
     final res = await _http
         .post(

@@ -19,29 +19,48 @@ void main() {
       baseUrl: 'https://example.test/v1',
     );
     await expectLater(
-      p.analyze([
-        const AiCandidate(path: '/a', sizeBytes: 1, isDir: false),
-      ]),
+      p.analyze([const AiCandidate(path: '/a', sizeBytes: 1, isDir: false)]),
       throwsA(predicate((e) => e.toString().contains('insufficient_credits'))),
     );
   });
 
-  test('401 clears the stored token so the user is guided to re-link', () async {
-    await PlatformAuthStore.instance.debugSetUserToken('stale');
-    final client = MockClient((req) async => http.Response('{}', 401));
-    final p = PlatformAiProvider(
-      token: 'stale',
-      client: client,
-      baseUrl: 'https://example.test/v1',
-    );
-    await expectLater(
-      p.analyze([
-        const AiCandidate(path: '/a', sizeBytes: 1, isDir: false),
-      ]),
-      throwsA(predicate((e) => e.toString().contains('session_expired'))),
-    );
-    expect(await PlatformAuthStore.instance.userToken(), isNull);
-  });
+  test(
+    'unconfigured platform endpoint fails before making a request',
+    () async {
+      var requests = 0;
+      final client = MockClient((req) async {
+        requests++;
+        return http.Response('{}', 500);
+      });
+      final p = PlatformAiProvider(token: 't', client: client, baseUrl: '');
+
+      await expectLater(
+        p.analyze([const AiCandidate(path: '/a', sizeBytes: 1, isDir: false)]),
+        throwsA(
+          predicate((e) => e.toString().contains('platform_api_unconfigured')),
+        ),
+      );
+      expect(requests, 0);
+    },
+  );
+
+  test(
+    '401 clears the stored token so the user is guided to re-link',
+    () async {
+      await PlatformAuthStore.instance.debugSetUserToken('stale');
+      final client = MockClient((req) async => http.Response('{}', 401));
+      final p = PlatformAiProvider(
+        token: 'stale',
+        client: client,
+        baseUrl: 'https://example.test/v1',
+      );
+      await expectLater(
+        p.analyze([const AiCandidate(path: '/a', sizeBytes: 1, isDir: false)]),
+        throwsA(predicate((e) => e.toString().contains('session_expired'))),
+      );
+      expect(await PlatformAuthStore.instance.userToken(), isNull);
+    },
+  );
 
   test('200 parses entries and credits_used', () async {
     final client = MockClient(
