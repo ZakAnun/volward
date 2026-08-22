@@ -4,10 +4,11 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
-import 'ai_analysis_page.dart';
+import 'ai/ai_analysis_gateway.dart';
 import 'l10n/l10n.dart';
 import 'macos_settings.dart';
 import 'scan_entry_record.dart';
+import 'scan_snapshot_state.dart';
 import 'scan_tree.dart';
 import 'storage_home_summary.dart';
 import 'storage_overview.dart';
@@ -19,6 +20,7 @@ import 'theme/volward_tokens.dart';
 import 'updater/app_updater.dart';
 import 'volward_session.dart';
 import 'widgets/apple_widgets.dart';
+import 'widgets/ai_analysis_workspace.dart';
 import 'widgets/volward_logo.dart';
 import 'widgets/scan_column_view.dart';
 import 'widgets/scan_filter_bar.dart';
@@ -80,6 +82,7 @@ class HomePage extends StatefulWidget {
     required this.updater,
     this.directoryPicker,
     this.storageOverviewProvider = const MethodChannelStorageOverviewProvider(),
+    this.aiAnalysisGateway = const ProductionAiAnalysisGateway(),
   });
   final VolwardSession session;
   final VolwardThemeSettings themeSettings;
@@ -87,6 +90,7 @@ class HomePage extends StatefulWidget {
   final Future<String?> Function({required String confirmButtonText})?
   directoryPicker;
   final StorageOverviewProvider storageOverviewProvider;
+  final AiAnalysisGateway aiAnalysisGateway;
 
   static const logoKey = Key('volward-top-nav-home');
   static const browseFolderActionKey = Key('volward-browse-folder-action');
@@ -135,6 +139,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _scanStartPending = false;
   bool _targetPreparationPending = false;
   int _scanStartGeneration = 0;
+  String? _activeAiSnapshotId;
+  bool _aiDeleteInProgress = false;
+  final FocusNode _homeAiActionFocusNode = FocusNode(
+    debugLabel: 'home-ai-action',
+  );
 
   // ---------- canonical snapshot cache ----------
   ScanTreeNode? _cachedResolvedTree;
@@ -310,6 +319,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _scanStartGeneration++;
       _scanStartPending = false;
       _targetPreparationPending = false;
+      _activeAiSnapshotId = null;
+      _aiDeleteInProgress = false;
       _scanStatus = null;
       _selected.clear();
       _selectedSizes.clear();
@@ -361,6 +372,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     _subscribedSession.removeListener(_onSessionChanged);
     _columnNavTick.dispose();
+    _homeAiActionFocusNode.dispose();
     _pendingVisibleChildrenQueries.clear();
     super.dispose();
   }
@@ -1199,6 +1211,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _pickHomeFolder() async {
+    if (_aiDeleteInProgress) return;
+    _closeHomeAi(restoreFocus: false);
     final path = await _chooseFolderPath();
     if (path == null) return;
     await _prepareHomeTarget(path);
@@ -1258,7 +1272,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _prepareHomeTarget(String path) async {
-    if (_s.scanning || _targetPreparationPending) return;
+    if (_s.scanning || _targetPreparationPending || _aiDeleteInProgress) return;
+    _closeHomeAi(restoreFocus: false);
     final session = _s;
     final sessionGeneration = _sessionGeneration;
     _scanStartGeneration++;
@@ -1407,6 +1422,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       scanPhase: _s.scanning ? progress.phase : null,
       recentCustomLocations: _recentCustomLocations,
     );
+  }
+
+  ScanSnapshotState? _homeAiSnapshot() {
+    final target = _homeTargetPath ?? _scanRootPath();
+    final snapshot = _snapshotMatchesTarget(target) ? _s.lastSnapshot : null;
+    final snapshotId = snapshot?.snapshotId ?? '';
+    if (!_s.hasAiSessionApi ||
+        _s.scanning ||
+        _aiDeleteInProgress ||
+        snapshot == null ||
+        snapshot.stats['scan_state']?.toString() != 'Done' ||
+        snapshotId.isEmpty ||
+        snapshotId.startsWith('preview-')) {
+      return null;
+    }
+    return snapshot;
+  }
+
+  void _openHomeAi(String snapshotId) {
+    if (_homeAiSnapshot()?.snapshotId != snapshotId) return;
+    setState(() => _activeAiSnapshotId = snapshotId);
+  }
+
+  void _closeHomeAi({bool restoreFocus = true}) {
+    if (_activeAiSnapshotId == null) return;
+    setState(() => _activeAiSnapshotId = null);
+    if (!restoreFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _homeAiActionFocusNode.requestFocus();
+    });
+  }
+
+  void _handleAiDeleteCompleted() {
+    if (!mounted) return;
+    setState(() {
+      _activeAiSnapshotId = null;
+      _aiDeleteInProgress = false;
+    });
   }
 
   bool get _canStartScan {
@@ -1936,19 +1989,50 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child: !browsing
                     ? ValueListenableBuilder<ScanProgressViewState>(
                         valueListenable: _s.scanProgressNotifier,
-                        builder: (context, progress, _) => StorageStewardHome(
-                          summary: _homeSummary(progress),
-                          onBrowse: () => unawaited(_onHomeBrowse()),
-                          onChooseFolder: () => unawaited(_pickHomeFolder()),
-                          onSelectTarget: (location) =>
-                              unawaited(_prepareHomeTarget(location.path)),
-                          onScan: _scanStartAction,
-                          onCancelScan: _s.scanning ? _s.cancelScan : null,
-                          onOpenSettings: _openSettings,
-                          onSelectCategory: _openHomeCategory,
-                          onOpenItem: (item) =>
-                              unawaited(_onHomeBrowse(focusPath: item.path)),
-                        ),
+                        builder: (context, progress, _) {
+                          final summary = _homeSummary(progress);
+                          final availableAiSnapshot = _homeAiSnapshot();
+                          return StorageStewardHome(
+                            summary: summary,
+                            onOpenAi: availableAiSnapshot == null
+                                ? null
+                                : () => _openHomeAi(
+                                    availableAiSnapshot.snapshotId,
+                                  ),
+                            mainPaneOverride: _activeAiSnapshotId == null
+                                ? null
+                                : AiAnalysisWorkspace(
+                                    key: ValueKey(_activeAiSnapshotId),
+                                    snapshotId: _activeAiSnapshotId!,
+                                    targetLabel: rootDisplayNameFor(
+                                      _homeTargetPath ?? _scanRootPath(),
+                                    ),
+                                    gateway: widget.aiAnalysisGateway,
+                                    onExit: () => _closeHomeAi(),
+                                    onOpenSettings: _openSettings,
+                                    onDeletingChanged: (value) {
+                                      if (mounted) {
+                                        setState(
+                                          () => _aiDeleteInProgress = value,
+                                        );
+                                      }
+                                    },
+                                    onDeleteCompleted: _handleAiDeleteCompleted,
+                                  ),
+                            interactionsLocked: _aiDeleteInProgress,
+                            aiActionFocusNode: _homeAiActionFocusNode,
+                            onBrowse: () => unawaited(_onHomeBrowse()),
+                            onChooseFolder: () => unawaited(_pickHomeFolder()),
+                            onSelectTarget: (location) =>
+                                unawaited(_prepareHomeTarget(location.path)),
+                            onScan: _scanStartAction,
+                            onCancelScan: _s.scanning ? _s.cancelScan : null,
+                            onOpenSettings: _openSettings,
+                            onSelectCategory: _openHomeCategory,
+                            onOpenItem: (item) =>
+                                unawaited(_onHomeBrowse(focusPath: item.path)),
+                          );
+                        },
                       )
                     : (restoring || loadingTarget) && !hasResults
                     ? Column(
@@ -1983,13 +2067,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               listenable: _columnNavTick,
                               builder: (context, _) {
                                 final focus = scanColumnFocusNode(_columnChain);
-                                final snapId = _s.lastSnapshot?.snapshotId;
-                                final showAi =
-                                    _s.hasAiSessionApi &&
-                                    hasResults &&
-                                    snapId != null &&
-                                    snapId.isNotEmpty &&
-                                    !snapId.startsWith('preview-');
                                 return Stack(
                                   children: [
                                     Column(
@@ -2014,25 +2091,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         _buildItemPreview(context, focus),
                                       ],
                                     ),
-                                    if (showAi)
-                                      Positioned(
-                                        top: AppleSpacing.xxs,
-                                        right: AppleSpacing.lg,
-                                        child: AppleButton(
-                                          label: context.l10n.aiAnalysisFab,
-                                          icon: Icons.auto_awesome_outlined,
-                                          variant: AppleButtonVariant.pearl,
-                                          onPressed: () {
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute<void>(
-                                                builder: (_) => AiAnalysisPage(
-                                                  snapshotId: snapId,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
                                   ],
                                 );
                               },
