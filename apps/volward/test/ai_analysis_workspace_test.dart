@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -123,6 +124,7 @@ class _FakeGateway implements AiAnalysisGateway {
   String? candidatesJson;
   final cache = <String, String>{};
   final deleteReports = <Map<String, dynamic>>[];
+  final deleteResponses = <Future<Map<String, dynamic>>>[];
   final deleteCalls =
       <({List<String> targets, bool dryRun, bool rescanAfterDelete})>[];
   final candidateRequests = <String>[];
@@ -167,6 +169,9 @@ class _FakeGateway implements AiAnalysisGateway {
       dryRun: dryRun,
       rescanAfterDelete: rescanAfterDelete,
     ));
+    if (!dryRun && deleteResponses.isNotEmpty) {
+      return deleteResponses.removeAt(0);
+    }
     return deleteReports.removeAt(0);
   }
 }
@@ -254,11 +259,20 @@ Future<void> _openResults(
   WidgetTester tester,
   _FakeGateway gateway, {
   List<AiVerdict> result = verdicts,
+  String? candidatesJson,
+  ValueChanged<bool>? onDeletingChanged,
+  VoidCallback? onDeleteCompleted,
 }) async {
   gateway
-    ..candidatesJson = _candidatePayload()
+    ..candidatesJson = candidatesJson ?? _candidatePayload()
     ..provider = _ResultProvider(result);
-  await tester.pumpWidget(_workspaceShell(gateway));
+  await tester.pumpWidget(
+    _workspaceShell(
+      gateway,
+      onDeletingChanged: onDeletingChanged,
+      onDeleteCompleted: onDeleteCompleted,
+    ),
+  );
   await _pumpUntilFound(
     tester,
     find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
@@ -266,6 +280,35 @@ Future<void> _openResults(
   await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
   await tester.pumpAndSettle();
 }
+
+const _aggregateCandidates = '''
+{
+  "pre_classified": [],
+  "unknown_candidates": [
+    {
+      "path": "/tmp/build-output",
+      "size_bytes": 300,
+      "is_dir": true,
+      "member_paths": ["/tmp/build-output/a.o", "/tmp/build-output/b.o"]
+    }
+  ],
+  "estimated_input_tokens": 12,
+  "has_existing_result": true,
+  "truncated": false,
+  "candidates_total_before_cap": 1,
+  "result_cache_key": "aggregate-cache-key",
+  "root_path": "/tmp"
+}
+''';
+
+const _aggregateVerdict = [
+  AiVerdict(
+    path: '/tmp/build-output',
+    verdict: 'safe_to_remove',
+    confidence: 'high',
+    reason: 'Build output',
+  ),
+];
 
 void main() {
   test(
@@ -566,6 +609,190 @@ void main() {
     );
     await tester.pump();
     expect(find.text('2 selected · 300 B'), findsOneWidget);
+  });
+
+  testWidgets(
+    'aggregate members are dry-run targets and cancel preserves selection',
+    (tester) async {
+      final gateway = _FakeGateway()
+        ..deleteReports.add({
+          'deleted_count': 2,
+          'freed_bytes': 300,
+          'failed_paths': const [],
+        });
+      await _openResults(
+        tester,
+        gateway,
+        result: _aggregateVerdict,
+        candidatesJson: _aggregateCandidates,
+      );
+
+      expect(find.text('1 selected · 300 B'), findsOneWidget);
+      await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+      await _pumpUntilFound(tester, find.byType(AlertDialog));
+
+      expect(gateway.deleteCalls.single.dryRun, isTrue);
+      expect(gateway.deleteCalls.single.rescanAfterDelete, isFalse);
+      expect(gateway.deleteCalls.single.targets, const [
+        '/tmp/build-output/a.o',
+        '/tmp/build-output/b.o',
+      ]);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 selected · 300 B'), findsOneWidget);
+      expect(gateway.deleteCalls, hasLength(1));
+    },
+  );
+
+  testWidgets(
+    'real deletion locks only after confirmation and always unlocks',
+    (tester) async {
+      final deleteGate = Completer<Map<String, dynamic>>();
+      final gateway = _FakeGateway()
+        ..deleteReports.add({
+          'deleted_count': 1,
+          'freed_bytes': 100,
+          'failed_paths': const [],
+        })
+        ..deleteResponses.add(deleteGate.future);
+      final deleting = <bool>[];
+      await _openResults(
+        tester,
+        gateway,
+        onDeletingChanged: deleting.add,
+      );
+
+      await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+      await _pumpUntilFound(tester, find.byType(AlertDialog));
+      expect(deleting, isEmpty);
+      expect(gateway.deleteCalls, hasLength(1));
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await tester.tap(find.text('Delete'));
+      await tester.pump();
+      expect(deleting, [true]);
+      expect(gateway.deleteCalls.last.dryRun, isFalse);
+      expect(gateway.deleteCalls.last.rescanAfterDelete, isTrue);
+
+      deleteGate.complete({
+        'deleted_count': 1,
+        'freed_bytes': 100,
+        'failed_paths': const [],
+      });
+      await tester.pumpAndSettle();
+      expect(deleting, [true, false]);
+    },
+  );
+
+  testWidgets('complete deletion requests rescan and returns to overview', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 100,
+        'failed_paths': const [],
+      })
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 300,
+        'failed_paths': const [],
+      });
+    final deleting = <bool>[];
+    var completed = 0;
+    await _openResults(
+      tester,
+      gateway,
+      onDeletingChanged: deleting.add,
+      onDeleteCompleted: () => completed++,
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+    await _pumpUntilFound(tester, find.byType(AlertDialog));
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(gateway.deleteCalls.last.rescanAfterDelete, isTrue);
+    expect(deleting, [true, false]);
+    expect(completed, 1);
+  });
+
+  testWidgets('partial deletion stays open with retry and freed bytes', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 300,
+        'failed_paths': const [],
+      })
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 150,
+        'failed_paths': ['/tmp/review.log'],
+      })
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 150,
+        'failed_paths': ['/tmp/review.log'],
+      });
+    await _openResults(tester, gateway);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+    await _pumpUntilFound(tester, find.byType(AlertDialog));
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsOneWidget);
+    expect(find.text('1 items could not be removed · 150 B freed'),
+        findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Return to Overview'), findsOneWidget);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(gateway.deleteCalls.last.dryRun, isTrue);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('late delete completion after exit does not invoke callbacks', (
+    tester,
+  ) async {
+    final deleteGate = Completer<Map<String, dynamic>>();
+    final gateway = _FakeGateway()
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 100,
+        'failed_paths': const [],
+      })
+      ..deleteResponses.add(deleteGate.future);
+    var completed = 0;
+    var changes = 0;
+    await _openResults(
+      tester,
+      gateway,
+      onDeletingChanged: (_) => changes++,
+      onDeleteCompleted: () => completed++,
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+    await _pumpUntilFound(tester, find.byType(AlertDialog));
+    await tester.tap(find.text('Delete'));
+    await tester.pump();
+    expect(changes, 1);
+
+    await tester.pumpWidget(const SizedBox());
+    deleteGate.complete({
+      'deleted_count': 1,
+      'freed_bytes': 100,
+      'failed_paths': const [],
+    });
+    await tester.pumpAndSettle();
+    expect(completed, 0);
+    expect(changes, 1);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('missing key zero quota and expired session link to Settings', (

@@ -669,6 +669,41 @@ void main() {
     expect(aiOpens, 0);
   });
 
+  testWidgets('locked semantics hide mutable controls but keep Settings', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await pumpOverview(
+        tester,
+        interactionsLocked: true,
+        onOpenAi: () {},
+        onOpenSettings: () {},
+      );
+
+      expectButtonSemantics(
+        tester.getSemantics(
+          find.byKey(const ValueKey('storage-target-semantics-downloads')),
+        ),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('Choose Folder')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('AI Analysis')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.byKey(StorageStewardHome.settingsKey)),
+        enabled: true,
+      );
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('wide dashboard board is full width and top aligned', (
     tester,
   ) async {
@@ -961,6 +996,10 @@ void main() {
     expect(find.byKey(StorageStewardHome.targetsKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.browseCardKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.actionsKey), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(StorageStewardHome.targetsKey)).width,
+      216,
+    );
     expect(find.text('Desktop storage steward'), findsNothing);
     expect(find.text('See what is taking space.'), findsNothing);
     expect(find.text('Preview first'), findsNothing);
@@ -983,6 +1022,20 @@ void main() {
     expect(actions.top, greaterThanOrEqualTo(scanSummary.top));
     expect(actions.left, greaterThan(scanSummary.left));
     expect(panel.width, greaterThan(1000));
+  });
+
+  testWidgets('wide workspace fills the main pane bounds', (tester) async {
+    const workspace = Key('test-workspace-bounds');
+    await pumpOverview(
+      tester,
+      size: const Size(1280, 800),
+      mainPaneOverride: const SizedBox(key: workspace),
+    );
+
+    expect(
+      tester.getRect(find.byKey(workspace)),
+      tester.getRect(find.byKey(StorageStewardHome.mainPaneKey)),
+    );
   });
 
   testWidgets('wide dashboard renders topbar and sidebar logos', (

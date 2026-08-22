@@ -164,6 +164,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool _hasProvider = false;
   bool _analyzing = false;
   bool _deleting = false;
+  int? _partialDeleteFailedCount;
+  int? _partialDeleteFreedBytes;
   AiMode _mode = AiMode.off;
   int? _platformCredits;
   int _operationGeneration = 0;
@@ -210,6 +212,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _candidatesBeforeCap = 0;
       _resultCacheKey = '';
       _rootPath = '';
+      _partialDeleteFailedCount = null;
+      _partialDeleteFreedBytes = null;
     });
     try {
       final mode = await widget.gateway.getMode();
@@ -574,21 +578,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return targets.toList();
   }
 
-  void _setDeleting(bool value, int generation, {_Phase? phase}) {
-    if (!_isCurrent(generation)) return;
-    setState(() {
-      _deleting = value;
-      if (phase != null) _phase = phase;
-    });
-    if (_isCurrent(generation)) widget.onDeletingChanged(value);
-  }
-
   Future<void> _deleteSelected() async {
     if (_deleting) return;
     final targets = _deleteTargets();
     if (targets.isEmpty) return;
     final generation = _beginOperation();
     final l10n = context.l10n;
+    setState(() {
+      _error = null;
+      _partialDeleteFailedCount = null;
+      _partialDeleteFreedBytes = null;
+    });
     final Map<String, dynamic> preview;
     try {
       preview = await widget.gateway.deleteEntries(targets, dryRun: true);
@@ -620,7 +620,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       ),
     );
     if (!_isCurrent(generation) || confirmed != true) return;
-    _setDeleting(true, generation, phase: _Phase.deleting);
+    var completed = false;
+    setState(() {
+      _deleting = true;
+      _phase = _Phase.deleting;
+    });
+    widget.onDeletingChanged(true);
     try {
       final report = await widget.gateway.deleteEntries(
         targets,
@@ -629,9 +634,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!_isCurrent(generation)) return;
       final error = report['error'];
       if (error != null) {
-        _setDeleting(false, generation, phase: _Phase.results);
-        if (!_isCurrent(generation)) return;
-        setState(() => _error = l10n.deleteFailed(error.toString()));
+        setState(() {
+          _phase = _Phase.results;
+          _error = l10n.deleteFailed(error.toString());
+        });
         return;
       }
       final failed = report['failed_paths'];
@@ -648,9 +654,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         }),
       );
       if (failedCount > 0) {
-        _setDeleting(false, generation, phase: _Phase.results);
-        if (!_isCurrent(generation)) return;
         setState(() {
+          _phase = _Phase.results;
+          _partialDeleteFailedCount = failedCount;
+          _partialDeleteFreedBytes = freedAfter;
           _error = l10n.aiWorkspacePartialDelete(
             failedCount,
             _formatBytes(freedAfter),
@@ -658,15 +665,23 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         });
         return;
       }
-      _setDeleting(false, generation, phase: _Phase.results);
-      if (!_isCurrent(generation)) return;
-      widget.onDeleteCompleted();
+      completed = true;
     } catch (error) {
       if (!_isCurrent(generation)) return;
-      _setDeleting(false, generation, phase: _Phase.results);
-      if (!_isCurrent(generation)) return;
-      setState(() => _error = l10n.deleteFailed(error.toString()));
+      setState(() {
+        _phase = _Phase.results;
+        _error = l10n.deleteFailed(error.toString());
+      });
+    } finally {
+      if (_isCurrent(generation)) {
+        setState(() {
+          _deleting = false;
+          _phase = _Phase.results;
+        });
+        widget.onDeletingChanged(false);
+      }
     }
+    if (completed && _isCurrent(generation)) widget.onDeleteCompleted();
   }
 
   void _toggle(String path, bool? selected) {
@@ -1015,11 +1030,39 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             ),
             style: context.vwBodyStrong,
           ),
-          if (_error != null) ...[
+          if (_error != null && _partialDeleteFailedCount == null) ...[
             const SizedBox(height: AppleSpacing.xs),
             Text(
               _error!,
               style: AppleTypography.caption.copyWith(color: tokens.danger),
+            ),
+          ],
+          if (_partialDeleteFailedCount != null &&
+              _partialDeleteFreedBytes != null) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            Text(
+              l10n.aiWorkspacePartialDelete(
+                _partialDeleteFailedCount!,
+                _formatBytes(_partialDeleteFreedBytes!),
+              ),
+              style: AppleTypography.caption.copyWith(color: tokens.danger),
+            ),
+          ],
+          if (_partialDeleteFailedCount != null) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            AppleButton(
+              label: l10n.aiActionRetry,
+              icon: Icons.refresh_outlined,
+              variant: AppleButtonVariant.pearl,
+              expanded: true,
+              onPressed: _deleting ? null : _deleteSelected,
+            ),
+            const SizedBox(height: AppleSpacing.xs),
+            AppleButton(
+              label: l10n.aiWorkspaceReturn,
+              variant: AppleButtonVariant.pearl,
+              expanded: true,
+              onPressed: _deleting ? null : widget.onExit,
             ),
           ],
           if (!compact) const Spacer(),
