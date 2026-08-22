@@ -554,6 +554,10 @@ Future<void> pumpOverview(
   VoidCallback? onOpenSettings,
   ValueChanged<String>? onSelectCategory,
   ValueChanged<StorageHomeItem>? onOpenItem,
+  VoidCallback? onOpenAi,
+  Widget? mainPaneOverride,
+  bool interactionsLocked = false,
+  FocusNode? aiActionFocusNode,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -576,6 +580,10 @@ Future<void> pumpOverview(
           onOpenSettings: onOpenSettings,
           onSelectCategory: onSelectCategory,
           onOpenItem: onOpenItem,
+          onOpenAi: onOpenAi,
+          mainPaneOverride: mainPaneOverride,
+          interactionsLocked: interactionsLocked,
+          aiActionFocusNode: aiActionFocusNode,
         ),
       ),
     ),
@@ -583,6 +591,84 @@ Future<void> pumpOverview(
 }
 
 void main() {
+  testWidgets('default overview keeps all original regions unchanged', (
+    tester,
+  ) async {
+    await pumpOverview(tester, summary: completedSummary);
+
+    expect(find.byKey(StorageStewardHome.capacityKey), findsOneWidget);
+    expect(find.byKey(LargestItemsPanel.panelKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.browseCardKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.aiActionKey), findsNothing);
+  });
+
+  testWidgets('wide overview exposes the AI action without overflow', (
+    tester,
+  ) async {
+    await pumpOverview(tester, onOpenAi: () {});
+
+    expect(find.byKey(StorageStewardHome.aiActionKey), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(StorageStewardHome.aiActionKey)).width,
+      lessThanOrEqualTo(140),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact overview exposes the AI action without overflow', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      onOpenAi: () {},
+    );
+
+    expect(find.byKey(StorageStewardHome.aiActionKey), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(StorageStewardHome.aiActionKey)).width,
+      lessThanOrEqualTo(140),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('main pane override replaces the default overview pane', (
+    tester,
+  ) async {
+    const replacement = Key('test-main-pane-replacement');
+    await pumpOverview(
+      tester,
+      mainPaneOverride: const SizedBox(key: replacement),
+    );
+
+    expect(find.byKey(replacement), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.targetsKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.capacityKey), findsNothing);
+  });
+
+  testWidgets('locked interactions absorb target folder and AI taps', (
+    tester,
+  ) async {
+    var targetSelections = 0;
+    var folderSelections = 0;
+    var aiOpens = 0;
+    await pumpOverview(
+      tester,
+      onSelectTarget: (_) => targetSelections++,
+      onChooseFolder: () => folderSelections++,
+      onOpenAi: () => aiOpens++,
+      interactionsLocked: true,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('storage-target-home')));
+    await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+
+    expect(targetSelections, 0);
+    expect(folderSelections, 0);
+    expect(aiOpens, 0);
+  });
+
   testWidgets('wide dashboard board is full width and top aligned', (
     tester,
   ) async {
