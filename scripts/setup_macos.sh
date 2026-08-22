@@ -8,7 +8,6 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="$ROOT_DIR/apps/volward"
 MACOS_DIR="$APP_DIR/macos"
 LOCAL_TEAM_FILE="$MACOS_DIR/Runner/Configs/TeamSettings.local.xcconfig"
-EXAMPLE_TEAM_FILE="$MACOS_DIR/Runner/Configs/TeamSettings.local.xcconfig.example"
 
 ASSUME_YES=0
 SKIP_BUILD=0
@@ -328,8 +327,7 @@ Do this once, then re-run setup:
   4. bash scripts/setup_macos.sh
 
 Or set the Team ID manually:
-  cp "$EXAMPLE_TEAM_FILE" "$LOCAL_TEAM_FILE"
-  # edit DEVELOPMENT_TEAM, then re-run
+  bash scripts/setup_macos.sh --team YOUR_TEAM_ID
 
 Or non-interactive:
   bash scripts/setup_macos.sh --team YOUR_TEAM_ID
