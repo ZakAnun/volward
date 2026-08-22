@@ -456,6 +456,7 @@
   "aiWorkspacePhaseAnalyzing": "Analyzing",
   "aiWorkspacePhaseReview": "Review",
   "aiWorkspacePhaseDeleting": "Deleting",
+  "aiWorkspacePhaseRecovery": "Recovery",
   "aiWorkspaceLoadPrevious": "Load Previous Result",
   "aiWorkspaceAnalyzeAgain": "Analyze Again",
   "aiWorkspaceSelectedSummary": "{count} selected · {size}",

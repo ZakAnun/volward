@@ -456,6 +456,7 @@
   "aiWorkspacePhaseAnalyzing": "正在分析",
   "aiWorkspacePhaseReview": "确认建议",
   "aiWorkspacePhaseDeleting": "正在删除",
+  "aiWorkspacePhaseRecovery": "恢复",
   "aiWorkspaceLoadPrevious": "加载上次结果",
   "aiWorkspaceAnalyzeAgain": "重新分析",
   "aiWorkspaceSelectedSummary": "{count} 项已选择 · {size}",

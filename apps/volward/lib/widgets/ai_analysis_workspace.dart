@@ -508,17 +508,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         });
         return;
       }
+      final normalizedError = _normalizeAiError(error);
       unawaited(
         Analytics.instance.track(AnalyticsEvents.aiAnalysisFailed, {
           'provider': providerLabel,
-          'error': _normalizeAiError(error),
+          'error': normalizedError,
           'duration_ms': stopwatch.elapsedMilliseconds,
         }),
       );
       if (!_isCurrent(generation)) return;
+      final configurationError = switch (normalizedError) {
+        'invalid_api_key' || 'empty_api_key' || 'ai_contract_unavailable' =>
+          true,
+        _ => false,
+      };
       setState(() {
         _analyzing = false;
         _phase = _Phase.precheck;
+        _hasProvider = configurationError ? false : _hasProvider;
         _error = _localizedAiError(error);
       });
     }
@@ -722,7 +729,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _Phase.analyzing => l10n.aiWorkspacePhaseAnalyzing,
       _Phase.results => l10n.aiWorkspacePhaseReview,
       _Phase.deleting => l10n.aiWorkspacePhaseDeleting,
-      _Phase.error => l10n.aiWorkspacePhaseLoading,
+      _Phase.error => l10n.aiWorkspacePhaseRecovery,
     };
   }
 
@@ -1131,8 +1138,7 @@ class _WorkspaceHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final tokens = context.volward;
-    final phaseSemantics =
-        '$phaseLabel, ${MaterialLocalizations.of(context).tabLabel(tabIndex: phaseStep, tabCount: 5)}';
+    final phaseSemantics = '$phaseLabel, step $phaseStep of 5';
     return SafeArea(
       bottom: false,
       child: Padding(

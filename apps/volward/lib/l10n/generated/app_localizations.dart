@@ -1327,6 +1327,12 @@ abstract class AppLocalizations {
   /// **'Deleting'**
   String get aiWorkspacePhaseDeleting;
 
+  /// No description provided for @aiWorkspacePhaseRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery'**
+  String get aiWorkspacePhaseRecovery;
+
   /// No description provided for @aiWorkspaceLoadPrevious.
   ///
   /// In en, this message translates to:

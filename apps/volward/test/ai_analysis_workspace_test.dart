@@ -462,6 +462,14 @@ void main() {
     expect(find.textContaining('640 tokens'), findsOneWidget);
     expect(find.textContaining('largest of 12 items'), findsOneWidget);
     expect(find.textContaining('balance 7'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.value == 'Pre-check, step 2 of 5',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('valid cache loads inline and invalid cache remains in precheck',
@@ -635,6 +643,32 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(error.value), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
+    });
+  }
+
+  const configurationErrors = {
+    'invalid_api_key': 'No API Key — configure in Settings',
+    'empty_api_key': 'No API Key — configure in Settings',
+    'ai_contract_unavailable':
+        'The installed native library is out of date. Please update Volward to use AI analysis.',
+  };
+  for (final error in configurationErrors.entries) {
+    testWidgets('configuration ${error.key} exposes Settings', (tester) async {
+      final gateway = _FakeGateway()
+        ..candidatesJson = _candidatePayload()
+        ..provider = _ThrowingProvider(StateError(error.key));
+      await tester.pumpWidget(_workspaceShell(gateway));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+      );
+      await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.settingsKey),
+      );
+      expect(find.text(error.value), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
     });
   }
 

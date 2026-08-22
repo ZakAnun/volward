@@ -716,6 +716,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiWorkspacePhaseDeleting => '正在删除';
 
   @override
+  String get aiWorkspacePhaseRecovery => '恢复';
+
+  @override
   String get aiWorkspaceLoadPrevious => '加载上次结果';
 
   @override

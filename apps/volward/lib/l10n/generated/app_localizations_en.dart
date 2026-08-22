@@ -747,6 +747,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiWorkspacePhaseDeleting => 'Deleting';
 
   @override
+  String get aiWorkspacePhaseRecovery => 'Recovery';
+
+  @override
   String get aiWorkspaceLoadPrevious => 'Load Previous Result';
 
   @override
