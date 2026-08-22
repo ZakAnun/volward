@@ -448,6 +448,34 @@
       }
     }
   },
+  "aiWorkspaceTitle": "AI Cleanup Suggestions",
+  "aiWorkspaceBack": "Back to Overview",
+  "aiWorkspacePhaseLoading": "Preparing candidates",
+  "aiWorkspacePhasePrecheck": "Pre-check",
+  "aiWorkspacePhasePrivacy": "Privacy",
+  "aiWorkspacePhaseAnalyzing": "Analyzing",
+  "aiWorkspacePhaseReview": "Review",
+  "aiWorkspacePhaseDeleting": "Deleting",
+  "aiWorkspaceLoadPrevious": "Load Previous Result",
+  "aiWorkspaceAnalyzeAgain": "Analyze Again",
+  "aiWorkspaceSelectedSummary": "{count} selected · {size}",
+  "@aiWorkspaceSelectedSummary": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
+  "aiWorkspacePartialDelete": "{count} items could not be removed · {size} freed",
+  "@aiWorkspacePartialDelete": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
+  "aiErrorTimeout": "The AI request timed out. Try again.",
+  "aiErrorRateLimited": "The AI service is busy. Try again shortly.",
+  "aiErrorNetwork": "Could not reach the AI service. Check your connection.",
+  "aiWorkspaceReturn": "Return to Overview",
   "back": "Back",
   "homeBrowseFiles": "Browse Files",
   "homeStartScan": "Start Scan",

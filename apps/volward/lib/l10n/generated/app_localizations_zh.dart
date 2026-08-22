@@ -692,6 +692,58 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get aiWorkspaceTitle => 'AI 清理建议';
+
+  @override
+  String get aiWorkspaceBack => '返回概览';
+
+  @override
+  String get aiWorkspacePhaseLoading => '正在准备候选项';
+
+  @override
+  String get aiWorkspacePhasePrecheck => '预检查';
+
+  @override
+  String get aiWorkspacePhasePrivacy => '隐私确认';
+
+  @override
+  String get aiWorkspacePhaseAnalyzing => '正在分析';
+
+  @override
+  String get aiWorkspacePhaseReview => '确认建议';
+
+  @override
+  String get aiWorkspacePhaseDeleting => '正在删除';
+
+  @override
+  String get aiWorkspaceLoadPrevious => '加载上次结果';
+
+  @override
+  String get aiWorkspaceAnalyzeAgain => '重新分析';
+
+  @override
+  String aiWorkspaceSelectedSummary(int count, String size) {
+    return '$count 项已选择 · $size';
+  }
+
+  @override
+  String aiWorkspacePartialDelete(int count, String size) {
+    return '$count 项未能删除 · 已释放 $size';
+  }
+
+  @override
+  String get aiErrorTimeout => 'AI 请求超时，请重试。';
+
+  @override
+  String get aiErrorRateLimited => 'AI 服务繁忙，请稍后重试。';
+
+  @override
+  String get aiErrorNetwork => '无法连接 AI 服务，请检查网络。';
+
+  @override
+  String get aiWorkspaceReturn => '返回概览';
+
+  @override
   String get back => '返回';
 
   @override

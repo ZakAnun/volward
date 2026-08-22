@@ -119,12 +119,25 @@ class _AppleButtonState extends State<AppleButton> {
                   ),
                   const SizedBox(width: AppleSpacing.xs),
                 ],
-                Text(
-                  widget.label,
-                  style: textStyle.copyWith(
-                    color: enabled ? fg : fg.withValues(alpha: 0.5),
+                if (widget.expanded)
+                  Flexible(
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: textStyle.copyWith(
+                        color: enabled ? fg : fg.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    widget.label,
+                    style: textStyle.copyWith(
+                      color: enabled ? fg : fg.withValues(alpha: 0.5),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

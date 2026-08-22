@@ -184,6 +184,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant AiAnalysisWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gateway != widget.gateway ||
+        oldWidget.snapshotId != widget.snapshotId) {
+      unawaited(_bootstrap());
+    }
+  }
+
   Future<void> _bootstrap() async {
     final generation = _beginOperation();
     setState(() {
@@ -207,6 +216,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!_isCurrent(generation)) return;
       final provider = await widget.gateway.resolveProvider();
       if (!_isCurrent(generation)) return;
+      setState(() {
+        _mode = mode;
+        _hasProvider = provider != null;
+      });
       int? platformCredits;
       if (mode == AiMode.platform && provider != null) {
         try {
@@ -282,21 +295,33 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (!_isCurrent(generation)) return false;
     if (accepted) return true;
     setState(() => _phase = _Phase.privacy);
-    return false;
-  }
-
-  Future<void> _acceptPrivacy() async {
-    final generation = _beginOperation();
+    if (!mounted) return false;
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.aiPrivacyTitle),
+        content: Text(l10n.aiPrivacyBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.aiPrivacyAccept),
+          ),
+        ],
+      ),
+    );
+    if (!_isCurrent(generation)) return false;
+    if (confirmed != true) {
+      setState(() => _phase = _Phase.precheck);
+      return false;
+    }
     await widget.gateway.setPrivacyAccepted(true);
-    if (!_isCurrent(generation)) return;
-    setState(() => _phase = _Phase.precheck);
-    await _startAnalysis();
-  }
-
-  void _declinePrivacy() {
-    final generation = _beginOperation();
-    if (!_isCurrent(generation)) return;
-    setState(() => _phase = _Phase.precheck);
+    return _isCurrent(generation);
   }
 
   Future<bool> _loadPreviousResult() async {
@@ -494,9 +519,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       setState(() {
         _analyzing = false;
         _phase = _Phase.precheck;
-        _error = message;
+        _error = _localizedAiError(error);
       });
     }
+  }
+
+  String _localizedAiError(Object error) {
+    return switch (_normalizeAiError(error)) {
+      'request_timeout' => context.l10n.aiErrorTimeout,
+      'rate_limited_after_retries' => context.l10n.aiErrorRateLimited,
+      'network_error' => context.l10n.aiErrorNetwork,
+      'invalid_api_key' || 'empty_api_key' => context.l10n.aiNoApiKey,
+      'ai_contract_unavailable' => context.l10n.aiContractUnavailable,
+      _ => context.l10n.aiErrorUnknown,
+    };
   }
 
   static String _normalizeAiError(Object error) {
@@ -608,7 +644,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _setDeleting(false, generation, phase: _Phase.results);
         if (!_isCurrent(generation)) return;
         setState(() {
-          _error = l10n.deleteSuccessWithFailures(
+          _error = l10n.aiWorkspacePartialDelete(
             failedCount,
             _formatBytes(freedAfter),
           );
@@ -655,73 +691,95 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
-    final l10n = context.l10n;
     return DecoratedBox(
       key: AiAnalysisWorkspace.workspaceKey,
-      decoration: BoxDecoration(color: tokens.canvasParchment),
-      child: switch (_phase) {
-        _Phase.loading => const Center(child: CircularProgressIndicator()),
-        _Phase.error => _ErrorBody(
-            message: _error ?? l10n.aiErrorUnknown,
-            retryLabel: l10n.aiActionRetry,
-            onRetry: _bootstrap,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        children: [
+          _WorkspaceHeader(
+            targetLabel: widget.targetLabel,
+            phaseLabel: _phaseLabel(context),
+            phaseStep: _phaseStep,
+            onBack: _deleting ? null : widget.onExit,
           ),
-        _Phase.privacy => _buildPrivacy(tokens),
-        _Phase.analyzing => Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: AppleSpacing.md),
-                Text(l10n.aiAnalyzing),
-              ],
-            ),
-          ),
-        _Phase.precheck => _buildPrecheck(tokens),
-        _Phase.results => _buildResults(tokens),
-        _Phase.deleting => _buildDeleting(),
-      },
+          Divider(height: 1, color: tokens.dividerSoft),
+          Expanded(child: _buildPhaseBody()),
+        ],
+      ),
     );
   }
 
-  Widget _buildPrivacy(VolwardTokens tokens) {
+  String _phaseLabel(BuildContext context) {
     final l10n = context.l10n;
-    return SafeArea(
+    return switch (_phase) {
+      _Phase.loading => l10n.aiWorkspacePhaseLoading,
+      _Phase.precheck => l10n.aiWorkspacePhasePrecheck,
+      _Phase.privacy => l10n.aiWorkspacePhasePrivacy,
+      _Phase.analyzing => l10n.aiWorkspacePhaseAnalyzing,
+      _Phase.results => l10n.aiWorkspacePhaseReview,
+      _Phase.deleting => l10n.aiWorkspacePhaseDeleting,
+      _Phase.error => l10n.aiWorkspacePhaseLoading,
+    };
+  }
+
+  int get _phaseStep => switch (_phase) {
+        _Phase.loading || _Phase.error => 1,
+        _Phase.precheck => 2,
+        _Phase.privacy || _Phase.analyzing => 3,
+        _Phase.results => 4,
+        _Phase.deleting => 5,
+      };
+
+  Widget _buildPhaseBody() {
+    return switch (_phase) {
+      _Phase.loading => _buildProgressBody(
+          label: context.l10n.aiWorkspacePhaseLoading,
+          candidateCount: 0,
+        ),
+      _Phase.precheck || _Phase.privacy => _buildPrecheck(),
+      _Phase.analyzing => _buildProgressBody(
+          label: context.l10n.aiWorkspacePhaseAnalyzing,
+          candidateCount: _unknown.length,
+        ),
+      _Phase.results || _Phase.deleting => _buildResults(),
+      _Phase.error => _buildError(),
+    };
+  }
+
+  String _modeLabel() {
+    final l10n = context.l10n;
+    return switch (_mode) {
+      AiMode.platform => l10n.aiSettingsPlatformLabel,
+      AiMode.byok => l10n.aiSettingsByokLabel,
+      AiMode.off => l10n.aiSettingsOffLabel,
+    };
+  }
+
+  Widget _buildProgressBody({
+    required String label,
+    required int candidateCount,
+  }) {
+    final tokens = context.volward;
+    return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppleSpacing.lg),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: AppleSpacing.md),
+            Text(label, style: context.vwBodyStrong),
+            const SizedBox(height: AppleSpacing.xs),
             Text(
-              l10n.aiPrivacyTitle,
-              style: AppleTypography.tagline.copyWith(color: tokens.ink),
-            ),
-            const SizedBox(height: AppleSpacing.sm),
-            Text(
-              l10n.aiPrivacyBody,
-              style: AppleTypography.body.copyWith(color: tokens.inkMuted80),
-            ),
-            const SizedBox(height: AppleSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: AppleButton(
-                    key: AiAnalysisWorkspace.backKey,
-                    label: l10n.scanActionCancel,
-                    variant: AppleButtonVariant.pearl,
-                    expanded: true,
-                    onPressed: _declinePrivacy,
-                  ),
-                ),
-                const SizedBox(width: AppleSpacing.sm),
-                Expanded(
-                  child: AppleButton(
-                    label: l10n.aiPrivacyAccept,
-                    expanded: true,
-                    onPressed: _acceptPrivacy,
-                  ),
-                ),
-              ],
+              '${context.l10n.scanProgressItems(candidateCount)} · ${_modeLabel()}',
+              textAlign: TextAlign.center,
+              style: AppleTypography.caption.copyWith(
+                color: tokens.inkMuted80,
+              ),
             ),
           ],
         ),
@@ -729,152 +787,114 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
-  Widget _buildPrecheck(VolwardTokens tokens) {
+  Widget _buildPrecheck() {
     final l10n = context.l10n;
+    final tokens = context.volward;
     final canAnalyze =
         _hasProvider && !(_mode == AiMode.platform && _platformCredits == 0);
-    return Column(
+    final needsSettings =
+        !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
+    final configurationMessage = !_hasProvider
+        ? (_error ??
+            (_mode == AiMode.platform
+                ? l10n.aiSettingsSessionExpired
+                : l10n.aiNoApiKey))
+        : l10n.aiInsufficientCredits;
+    return ListView(
+      padding: const EdgeInsets.all(AppleSpacing.lg),
       children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppleSpacing.lg,
-              AppleSpacing.sm,
-              AppleSpacing.lg,
-              AppleSpacing.lg,
+        Text(
+          l10n.aiPreCheckSafeTitle(_preClassified.length),
+          style: context.vwBodyStrong,
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiPreCheckUnknownTitle(_unknown.length, _estimatedTokens),
+          style: context.vwCaption,
+        ),
+        if (_truncated) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            l10n.aiTruncatedNotice(_unknown.length, _candidatesBeforeCap),
+            style: AppleTypography.caption.copyWith(color: tokens.warning),
+          ),
+        ],
+        if (_mode == AiMode.platform && _platformCredits != null) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            l10n.aiPrecheckCreditsCost(_platformCredits!),
+            style: context.vwCaption,
+          ),
+        ],
+        if (needsSettings) ...[
+          const SizedBox(height: AppleSpacing.md),
+          Text(
+            configurationMessage,
+            style: AppleTypography.caption.copyWith(color: tokens.warning),
+          ),
+          const SizedBox(height: AppleSpacing.xs),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppleButton(
+              key: AiAnalysisWorkspace.settingsKey,
+              label: l10n.settingsTitle,
+              icon: Icons.settings_outlined,
+              variant: AppleButtonVariant.pearl,
+              onPressed: widget.onOpenSettings,
             ),
-            children: [
-              if (widget.targetLabel.isNotEmpty) ...[
-                Text(
-                  widget.targetLabel,
-                  style: AppleTypography.captionStrong.copyWith(
-                    color: tokens.inkMuted80,
-                  ),
-                ),
-                const SizedBox(height: AppleSpacing.xs),
-              ],
-              Text(
-                l10n.aiPreCheckSafeTitle(_preClassified.length),
-                style: AppleTypography.tagline.copyWith(color: tokens.ink),
+          ),
+        ] else if (_error != null) ...[
+          const SizedBox(height: AppleSpacing.md),
+          Text(
+            _error!,
+            style: AppleTypography.caption.copyWith(color: tokens.danger),
+          ),
+          const SizedBox(height: AppleSpacing.xs),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppleButton(
+              label: l10n.aiActionRetry,
+              icon: Icons.refresh_outlined,
+              variant: AppleButtonVariant.pearl,
+              onPressed: _startAnalysis,
+            ),
+          ),
+        ],
+        if (_preClassified.isNotEmpty) ...[
+          const SizedBox(height: AppleSpacing.lg),
+          Text(
+            l10n.aiPreCheckSafeSelectable(_preClassified.length),
+            style: context.vwCaptionStrong,
+          ),
+          const SizedBox(height: AppleSpacing.xs),
+          ..._preClassified.map(_preClassifiedTile),
+        ],
+        const SizedBox(height: AppleSpacing.lg),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_hasExistingResult) ...[
+              AppleButton(
+                key: AiAnalysisWorkspace.loadPreviousKey,
+                label: l10n.aiWorkspaceLoadPrevious,
+                variant: AppleButtonVariant.pearl,
+                expanded: true,
+                onPressed: _loadPreviousResult,
               ),
               const SizedBox(height: AppleSpacing.xs),
-              Text(
-                l10n.aiPreCheckUnknownTitle(_unknown.length, _estimatedTokens),
-                style: AppleTypography.body.copyWith(color: tokens.inkMuted80),
-              ),
-              if (_truncated) ...[
-                const SizedBox(height: AppleSpacing.xs),
-                Text(
-                  l10n.aiTruncatedNotice(
-                    _unknown.length,
-                    _candidatesBeforeCap,
-                  ),
-                  style:
-                      AppleTypography.caption.copyWith(color: tokens.warning),
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: AppleSpacing.sm),
-                Text(
-                  _error!,
-                  style: AppleTypography.caption.copyWith(color: tokens.danger),
-                ),
-              ],
-              if (!_hasProvider) ...[
-                const SizedBox(height: AppleSpacing.sm),
-                Text(
-                  _mode == AiMode.platform
-                      ? l10n.aiSettingsSessionExpired
-                      : l10n.aiNoApiKey,
-                  style:
-                      AppleTypography.caption.copyWith(color: tokens.warning),
-                ),
-                const SizedBox(height: AppleSpacing.sm),
-                IconButton(
-                  key: AiAnalysisWorkspace.settingsKey,
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: l10n.aiAnalysisTitle,
-                  onPressed: widget.onOpenSettings,
-                ),
-              ],
-              if (_mode == AiMode.platform && _platformCredits != null) ...[
-                const SizedBox(height: AppleSpacing.sm),
-                Text(
-                  l10n.aiPrecheckCreditsCost(_platformCredits!),
-                  style: AppleTypography.caption.copyWith(
-                    color: tokens.inkMuted80,
-                  ),
-                ),
-                if (_platformCredits == 0)
-                  Text(
-                    l10n.aiInsufficientCredits,
-                    style: AppleTypography.caption.copyWith(
-                      color: tokens.warning,
-                    ),
-                  ),
-              ],
-              const SizedBox(height: AppleSpacing.lg),
-              if (_preClassified.isNotEmpty) ...[
-                Text(
-                  l10n.aiPreCheckSafeSelectable(_preClassified.length),
-                  style: AppleTypography.captionStrong.copyWith(
-                    color: tokens.ink,
-                  ),
-                ),
-                const SizedBox(height: AppleSpacing.xs),
-                ..._preClassified.map(_preClassifiedTile),
-              ],
             ],
-          ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppleSpacing.lg,
-              AppleSpacing.sm,
-              AppleSpacing.lg,
-              AppleSpacing.md,
+            AppleButton(
+              key: _hasExistingResult
+                  ? AiAnalysisWorkspace.analyzeAgainKey
+                  : null,
+              label: _hasExistingResult
+                  ? l10n.aiWorkspaceAnalyzeAgain
+                  : l10n.aiStartAnalysis,
+              icon: Icons.auto_awesome_outlined,
+              expanded: true,
+              onPressed: canAnalyze ? _startAnalysis : null,
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppleButton(
-                    key: AiAnalysisWorkspace.backKey,
-                    label: l10n.scanActionCancel,
-                    variant: AppleButtonVariant.pearl,
-                    expanded: true,
-                    onPressed: widget.onExit,
-                  ),
-                ),
-                if (_hasExistingResult) ...[
-                  const SizedBox(width: AppleSpacing.sm),
-                  Expanded(
-                    child: AppleButton(
-                      key: AiAnalysisWorkspace.loadPreviousKey,
-                      label: l10n.aiActionLoadPrevious,
-                      variant: AppleButtonVariant.pearl,
-                      expanded: true,
-                      onPressed: _loadPreviousResult,
-                    ),
-                  ),
-                ],
-                const SizedBox(width: AppleSpacing.sm),
-                Expanded(
-                  child: AppleButton(
-                    key: _hasExistingResult
-                        ? AiAnalysisWorkspace.analyzeAgainKey
-                        : null,
-                    label: _hasExistingResult
-                        ? l10n.aiActionContinue
-                        : l10n.aiStartAnalysis,
-                    expanded: true,
-                    onPressed: canAnalyze ? _startAnalysis : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ),
       ],
     );
@@ -886,20 +906,23 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final confidence = entry['confidence']?.toString() ?? '';
     final reason = entry['reason']?.toString() ?? '';
     final size = _asInt(entry['size_bytes']);
-    return CheckboxListTile(
-      value: deletable ? _selected.contains(path) : false,
-      onChanged: deletable ? (value) => _toggle(path, value) : null,
-      controlAffinity: ListTileControlAffinity.leading,
-      contentPadding: EdgeInsets.zero,
-      title: Text(path, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${_formatBytes(size)} - $confidence'
-        '${reason.isNotEmpty ? ' - $reason' : ''}',
+    return Material(
+      color: Colors.transparent,
+      child: CheckboxListTile(
+        value: deletable ? _selected.contains(path) : false,
+        onChanged: deletable ? (value) => _toggle(path, value) : null,
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: EdgeInsets.zero,
+        title: _PathLabel(path),
+        subtitle: Text(
+          '${_formatBytes(size)} · $confidence'
+          '${reason.isNotEmpty ? ' · $reason' : ''}',
+        ),
       ),
     );
   }
 
-  Widget _buildResults(VolwardTokens tokens) {
+  Widget _buildResults() {
     final l10n = context.l10n;
     final safe = _verdicts
         .where((verdict) => verdict.verdict == 'safe_to_remove')
@@ -909,91 +932,128 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         .toList();
     final keep =
         _verdicts.where((verdict) => verdict.verdict == 'keep').toList();
-    return Column(
+    final resultsList = ListView(
+      key: AiAnalysisWorkspace.resultsListKey,
+      padding: const EdgeInsets.all(AppleSpacing.lg),
       children: [
-        Expanded(
-          child: ListView(
-            key: AiAnalysisWorkspace.resultsListKey,
-            padding: const EdgeInsets.fromLTRB(
-              AppleSpacing.lg,
-              AppleSpacing.sm,
-              AppleSpacing.lg,
-              AppleSpacing.lg,
-            ),
-            children: [
-              Text(
-                l10n.aiAnalysisTitle,
-                key: AiAnalysisWorkspace.summaryKey,
-                style: AppleTypography.tagline.copyWith(color: tokens.ink),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: AppleSpacing.sm),
-                Text(
-                  _error!,
-                  style: AppleTypography.caption.copyWith(color: tokens.danger),
-                ),
-              ],
-              const SizedBox(height: AppleSpacing.lg),
-              if (_preClassified.isNotEmpty) ...[
-                Text(
-                  l10n.aiPreCheckSafeSelectable(_preClassified.length),
-                  style: AppleTypography.captionStrong.copyWith(
-                    color: tokens.ink,
-                  ),
-                ),
-                ..._preClassified.map(_preClassifiedTile),
-                const SizedBox(height: AppleSpacing.md),
-              ],
-              _verdictSection(
-                title: l10n.aiVerdictSafe(safe.length),
-                items: safe,
-                selectable: true,
-              ),
-              _verdictSection(
-                title: l10n.aiVerdictReview(review.length),
-                items: review,
-                selectable: true,
-              ),
-              _verdictSection(
-                title: l10n.aiVerdictKeep(keep.length),
-                items: keep,
-                selectable: false,
-              ),
-            ],
+        if (_preClassified.isNotEmpty) ...[
+          Text(
+            l10n.aiPreCheckSafeSelectable(_preClassified.length),
+            style: context.vwCaptionStrong,
           ),
+          ..._preClassified.map(_preClassifiedTile),
+          const SizedBox(height: AppleSpacing.md),
+        ],
+        _verdictSection(
+          title: l10n.aiVerdictSafe(safe.length),
+          items: safe,
+          selectable: true,
         ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppleSpacing.lg,
-              AppleSpacing.sm,
-              AppleSpacing.lg,
-              AppleSpacing.md,
-            ),
-            child: AppleButton(
-              key: AiAnalysisWorkspace.deleteKey,
-              label:
-                  '${l10n.aiDeleteSelected(_selected.length)} (${_formatBytes(_selectedBytes)})',
-              expanded: true,
-              onPressed: _selected.isEmpty ? null : _deleteSelected,
-            ),
-          ),
+        _verdictSection(
+          title: l10n.aiVerdictReview(review.length),
+          items: review,
+          selectable: true,
+        ),
+        _verdictSection(
+          title: l10n.aiVerdictKeep(keep.length),
+          items: keep,
+          selectable: false,
         ),
       ],
     );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 720) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: resultsList),
+              const VerticalDivider(width: 1),
+              SizedBox(
+                key: AiAnalysisWorkspace.summaryKey,
+                width: 260,
+                child: _buildSelectionSummary(),
+              ),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            SizedBox(
+              key: AiAnalysisWorkspace.summaryKey,
+              width: double.infinity,
+              child: _buildSelectionSummary(compact: true),
+            ),
+            const Divider(height: 1),
+            Expanded(child: resultsList),
+          ],
+        );
+      },
+    );
   }
 
-  Widget _buildDeleting() {
+  Widget _buildSelectionSummary({bool compact = false}) {
+    final l10n = context.l10n;
+    final tokens = context.volward;
+    return Padding(
+      padding: EdgeInsets.all(compact ? AppleSpacing.sm : AppleSpacing.lg),
+      child: Column(
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l10n.aiWorkspaceSelectedSummary(
+              _selected.length,
+              _formatBytes(_selectedBytes),
+            ),
+            style: context.vwBodyStrong,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            Text(
+              _error!,
+              style: AppleTypography.caption.copyWith(color: tokens.danger),
+            ),
+          ],
+          if (!compact) const Spacer(),
+          SizedBox(height: compact ? AppleSpacing.xs : AppleSpacing.md),
+          AppleButton(
+            key: AiAnalysisWorkspace.deleteKey,
+            label: _deleting
+                ? l10n.deleteActionWorking
+                : l10n.aiDeleteSelected(_selected.length),
+            icon: _deleting ? null : Icons.delete_outline,
+            expanded: true,
+            onPressed: _selected.isEmpty || _deleting ? null : _deleteSelected,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError() {
     final l10n = context.l10n;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: AppleSpacing.md),
-          Text(l10n.deleteActionDelete),
-        ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppleSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _error ?? l10n.aiErrorUnknown,
+              textAlign: TextAlign.center,
+              style: AppleTypography.body.copyWith(
+                color: context.volward.danger,
+              ),
+            ),
+            const SizedBox(height: AppleSpacing.md),
+            AppleButton(
+              label: l10n.aiActionRetry,
+              icon: Icons.refresh_outlined,
+              onPressed: _bootstrap,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1013,78 +1073,154 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           style: AppleTypography.captionStrong.copyWith(color: tokens.ink),
         ),
         const SizedBox(height: AppleSpacing.xs),
-        ...items.map((item) {
-          final size = _sizeByPath[item.path] ?? 0;
-          if (!selectable) {
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.lock_outline,
-                size: 20,
-                color: tokens.inkMuted48,
-              ),
-              title: Text(
-                item.path,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text('${_formatBytes(size)} - ${item.reason}'),
-            );
-          }
-          return CheckboxListTile(
-            value: _selected.contains(item.path),
-            onChanged: (value) => _toggle(item.path, value),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              item.path,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              '${_formatBytes(size)} - ${item.confidence} - ${item.reason}',
-            ),
-          );
-        }),
+        ...items.map(
+          (item) => _verdictTile(item: item, selectable: selectable),
+        ),
         const SizedBox(height: AppleSpacing.md),
       ],
     );
   }
+
+  Widget _verdictTile({
+    required AiVerdict item,
+    required bool selectable,
+  }) {
+    final size = _sizeByPath[item.path] ?? 0;
+    final subtitle =
+        '${_formatBytes(size)} · ${item.confidence} · ${item.reason}';
+    if (!selectable) {
+      return Material(
+        color: Colors.transparent,
+        child: ListTile(
+          enabled: false,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.lock_outline, size: 20),
+          title: _PathLabel(item.path),
+          subtitle: Text(subtitle),
+        ),
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      child: CheckboxListTile(
+        value: _selected.contains(item.path),
+        onChanged: (value) => _toggle(item.path, value),
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: EdgeInsets.zero,
+        title: _PathLabel(item.path),
+        subtitle: Text(subtitle),
+      ),
+    );
+  }
 }
 
-class _ErrorBody extends StatelessWidget {
-  const _ErrorBody({
-    required this.message,
-    required this.retryLabel,
-    required this.onRetry,
+class _WorkspaceHeader extends StatelessWidget {
+  const _WorkspaceHeader({
+    required this.targetLabel,
+    required this.phaseLabel,
+    required this.phaseStep,
+    required this.onBack,
   });
 
-  final String message;
-  final String retryLabel;
-  final VoidCallback onRetry;
+  final String targetLabel;
+  final String phaseLabel;
+  final int phaseStep;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final tokens = context.volward;
+    final phaseSemantics =
+        '$phaseLabel, ${MaterialLocalizations.of(context).tabLabel(tabIndex: phaseStep, tabCount: 5)}';
     return SafeArea(
+      bottom: false,
       child: Padding(
-        padding: const EdgeInsets.all(AppleSpacing.lg),
-        child: Column(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppleSpacing.md,
+          vertical: AppleSpacing.sm,
+        ),
+        child: Row(
           children: [
+            IconButton(
+              key: AiAnalysisWorkspace.backKey,
+              tooltip: l10n.aiWorkspaceBack,
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back),
+            ),
+            const SizedBox(width: AppleSpacing.xs),
             Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  child: SelectableText(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: AppleTypography.body.copyWith(color: tokens.danger),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    l10n.aiWorkspaceTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.vwBodyStrong,
                   ),
+                  if (targetLabel.isNotEmpty)
+                    Text(
+                      targetLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.vwFinePrint,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppleSpacing.sm),
+            Semantics(
+              value: phaseSemantics,
+              child: ExcludeSemantics(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      phaseLabel,
+                      style: context.vwCaptionStrong,
+                    ),
+                    const SizedBox(width: AppleSpacing.xs),
+                    for (var step = 1; step <= 5; step++) ...[
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: step <= phaseStep
+                              ? tokens.primary
+                              : tokens.inkMuted48.withValues(alpha: 0.35),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      if (step < 5) const SizedBox(width: AppleSpacing.xxs),
+                    ],
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: AppleSpacing.md),
-            AppleButton(label: retryLabel, onPressed: onRetry),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PathLabel extends StatelessWidget {
+  const _PathLabel(this.path);
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      value: path,
+      child: Tooltip(
+        message: path,
+        child: Text(
+          path,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
     );

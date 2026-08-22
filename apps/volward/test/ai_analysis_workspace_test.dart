@@ -29,6 +29,93 @@ const candidatePayload = '''
 }
 ''';
 
+const verdicts = [
+  AiVerdict(
+    path: '/tmp/safe.cache',
+    verdict: 'safe_to_remove',
+    confidence: 'high',
+    reason: 'Rebuildable cache',
+  ),
+  AiVerdict(
+    path: '/tmp/review.log',
+    verdict: 'review_needed',
+    confidence: 'medium',
+    reason: 'Old log with uncertain ownership',
+  ),
+  AiVerdict(
+    path: '/tmp/keep.db',
+    verdict: 'keep',
+    confidence: 'high',
+    reason: 'Application data',
+  ),
+];
+
+class _ResultProvider implements AiProvider {
+  _ResultProvider(this.verdicts, {this.quota});
+
+  final List<AiVerdict> verdicts;
+  final AiQuotaInfo? quota;
+  int analyzeCalls = 0;
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    analyzeCalls++;
+    return verdicts;
+  }
+
+  @override
+  Future<AiQuotaInfo?> queryQuota() async => quota;
+}
+
+class _ThrowingProvider implements AiProvider {
+  const _ThrowingProvider(this.error);
+
+  final Object error;
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async =>
+      throw error;
+
+  @override
+  Future<AiQuotaInfo?> queryQuota() async => null;
+}
+
+String _candidatePayload({
+  List<Map<String, Object?>> preClassified = const [],
+  List<Map<String, Object?>> unknownCandidates = const [
+    {
+      'path': '/tmp/safe.cache',
+      'size_bytes': 100,
+      'is_dir': false,
+    },
+    {
+      'path': '/tmp/review.log',
+      'size_bytes': 200,
+      'is_dir': false,
+    },
+    {
+      'path': '/tmp/keep.db',
+      'size_bytes': 300,
+      'is_dir': false,
+    },
+  ],
+  int estimatedTokens = 640,
+  bool hasExistingResult = true,
+  bool truncated = false,
+  int candidatesBeforeCap = 3,
+}) {
+  return jsonEncode({
+    'pre_classified': preClassified,
+    'unknown_candidates': unknownCandidates,
+    'estimated_input_tokens': estimatedTokens,
+    'has_existing_result': hasExistingResult,
+    'truncated': truncated,
+    'candidates_total_before_cap': candidatesBeforeCap,
+    'result_cache_key': 'cache-key',
+    'root_path': '/home',
+  });
+}
+
 class _FakeGateway implements AiAnalysisGateway {
   AiMode mode = AiMode.byok;
   AiProvider? provider;
@@ -161,6 +248,23 @@ Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
     if (finder.evaluate().isNotEmpty) return;
   }
   fail('Timed out waiting for the expected workspace phase');
+}
+
+Future<void> _openResults(
+  WidgetTester tester,
+  _FakeGateway gateway, {
+  List<AiVerdict> result = verdicts,
+}) async {
+  gateway
+    ..candidatesJson = _candidatePayload()
+    ..provider = _ResultProvider(result);
+  await tester.pumpWidget(_workspaceShell(gateway));
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+  );
+  await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -315,5 +419,288 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('precheck shows local unknown token truncation and quota data', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 7, creditsTotal: 20),
+      )
+      ..candidatesJson = _candidatePayload(
+        preClassified: const [
+          {
+            'path': '/tmp/local-1.cache',
+            'size_bytes': 40,
+            'confidence': 'high',
+            'reason': 'Local cache',
+            'deletable': true,
+          },
+          {
+            'path': '/tmp/local-2.cache',
+            'size_bytes': 60,
+            'confidence': 'high',
+            'reason': 'Local cache',
+            'deletable': true,
+          },
+        ],
+        truncated: true,
+        candidatesBeforeCap: 12,
+      );
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+
+    expect(find.textContaining('2 items pre-identified'), findsOneWidget);
+    expect(find.textContaining('3 items will be sent'), findsOneWidget);
+    expect(find.textContaining('640 tokens'), findsOneWidget);
+    expect(find.textContaining('largest of 12 items'), findsOneWidget);
+    expect(find.textContaining('balance 7'), findsOneWidget);
+  });
+
+  testWidgets('valid cache loads inline and invalid cache remains in precheck',
+      (
+    tester,
+  ) async {
+    final validGateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload()
+      ..cache['cache-key'] = jsonEncode({
+        'entries': [
+          {
+            'path': '/tmp/safe.cache',
+            'size_bytes': 100,
+            'verdict': 'safe_to_remove',
+            'confidence': 'high',
+            'reason': 'Rebuildable cache',
+          },
+        ],
+      });
+    await tester.pumpWidget(_workspaceShell(validGateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+
+    final invalidGateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload()
+      ..cache['cache-key'] = 'not-json';
+    await tester.pumpWidget(_workspaceShell(invalidGateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
+    expect(
+      find.text('Could not load the previous AI result.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('privacy decline stays in precheck and accept starts analysis', (
+    tester,
+  ) async {
+    final provider = _ResultProvider(verdicts);
+    final gateway = _FakeGateway()
+      ..privacyAccepted = false
+      ..provider = provider
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(provider.analyzeCalls, 0);
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('I understand'));
+    await tester.pumpAndSettle();
+    expect(provider.analyzeCalls, 1);
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+  });
+
+  testWidgets('analysis groups verdicts and keep items cannot be selected', (
+    tester,
+  ) async {
+    await _openResults(tester, _FakeGateway());
+    expect(find.text('Safe to Remove (1)'), findsOneWidget);
+    expect(find.text('Review Needed (1)'), findsOneWidget);
+    expect(find.text('Keep (1)'), findsOneWidget);
+    expect(find.text('1 selected · 100 B'), findsOneWidget);
+
+    await tester.tap(find.text('/tmp/keep.db'));
+    await tester.pump();
+    expect(find.text('1 selected · 100 B'), findsOneWidget);
+  });
+
+  testWidgets('selection summary tracks count and bytes', (tester) async {
+    await _openResults(tester, _FakeGateway());
+    await tester.tap(
+      find.widgetWithText(CheckboxListTile, '/tmp/review.log'),
+    );
+    await tester.pump();
+    expect(find.text('2 selected · 300 B'), findsOneWidget);
+  });
+
+  testWidgets('missing key zero quota and expired session link to Settings', (
+    tester,
+  ) async {
+    var settingsCalls = 0;
+    final missingKeyGateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(
+      _workspaceShell(
+        missingKeyGateway,
+        onOpenSettings: () => settingsCalls++,
+      ),
+    );
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.settingsKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
+
+    final zeroQuotaGateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 0, creditsTotal: 20),
+      )
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(
+      _workspaceShell(
+        zeroQuotaGateway,
+        onOpenSettings: () => settingsCalls++,
+      ),
+    );
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.settingsKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
+
+    final expiredGateway = _FakeGateway()
+      ..provider = _ThrowingProvider(StateError('session_expired'))
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(
+      _workspaceShell(
+        expiredGateway,
+        onOpenSettings: () => settingsCalls++,
+      ),
+    );
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
+    expect(settingsCalls, 3);
+  });
+
+  const errors = {
+    'request_timeout': 'The AI request timed out. Try again.',
+    'rate_limited_after_retries': 'The AI service is busy. Try again shortly.',
+    'network_error': 'Could not reach the AI service. Check your connection.',
+  };
+  for (final error in errors.entries) {
+    testWidgets('normalizes ${error.key} inline', (tester) async {
+      final gateway = _FakeGateway()
+        ..candidatesJson = _candidatePayload()
+        ..provider = _ThrowingProvider(StateError(error.key));
+      await tester.pumpWidget(_workspaceShell(gateway));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+      );
+      await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+      await tester.pumpAndSettle();
+      expect(find.text(error.value), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+  }
+
+  testWidgets('wide results use list and stable side summary', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 800);
+    addTearDown(tester.view.reset);
+    await _openResults(tester, _FakeGateway());
+
+    final listRect = tester.getRect(
+      find.byKey(AiAnalysisWorkspace.resultsListKey),
+    );
+    final summaryRect = tester.getRect(
+      find.byKey(AiAnalysisWorkspace.summaryKey),
+    );
+    expect(summaryRect.left, greaterThanOrEqualTo(listRect.right));
+    expect(summaryRect.width, 260);
+  });
+
+  testWidgets('compact results place summary above the internal list', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(719, 800);
+    addTearDown(tester.view.reset);
+    await _openResults(tester, _FakeGateway());
+
+    final listRect = tester.getRect(
+      find.byKey(AiAnalysisWorkspace.resultsListKey),
+    );
+    final summaryRect = tester.getRect(
+      find.byKey(AiAnalysisWorkspace.summaryKey),
+    );
+    expect(summaryRect.bottom, lessThanOrEqualTo(listRect.top));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long paths expose tooltip and full semantic value', (
+    tester,
+  ) async {
+    const longPath =
+        '/Users/example/Library/Application Support/Very Long App/Cache/'
+        'nested/folder/that/needs/the/full/path/cache.data';
+    final semantics = tester.ensureSemantics();
+    try {
+      await _openResults(
+        tester,
+        _FakeGateway(),
+        result: const [
+          AiVerdict(
+            path: longPath,
+            verdict: 'safe_to_remove',
+            confidence: 'high',
+            reason: 'Rebuildable cache',
+          ),
+        ],
+      );
+
+      final tooltip = find.byWidgetPredicate(
+        (widget) => widget is Tooltip && widget.message == longPath,
+      );
+      expect(tooltip, findsOneWidget);
+      final semanticsNode = tester.getSemantics(find.text(longPath));
+      expect(semanticsNode.value, longPath);
+    } finally {
+      semantics.dispose();
+    }
   });
 }

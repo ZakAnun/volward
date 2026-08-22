@@ -723,6 +723,59 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get aiWorkspaceTitle => 'AI Cleanup Suggestions';
+
+  @override
+  String get aiWorkspaceBack => 'Back to Overview';
+
+  @override
+  String get aiWorkspacePhaseLoading => 'Preparing candidates';
+
+  @override
+  String get aiWorkspacePhasePrecheck => 'Pre-check';
+
+  @override
+  String get aiWorkspacePhasePrivacy => 'Privacy';
+
+  @override
+  String get aiWorkspacePhaseAnalyzing => 'Analyzing';
+
+  @override
+  String get aiWorkspacePhaseReview => 'Review';
+
+  @override
+  String get aiWorkspacePhaseDeleting => 'Deleting';
+
+  @override
+  String get aiWorkspaceLoadPrevious => 'Load Previous Result';
+
+  @override
+  String get aiWorkspaceAnalyzeAgain => 'Analyze Again';
+
+  @override
+  String aiWorkspaceSelectedSummary(int count, String size) {
+    return '$count selected · $size';
+  }
+
+  @override
+  String aiWorkspacePartialDelete(int count, String size) {
+    return '$count items could not be removed · $size freed';
+  }
+
+  @override
+  String get aiErrorTimeout => 'The AI request timed out. Try again.';
+
+  @override
+  String get aiErrorRateLimited => 'The AI service is busy. Try again shortly.';
+
+  @override
+  String get aiErrorNetwork =>
+      'Could not reach the AI service. Check your connection.';
+
+  @override
+  String get aiWorkspaceReturn => 'Return to Overview';
+
+  @override
   String get back => 'Back';
 
   @override

@@ -1279,6 +1279,102 @@ abstract class AppLocalizations {
   /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
   String aiTruncatedNotice(int shown, int total);
 
+  /// No description provided for @aiWorkspaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Cleanup Suggestions'**
+  String get aiWorkspaceTitle;
+
+  /// No description provided for @aiWorkspaceBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to Overview'**
+  String get aiWorkspaceBack;
+
+  /// No description provided for @aiWorkspacePhaseLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing candidates'**
+  String get aiWorkspacePhaseLoading;
+
+  /// No description provided for @aiWorkspacePhasePrecheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Pre-check'**
+  String get aiWorkspacePhasePrecheck;
+
+  /// No description provided for @aiWorkspacePhasePrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy'**
+  String get aiWorkspacePhasePrivacy;
+
+  /// No description provided for @aiWorkspacePhaseAnalyzing.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing'**
+  String get aiWorkspacePhaseAnalyzing;
+
+  /// No description provided for @aiWorkspacePhaseReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get aiWorkspacePhaseReview;
+
+  /// No description provided for @aiWorkspacePhaseDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting'**
+  String get aiWorkspacePhaseDeleting;
+
+  /// No description provided for @aiWorkspaceLoadPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Load Previous Result'**
+  String get aiWorkspaceLoadPrevious;
+
+  /// No description provided for @aiWorkspaceAnalyzeAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyze Again'**
+  String get aiWorkspaceAnalyzeAgain;
+
+  /// No description provided for @aiWorkspaceSelectedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} selected · {size}'**
+  String aiWorkspaceSelectedSummary(int count, String size);
+
+  /// No description provided for @aiWorkspacePartialDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items could not be removed · {size} freed'**
+  String aiWorkspacePartialDelete(int count, String size);
+
+  /// No description provided for @aiErrorTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI request timed out. Try again.'**
+  String get aiErrorTimeout;
+
+  /// No description provided for @aiErrorRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI service is busy. Try again shortly.'**
+  String get aiErrorRateLimited;
+
+  /// No description provided for @aiErrorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the AI service. Check your connection.'**
+  String get aiErrorNetwork;
+
+  /// No description provided for @aiWorkspaceReturn.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to Overview'**
+  String get aiWorkspaceReturn;
+
   /// No description provided for @back.
   ///
   /// In en, this message translates to:
