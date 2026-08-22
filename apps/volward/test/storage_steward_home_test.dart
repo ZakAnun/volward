@@ -652,21 +652,25 @@ void main() {
     var targetSelections = 0;
     var folderSelections = 0;
     var aiOpens = 0;
+    var browseOpens = 0;
     await pumpOverview(
       tester,
       onSelectTarget: (_) => targetSelections++,
       onChooseFolder: () => folderSelections++,
       onOpenAi: () => aiOpens++,
+      onBrowse: () => browseOpens++,
       interactionsLocked: true,
     );
 
     await tester.tap(find.byKey(const ValueKey('storage-target-home')));
     await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
     await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.tap(find.byKey(StorageStewardHome.browseKey));
 
     expect(targetSelections, 0);
     expect(folderSelections, 0);
     expect(aiOpens, 0);
+    expect(browseOpens, 0);
   });
 
   testWidgets('locked semantics hide mutable controls but keep Settings', (
@@ -693,6 +697,10 @@ void main() {
       );
       expectButtonSemantics(
         tester.getSemantics(find.bySemanticsLabel('AI Analysis')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('Browse Files')),
         enabled: false,
       );
       expectButtonSemantics(
