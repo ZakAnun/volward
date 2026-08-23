@@ -17,8 +17,9 @@ pub use ai_analysis::{
     compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry,
 };
 pub use ai_candidates::{
-    AiCandidate, AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, DEFAULT_CANDIDATE_CAP,
-    DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
+    ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, AiCandidate,
+    AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,
+    DEFAULT_CANDIDATE_CAP, DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
 };
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;

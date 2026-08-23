@@ -448,6 +448,35 @@
       }
     }
   },
+  "aiWorkspaceTitle": "AI 清理建议",
+  "aiWorkspaceBack": "返回概览",
+  "aiWorkspacePhaseLoading": "正在准备候选项",
+  "aiWorkspacePhasePrecheck": "预检查",
+  "aiWorkspacePhasePrivacy": "隐私确认",
+  "aiWorkspacePhaseAnalyzing": "正在分析",
+  "aiWorkspacePhaseReview": "确认建议",
+  "aiWorkspacePhaseDeleting": "正在删除",
+  "aiWorkspacePhaseRecovery": "恢复",
+  "aiWorkspaceLoadPrevious": "加载上次结果",
+  "aiWorkspaceAnalyzeAgain": "重新分析",
+  "aiWorkspaceSelectedSummary": "{count} 项已选择 · {size}",
+  "@aiWorkspaceSelectedSummary": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
+  "aiWorkspacePartialDelete": "{count} 项未能删除 · 已释放 {size}",
+  "@aiWorkspacePartialDelete": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
+  "aiErrorTimeout": "AI 请求超时，请重试。",
+  "aiErrorRateLimited": "AI 服务繁忙，请稍后重试。",
+  "aiErrorNetwork": "无法连接 AI 服务，请检查网络。",
+  "aiWorkspaceReturn": "返回概览",
   "back": "返回",
   "homeBrowseFiles": "浏览文件",
   "homeStartScan": "开始扫描",

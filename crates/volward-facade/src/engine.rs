@@ -7,6 +7,10 @@ use std::sync::{Arc, Mutex};
 use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
+use volward_core::{
+    ai_aggregate_path_from_delete_target, AiCandidateBuilder, OsKnowledgeBase,
+    DEFAULT_CANDIDATE_CAP,
+};
 use volward_core::model::{
     DeleteReport, EntryCategory, PlatformCapabilities, ScanProgress, ScanTreeNode, SourceType,
     StorageSnapshot, TrashEmptyReport,
@@ -491,6 +495,10 @@ impl VolwardEngine {
                 }
                 let mut paths = Vec::new();
                 for target in &entry_ids {
+                    if ai_aggregate_path_from_delete_target(target).is_some() {
+                        paths.extend(resolve_index_ai_aggregate_paths(index, target)?);
+                        continue;
+                    }
                     let resolved_entries = index.entries_for_ids(std::slice::from_ref(target));
                     if let Some(entry) = resolved_entries.first() {
                         paths.push((entry.path.clone(), entry.size_bytes));
@@ -518,6 +526,10 @@ impl VolwardEngine {
         }
         let mut paths = Vec::new();
         for target in &entry_ids {
+            if ai_aggregate_path_from_delete_target(target).is_some() {
+                paths.extend(resolve_snapshot_ai_aggregate_paths(&snapshot, target)?);
+                continue;
+            }
             if let Some((path, size_bytes)) =
                 snapshot_target_path_size(&snapshot.tree, &snapshot.entries, target)
             {
@@ -1017,6 +1029,73 @@ fn index_target_path_size(index: &SnapshotIndex, target: &str) -> Option<(String
         .map(|node| (node.path, node.size_bytes))
 }
 
+fn resolve_index_ai_aggregate_paths(
+    index: &SnapshotIndex,
+    target: &str,
+) -> Result<Vec<(String, u64)>, String> {
+    let parent = ai_aggregate_path_from_delete_target(target)
+        .ok_or_else(|| "Invalid AI aggregate delete target".to_string())?;
+    let kb = OsKnowledgeBase::for_current_platform();
+    let classified = index.classified_paths();
+    let files = index.unclassified_files();
+    let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb)
+        .aggregate_by_dir(20)
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build();
+    let valid = set.candidates.iter().any(|candidate| {
+        candidate.path == parent && candidate.delete_target.as_deref() == Some(target)
+    });
+    if !valid {
+        return Err("AI aggregate candidate is no longer valid".to_string());
+    }
+    Ok(files
+        .into_iter()
+        .filter(|(path, _)| {
+            parent_path_of(path)
+                .as_deref()
+                .is_some_and(|candidate_parent| facade_paths_equal(candidate_parent, parent))
+                && !classified.contains(path)
+                && kb.classify_path(path).is_none()
+        })
+        .collect())
+}
+
+fn resolve_snapshot_ai_aggregate_paths(
+    snapshot: &StorageSnapshot,
+    target: &str,
+) -> Result<Vec<(String, u64)>, String> {
+    let parent = ai_aggregate_path_from_delete_target(target)
+        .ok_or_else(|| "Invalid AI aggregate delete target".to_string())?;
+    let kb = OsKnowledgeBase::for_current_platform();
+    let classified: std::collections::HashSet<String> = snapshot
+        .entries
+        .iter()
+        .map(|entry| entry.path_or_uri.clone())
+        .collect();
+    let set = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb)
+        .aggregate_by_dir(20)
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build();
+    let valid = set.candidates.iter().any(|candidate| {
+        candidate.path == parent && candidate.delete_target.as_deref() == Some(target)
+    });
+    if !valid {
+        return Err("AI aggregate candidate is no longer valid".to_string());
+    }
+    let node = find_tree_node(&snapshot.tree, parent)
+        .ok_or_else(|| "AI aggregate directory is no longer present".to_string())?;
+    Ok(node
+        .children
+        .iter()
+        .filter(|child| {
+            !child.is_dir
+                && !classified.contains(&child.path)
+                && kb.classify_path(&child.path).is_none()
+        })
+        .map(|child| (child.path.clone(), child.size_bytes))
+        .collect())
+}
+
 fn snapshot_target_path_size(
     root: &ScanTreeNode,
     entries: &[volward_core::model::StorageEntry],
@@ -1172,13 +1251,13 @@ mod tests {
             deletable: true,
             reason: "build artifact".to_string(),
         });
-        // 25 unclassified siblings fold into one aggregate candidate.
-        let children: Vec<ScanTreeNode> = (0..25)
+        // 250 unclassified siblings fold into one aggregate candidate.
+        let children: Vec<ScanTreeNode> = (0..250)
             .map(|i| ScanTreeNode {
                 name: format!("blob_{i}.dat"),
                 path: format!("/Users/x/scratch/blob_{i}.dat"),
                 is_dir: false,
-                size_bytes: 100,
+                size_bytes: 1,
                 entry_id: None,
                 children: vec![],
             })
@@ -1187,7 +1266,7 @@ mod tests {
             name: "scratch".to_string(),
             path: "/Users/x/scratch".to_string(),
             is_dir: true,
-            size_bytes: 2500,
+            size_bytes: 250,
             entry_id: None,
             children,
         });
@@ -1200,11 +1279,16 @@ mod tests {
         assert_eq!(candidates[0]["path"], "/Users/x/scratch");
         assert_eq!(
             candidates[0]["member_paths"].as_array().map(Vec::len),
-            Some(25),
+            Some(200),
             "{json}"
         );
+        assert_eq!(
+            candidates[0]["delete_target"],
+            "volward-ai-aggregate:v1:/Users/x/scratch"
+        );
+        assert!(candidates[0].get("delete_member_paths").is_none(), "{json}");
         assert_eq!(parsed["truncated"], false);
-        assert_eq!(parsed["total_raw_count"], 25);
+        assert_eq!(parsed["total_raw_count"], 250);
         assert_eq!(parsed["candidates_total_before_cap"], 1);
 
         let pre = parsed["pre_classified"].as_array().expect("pre_classified");
@@ -1213,6 +1297,11 @@ mod tests {
                 .any(|e| e["path"] == "/Users/x/app/node_modules" && e["confidence"] == "high"),
             "{json}"
         );
+
+        let token = candidates[0]["delete_target"].as_str().unwrap().to_string();
+        let report = engine.delete_entries_json("test-snap", vec![token], true);
+        assert!(report.contains(r#""deleted_count":250"#), "{report}");
+        assert!(report.contains(r#""freed_bytes":250"#), "{report}");
     }
 
     #[test]

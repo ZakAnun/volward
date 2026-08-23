@@ -166,6 +166,7 @@ class VolwardSession extends ChangeNotifier {
   final Set<String> _invalidatedPrefixes = {};
   final Map<String, ScanTreeNode> _directoryOverlays = {};
   final Set<String> _refreshingDirectoryPaths = {};
+  final Set<String> _postDeleteRefreshPaths = {};
   final Map<String, String> _refreshErrors = {};
   // Monotonic token for root switches. If the user picks folders quickly, only
   // the latest preview/scan handoff may update the visible snapshot.
@@ -329,6 +330,8 @@ class VolwardSession extends ChangeNotifier {
 
   Set<String> get refreshingDirectoryPaths =>
       Set.unmodifiable(_refreshingDirectoryPaths);
+
+  bool get postDeleteRefreshPending => _postDeleteRefreshPaths.isNotEmpty;
 
   bool isDirectoryRefreshing(String path) =>
       _refreshingDirectoryPaths.contains(ScanTreeBuilder.normalizeRoot(path));
@@ -1245,6 +1248,7 @@ class VolwardSession extends ChangeNotifier {
     _lastDeleteReport = null;
     _directoryOverlays.clear();
     _refreshingDirectoryPaths.clear();
+    _postDeleteRefreshPaths.clear();
     _refreshErrors.clear();
     _targetPreviewLoading = true;
     _targetPreviewStartedAt = DateTime.now();
@@ -1908,9 +1912,7 @@ class VolwardSession extends ChangeNotifier {
   }
 
   bool get hasAiSessionApi =>
-      _ready &&
-      _engine != null &&
-      VolwardNativeBridge.instance.hasAiSessionApi;
+      _ready && _engine != null && VolwardNativeBridge.instance.hasAiSessionApi;
 
   bool get hasAiContractApi =>
       _ready && VolwardNativeBridge.instance.hasAiContractApi;
@@ -1959,7 +1961,10 @@ class VolwardSession extends ChangeNotifier {
   String? buildAiCandidatesJson(String snapshotId) {
     final engine = _engine;
     if (!_ready || engine == null) return null;
-    return VolwardNativeBridge.instance.buildAiCandidatesJson(engine, snapshotId);
+    return VolwardNativeBridge.instance.buildAiCandidatesJson(
+      engine,
+      snapshotId,
+    );
   }
 
   /// Prefer async native build so huge scans don't freeze the UI isolate.
@@ -2017,6 +2022,7 @@ class VolwardSession extends ChangeNotifier {
 
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? expectedSnapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
     String? refreshPath,
@@ -2029,6 +2035,9 @@ class VolwardSession extends ChangeNotifier {
     final snapshotId = _lastSnapshot?.snapshotId;
     if (snapshotId == null || snapshotId.isEmpty) {
       throw StateError('No scan snapshot — run a scan first');
+    }
+    if (expectedSnapshotId != null && expectedSnapshotId != snapshotId) {
+      throw StateError('Snapshot changed — refresh the analysis and try again');
     }
 
     _deleting = true;
@@ -2100,6 +2109,9 @@ class VolwardSession extends ChangeNotifier {
   }
 
   void _scheduleDirectoryRefreshAfterDelete(String path) {
+    final normalizedPath = ScanTreeBuilder.normalizeRoot(path);
+    _postDeleteRefreshPaths.add(normalizedPath);
+    _notifyListeners();
     unawaited(
       Future<void>.delayed(Duration.zero, () async {
         try {
@@ -2114,6 +2126,9 @@ class VolwardSession extends ChangeNotifier {
           debugPrint(
             'VolwardSession: post-delete directory refresh failed: $e\n$st',
           );
+          _notifyListeners();
+        } finally {
+          _postDeleteRefreshPaths.remove(normalizedPath);
           _notifyListeners();
         }
       }),

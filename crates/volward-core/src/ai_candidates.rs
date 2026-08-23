@@ -10,6 +10,17 @@ pub const DEFAULT_CANDIDATE_CAP: usize = 150;
 pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
 /// Max Tier-2 / KB pre-classified rows shown in the pre-check UI.
 pub const DEFAULT_PRECLASSIFIED_CAP: usize = 200;
+pub const AI_AGGREGATE_DELETE_TARGET_PREFIX: &str = "volward-ai-aggregate:v1:";
+
+pub fn ai_aggregate_delete_target(path: &str) -> String {
+    format!("{AI_AGGREGATE_DELETE_TARGET_PREFIX}{path}")
+}
+
+pub fn ai_aggregate_path_from_delete_target(target: &str) -> Option<&str> {
+    target
+        .strip_prefix(AI_AGGREGATE_DELETE_TARGET_PREFIX)
+        .filter(|path| !path.is_empty())
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AiCandidate {
@@ -24,6 +35,10 @@ pub struct AiCandidate {
     /// hold unrelated (classified or user) data.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub member_paths: Vec<String>,
+    /// Opaque native target used to resolve all aggregate members at deletion
+    /// time without serializing every path over FFI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delete_target: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -122,6 +137,7 @@ impl AiCandidateBuilder {
                 child_count: None,
                 extension: ext,
                 member_paths: vec![],
+                delete_target: None,
             });
         }
     }
@@ -145,8 +161,7 @@ impl AiCandidateBuilder {
             if children.len() >= threshold {
                 let child_count = children.len();
                 let total_size: u64 = children.iter().map(|c| c.size_bytes).sum();
-                // Prefer the largest members when capping so delete still
-                // targets the bulk of reclaimable bytes.
+                // Prefer the largest members when capping the model/UI list.
                 if children.len() > DEFAULT_MAX_MEMBER_PATHS {
                     children.sort_by(|a, b| {
                         b.size_bytes
@@ -157,6 +172,7 @@ impl AiCandidateBuilder {
                 }
                 let member_paths: Vec<String> =
                     children.iter().map(|c| c.path.clone()).collect();
+                let delete_target = ai_aggregate_delete_target(&parent);
                 self.raw_unknown.push(AiCandidate {
                     path: parent,
                     size_bytes: total_size,
@@ -164,6 +180,7 @@ impl AiCandidateBuilder {
                     child_count: Some(child_count),
                     extension: None,
                     member_paths,
+                    delete_target: Some(delete_target),
                 });
             } else {
                 self.raw_unknown.append(&mut children);
@@ -241,6 +258,7 @@ impl AiCandidateBuilder {
                 child_count: None,
                 extension: ext,
                 member_paths: vec![],
+                delete_target: None,
             });
         }
         b.raw_file_count = b.raw_unknown.len();
@@ -385,6 +403,10 @@ mod tests {
             set.candidates[0].member_paths.len(),
             DEFAULT_MAX_MEMBER_PATHS
         );
+        assert_eq!(
+            set.candidates[0].delete_target.as_deref(),
+            Some("volward-ai-aggregate:v1:/Users/x/huge_dir")
+        );
         // Largest members kept first (file_249 = 250 bytes).
         assert!(set.candidates[0]
             .member_paths
@@ -392,6 +414,8 @@ mod tests {
         assert!(!set.candidates[0]
             .member_paths
             .contains(&"/Users/x/huge_dir/file_000.dat".to_string()));
+        let encoded = serde_json::to_value(&set.candidates[0]).unwrap();
+        assert!(encoded.get("delete_member_paths").is_none());
     }
 
     #[test]

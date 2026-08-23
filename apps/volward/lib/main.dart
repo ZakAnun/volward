@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
-import 'home_page.dart';
+import 'directory_details_page.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'theme/volward_theme.dart';
 import 'theme/volward_theme_settings.dart';
@@ -88,7 +88,7 @@ class _VolwardAppState extends State<VolwardApp> {
               ),
               themeMode: _themeSettings.themeMode,
               scrollBehavior: const _VolwardScrollBehavior(),
-              home: HomePage(
+              home: DirectoryDetailsPage(
                 session: _session,
                 themeSettings: _themeSettings,
                 updater: _updater,

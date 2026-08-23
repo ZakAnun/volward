@@ -254,6 +254,7 @@ void main() {
 
     expect(report['deleted_count'], 1);
     expect(session.deleting, isFalse);
+    expect(session.postDeleteRefreshPending, isTrue);
     expect(
       session
           .directoryOverlayForPath('/root/Downloads')!
@@ -266,6 +267,7 @@ void main() {
 
     finishRefresh.complete();
     await Future<void>.delayed(Duration.zero);
+    expect(session.postDeleteRefreshPending, isFalse);
   });
 
   test('estimated scan progress advances over time and finishes at 100%', () {
