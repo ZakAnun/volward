@@ -336,9 +336,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _loadPreviousResult() async {
     final generation = _beginOperation();
     final l10n = context.l10n;
-    final key = _resultCacheKey.isNotEmpty
-        ? _resultCacheKey
-        : widget.snapshotId;
+    final key =
+        _resultCacheKey.isNotEmpty ? _resultCacheKey : widget.snapshotId;
     var raw = widget.gateway.loadResult(key);
     if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
         key != widget.snapshotId) {
@@ -436,13 +435,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     try {
       final verdicts = await provider.analyze(_unknown);
       if (!_isCurrent(generation)) return;
-      final model = provider is ByokAiProvider
-          ? provider.model
-          : 'deepseek-v4-flash';
-      final inputTokens = _estimatedTokens > 0
-          ? _estimatedTokens
-          : (_unknown.length * 8 + 200);
-      final outputTokens = verdicts.length * 40;
+      final model =
+          provider is ByokAiProvider ? provider.model : 'deepseek-v4-flash';
+      final byokUsage =
+          provider is ByokAiProvider && provider.hasReliableTokenUsage
+              ? provider.lastTokenUsage
+              : null;
+      final inputTokens = byokUsage?.promptTokens ??
+          (_estimatedTokens > 0
+              ? _estimatedTokens
+              : (_unknown.length * 8 + 200));
+      final outputTokens = byokUsage?.completionTokens ?? verdicts.length * 40;
       final cost = (inputTokens / 1e6) * 0.14 + (outputTokens / 1e6) * 0.28;
       final entries = verdicts
           .map(
@@ -488,9 +491,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           'review_count': verdicts
               .where((verdict) => verdict.verdict == 'review_needed')
               .length,
-          'keep_count': verdicts
-              .where((verdict) => verdict.verdict == 'keep')
-              .length,
+          'keep_count':
+              verdicts.where((verdict) => verdict.verdict == 'keep').length,
         }),
       );
       if (!_isCurrent(generation)) return;
@@ -535,7 +537,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'empty_api_key' ||
         'ai_contract_unavailable' ||
         'platform_api_unconfigured' ||
-        'link_account_required' => true,
+        'link_account_required' =>
+          true,
         _ => false,
       };
       setState(() {
@@ -554,7 +557,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       'network_error' => context.l10n.aiErrorNetwork,
       'invalid_api_key' || 'empty_api_key' => context.l10n.aiNoApiKey,
       'ai_contract_unavailable' ||
-      'platform_api_unconfigured' => context.l10n.aiContractUnavailable,
+      'platform_api_unconfigured' =>
+        context.l10n.aiContractUnavailable,
       'link_account_required' => context.l10n.aiSettingsSessionExpired,
       _ => context.l10n.aiErrorUnknown,
     };
@@ -667,8 +671,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ? failed.whereType<String>().toList(growable: false)
           : const <String>[];
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
-      final deletedCount =
-          (report['deleted_count'] as num?)?.toInt() ??
+      final deletedCount = (report['deleted_count'] as num?)?.toInt() ??
           (targets.length - failedCount);
       if (!_isCurrent(generation)) return;
       unawaited(
@@ -774,24 +777,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   int get _phaseStep => switch (_phase) {
-    _Phase.loading || _Phase.error => 1,
-    _Phase.precheck => 2,
-    _Phase.privacy || _Phase.analyzing => 3,
-    _Phase.results => 4,
-    _Phase.deleting => 5,
-  };
+        _Phase.loading || _Phase.error => 1,
+        _Phase.precheck => 2,
+        _Phase.privacy || _Phase.analyzing => 3,
+        _Phase.results => 4,
+        _Phase.deleting => 5,
+      };
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(
-        label: context.l10n.aiWorkspacePhaseLoading,
-        candidateCount: 0,
-      ),
+          label: context.l10n.aiWorkspacePhaseLoading,
+          candidateCount: 0,
+        ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
       _Phase.analyzing => _buildProgressBody(
-        label: context.l10n.aiWorkspacePhaseAnalyzing,
-        candidateCount: _unknown.length,
-      ),
+          label: context.l10n.aiWorkspacePhaseAnalyzing,
+          candidateCount: _unknown.length,
+        ),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -841,9 +844,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
         ? (_error ??
-              (_mode == AiMode.platform
-                  ? l10n.aiSettingsSessionExpired
-                  : l10n.aiNoApiKey))
+            (_mode == AiMode.platform
+                ? l10n.aiSettingsSessionExpired
+                : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -975,9 +978,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final review = _verdicts
         .where((verdict) => verdict.verdict == 'review_needed')
         .toList();
-    final keep = _verdicts
-        .where((verdict) => verdict.verdict == 'keep')
-        .toList();
+    final keep =
+        _verdicts.where((verdict) => verdict.verdict == 'keep').toList();
     final resultsList = ListView(
       key: AiAnalysisWorkspace.resultsListKey,
       padding: const EdgeInsets.all(AppleSpacing.lg),

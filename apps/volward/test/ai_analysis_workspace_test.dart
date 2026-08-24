@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
+import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/ai_settings_store.dart';
+import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
@@ -79,6 +81,61 @@ class _ThrowingProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+}
+
+class _UsageByokProvider extends ByokAiProvider {
+  _UsageByokProvider(this.verdicts)
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+
+  final List<AiVerdict> verdicts;
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    lastTokenUsage = const ByokTokenUsage(
+      promptTokens: 321,
+      completionTokens: 45,
+      totalTokens: 366,
+    );
+    return verdicts;
+  }
+}
+
+class _IncompleteUsageByokProvider extends ByokAiProvider {
+  _IncompleteUsageByokProvider(this.verdicts)
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+
+  final List<AiVerdict> verdicts;
+
+  @override
+  bool get hasReliableTokenUsage => false;
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    lastTokenUsage = const ByokTokenUsage(
+      promptTokens: 321,
+      completionTokens: 45,
+      totalTokens: 366,
+    );
+    return verdicts;
+  }
+}
+
+class _FakeUsageContract implements AiContract {
+  @override
+  int batchSize() => 40;
+
+  @override
+  String buildRequestJson(List<AiCandidate> batch) => '{}';
+
+  @override
+  List<AiVerdict> parseResponseJson(
+    String responseBody,
+    List<AiCandidate> batch,
+  ) =>
+      const [];
+
+  @override
+  String upstreamEndpoint() => 'https://example.test/v1/chat';
 }
 
 String _candidatePayload({
@@ -608,6 +665,46 @@ void main() {
     await tester.tap(find.text('/tmp/keep.db'));
     await tester.pump();
     expect(find.text('1 selected · 100 B'), findsOneWidget);
+  });
+
+  testWidgets('BYOK result persists provider-reported token usage', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..provider = _UsageByokProvider(verdicts)
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+
+    final result = jsonDecode(gateway.cache['snapshot-1']!) as Map;
+    expect(result['token_usage'], {'input': 321, 'output': 45});
+    expect(result['credits_used'], 0);
+  });
+
+  testWidgets('BYOK falls back to estimates when usage is incomplete', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..provider = _IncompleteUsageByokProvider(verdicts)
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+
+    final result = jsonDecode(gateway.cache['snapshot-1']!) as Map;
+    expect(result['token_usage'], {'input': 640, 'output': 120});
+    expect(result['credits_used'], 0);
   });
 
   testWidgets('selection summary tracks count and bytes', (tester) async {

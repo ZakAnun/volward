@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
@@ -7,6 +8,18 @@ import 'ai_provider.dart';
 import '../volward_session.dart';
 
 const _kRequestTimeout = Duration(seconds: 90);
+
+class ByokTokenUsage {
+  const ByokTokenUsage({
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
+  });
+
+  final int promptTokens;
+  final int completionTokens;
+  final int totalTokens;
+}
 
 /// DeepSeek Chat Completions BYOK provider (transport only).
 ///
@@ -17,17 +30,22 @@ class ByokAiProvider implements AiProvider {
     this.contract,
     http.Client? client,
     this.requestTimeout = _kRequestTimeout,
-  }) : _client = client ?? http.Client(),
-       _ownsClient = client == null;
+  })  : _client = client ?? http.Client(),
+        _ownsClient = client == null;
 
   final String apiKey;
   final Duration requestTimeout;
   final AiContract? contract;
   final http.Client _client;
   final bool _ownsClient;
+  bool _tokenUsageComplete = true;
 
   /// Legacy accessor used by cost estimate UI; model is owned by the contract.
   String get model => 'deepseek-v4-flash';
+
+  ByokTokenUsage? lastTokenUsage;
+  bool get hasReliableTokenUsage =>
+      lastTokenUsage != null && _tokenUsageComplete;
 
   AiContract _resolveContract() {
     final injected = contract;
@@ -51,6 +69,8 @@ class ByokAiProvider implements AiProvider {
 
   @override
   Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    lastTokenUsage = null;
+    _tokenUsageComplete = true;
     if (apiKey.trim().isEmpty) {
       throw Exception('empty_api_key');
     }
@@ -99,8 +119,40 @@ class ByokAiProvider implements AiProvider {
       if (response.statusCode != 200) {
         throw Exception('api_error:${response.statusCode}');
       }
+      _recordTokenUsage(response.body);
       return contract.parseResponseJson(response.body, batch);
     }
     throw Exception('rate_limited_after_retries');
+  }
+
+  void _recordTokenUsage(String responseBody) {
+    try {
+      final decoded = jsonDecode(responseBody);
+      if (decoded is! Map) {
+        _tokenUsageComplete = false;
+        return;
+      }
+      final usage = decoded['usage'];
+      if (usage is! Map) {
+        _tokenUsageComplete = false;
+        return;
+      }
+      final promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
+      final completionTokens = (usage['completion_tokens'] as num?)?.toInt();
+      if (promptTokens == null || completionTokens == null) {
+        _tokenUsageComplete = false;
+        return;
+      }
+      final totalTokens = (usage['total_tokens'] as num?)?.toInt() ??
+          promptTokens + completionTokens;
+      final previous = lastTokenUsage;
+      lastTokenUsage = ByokTokenUsage(
+        promptTokens: (previous?.promptTokens ?? 0) + promptTokens,
+        completionTokens: (previous?.completionTokens ?? 0) + completionTokens,
+        totalTokens: (previous?.totalTokens ?? 0) + totalTokens,
+      );
+    } catch (_) {
+      _tokenUsageComplete = false;
+    }
   }
 }
