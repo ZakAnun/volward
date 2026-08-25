@@ -723,6 +723,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get aiCleanupSourceAiToolCache => 'AI tool cache/temp';
+
+  @override
+  String get aiCleanupSourceAiGeneratedOutput => 'AI-generated output';
+
+  @override
+  String get aiCleanupSourceSystemTemp => 'Temporary file';
+
+  @override
+  String aiCleanupRetentionDays(int days) {
+    return 'Review after $days days';
+  }
+
+  @override
   String get aiWorkspaceTitle => 'AI Cleanup Suggestions';
 
   @override

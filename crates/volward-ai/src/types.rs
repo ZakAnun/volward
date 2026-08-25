@@ -10,6 +10,12 @@ pub struct AnalyzeCandidate {
     pub child_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

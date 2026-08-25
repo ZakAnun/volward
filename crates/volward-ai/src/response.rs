@@ -75,6 +75,9 @@ mod tests {
             is_dir: false,
             child_count: None,
             extension: None,
+            cleanup_source: None,
+            cleanup_hint: None,
+            retention_days: None,
         }];
         let body = r#"{"choices":[{"finish_reason":"length","message":{"content":"["}}]}"#;
         let out = parse_response(body, &batch);
@@ -90,6 +93,9 @@ mod tests {
             is_dir: false,
             child_count: None,
             extension: None,
+            cleanup_source: None,
+            cleanup_hint: None,
+            retention_days: None,
         }];
         let inner = r#"[{"path":"/a","verdict":"keep","confidence":"high","reason":"x"}]"#;
         let fenced = format!("```json\n{inner}\n```");

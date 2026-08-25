@@ -176,6 +176,26 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool _isCurrent(int generation) =>
       mounted && generation == _operationGeneration;
 
+  AiVerdict _withCandidateMeta(AiVerdict verdict) {
+    AiCandidate? candidate;
+    for (final item in _unknown) {
+      if (item.path == verdict.path) {
+        candidate = item;
+        break;
+      }
+    }
+    if (candidate == null) return verdict;
+    return AiVerdict(
+      path: verdict.path,
+      verdict: verdict.verdict,
+      confidence: verdict.confidence,
+      reason: verdict.reason,
+      cleanupSource: verdict.cleanupSource ?? candidate.cleanupSource,
+      cleanupHint: verdict.cleanupHint ?? candidate.cleanupHint,
+      retentionDays: verdict.retentionDays ?? candidate.retentionDays,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -336,8 +356,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _loadPreviousResult() async {
     final generation = _beginOperation();
     final l10n = context.l10n;
-    final key =
-        _resultCacheKey.isNotEmpty ? _resultCacheKey : widget.snapshotId;
+    final key = _resultCacheKey.isNotEmpty
+        ? _resultCacheKey
+        : widget.snapshotId;
     var raw = widget.gateway.loadResult(key);
     if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
         key != widget.snapshotId) {
@@ -374,11 +395,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (path == null || path.isEmpty) continue;
         resultSizes[path] = _asInt(entry['size_bytes']);
         verdicts.add(
-          AiVerdict(
-            path: path,
-            verdict: entry['verdict']?.toString() ?? '',
-            confidence: entry['confidence']?.toString() ?? '',
-            reason: entry['reason']?.toString() ?? '',
+          _withCandidateMeta(
+            AiVerdict(
+              path: path,
+              verdict: entry['verdict']?.toString() ?? '',
+              confidence: entry['confidence']?.toString() ?? '',
+              reason: entry['reason']?.toString() ?? '',
+              cleanupSource: entry['cleanup_source'] as String?,
+              cleanupHint: entry['cleanup_hint'] as String?,
+              retentionDays: entry['retention_days'] as int?,
+            ),
           ),
         );
       }
@@ -435,19 +461,22 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     try {
       final verdicts = await provider.analyze(_unknown);
       if (!_isCurrent(generation)) return;
-      final model =
-          provider is ByokAiProvider ? provider.model : 'deepseek-v4-flash';
+      final model = provider is ByokAiProvider
+          ? provider.model
+          : 'deepseek-v4-flash';
       final byokUsage =
           provider is ByokAiProvider && provider.hasReliableTokenUsage
-              ? provider.lastTokenUsage
-              : null;
-      final inputTokens = byokUsage?.promptTokens ??
+          ? provider.lastTokenUsage
+          : null;
+      final inputTokens =
+          byokUsage?.promptTokens ??
           (_estimatedTokens > 0
               ? _estimatedTokens
               : (_unknown.length * 8 + 200));
       final outputTokens = byokUsage?.completionTokens ?? verdicts.length * 40;
       final cost = (inputTokens / 1e6) * 0.14 + (outputTokens / 1e6) * 0.28;
-      final entries = verdicts
+      final enrichedVerdicts = verdicts.map(_withCandidateMeta).toList();
+      final entries = enrichedVerdicts
           .map(
             (verdict) => {
               'path': verdict.path,
@@ -455,6 +484,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               'verdict': verdict.verdict,
               'confidence': verdict.confidence,
               'reason': verdict.reason,
+              if (verdict.cleanupSource != null &&
+                  verdict.cleanupSource!.isNotEmpty)
+                'cleanup_source': verdict.cleanupSource,
+              if (verdict.cleanupHint != null &&
+                  verdict.cleanupHint!.isNotEmpty)
+                'cleanup_hint': verdict.cleanupHint,
+              if (verdict.retentionDays != null)
+                'retention_days': verdict.retentionDays,
             },
           )
           .toList();
@@ -477,7 +514,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       });
       if (!_isCurrent(generation)) return;
       widget.gateway.saveResult(widget.snapshotId, resultJson);
-      for (final verdict in verdicts) {
+      for (final verdict in enrichedVerdicts) {
         if (verdict.verdict == 'safe_to_remove') _selected.add(verdict.path);
       }
       if (!_isCurrent(generation)) return;
@@ -485,19 +522,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         Analytics.instance.track(AnalyticsEvents.aiAnalysisCompleted, {
           'provider': providerLabel,
           'duration_ms': stopwatch.elapsedMilliseconds,
-          'safe_count': verdicts
+          'safe_count': enrichedVerdicts
               .where((verdict) => verdict.verdict == 'safe_to_remove')
               .length,
-          'review_count': verdicts
+          'review_count': enrichedVerdicts
               .where((verdict) => verdict.verdict == 'review_needed')
               .length,
-          'keep_count':
-              verdicts.where((verdict) => verdict.verdict == 'keep').length,
+          'keep_count': enrichedVerdicts
+              .where((verdict) => verdict.verdict == 'keep')
+              .length,
         }),
       );
       if (!_isCurrent(generation)) return;
       setState(() {
-        _verdicts = verdicts;
+        _verdicts = enrichedVerdicts;
         _hasExistingResult = true;
         _analyzing = false;
         _phase = _Phase.results;
@@ -537,8 +575,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'empty_api_key' ||
         'ai_contract_unavailable' ||
         'platform_api_unconfigured' ||
-        'link_account_required' =>
-          true,
+        'link_account_required' => true,
         _ => false,
       };
       setState(() {
@@ -557,8 +594,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       'network_error' => context.l10n.aiErrorNetwork,
       'invalid_api_key' || 'empty_api_key' => context.l10n.aiNoApiKey,
       'ai_contract_unavailable' ||
-      'platform_api_unconfigured' =>
-        context.l10n.aiContractUnavailable,
+      'platform_api_unconfigured' => context.l10n.aiContractUnavailable,
       'link_account_required' => context.l10n.aiSettingsSessionExpired,
       _ => context.l10n.aiErrorUnknown,
     };
@@ -671,7 +707,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ? failed.whereType<String>().toList(growable: false)
           : const <String>[];
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
-      final deletedCount = (report['deleted_count'] as num?)?.toInt() ??
+      final deletedCount =
+          (report['deleted_count'] as num?)?.toInt() ??
           (targets.length - failedCount);
       if (!_isCurrent(generation)) return;
       unawaited(
@@ -777,24 +814,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   int get _phaseStep => switch (_phase) {
-        _Phase.loading || _Phase.error => 1,
-        _Phase.precheck => 2,
-        _Phase.privacy || _Phase.analyzing => 3,
-        _Phase.results => 4,
-        _Phase.deleting => 5,
-      };
+    _Phase.loading || _Phase.error => 1,
+    _Phase.precheck => 2,
+    _Phase.privacy || _Phase.analyzing => 3,
+    _Phase.results => 4,
+    _Phase.deleting => 5,
+  };
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(
-          label: context.l10n.aiWorkspacePhaseLoading,
-          candidateCount: 0,
-        ),
+        label: context.l10n.aiWorkspacePhaseLoading,
+        candidateCount: 0,
+      ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
       _Phase.analyzing => _buildProgressBody(
-          label: context.l10n.aiWorkspacePhaseAnalyzing,
-          candidateCount: _unknown.length,
-        ),
+        label: context.l10n.aiWorkspacePhaseAnalyzing,
+        candidateCount: _unknown.length,
+      ),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -844,9 +881,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
         ? (_error ??
-            (_mode == AiMode.platform
-                ? l10n.aiSettingsSessionExpired
-                : l10n.aiNoApiKey))
+              (_mode == AiMode.platform
+                  ? l10n.aiSettingsSessionExpired
+                  : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -978,8 +1015,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final review = _verdicts
         .where((verdict) => verdict.verdict == 'review_needed')
         .toList();
-    final keep =
-        _verdicts.where((verdict) => verdict.verdict == 'keep').toList();
+    final keep = _verdicts
+        .where((verdict) => verdict.verdict == 'keep')
+        .toList();
     final resultsList = ListView(
       key: AiAnalysisWorkspace.resultsListKey,
       padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -1159,8 +1197,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _verdictTile({required AiVerdict item, required bool selectable}) {
     final size = _sizeByPath[item.path] ?? 0;
+    final cleanupMeta = _cleanupMetaLabel(item);
     final subtitle =
-        '${_formatBytes(size)} · ${item.confidence} · ${item.reason}';
+        '${_formatBytes(size)} · ${item.confidence} · ${item.reason}'
+        '${cleanupMeta == null ? '' : '\n$cleanupMeta'}';
     if (!selectable) {
       return Material(
         color: Colors.transparent,
@@ -1184,6 +1224,30 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         subtitle: Text(subtitle),
       ),
     );
+  }
+
+  String? _cleanupMetaLabel(AiVerdict item) {
+    final source = item.cleanupSource;
+    final hint = item.cleanupHint;
+    final days = item.retentionDays;
+    if ((source == null || source.isEmpty) &&
+        (hint == null || hint.isEmpty) &&
+        days == null) {
+      return null;
+    }
+    final l10n = context.l10n;
+    final sourceLabel = switch (source) {
+      'ai_tool_cache' => l10n.aiCleanupSourceAiToolCache,
+      'ai_generated_output' => l10n.aiCleanupSourceAiGeneratedOutput,
+      'system_temp' => l10n.aiCleanupSourceSystemTemp,
+      _ => null,
+    };
+    final parts = <String>[
+      if (sourceLabel != null) sourceLabel,
+      if (days != null) l10n.aiCleanupRetentionDays(days),
+      if (hint != null && hint.isNotEmpty) hint,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 }
 

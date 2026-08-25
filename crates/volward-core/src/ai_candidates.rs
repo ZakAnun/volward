@@ -1,7 +1,7 @@
-use std::collections::HashSet;
-use serde::Serialize;
 use crate::model::{EntryCategory, ScanTreeNode};
 use crate::os_knowledge::{Confidence, OsKnowledgeBase};
+use serde::Serialize;
+use std::collections::HashSet;
 
 /// Default maximum number of candidates sent to the model / UI.
 pub const DEFAULT_CANDIDATE_CAP: usize = 150;
@@ -29,6 +29,17 @@ pub struct AiCandidate {
     pub is_dir: bool,
     pub child_count: Option<usize>,
     pub extension: Option<String>,
+    /// Optional source bucket used by the UI/prompt to explain why a path is
+    /// interesting for AI cleanup.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cleanup_source: Option<String>,
+    /// Short evidence string shown in UI and sent to the model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cleanup_hint: Option<String>,
+    /// Conservative review window. Without mtime in the snapshot this is a
+    /// policy hint, not an automatic age check.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
     /// Files folded into this candidate by `aggregate_by_dir`. Empty for
     /// real file candidates. Deleting an aggregate MUST target these paths
     /// instead of `path`, which is only the common parent directory and may
@@ -136,6 +147,9 @@ impl AiCandidateBuilder {
                 is_dir: false,
                 child_count: None,
                 extension: ext,
+                cleanup_source: None,
+                cleanup_hint: None,
+                retention_days: None,
                 member_paths: vec![],
                 delete_target: None,
             });
@@ -161,17 +175,16 @@ impl AiCandidateBuilder {
             if children.len() >= threshold {
                 let child_count = children.len();
                 let total_size: u64 = children.iter().map(|c| c.size_bytes).sum();
+                let merged_cleanup_source = children.iter().find_map(|c| c.cleanup_source.clone());
+                let merged_cleanup_hint = children.iter().find_map(|c| c.cleanup_hint.clone());
+                let merged_retention_days = children.iter().filter_map(|c| c.retention_days).min();
                 // Prefer the largest members when capping the model/UI list.
                 if children.len() > DEFAULT_MAX_MEMBER_PATHS {
-                    children.sort_by(|a, b| {
-                        b.size_bytes
-                            .cmp(&a.size_bytes)
-                            .then(a.path.cmp(&b.path))
-                    });
+                    children
+                        .sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
                     children.truncate(DEFAULT_MAX_MEMBER_PATHS);
                 }
-                let member_paths: Vec<String> =
-                    children.iter().map(|c| c.path.clone()).collect();
+                let member_paths: Vec<String> = children.iter().map(|c| c.path.clone()).collect();
                 let delete_target = ai_aggregate_delete_target(&parent);
                 self.raw_unknown.push(AiCandidate {
                     path: parent,
@@ -179,6 +192,9 @@ impl AiCandidateBuilder {
                     is_dir: true,
                     child_count: Some(child_count),
                     extension: None,
+                    cleanup_source: merged_cleanup_source,
+                    cleanup_hint: merged_cleanup_hint,
+                    retention_days: merged_retention_days,
                     member_paths,
                     delete_target: Some(delete_target),
                 });
@@ -204,8 +220,7 @@ impl AiCandidateBuilder {
     }
 
     pub fn build(self) -> AiCandidateSet {
-        let candidates_total_before_cap =
-            self.total_before_cap.unwrap_or(self.raw_unknown.len());
+        let candidates_total_before_cap = self.total_before_cap.unwrap_or(self.raw_unknown.len());
         let truncated = candidates_total_before_cap > self.raw_unknown.len();
         let estimated_input_tokens = self.raw_unknown.len() * 8 + 200;
         AiCandidateSet {
@@ -257,6 +272,9 @@ impl AiCandidateBuilder {
                 is_dir: false,
                 child_count: None,
                 extension: ext,
+                cleanup_source: None,
+                cleanup_hint: None,
+                retention_days: None,
                 member_paths: vec![],
                 delete_target: None,
             });
@@ -264,6 +282,130 @@ impl AiCandidateBuilder {
         b.raw_file_count = b.raw_unknown.len();
         b
     }
+
+    /// Adds conservative AI-tool/temp hints without expanding beyond the
+    /// current snapshot. The model still decides the verdict.
+    pub fn annotate_ai_cleanup_patterns(mut self) -> Self {
+        for candidate in &mut self.raw_unknown {
+            if let Some(hint) = ai_cleanup_hint_for_path(&candidate.path) {
+                candidate.cleanup_source = Some(hint.source.to_string());
+                candidate.cleanup_hint = Some(hint.hint.to_string());
+                candidate.retention_days = Some(hint.retention_days);
+            }
+        }
+        self
+    }
+}
+
+struct AiCleanupHint {
+    source: &'static str,
+    hint: &'static str,
+    retention_days: u32,
+}
+
+fn ai_cleanup_hint_for_path(path: &str) -> Option<AiCleanupHint> {
+    let normalized = path.replace('\\', "/");
+    let lower = normalized.to_ascii_lowercase();
+    let file_name = lower.rsplit('/').next().unwrap_or(lower.as_str());
+
+    if lower.starts_with("/var/tmp/") {
+        return Some(AiCleanupHint {
+            source: "system_temp",
+            hint: "Persistent temp location; review files that have not been needed for about 30 days.",
+            retention_days: 30,
+        });
+    }
+    if lower.starts_with("/tmp/")
+        || lower.starts_with("/private/tmp/")
+        || lower.contains("/appdata/local/temp/")
+        || lower.contains("/windows/temp/")
+        || lower.contains("/private/var/folders/")
+    {
+        return Some(AiCleanupHint {
+            source: "system_temp",
+            hint: "Temporary location; many systems treat files older than about 10 days as stale.",
+            retention_days: 10,
+        });
+    }
+
+    let hidden_ai_tool = lower.contains("/.cursor/")
+        || lower.contains("/.windsurf/")
+        || lower.contains("/.claude/")
+        || lower.contains("/.codex/");
+    let known_ai_tool_app_root = [
+        "/library/application support/cursor/",
+        "/library/application support/windsurf/",
+        "/library/application support/claude/",
+        "/library/application support/codex/",
+        "/library/caches/cursor/",
+        "/library/caches/windsurf/",
+        "/library/caches/claude/",
+        "/library/caches/codex/",
+        "/appdata/roaming/cursor/",
+        "/appdata/roaming/windsurf/",
+        "/appdata/roaming/claude/",
+        "/appdata/roaming/codex/",
+        "/appdata/local/cursor/",
+        "/appdata/local/windsurf/",
+        "/appdata/local/claude/",
+        "/appdata/local/codex/",
+        "/.config/cursor/",
+        "/.config/windsurf/",
+        "/.config/claude/",
+        "/.config/codex/",
+        "/.cache/cursor/",
+        "/.cache/windsurf/",
+        "/.cache/claude/",
+        "/.cache/codex/",
+    ]
+    .iter()
+    .any(|root| lower.contains(root));
+    if (hidden_ai_tool || known_ai_tool_app_root)
+        && (lower.contains("/cache/")
+            || lower.contains("/caches/")
+            || lower.contains("/cacheddata/")
+            || lower.contains("/code cache/")
+            || lower.contains("/gpucache/")
+            || lower.contains("/logs/")
+            || lower.contains("/tmp/")
+            || lower.contains("/temp/"))
+    {
+        return Some(AiCleanupHint {
+            source: "ai_tool_cache",
+            hint: "Known AI/editor cache, log, or temp location; review items older than about 30 days.",
+            retention_days: 30,
+        });
+    }
+
+    let looks_ai_generated = lower.contains("ai-output")
+        || lower.contains("ai_output")
+        || lower.contains("ai-generated")
+        || lower.contains("ai_generated")
+        || lower.contains("generated-by-ai")
+        || lower.contains("llm-output")
+        || lower.contains("llm_cache")
+        || lower.contains("llm-cache")
+        || lower.contains("prompt-cache")
+        || lower.contains("chat-export")
+        || lower.contains("chat_export")
+        || lower.contains("claude-output")
+        || lower.contains("cursor-output")
+        || lower.contains("codex-output")
+        || lower.contains("/.cursor/rules/")
+        || lower.contains("/.windsurf/rules/")
+        || lower.contains("/.claude/tmp/")
+        || lower.contains("/.codex/tmp/");
+
+    if looks_ai_generated {
+        let retention_days = if file_name.ends_with(".md") { 90 } else { 30 };
+        return Some(AiCleanupHint {
+            source: "ai_generated_output",
+            hint: "AI-generated sidecar/output pattern; inspect before deleting because it may contain user-authored content.",
+            retention_days,
+        });
+    }
+
+    None
 }
 
 impl AiCandidateSet {
@@ -273,11 +415,8 @@ impl AiCandidateSet {
         if self.pre_classified.len() <= n {
             return self;
         }
-        self.pre_classified.sort_by(|a, b| {
-            b.size_bytes
-                .cmp(&a.size_bytes)
-                .then(a.path.cmp(&b.path))
-        });
+        self.pre_classified
+            .sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
         self.pre_classified.truncate(n);
         self.pre_classified_truncated = true;
         self
@@ -287,9 +426,9 @@ impl AiCandidateSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use crate::model::{EntryCategory, ScanTreeNode};
     use crate::os_knowledge::OsKnowledgeBase;
+    use std::collections::HashSet;
 
     fn leaf(path: &str, size: u64) -> ScanTreeNode {
         ScanTreeNode {
@@ -317,8 +456,9 @@ mod tests {
         let tree = leaf("/Users/x/Library/Caches/foo.bin", 1000);
         let mut classified = HashSet::new();
         classified.insert("/Users/x/Library/Caches/foo.bin".to_string());
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let set = AiCandidateBuilder::from_tree(&tree, &classified, &kb).build();
         assert!(set.candidates.is_empty());
         assert!(set.pre_classified.is_empty());
@@ -336,8 +476,9 @@ mod tests {
 
     #[test]
     fn aggregate_folds_large_directory() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let children: Vec<_> = (0..25)
             .map(|i| leaf(&format!("/Users/x/big_dir/file_{i}.dat"), 100))
             .collect();
@@ -357,13 +498,10 @@ mod tests {
 
     #[test]
     fn cap_pre_classified_keeps_largest() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
-        let mut builder = AiCandidateBuilder::from_tree(
-            &leaf("/tmp/x", 1),
-            &HashSet::new(),
-            &kb,
-        );
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let mut builder = AiCandidateBuilder::from_tree(&leaf("/tmp/x", 1), &HashSet::new(), &kb);
         for i in 0..50 {
             builder.push_pre_classified(PreClassifiedEntry {
                 path: format!("/Users/x/art_{i}"),
@@ -383,8 +521,9 @@ mod tests {
 
     #[test]
     fn aggregate_caps_member_paths_to_largest() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let children: Vec<_> = (0..250)
             .map(|i| {
                 leaf(
@@ -420,8 +559,9 @@ mod tests {
 
     #[test]
     fn cap_top_n_keeps_largest_and_flags_truncation() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let files: Vec<(String, u64)> = (0..10)
             .map(|i| (format!("/Users/x/dir_{i}/file.dat"), (i as u64 + 1) * 100))
             .collect();
@@ -438,8 +578,9 @@ mod tests {
 
     #[test]
     fn cap_top_n_below_limit_is_not_truncated() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let files = vec![("/Users/x/a.dat".to_string(), 10u64)];
         let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
             .cap_top_n(DEFAULT_CANDIDATE_CAP)
@@ -450,8 +591,9 @@ mod tests {
 
     #[test]
     fn token_estimate_positive_for_nonempty() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let tree = leaf("/Users/x/Projects/old/weird_thing.xyz", 50000);
         let set = AiCandidateBuilder::from_tree(&tree, &HashSet::new(), &kb).build();
         assert!(set.estimated_input_tokens > 0);
@@ -459,8 +601,9 @@ mod tests {
 
     #[test]
     fn from_unclassified_files_aggregate_folds_siblings() {
-        let kb = OsKnowledgeBase::from_yaml(
-            "version: 1\nmacos: []\nwindows: []\nlinux: []", "macos").unwrap();
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
         let files: Vec<(String, u64)> = (0..25)
             .map(|i| (format!("/Users/x/big_dir/file_{i}.dat"), 100))
             .collect();
@@ -472,5 +615,104 @@ mod tests {
         assert_eq!(set.candidates[0].child_count, Some(25));
         assert_eq!(set.candidates[0].size_bytes, 2500);
         assert_eq!(set.candidates[0].member_paths.len(), 25);
+    }
+
+    #[test]
+    fn annotates_ai_cleanup_patterns_inside_snapshot_only() {
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let files = vec![
+            ("/tmp/volward-ai/a.tmp".to_string(), 10),
+            (
+                "/Users/x/Library/Application Support/Cursor/CachedData/blob".to_string(),
+                20,
+            ),
+            ("/Users/x/project/ai-output/summary.md".to_string(), 30),
+            ("/Users/x/project/README.md".to_string(), 40),
+            ("/Users/x/project/temp/draft.txt".to_string(), 50),
+            ("/Users/x/Projects/codex/logs/app.log".to_string(), 60),
+        ];
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+            .annotate_ai_cleanup_patterns()
+            .build();
+
+        let by_path = set
+            .candidates
+            .iter()
+            .map(|candidate| (candidate.path.as_str(), candidate))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            by_path["/tmp/volward-ai/a.tmp"].cleanup_source.as_deref(),
+            Some("system_temp")
+        );
+        assert_eq!(by_path["/tmp/volward-ai/a.tmp"].retention_days, Some(10));
+        assert_eq!(
+            by_path["/Users/x/Library/Application Support/Cursor/CachedData/blob"]
+                .cleanup_source
+                .as_deref(),
+            Some("ai_tool_cache")
+        );
+        assert_eq!(
+            by_path["/Users/x/Library/Application Support/Cursor/CachedData/blob"].retention_days,
+            Some(30)
+        );
+        assert_eq!(
+            by_path["/Users/x/project/ai-output/summary.md"]
+                .cleanup_source
+                .as_deref(),
+            Some("ai_generated_output")
+        );
+        assert_eq!(
+            by_path["/Users/x/project/ai-output/summary.md"].retention_days,
+            Some(90)
+        );
+        assert_eq!(
+            by_path["/Users/x/project/README.md"].cleanup_source, None,
+            "plain markdown documents must not be treated as AI output"
+        );
+        assert_eq!(
+            by_path["/Users/x/project/temp/draft.txt"].cleanup_source, None,
+            "ordinary project temp folders are not OS temp locations"
+        );
+        assert_eq!(
+            by_path["/Users/x/Projects/codex/logs/app.log"].cleanup_source, None,
+            "ordinary project paths named after AI tools are not app cache roots"
+        );
+    }
+
+    #[test]
+    fn aggregate_cleanup_meta_uses_all_children_before_member_cap() {
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let mut files: Vec<(String, u64)> = (0..250)
+            .map(|i| (format!("/Users/x/project/mixed/file_{i:03}.dat"), 1000))
+            .collect();
+        files.push((
+            "/Users/x/project/mixed/prompt-cache-note.txt".to_string(),
+            1,
+        ));
+
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+            .annotate_ai_cleanup_patterns()
+            .aggregate_by_dir(20)
+            .build();
+
+        assert_eq!(set.candidates.len(), 1);
+        let aggregate = &set.candidates[0];
+        assert_eq!(aggregate.path, "/Users/x/project/mixed");
+        assert_eq!(aggregate.member_paths.len(), DEFAULT_MAX_MEMBER_PATHS);
+        assert!(
+            !aggregate
+                .member_paths
+                .contains(&"/Users/x/project/mixed/prompt-cache-note.txt".to_string()),
+            "small hint file is outside the capped display members"
+        );
+        assert_eq!(
+            aggregate.cleanup_source.as_deref(),
+            Some("ai_generated_output")
+        );
+        assert_eq!(aggregate.retention_days, Some(30));
     }
 }

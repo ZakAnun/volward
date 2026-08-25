@@ -7,10 +7,6 @@ use std::sync::{Arc, Mutex};
 use platform_desktop::DesktopPlatform;
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
-use volward_core::{
-    ai_aggregate_path_from_delete_target, AiCandidateBuilder, OsKnowledgeBase,
-    DEFAULT_CANDIDATE_CAP,
-};
 use volward_core::model::{
     DeleteReport, EntryCategory, PlatformCapabilities, ScanProgress, ScanTreeNode, SourceType,
     StorageSnapshot, TrashEmptyReport,
@@ -20,6 +16,10 @@ use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
+use volward_core::{
+    ai_aggregate_path_from_delete_target, AiCandidateBuilder, OsKnowledgeBase,
+    DEFAULT_CANDIDATE_CAP,
+};
 
 use crate::proto;
 
@@ -758,8 +758,7 @@ impl VolwardEngine {
             if index_snap_id != snapshot_id {
                 return format!("error:snapshot_id mismatch: got {index_snap_id}");
             }
-            let mut builder =
-                AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
+            let mut builder = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
             for (path, size_bytes, is_dir, deletable) in build_artifacts {
                 builder.push_pre_classified(PreClassifiedEntry {
                     is_dir,
@@ -772,19 +771,15 @@ impl VolwardEngine {
                 });
             }
             let set = builder
+                .annotate_ai_cleanup_patterns()
                 .aggregate_by_dir(20)
                 .cap_top_n(DEFAULT_CANDIDATE_CAP)
                 .build()
                 .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
-            let cache_key = compute_result_cache_key(
-                &root_path,
-                &stats,
-                root_size_bytes,
-                reclaimable,
-                &set,
-            );
-            let has_existing_result = AiAnalysisResult::exists(&cache_key)
-                || AiAnalysisResult::exists(snapshot_id);
+            let cache_key =
+                compute_result_cache_key(&root_path, &stats, root_size_bytes, reclaimable, &set);
+            let has_existing_result =
+                AiAnalysisResult::exists(&cache_key) || AiAnalysisResult::exists(snapshot_id);
             return Self::serialize_ai_candidate_set(
                 snapshot_id,
                 &set,
@@ -832,6 +827,7 @@ impl VolwardEngine {
             });
         }
         let set = builder
+            .annotate_ai_cleanup_patterns()
             .aggregate_by_dir(20)
             .cap_top_n(DEFAULT_CANDIDATE_CAP)
             .build()
@@ -907,11 +903,8 @@ impl VolwardEngine {
         // We need a thin stand-in that can call the same build logic. Reconstruct
         // a minimal engine view via a free helper using the cloned Arcs.
         std::thread::spawn(move || {
-            let json = Self::build_ai_candidates_json_with(
-                &engine_index,
-                &engine_snapshot,
-                &snapshot_id,
-            );
+            let json =
+                Self::build_ai_candidates_json_with(&engine_index, &engine_snapshot, &snapshot_id);
             if generation_slot.load(Ordering::SeqCst) == generation {
                 if let Ok(mut g) = result_slot.lock() {
                     *g = Some(json);
@@ -982,8 +975,9 @@ impl VolwardEngine {
     pub fn load_ai_result_json(&self, key: &str) -> String {
         use volward_core::AiAnalysisResult;
         match AiAnalysisResult::load(key) {
-            Some(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| format!("error:serialize:{e}")),
+            Some(result) => {
+                serde_json::to_string(&result).unwrap_or_else(|e| format!("error:serialize:{e}"))
+            }
             None => "error:not_found".to_string(),
         }
     }
@@ -1039,6 +1033,7 @@ fn resolve_index_ai_aggregate_paths(
     let classified = index.classified_paths();
     let files = index.unclassified_files();
     let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb)
+        .annotate_ai_cleanup_patterns()
         .aggregate_by_dir(20)
         .cap_top_n(DEFAULT_CANDIDATE_CAP)
         .build();
@@ -1073,6 +1068,7 @@ fn resolve_snapshot_ai_aggregate_paths(
         .map(|entry| entry.path_or_uri.clone())
         .collect();
     let set = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb)
+        .annotate_ai_cleanup_patterns()
         .aggregate_by_dir(20)
         .cap_top_n(DEFAULT_CANDIDATE_CAP)
         .build();

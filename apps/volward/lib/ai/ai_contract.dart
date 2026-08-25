@@ -17,6 +17,11 @@ Map<String, dynamic> analyzeCandidateMap(AiCandidate c) => {
   'is_dir': c.isDir,
   if (c.childCount != null) 'child_count': c.childCount,
   if (c.extension != null) 'extension': c.extension,
+  if (c.cleanupSource != null && c.cleanupSource!.isNotEmpty)
+    'cleanup_source': c.cleanupSource,
+  if (c.cleanupHint != null && c.cleanupHint!.isNotEmpty)
+    'cleanup_hint': c.cleanupHint,
+  if (c.retentionDays != null) 'retention_days': c.retentionDays,
 };
 
 /// FFI-backed contract. Throws [ai_contract_unavailable] if symbols missing.

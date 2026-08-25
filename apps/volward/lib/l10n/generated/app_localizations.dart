@@ -1279,6 +1279,30 @@ abstract class AppLocalizations {
   /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
   String aiTruncatedNotice(int shown, int total);
 
+  /// No description provided for @aiCleanupSourceAiToolCache.
+  ///
+  /// In en, this message translates to:
+  /// **'AI tool cache/temp'**
+  String get aiCleanupSourceAiToolCache;
+
+  /// No description provided for @aiCleanupSourceAiGeneratedOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'AI-generated output'**
+  String get aiCleanupSourceAiGeneratedOutput;
+
+  /// No description provided for @aiCleanupSourceSystemTemp.
+  ///
+  /// In en, this message translates to:
+  /// **'Temporary file'**
+  String get aiCleanupSourceSystemTemp;
+
+  /// No description provided for @aiCleanupRetentionDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Review after {days} days'**
+  String aiCleanupRetentionDays(int days);
+
   /// No description provided for @aiWorkspaceTitle.
   ///
   /// In en, this message translates to:

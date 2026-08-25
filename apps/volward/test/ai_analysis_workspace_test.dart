@@ -85,7 +85,7 @@ class _ThrowingProvider implements AiProvider {
 
 class _UsageByokProvider extends ByokAiProvider {
   _UsageByokProvider(this.verdicts)
-      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -102,7 +102,7 @@ class _UsageByokProvider extends ByokAiProvider {
 
 class _IncompleteUsageByokProvider extends ByokAiProvider {
   _IncompleteUsageByokProvider(this.verdicts)
-      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -131,8 +131,7 @@ class _FakeUsageContract implements AiContract {
   List<AiVerdict> parseResponseJson(
     String responseBody,
     List<AiCandidate> batch,
-  ) =>
-      const [];
+  ) => const [];
 
   @override
   String upstreamEndpoint() => 'https://example.test/v1/chat';
@@ -458,8 +457,14 @@ void main() {
         'path': '/tmp/foo.xyz',
         'size_bytes': 12,
         'is_dir': false,
+        'cleanup_source': 'ai_tool_cache',
+        'cleanup_hint': 123,
+        'retention_days': 30.0,
       });
       expect(candidate.memberPaths, isEmpty);
+      expect(candidate.cleanupSource, 'ai_tool_cache');
+      expect(candidate.cleanupHint, '123');
+      expect(candidate.retentionDays, 30);
       expect(candidate.toJson().containsKey('member_paths'), isFalse);
     });
 
@@ -469,11 +474,17 @@ void main() {
         'verdict': 'safe_to_remove',
         'confidence': 'high',
         'reason': 'build cache',
+        'cleanup_source': 'ai_tool_cache',
+        'cleanup_hint': 'Known cache',
+        'retention_days': 30.0,
       });
       expect(verdict.path, '/Users/x/weird.cache');
       expect(verdict.verdict, 'safe_to_remove');
       expect(verdict.confidence, 'high');
       expect(verdict.reason, 'build cache');
+      expect(verdict.cleanupSource, 'ai_tool_cache');
+      expect(verdict.cleanupHint, 'Known cache');
+      expect(verdict.retentionDays, 30);
     });
   });
 
@@ -622,6 +633,49 @@ void main() {
       );
     },
   );
+
+  testWidgets('loaded results merge partial cleanup metadata from candidates', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload(
+        unknownCandidates: const [
+          {
+            'path': '/Users/x/Library/Application Support/Cursor/CachedData/a',
+            'size_bytes': 100,
+            'is_dir': false,
+            'cleanup_source': 'ai_tool_cache',
+            'cleanup_hint': 'Known AI/editor cache',
+            'retention_days': 30,
+          },
+        ],
+        candidatesBeforeCap: 1,
+      )
+      ..cache['cache-key'] = jsonEncode({
+        'entries': [
+          {
+            'path': '/Users/x/Library/Application Support/Cursor/CachedData/a',
+            'size_bytes': 100,
+            'verdict': 'safe_to_remove',
+            'confidence': 'high',
+            'reason': 'Rebuildable cache',
+            'cleanup_source': 'ai_tool_cache',
+          },
+        ],
+      });
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('AI tool cache/temp'), findsOneWidget);
+    expect(find.textContaining('Review after 30 days'), findsOneWidget);
+    expect(find.textContaining('Known AI/editor cache'), findsOneWidget);
+  });
 
   testWidgets('privacy decline stays in precheck and accept starts analysis', (
     tester,

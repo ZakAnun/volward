@@ -11,6 +11,12 @@ pub struct AiVerdictEntry {
     pub verdict: String,
     pub confidence: String,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +201,9 @@ mod tests {
                 verdict: "safe_to_remove".into(),
                 confidence: "medium".into(),
                 reason: "looks like temp".into(),
+                cleanup_source: Some("ai_tool_cache".into()),
+                cleanup_hint: Some("Known AI/editor cache".into()),
+                retention_days: Some(30),
             }],
             token_usage: AiTokenUsage {
                 input: 100,
@@ -220,6 +229,40 @@ mod tests {
         assert_eq!(loaded.token_usage.input, 100);
         assert_eq!(loaded.credits_used, 1);
         assert_eq!(loaded.cache_key.as_deref(), Some("cache-abc"));
+        assert_eq!(
+            loaded.entries[0].cleanup_source.as_deref(),
+            Some("ai_tool_cache")
+        );
+        assert_eq!(
+            loaded.entries[0].cleanup_hint.as_deref(),
+            Some("Known AI/editor cache")
+        );
+        assert_eq!(loaded.entries[0].retention_days, Some(30));
+    }
+
+    #[test]
+    fn legacy_result_without_cleanup_metadata_still_loads() {
+        let raw = r#"{
+            "schema_version": 1,
+            "snapshot_id": "legacy-snap",
+            "analyzed_at_ms": 1700000000000,
+            "mode": "byok",
+            "model": "deepseek-v4-flash",
+            "entries": [{
+                "path": "/Users/x/README.md",
+                "size_bytes": 12,
+                "verdict": "keep",
+                "confidence": "high",
+                "reason": "user document"
+            }],
+            "token_usage": {"input": 1, "output": 1},
+            "cost_estimate_usd": 0.0
+        }"#;
+        let parsed: AiAnalysisResult = serde_json::from_str(raw).expect("legacy result");
+        assert_eq!(parsed.entries[0].cleanup_source, None);
+        assert_eq!(parsed.entries[0].cleanup_hint, None);
+        assert_eq!(parsed.entries[0].retention_days, None);
+        assert_eq!(parsed.credits_used, 0);
     }
 
     #[test]
@@ -277,6 +320,9 @@ mod tests {
             is_dir: false,
             child_count: None,
             extension: Some(".dat".into()),
+            cleanup_source: None,
+            cleanup_hint: None,
+            retention_days: None,
             member_paths: vec![],
             delete_target: None,
         });
@@ -301,6 +347,9 @@ mod tests {
             is_dir: false,
             child_count: None,
             extension: None,
+            cleanup_source: None,
+            cleanup_hint: None,
+            retention_days: None,
             member_paths: vec![],
             delete_target: None,
         });
@@ -311,6 +360,9 @@ mod tests {
             is_dir: false,
             child_count: None,
             extension: None,
+            cleanup_source: None,
+            cleanup_hint: None,
+            retention_days: None,
             member_paths: vec![],
             delete_target: None,
         });

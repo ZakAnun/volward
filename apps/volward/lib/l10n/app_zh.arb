@@ -448,6 +448,17 @@
       }
     }
   },
+  "aiCleanupSourceAiToolCache": "AI 工具缓存/临时文件",
+  "aiCleanupSourceAiGeneratedOutput": "AI 生成输出",
+  "aiCleanupSourceSystemTemp": "临时文件",
+  "aiCleanupRetentionDays": "超过 {days} 天后建议检查",
+  "@aiCleanupRetentionDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
   "aiWorkspaceTitle": "AI 清理建议",
   "aiWorkspaceBack": "返回概览",
   "aiWorkspacePhaseLoading": "正在准备候选项",

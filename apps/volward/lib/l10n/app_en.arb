@@ -448,6 +448,17 @@
       }
     }
   },
+  "aiCleanupSourceAiToolCache": "AI tool cache/temp",
+  "aiCleanupSourceAiGeneratedOutput": "AI-generated output",
+  "aiCleanupSourceSystemTemp": "Temporary file",
+  "aiCleanupRetentionDays": "Review after {days} days",
+  "@aiCleanupRetentionDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
   "aiWorkspaceTitle": "AI Cleanup Suggestions",
   "aiWorkspaceBack": "Back to Overview",
   "aiWorkspacePhaseLoading": "Preparing candidates",

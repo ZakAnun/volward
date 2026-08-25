@@ -692,6 +692,20 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get aiCleanupSourceAiToolCache => 'AI 工具缓存/临时文件';
+
+  @override
+  String get aiCleanupSourceAiGeneratedOutput => 'AI 生成输出';
+
+  @override
+  String get aiCleanupSourceSystemTemp => '临时文件';
+
+  @override
+  String aiCleanupRetentionDays(int days) {
+    return '超过 $days 天后建议检查';
+  }
+
+  @override
   String get aiWorkspaceTitle => 'AI 清理建议';
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -83,29 +85,41 @@ void main() {
     expect(p.lastCreditsRemaining, 9);
   });
 
-  test('request body omits member_paths', () async {
-    String? body;
-    final client = MockClient((req) async {
-      body = req.body;
-      return http.Response(
-        '{"entries":[],"credits_used":1,"credits_remaining":1,"model":"m"}',
-        200,
+  test(
+    'request body includes cleanup metadata but omits member_paths',
+    () async {
+      String? body;
+      final client = MockClient((req) async {
+        body = req.body;
+        return http.Response(
+          '{"entries":[],"credits_used":1,"credits_remaining":1,"model":"m"}',
+          200,
+        );
+      });
+      final p = PlatformAiProvider(
+        token: 't',
+        client: client,
+        baseUrl: 'https://example.test/v1',
       );
-    });
-    final p = PlatformAiProvider(
-      token: 't',
-      client: client,
-      baseUrl: 'https://example.test/v1',
-    );
-    await p.analyze([
-      const AiCandidate(
-        path: '/a',
-        sizeBytes: 1,
-        isDir: true,
-        memberPaths: ['/a/1', '/a/2'],
-      ),
-    ]);
-    expect(body, isNotNull);
-    expect(body!.contains('member_paths'), isFalse);
-  });
+      await p.analyze([
+        const AiCandidate(
+          path: '/a',
+          sizeBytes: 1,
+          isDir: true,
+          cleanupSource: 'ai_tool_cache',
+          cleanupHint: 'Known AI/editor cache',
+          retentionDays: 30,
+          memberPaths: ['/a/1', '/a/2'],
+        ),
+      ]);
+      expect(body, isNotNull);
+      final decoded = jsonDecode(body!) as Map<String, dynamic>;
+      final candidates = decoded['candidates'] as List;
+      final candidate = candidates.single as Map<String, dynamic>;
+      expect(candidate['cleanup_source'], 'ai_tool_cache');
+      expect(candidate['cleanup_hint'], 'Known AI/editor cache');
+      expect(candidate['retention_days'], 30);
+      expect(candidate.containsKey('member_paths'), isFalse);
+    },
+  );
 }
