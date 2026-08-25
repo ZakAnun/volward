@@ -470,6 +470,75 @@
   "aiWorkspacePhaseRecovery": "恢复",
   "aiWorkspaceLoadPrevious": "加载上次结果",
   "aiWorkspaceAnalyzeAgain": "重新分析",
+  "aiResultsSummaryTitle": "共发现 {count} 项结果",
+  "@aiResultsSummaryTitle": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsSummaryBody": "{safe} 项可直接删除 · {review} 项需要确认",
+  "@aiResultsSummaryBody": {
+    "placeholders": {
+      "safe": {"type": "int"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiResultsSafeSubtitle": "可直接删除",
+  "aiResultsReviewSubtitle": "需要再确认",
+  "aiResultsKeepSubtitle": "建议保留",
+  "aiResultsTopTitle": "优先建议",
+  "aiResultsTopCount": "显示 {shown}/{total}",
+  "@aiResultsTopCount": {
+    "placeholders": {
+      "shown": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "aiShowAllResults": "查看全部结果",
+  "aiResultsSummaryEyebrow": "AI 清理总结",
+  "aiResultsSelectedForCleanup": "已选择 {size} 可清理内容",
+  "@aiResultsSelectedForCleanup": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "aiResultsSelectedReviewBody": "{safeSelected} 项安全内容已选择。{review} 项需要删除前确认。",
+  "@aiResultsSelectedReviewBody": {
+    "placeholders": {
+      "safeSelected": {"type": "int"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiResultsMetricSafeTitle": "可安全删除",
+  "aiResultsMetricReviewTitle": "需要确认",
+  "aiResultsMetricKeepTitle": "AI 建议保留",
+  "aiResultsMetricTotalSize": "共 {size}",
+  "@aiResultsMetricTotalSize": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "aiResultsMetricProtected": "受保护",
+  "aiResultsRecommendedTitle": "优先建议",
+  "aiResultsRecommendedSubtitle": "按体积优先展示安全项和需确认项",
+  "aiResultsTopLimit": "前 {count} 项",
+  "@aiResultsTopLimit": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsStatusSafe": "安全",
+  "aiResultsStatusReview": "确认",
+  "aiResultsStatusKeep": "保留",
+  "aiResultsSelectedLabel": "已选择",
+  "aiResultsSelectedCount": "{count} 项",
+  "@aiResultsSelectedCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsDeleteGuidanceTitle": "删除前确认",
+  "aiResultsDeleteGuidanceBody": "需确认的项目默认不会选中。安全项目仍可取消勾选。",
   "aiWorkspaceSelectedSummary": "{count} 项已选择 · {size}",
   "@aiWorkspaceSelectedSummary": {
     "placeholders": {

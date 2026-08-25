@@ -1369,6 +1369,162 @@ abstract class AppLocalizations {
   /// **'Analyze Again'**
   String get aiWorkspaceAnalyzeAgain;
 
+  /// No description provided for @aiResultsSummaryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} results found'**
+  String aiResultsSummaryTitle(int count);
+
+  /// No description provided for @aiResultsSummaryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{safe} safe to remove · {review} to review'**
+  String aiResultsSummaryBody(int safe, int review);
+
+  /// No description provided for @aiResultsSafeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to remove'**
+  String get aiResultsSafeSubtitle;
+
+  /// No description provided for @aiResultsReviewSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs a final check'**
+  String get aiResultsReviewSubtitle;
+
+  /// No description provided for @aiResultsKeepSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave in place'**
+  String get aiResultsKeepSubtitle;
+
+  /// No description provided for @aiResultsTopTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Top suggestions'**
+  String get aiResultsTopTitle;
+
+  /// No description provided for @aiResultsTopCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{shown} of {total}'**
+  String aiResultsTopCount(int shown, int total);
+
+  /// No description provided for @aiShowAllResults.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all results'**
+  String get aiShowAllResults;
+
+  /// No description provided for @aiResultsSummaryEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'AI cleanup summary'**
+  String get aiResultsSummaryEyebrow;
+
+  /// No description provided for @aiResultsSelectedForCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} selected for cleanup'**
+  String aiResultsSelectedForCleanup(String size);
+
+  /// No description provided for @aiResultsSelectedReviewBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{safeSelected} safe {safeSelected, plural, =1{item is} other{items are}} selected. {review} {review, plural, =1{item needs} other{items need}} review before deleting.'**
+  String aiResultsSelectedReviewBody(int safeSelected, int review);
+
+  /// No description provided for @aiResultsMetricSafeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to remove'**
+  String get aiResultsMetricSafeTitle;
+
+  /// No description provided for @aiResultsMetricReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review needed'**
+  String get aiResultsMetricReviewTitle;
+
+  /// No description provided for @aiResultsMetricKeepTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept by AI'**
+  String get aiResultsMetricKeepTitle;
+
+  /// No description provided for @aiResultsMetricTotalSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} total'**
+  String aiResultsMetricTotalSize(String size);
+
+  /// No description provided for @aiResultsMetricProtected.
+  ///
+  /// In en, this message translates to:
+  /// **'Protected'**
+  String get aiResultsMetricProtected;
+
+  /// No description provided for @aiResultsRecommendedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended first'**
+  String get aiResultsRecommendedTitle;
+
+  /// No description provided for @aiResultsRecommendedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'largest safe items + review items'**
+  String get aiResultsRecommendedSubtitle;
+
+  /// No description provided for @aiResultsTopLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Top {count}'**
+  String aiResultsTopLimit(int count);
+
+  /// No description provided for @aiResultsStatusSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe'**
+  String get aiResultsStatusSafe;
+
+  /// No description provided for @aiResultsStatusReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get aiResultsStatusReview;
+
+  /// No description provided for @aiResultsStatusKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get aiResultsStatusKeep;
+
+  /// No description provided for @aiResultsSelectedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected'**
+  String get aiResultsSelectedLabel;
+
+  /// No description provided for @aiResultsSelectedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 item} other{{count} items}}'**
+  String aiResultsSelectedCount(int count);
+
+  /// No description provided for @aiResultsDeleteGuidanceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review before deleting'**
+  String get aiResultsDeleteGuidanceTitle;
+
+  /// No description provided for @aiResultsDeleteGuidanceBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Items marked Review are not selected by default. Safe items can still be unchecked.'**
+  String get aiResultsDeleteGuidanceBody;
+
   /// No description provided for @aiWorkspaceSelectedSummary.
   ///
   /// In en, this message translates to:

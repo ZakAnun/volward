@@ -739,6 +739,100 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiWorkspaceAnalyzeAgain => '重新分析';
 
   @override
+  String aiResultsSummaryTitle(int count) {
+    return '共发现 $count 项结果';
+  }
+
+  @override
+  String aiResultsSummaryBody(int safe, int review) {
+    return '$safe 项可直接删除 · $review 项需要确认';
+  }
+
+  @override
+  String get aiResultsSafeSubtitle => '可直接删除';
+
+  @override
+  String get aiResultsReviewSubtitle => '需要再确认';
+
+  @override
+  String get aiResultsKeepSubtitle => '建议保留';
+
+  @override
+  String get aiResultsTopTitle => '优先建议';
+
+  @override
+  String aiResultsTopCount(int shown, int total) {
+    return '显示 $shown/$total';
+  }
+
+  @override
+  String get aiShowAllResults => '查看全部结果';
+
+  @override
+  String get aiResultsSummaryEyebrow => 'AI 清理总结';
+
+  @override
+  String aiResultsSelectedForCleanup(String size) {
+    return '已选择 $size 可清理内容';
+  }
+
+  @override
+  String aiResultsSelectedReviewBody(int safeSelected, int review) {
+    return '$safeSelected 项安全内容已选择。$review 项需要删除前确认。';
+  }
+
+  @override
+  String get aiResultsMetricSafeTitle => '可安全删除';
+
+  @override
+  String get aiResultsMetricReviewTitle => '需要确认';
+
+  @override
+  String get aiResultsMetricKeepTitle => 'AI 建议保留';
+
+  @override
+  String aiResultsMetricTotalSize(String size) {
+    return '共 $size';
+  }
+
+  @override
+  String get aiResultsMetricProtected => '受保护';
+
+  @override
+  String get aiResultsRecommendedTitle => '优先建议';
+
+  @override
+  String get aiResultsRecommendedSubtitle => '按体积优先展示安全项和需确认项';
+
+  @override
+  String aiResultsTopLimit(int count) {
+    return '前 $count 项';
+  }
+
+  @override
+  String get aiResultsStatusSafe => '安全';
+
+  @override
+  String get aiResultsStatusReview => '确认';
+
+  @override
+  String get aiResultsStatusKeep => '保留';
+
+  @override
+  String get aiResultsSelectedLabel => '已选择';
+
+  @override
+  String aiResultsSelectedCount(int count) {
+    return '$count 项';
+  }
+
+  @override
+  String get aiResultsDeleteGuidanceTitle => '删除前确认';
+
+  @override
+  String get aiResultsDeleteGuidanceBody => '需确认的项目默认不会选中。安全项目仍可取消勾选。';
+
+  @override
   String aiWorkspaceSelectedSummary(int count, String size) {
     return '$count 项已选择 · $size';
   }

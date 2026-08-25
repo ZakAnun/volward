@@ -770,6 +770,120 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiWorkspaceAnalyzeAgain => 'Analyze Again';
 
   @override
+  String aiResultsSummaryTitle(int count) {
+    return '$count results found';
+  }
+
+  @override
+  String aiResultsSummaryBody(int safe, int review) {
+    return '$safe safe to remove · $review to review';
+  }
+
+  @override
+  String get aiResultsSafeSubtitle => 'Ready to remove';
+
+  @override
+  String get aiResultsReviewSubtitle => 'Needs a final check';
+
+  @override
+  String get aiResultsKeepSubtitle => 'Leave in place';
+
+  @override
+  String get aiResultsTopTitle => 'Top suggestions';
+
+  @override
+  String aiResultsTopCount(int shown, int total) {
+    return '$shown of $total';
+  }
+
+  @override
+  String get aiShowAllResults => 'Show all results';
+
+  @override
+  String get aiResultsSummaryEyebrow => 'AI cleanup summary';
+
+  @override
+  String aiResultsSelectedForCleanup(String size) {
+    return '$size selected for cleanup';
+  }
+
+  @override
+  String aiResultsSelectedReviewBody(int safeSelected, int review) {
+    String _temp0 = intl.Intl.pluralLogic(
+      safeSelected,
+      locale: localeName,
+      other: 'items are',
+      one: 'item is',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      review,
+      locale: localeName,
+      other: 'items need',
+      one: 'item needs',
+    );
+    return '$safeSelected safe $_temp0 selected. $review $_temp1 review before deleting.';
+  }
+
+  @override
+  String get aiResultsMetricSafeTitle => 'Safe to remove';
+
+  @override
+  String get aiResultsMetricReviewTitle => 'Review needed';
+
+  @override
+  String get aiResultsMetricKeepTitle => 'Kept by AI';
+
+  @override
+  String aiResultsMetricTotalSize(String size) {
+    return '$size total';
+  }
+
+  @override
+  String get aiResultsMetricProtected => 'Protected';
+
+  @override
+  String get aiResultsRecommendedTitle => 'Recommended first';
+
+  @override
+  String get aiResultsRecommendedSubtitle =>
+      'largest safe items + review items';
+
+  @override
+  String aiResultsTopLimit(int count) {
+    return 'Top $count';
+  }
+
+  @override
+  String get aiResultsStatusSafe => 'Safe';
+
+  @override
+  String get aiResultsStatusReview => 'Review';
+
+  @override
+  String get aiResultsStatusKeep => 'Keep';
+
+  @override
+  String get aiResultsSelectedLabel => 'Selected';
+
+  @override
+  String aiResultsSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '1 item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get aiResultsDeleteGuidanceTitle => 'Review before deleting';
+
+  @override
+  String get aiResultsDeleteGuidanceBody =>
+      'Items marked Review are not selected by default. Safe items can still be unchecked.';
+
+  @override
   String aiWorkspaceSelectedSummary(int count, String size) {
     return '$count selected · $size';
   }

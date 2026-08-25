@@ -12,6 +12,7 @@ import '../ai/platform_ai_provider.dart';
 import '../analytics/analytics.dart';
 import '../analytics/analytics_events.dart';
 import '../l10n/l10n.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'apple_widgets.dart';
@@ -134,6 +135,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const resultsListKey = Key('ai-analysis-results-list');
   static const summaryKey = Key('ai-analysis-summary');
   static const deleteKey = Key('ai-analysis-delete');
+  static const showAllResultsKey = Key('ai-analysis-show-all-results');
 
   final String snapshotId;
   final String targetLabel;
@@ -171,6 +173,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   AiMode _mode = AiMode.off;
   int? _platformCredits;
   int _operationGeneration = 0;
+  bool _showAllResults = false;
 
   int _beginOperation() => ++_operationGeneration;
   bool _isCurrent(int generation) =>
@@ -239,6 +242,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _partialDeleteFailedCount = null;
       _partialDeleteFreedBytes = null;
       _retryTargets = [];
+      _showAllResults = false;
     });
     try {
       final mode = await widget.gateway.getMode();
@@ -356,9 +360,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _loadPreviousResult() async {
     final generation = _beginOperation();
     final l10n = context.l10n;
-    final key = _resultCacheKey.isNotEmpty
-        ? _resultCacheKey
-        : widget.snapshotId;
+    final key =
+        _resultCacheKey.isNotEmpty ? _resultCacheKey : widget.snapshotId;
     var raw = widget.gateway.loadResult(key);
     if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
         key != widget.snapshotId) {
@@ -461,15 +464,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     try {
       final verdicts = await provider.analyze(_unknown);
       if (!_isCurrent(generation)) return;
-      final model = provider is ByokAiProvider
-          ? provider.model
-          : 'deepseek-v4-flash';
+      final model =
+          provider is ByokAiProvider ? provider.model : 'deepseek-v4-flash';
       final byokUsage =
           provider is ByokAiProvider && provider.hasReliableTokenUsage
-          ? provider.lastTokenUsage
-          : null;
-      final inputTokens =
-          byokUsage?.promptTokens ??
+              ? provider.lastTokenUsage
+              : null;
+      final inputTokens = byokUsage?.promptTokens ??
           (_estimatedTokens > 0
               ? _estimatedTokens
               : (_unknown.length * 8 + 200));
@@ -575,7 +576,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'empty_api_key' ||
         'ai_contract_unavailable' ||
         'platform_api_unconfigured' ||
-        'link_account_required' => true,
+        'link_account_required' =>
+          true,
         _ => false,
       };
       setState(() {
@@ -594,7 +596,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       'network_error' => context.l10n.aiErrorNetwork,
       'invalid_api_key' || 'empty_api_key' => context.l10n.aiNoApiKey,
       'ai_contract_unavailable' ||
-      'platform_api_unconfigured' => context.l10n.aiContractUnavailable,
+      'platform_api_unconfigured' =>
+        context.l10n.aiContractUnavailable,
       'link_account_required' => context.l10n.aiSettingsSessionExpired,
       _ => context.l10n.aiErrorUnknown,
     };
@@ -707,8 +710,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ? failed.whereType<String>().toList(growable: false)
           : const <String>[];
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
-      final deletedCount =
-          (report['deleted_count'] as num?)?.toInt() ??
+      final deletedCount = (report['deleted_count'] as num?)?.toInt() ??
           (targets.length - failedCount);
       if (!_isCurrent(generation)) return;
       unawaited(
@@ -814,24 +816,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   int get _phaseStep => switch (_phase) {
-    _Phase.loading || _Phase.error => 1,
-    _Phase.precheck => 2,
-    _Phase.privacy || _Phase.analyzing => 3,
-    _Phase.results => 4,
-    _Phase.deleting => 5,
-  };
+        _Phase.loading || _Phase.error => 1,
+        _Phase.precheck => 2,
+        _Phase.privacy || _Phase.analyzing => 3,
+        _Phase.results => 4,
+        _Phase.deleting => 5,
+      };
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(
-        label: context.l10n.aiWorkspacePhaseLoading,
-        candidateCount: 0,
-      ),
+          label: context.l10n.aiWorkspacePhaseLoading,
+          candidateCount: 0,
+        ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
       _Phase.analyzing => _buildProgressBody(
-        label: context.l10n.aiWorkspacePhaseAnalyzing,
-        candidateCount: _unknown.length,
-      ),
+          label: context.l10n.aiWorkspacePhaseAnalyzing,
+          candidateCount: _unknown.length,
+        ),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -881,9 +883,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
         ? (_error ??
-              (_mode == AiMode.platform
-                  ? l10n.aiSettingsSessionExpired
-                  : l10n.aiNoApiKey))
+            (_mode == AiMode.platform
+                ? l10n.aiSettingsSessionExpired
+                : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -1007,44 +1009,142 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  List<AiVerdict> _preClassifiedVerdicts({required bool deletable}) {
+    final items = <AiVerdict>[];
+    for (final entry in _preClassified) {
+      final isDeletable = entry['deletable'] == true;
+      if (isDeletable != deletable) continue;
+      final path = entry['path'] as String? ?? '';
+      if (path.isEmpty) continue;
+      items.add(
+        AiVerdict(
+          path: path,
+          verdict: deletable ? 'safe_to_remove' : 'keep',
+          confidence: entry['confidence']?.toString() ?? 'high',
+          reason: entry['reason']?.toString() ?? '',
+        ),
+      );
+    }
+    return items;
+  }
+
+  _ResultSummaryData _resultSummaryFor({
+    required List<AiVerdict> safe,
+    required List<AiVerdict> review,
+    required List<AiVerdict> keep,
+  }) {
+    int bytesFor(Iterable<AiVerdict> items) {
+      return items.fold<int>(
+        0,
+        (total, item) => total + (_sizeByPath[item.path] ?? 0),
+      );
+    }
+
+    final l10n = context.l10n;
+    final selectedSafeCount =
+        safe.where((item) => _selected.contains(item.path)).length;
+    return _ResultSummaryData(
+      safe: _ResultBucketData(
+        title: l10n.aiResultsMetricSafeTitle,
+        count: safe.length,
+        detail: l10n.aiResultsMetricTotalSize(_formatBytes(bytesFor(safe))),
+      ),
+      review: _ResultBucketData(
+        title: l10n.aiResultsMetricReviewTitle,
+        count: review.length,
+        detail: l10n.aiResultsMetricTotalSize(_formatBytes(bytesFor(review))),
+      ),
+      keep: _ResultBucketData(
+        title: l10n.aiResultsMetricKeepTitle,
+        count: keep.length,
+        detail: l10n.aiResultsMetricProtected,
+      ),
+      selectedSafeCount: selectedSafeCount,
+      selectedBytes: _selectedBytes,
+    );
+  }
+
   Widget _buildResults() {
     final l10n = context.l10n;
-    final safe = _verdicts
+    final localSafe = _preClassifiedVerdicts(deletable: true);
+    final localKeep = _preClassifiedVerdicts(deletable: false);
+    final aiSafe = _verdicts
         .where((verdict) => verdict.verdict == 'safe_to_remove')
         .toList();
+    final aiPaths = _verdicts.map((verdict) => verdict.path).toSet();
+    final safe = [
+      ...localSafe.where((verdict) => !aiPaths.contains(verdict.path)),
+      ...aiSafe,
+    ];
     final review = _verdicts
         .where((verdict) => verdict.verdict == 'review_needed')
         .toList();
-    final keep = _verdicts
-        .where((verdict) => verdict.verdict == 'keep')
-        .toList();
+    final keep = [
+      ...localKeep,
+      ..._verdicts.where((verdict) => verdict.verdict == 'keep'),
+    ];
+    final summary = _resultSummaryFor(
+      safe: safe,
+      review: review,
+      keep: keep,
+    );
+    final topSuggestions = [...safe, ...review];
+    topSuggestions.sort((a, b) {
+      int rank(AiVerdict item) => switch (item.verdict) {
+            'safe_to_remove' => 0,
+            'review_needed' => 1,
+            _ => 2,
+          };
+      final actionableDiff = (rank(a) == 2 ? 1 : 0).compareTo(
+        rank(b) == 2 ? 1 : 0,
+      );
+      if (actionableDiff != 0) return actionableDiff;
+      final sizeDiff =
+          (_sizeByPath[b.path] ?? 0).compareTo(_sizeByPath[a.path] ?? 0);
+      if (sizeDiff != 0) return sizeDiff;
+      final rankDiff = rank(a).compareTo(rank(b));
+      if (rankDiff != 0) return rankDiff;
+      return a.path.compareTo(b.path);
+    });
+    final visibleTopSuggestions =
+        topSuggestions.take(8).toList(growable: false);
     final resultsList = ListView(
       key: AiAnalysisWorkspace.resultsListKey,
       padding: const EdgeInsets.all(AppleSpacing.lg),
       children: [
-        if (_preClassified.isNotEmpty) ...[
-          Text(
-            l10n.aiPreCheckSafeSelectable(_preClassified.length),
-            style: context.vwCaptionStrong,
+        _buildResultsOverview(summary: summary),
+        if (_showAllResults) ...[
+          const SizedBox(height: AppleSpacing.lg),
+          _verdictSection(
+            title: l10n.aiVerdictSafe(safe.length),
+            items: safe,
+            selectable: true,
           ),
-          ..._preClassified.map(_preClassifiedTile),
-          const SizedBox(height: AppleSpacing.md),
+          _verdictSection(
+            title: l10n.aiVerdictReview(review.length),
+            items: review,
+            selectable: true,
+          ),
+          _verdictSection(
+            title: l10n.aiVerdictKeep(keep.length),
+            items: keep,
+            selectable: false,
+          ),
+        ] else ...[
+          const SizedBox(height: AppleSpacing.lg),
+          _buildTopSuggestions(
+            l10n: l10n,
+            items: visibleTopSuggestions,
+          ),
         ],
-        _verdictSection(
-          title: l10n.aiVerdictSafe(safe.length),
-          items: safe,
-          selectable: true,
-        ),
-        _verdictSection(
-          title: l10n.aiVerdictReview(review.length),
-          items: review,
-          selectable: true,
-        ),
-        _verdictSection(
-          title: l10n.aiVerdictKeep(keep.length),
-          items: keep,
-          selectable: false,
-        ),
+        if (!_showAllResults) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          TextButton(
+            key: AiAnalysisWorkspace.showAllResultsKey,
+            onPressed: () => setState(() => _showAllResults = true),
+            child: Text(l10n.aiShowAllResults),
+          ),
+        ],
       ],
     );
     return LayoutBuilder(
@@ -1078,6 +1178,61 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  Widget _buildResultsOverview({required _ResultSummaryData summary}) {
+    final l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.aiResultsSummaryEyebrow, style: context.vwFinePrintInk),
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiResultsSelectedForCleanup(
+            _formatBytes(summary.selectedBytes),
+          ),
+          style: context.vwBodyStrong.copyWith(fontSize: 26, height: 1.18),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiResultsSelectedReviewBody(
+            summary.selectedSafeCount,
+            summary.review.count,
+          ),
+          style: context.vwCaption,
+        ),
+        const SizedBox(height: AppleSpacing.md),
+        _ResultMetricCards(
+          buckets: [summary.safe, summary.review, summary.keep],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopSuggestions({
+    required AppLocalizations l10n,
+    required List<AiVerdict> items,
+  }) {
+    return _RecommendedResultsCard(
+      title: l10n.aiResultsRecommendedTitle,
+      subtitle: l10n.aiResultsRecommendedSubtitle,
+      countLabel: l10n.aiResultsTopLimit(items.length),
+      children: [
+        for (final item in items)
+          _ResultRow(
+            item: item,
+            sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
+            statusLabel: _statusLabel(item),
+            statusColor: _statusColor(item),
+            selected: _selected.contains(item.path),
+            selectable: item.verdict != 'keep',
+            onChanged: item.verdict == 'keep'
+                ? null
+                : (value) => _toggle(item.path, value),
+            cleanupMeta: _cleanupMetaLabel(item),
+          ),
+      ],
+    );
+  }
+
   Widget _buildSelectionSummary({bool compact = false}) {
     final l10n = context.l10n;
     final tokens = context.volward;
@@ -1087,13 +1242,21 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(l10n.aiResultsSelectedLabel, style: context.vwFinePrintInk),
+          const SizedBox(height: AppleSpacing.xxs),
           Text(
-            l10n.aiWorkspaceSelectedSummary(
-              _selected.length,
-              _formatBytes(_selectedBytes),
-            ),
-            style: context.vwBodyStrong,
+            l10n.aiResultsSelectedCount(_selected.length),
+            style: context.vwBodyStrong.copyWith(fontSize: compact ? 18 : 22),
           ),
+          const SizedBox(height: AppleSpacing.xxs),
+          Text(_formatBytes(_selectedBytes), style: context.vwCaption),
+          const SizedBox(height: AppleSpacing.md),
+          Divider(height: 1, color: tokens.dividerSoft),
+          const SizedBox(height: AppleSpacing.md),
+          Text(l10n.aiResultsDeleteGuidanceTitle,
+              style: context.vwCaptionStrong),
+          const SizedBox(height: AppleSpacing.xs),
+          Text(l10n.aiResultsDeleteGuidanceBody, style: context.vwCaption),
           if (_error != null && _partialDeleteFailedCount == null) ...[
             const SizedBox(height: AppleSpacing.xs),
             Text(
@@ -1178,52 +1341,50 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     required bool selectable,
   }) {
     if (items.isEmpty) return const SizedBox.shrink();
-    final tokens = context.volward;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: AppleTypography.captionStrong.copyWith(color: tokens.ink),
-        ),
-        const SizedBox(height: AppleSpacing.xs),
-        ...items.map(
-          (item) => _verdictTile(item: item, selectable: selectable),
-        ),
-        const SizedBox(height: AppleSpacing.md),
-      ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppleSpacing.md),
+      child: _RecommendedResultsCard(
+        title: title,
+        subtitle: '',
+        countLabel: items.length.toString(),
+        children: [
+          for (final item in items)
+            _verdictTile(item: item, selectable: selectable),
+        ],
+      ),
     );
   }
 
   Widget _verdictTile({required AiVerdict item, required bool selectable}) {
-    final size = _sizeByPath[item.path] ?? 0;
-    final cleanupMeta = _cleanupMetaLabel(item);
-    final subtitle =
-        '${_formatBytes(size)} · ${item.confidence} · ${item.reason}'
-        '${cleanupMeta == null ? '' : '\n$cleanupMeta'}';
-    if (!selectable) {
-      return Material(
-        color: Colors.transparent,
-        child: ListTile(
-          enabled: false,
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.lock_outline, size: 20),
-          title: _PathLabel(item.path),
-          subtitle: Text(subtitle),
-        ),
-      );
-    }
-    return Material(
-      color: Colors.transparent,
-      child: CheckboxListTile(
-        value: _selected.contains(item.path),
-        onChanged: (value) => _toggle(item.path, value),
-        controlAffinity: ListTileControlAffinity.leading,
-        contentPadding: EdgeInsets.zero,
-        title: _PathLabel(item.path),
-        subtitle: Text(subtitle),
-      ),
+    final selected = _selected.contains(item.path);
+    return _ResultRow(
+      item: item,
+      sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
+      statusLabel: _statusLabel(item),
+      statusColor: _statusColor(item),
+      selected: selected,
+      selectable: selectable,
+      onChanged: selectable ? (value) => _toggle(item.path, value) : null,
+      cleanupMeta: _cleanupMetaLabel(item),
     );
+  }
+
+  String _statusLabel(AiVerdict item) {
+    final l10n = context.l10n;
+    return switch (item.verdict) {
+      'safe_to_remove' => l10n.aiResultsStatusSafe,
+      'review_needed' => l10n.aiResultsStatusReview,
+      _ => l10n.aiResultsStatusKeep,
+    };
+  }
+
+  Color _statusColor(AiVerdict item) {
+    final tokens = context.volward;
+    return switch (item.verdict) {
+      'safe_to_remove' => const Color(0xFF267A42),
+      'review_needed' => tokens.warning,
+      _ => tokens.inkMuted48,
+    };
   }
 
   String? _cleanupMetaLabel(AiVerdict item) {
@@ -1248,6 +1409,273 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (hint != null && hint.isNotEmpty) hint,
     ];
     return parts.isEmpty ? null : parts.join(' · ');
+  }
+}
+
+class _RecommendedResultsCard extends StatelessWidget {
+  const _RecommendedResultsCard({
+    required this.title,
+    required this.subtitle,
+    required this.countLabel,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final String countLabel;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.hairline),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppleSpacing.sm,
+                vertical: AppleSpacing.xs,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: AppleSpacing.xs,
+                      children: [
+                        Text(title, style: context.vwCaptionStrong),
+                        Text(subtitle, style: context.vwFinePrint),
+                      ],
+                    ),
+                  ),
+                  Text(countLabel, style: context.vwFinePrint),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: tokens.dividerSoft),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResultRow extends StatelessWidget {
+  const _ResultRow({
+    required this.item,
+    required this.sizeLabel,
+    required this.statusLabel,
+    required this.statusColor,
+    required this.selected,
+    required this.selectable,
+    required this.onChanged,
+    required this.cleanupMeta,
+  });
+
+  final AiVerdict item;
+  final String sizeLabel;
+  final String statusLabel;
+  final Color statusColor;
+  final bool selected;
+  final bool selectable;
+  final ValueChanged<bool?>? onChanged;
+  final String? cleanupMeta;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    final subtitleParts = <String>[
+      item.confidence,
+      if (item.reason.isNotEmpty) item.reason,
+      if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
+    ];
+    final body = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppleSpacing.sm,
+        vertical: 10,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: selectable
+                ? Checkbox(
+                    value: selected,
+                    onChanged: onChanged,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  )
+                : Icon(Icons.lock_outline, size: 18, color: tokens.inkMuted48),
+          ),
+          const SizedBox(width: AppleSpacing.xs),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _PathLabel(item.path),
+                if (subtitleParts.isNotEmpty) ...[
+                  const SizedBox(height: AppleSpacing.xxs),
+                  Text(
+                    subtitleParts.join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.vwFinePrint,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: AppleSpacing.sm),
+          SizedBox(
+            width: 88,
+            child: Text(
+              sizeLabel,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.vwCaptionStrong,
+            ),
+          ),
+          const SizedBox(width: AppleSpacing.sm),
+          SizedBox(
+            width: 72,
+            child: Text(
+              statusLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.vwCaptionStrong.copyWith(color: statusColor),
+            ),
+          ),
+        ],
+      ),
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: tokens.dividerSoft)),
+      ),
+      child: selectable
+          ? Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => onChanged?.call(!selected),
+                child: body,
+              ),
+            )
+          : body,
+    );
+  }
+}
+
+class _ResultBucketData {
+  const _ResultBucketData({
+    required this.title,
+    required this.count,
+    required this.detail,
+  });
+
+  final String title;
+  final int count;
+  final String detail;
+}
+
+class _ResultSummaryData {
+  const _ResultSummaryData({
+    required this.safe,
+    required this.review,
+    required this.keep,
+    required this.selectedSafeCount,
+    required this.selectedBytes,
+  });
+
+  final _ResultBucketData safe;
+  final _ResultBucketData review;
+  final _ResultBucketData keep;
+  final int selectedSafeCount;
+  final int selectedBytes;
+}
+
+class _ResultMetricCards extends StatelessWidget {
+  const _ResultMetricCards({required this.buckets});
+
+  final List<_ResultBucketData> buckets;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(
+            children: [
+              for (var index = 0; index < buckets.length; index++) ...[
+                _ResultMetricCard(bucket: buckets[index]),
+                if (index != buckets.length - 1)
+                  const SizedBox(height: AppleSpacing.xs),
+              ],
+            ],
+          );
+        }
+        return Row(
+          children: [
+            for (var index = 0; index < buckets.length; index++) ...[
+              Expanded(child: _ResultMetricCard(bucket: buckets[index])),
+              if (index != buckets.length - 1)
+                const SizedBox(width: AppleSpacing.xs),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ResultMetricCard extends StatelessWidget {
+  const _ResultMetricCard({required this.bucket});
+
+  final _ResultBucketData bucket;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.hairline),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppleSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(bucket.title, style: context.vwFinePrintInk),
+            const SizedBox(height: AppleSpacing.xs),
+            Text(
+              bucket.count.toString(),
+              style: context.vwBodyStrong.copyWith(fontSize: 23, height: 1.12),
+            ),
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              bucket.detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.vwFinePrint,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

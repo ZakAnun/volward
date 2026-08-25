@@ -470,6 +470,75 @@
   "aiWorkspacePhaseRecovery": "Recovery",
   "aiWorkspaceLoadPrevious": "Load Previous Result",
   "aiWorkspaceAnalyzeAgain": "Analyze Again",
+  "aiResultsSummaryTitle": "{count} results found",
+  "@aiResultsSummaryTitle": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsSummaryBody": "{safe} safe to remove · {review} to review",
+  "@aiResultsSummaryBody": {
+    "placeholders": {
+      "safe": {"type": "int"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiResultsSafeSubtitle": "Ready to remove",
+  "aiResultsReviewSubtitle": "Needs a final check",
+  "aiResultsKeepSubtitle": "Leave in place",
+  "aiResultsTopTitle": "Top suggestions",
+  "aiResultsTopCount": "{shown} of {total}",
+  "@aiResultsTopCount": {
+    "placeholders": {
+      "shown": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "aiShowAllResults": "Show all results",
+  "aiResultsSummaryEyebrow": "AI cleanup summary",
+  "aiResultsSelectedForCleanup": "{size} selected for cleanup",
+  "@aiResultsSelectedForCleanup": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "aiResultsSelectedReviewBody": "{safeSelected} safe {safeSelected, plural, =1{item is} other{items are}} selected. {review} {review, plural, =1{item needs} other{items need}} review before deleting.",
+  "@aiResultsSelectedReviewBody": {
+    "placeholders": {
+      "safeSelected": {"type": "int"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiResultsMetricSafeTitle": "Safe to remove",
+  "aiResultsMetricReviewTitle": "Review needed",
+  "aiResultsMetricKeepTitle": "Kept by AI",
+  "aiResultsMetricTotalSize": "{size} total",
+  "@aiResultsMetricTotalSize": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "aiResultsMetricProtected": "Protected",
+  "aiResultsRecommendedTitle": "Recommended first",
+  "aiResultsRecommendedSubtitle": "largest safe items + review items",
+  "aiResultsTopLimit": "Top {count}",
+  "@aiResultsTopLimit": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsStatusSafe": "Safe",
+  "aiResultsStatusReview": "Review",
+  "aiResultsStatusKeep": "Keep",
+  "aiResultsSelectedLabel": "Selected",
+  "aiResultsSelectedCount": "{count, plural, =1{1 item} other{{count} items}}",
+  "@aiResultsSelectedCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsDeleteGuidanceTitle": "Review before deleting",
+  "aiResultsDeleteGuidanceBody": "Items marked Review are not selected by default. Safe items can still be unchecked.",
   "aiWorkspaceSelectedSummary": "{count} selected · {size}",
   "@aiWorkspaceSelectedSummary": {
     "placeholders": {

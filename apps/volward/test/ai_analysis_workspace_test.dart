@@ -85,7 +85,7 @@ class _ThrowingProvider implements AiProvider {
 
 class _UsageByokProvider extends ByokAiProvider {
   _UsageByokProvider(this.verdicts)
-    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -102,7 +102,7 @@ class _UsageByokProvider extends ByokAiProvider {
 
 class _IncompleteUsageByokProvider extends ByokAiProvider {
   _IncompleteUsageByokProvider(this.verdicts)
-    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -131,7 +131,8 @@ class _FakeUsageContract implements AiContract {
   List<AiVerdict> parseResponseJson(
     String responseBody,
     List<AiCandidate> batch,
-  ) => const [];
+  ) =>
+      const [];
 
   @override
   String upstreamEndpoint() => 'https://example.test/v1/chat';
@@ -707,18 +708,53 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
   });
 
-  testWidgets('analysis groups verdicts and keep items cannot be selected', (
-    tester,
-  ) async {
-    await _openResults(tester, _FakeGateway());
+  testWidgets('analysis groups verdicts and keep items cannot be selected',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      candidatesJson: _candidatePayload(
+        preClassified: const [
+          {
+            'path': '/tmp/local-keep.db',
+            'size_bytes': 400,
+            'confidence': 'high',
+            'reason': 'Application data',
+            'deletable': false,
+          },
+        ],
+      ),
+    );
+    expect(find.text('Recommended first'), findsOneWidget);
+    expect(find.text('/tmp/safe.cache'), findsOneWidget);
+    expect(find.text('/tmp/review.log'), findsOneWidget);
+    expect(find.text('/tmp/keep.db'), findsNothing);
+    expect(find.text('/tmp/local-keep.db'), findsNothing);
+    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('100 B'), findsAtLeastNWidgets(1));
+    expect(find.byKey(AiAnalysisWorkspace.showAllResultsKey), findsOneWidget);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+    await tester.pumpAndSettle();
     expect(find.text('Safe to Remove (1)'), findsOneWidget);
     expect(find.text('Review Needed (1)'), findsOneWidget);
-    expect(find.text('Keep (1)'), findsOneWidget);
-    expect(find.text('1 selected · 100 B'), findsOneWidget);
+    expect(find.text('Keep (2)'), findsOneWidget);
+    expect(find.text('/tmp/keep.db'), findsOneWidget);
+    expect(find.text('/tmp/local-keep.db'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('/tmp/local-keep.db'),
+        matching: find.byType(InkWell),
+      ),
+      findsNothing,
+    );
 
-    await tester.tap(find.text('/tmp/keep.db'));
+    await tester.tap(find.text('/tmp/local-keep.db'));
     await tester.pump();
-    expect(find.text('1 selected · 100 B'), findsOneWidget);
+    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('100 B'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('BYOK result persists provider-reported token usage', (
@@ -762,10 +798,72 @@ void main() {
   });
 
   testWidgets('selection summary tracks count and bytes', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await _openResults(tester, _FakeGateway());
-    await tester.tap(find.widgetWithText(CheckboxListTile, '/tmp/review.log'));
+    final reviewTile = find
+        .ancestor(
+          of: find.text('/tmp/review.log'),
+          matching: find.byType(InkWell),
+        )
+        .first;
+    await tester.tap(reviewTile);
     await tester.pump();
-    expect(find.text('2 selected · 300 B'), findsOneWidget);
+    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('300 B'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('results keep local preclassified selections visible', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      candidatesJson: _candidatePayload(
+        preClassified: const [
+          {
+            'path': '/tmp/local-1.cache',
+            'size_bytes': 40,
+            'confidence': 'high',
+            'reason': 'Local cache',
+            'deletable': true,
+          },
+          {
+            'path': '/tmp/local-2.cache',
+            'size_bytes': 60,
+            'confidence': 'high',
+            'reason': 'Local cache',
+            'deletable': true,
+          },
+        ],
+      ),
+    );
+
+    expect(find.text('200 B selected for cleanup'), findsOneWidget);
+    expect(
+      find.text(
+        '3 safe items are selected. 1 item needs review before deleting.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('/tmp/local-1.cache'), findsOneWidget);
+    expect(find.text('/tmp/local-2.cache'), findsOneWidget);
+    expect(find.text('3 items'), findsOneWidget);
+    expect(find.text('200 B'), findsAtLeastNWidgets(1));
+
+    final localSafeTile = find
+        .ancestor(
+          of: find.text('/tmp/local-1.cache'),
+          matching: find.byType(InkWell),
+        )
+        .first;
+    await tester.tap(localSafeTile);
+    await tester.pump();
+    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('160 B'), findsAtLeastNWidgets(1));
+    expect(find.text('3 items'), findsNothing);
   });
 
   testWidgets(
@@ -784,7 +882,8 @@ void main() {
         candidatesJson: _aggregateCandidates,
       );
 
-      expect(find.text('1 selected · 300 B'), findsOneWidget);
+      expect(find.text('1 item'), findsOneWidget);
+      expect(find.text('300 B'), findsAtLeastNWidgets(1));
       await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
       await _pumpUntilFound(tester, find.byType(AlertDialog));
 
@@ -796,7 +895,8 @@ void main() {
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.text('1 selected · 300 B'), findsOneWidget);
+      expect(find.text('1 item'), findsOneWidget);
+      expect(find.text('300 B'), findsAtLeastNWidgets(1));
       expect(gateway.deleteCalls, hasLength(1));
     },
   );
@@ -1052,6 +1152,196 @@ void main() {
     );
     expect(summaryRect.left, greaterThanOrEqualTo(listRect.right));
     expect(summaryRect.width, 260);
+    expect(find.text('Selected'), findsOneWidget);
+    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('100 B'), findsAtLeastNWidgets(1));
+    expect(find.text('Review before deleting'), findsOneWidget);
+    expect(
+      find.text(
+        'Items marked Review are not selected by default. Safe items can still be unchecked.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  Finder eightPxDecoratedContainerFinder() {
+    return find.byWidgetPredicate((widget) {
+      if (widget is! DecoratedBox) return false;
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.borderRadius == BorderRadius.circular(8) &&
+          decoration.border != null;
+    });
+  }
+
+  testWidgets('results match refined H summary and recommended container', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openResults(tester, _FakeGateway());
+
+    expect(find.text('AI cleanup summary'), findsOneWidget);
+    expect(find.text('100 B selected for cleanup'), findsOneWidget);
+    expect(
+      find.text(
+        '1 safe item is selected. 1 item needs review before deleting.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Safe to remove'), findsOneWidget);
+    expect(find.text('Review needed'), findsOneWidget);
+    expect(find.text('Kept by AI'), findsOneWidget);
+    expect(find.text('Recommended first'), findsOneWidget);
+    expect(find.text('largest safe items + review items'), findsOneWidget);
+    expect(find.text('Top 2'), findsOneWidget);
+    final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
+    expect(
+      find.descendant(of: resultsList, matching: find.text('Safe')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: resultsList, matching: find.text('Review')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: resultsList, matching: find.text('Keep')),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Safe to remove'),
+        matching: eightPxDecoratedContainerFinder(),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Review needed'),
+        matching: eightPxDecoratedContainerFinder(),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Kept by AI'),
+        matching: eightPxDecoratedContainerFinder(),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Recommended first'),
+        matching: eightPxDecoratedContainerFinder(),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('results overview is concise until expanded', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final result = <AiVerdict>[
+      for (var i = 0; i < 9; i++)
+        AiVerdict(
+          path: '/tmp/safe-$i.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+      for (var i = 0; i < 2; i++)
+        AiVerdict(
+          path: '/tmp/review-$i.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Needs confirmation',
+        ),
+      const AiVerdict(
+        path: '/tmp/keep.db',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'Application data',
+      ),
+    ];
+    await _openResults(tester, _FakeGateway(), result: result);
+
+    expect(find.text('AI cleanup summary'), findsOneWidget);
+    expect(find.text('0 B selected for cleanup'), findsOneWidget);
+    expect(
+      find.text(
+        '9 safe items are selected. 2 items need review before deleting.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Recommended first'), findsOneWidget);
+    expect(find.text('Top 8'), findsOneWidget);
+    expect(find.text('Show all results'), findsOneWidget);
+    expect(find.text('/tmp/safe-8.cache'), findsNothing);
+
+    await tester.tap(find.text('Show all results'));
+    await tester.pumpAndSettle();
+
+    final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
+    expect(
+      find.descendant(of: resultsList, matching: find.text('Safe')),
+      findsAtLeastNWidgets(1),
+    );
+    expect(
+      find.descendant(of: resultsList, matching: find.text('Review')),
+      findsAtLeastNWidgets(1),
+    );
+    expect(
+      find.descendant(of: resultsList, matching: find.text('Keep')),
+      findsAtLeastNWidgets(1),
+    );
+    expect(find.text('/tmp/safe-8.cache'), findsOneWidget);
+    expect(find.text('/tmp/review-1.log'), findsOneWidget);
+    expect(find.text('Top 8'), findsNothing);
+  });
+
+  testWidgets('top suggestions surface large review items before small safe', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final result = <AiVerdict>[
+      for (var i = 0; i < 8; i++)
+        AiVerdict(
+          path: '/tmp/small-safe-$i.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Small cache',
+        ),
+      const AiVerdict(
+        path: '/tmp/large-review.log',
+        verdict: 'review_needed',
+        confidence: 'medium',
+        reason: 'Large old log',
+      ),
+    ];
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: result,
+      candidatesJson: _candidatePayload(
+        unknownCandidates: [
+          for (var i = 0; i < 8; i++)
+            {
+              'path': '/tmp/small-safe-$i.cache',
+              'size_bytes': 1,
+              'is_dir': false
+            },
+          {
+            'path': '/tmp/large-review.log',
+            'size_bytes': 1000,
+            'is_dir': false,
+          },
+        ],
+      ),
+    );
+
+    expect(find.text('/tmp/large-review.log'), findsOneWidget);
+    expect(find.text('/tmp/small-safe-7.cache'), findsNothing);
   });
 
   testWidgets('compact results place summary above the internal list', (
