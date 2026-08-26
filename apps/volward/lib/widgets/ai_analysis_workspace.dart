@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -136,6 +137,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const summaryKey = Key('ai-analysis-summary');
   static const deleteKey = Key('ai-analysis-delete');
   static const showAllResultsKey = Key('ai-analysis-show-all-results');
+  static const headerKey = Key('ai-analysis-header');
 
   final String snapshotId;
   final String targetLabel;
@@ -174,6 +176,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int? _platformCredits;
   int _operationGeneration = 0;
   bool _showAllResults = false;
+  final ScrollController _resultsScrollController = ScrollController();
+  double _headerCollapseProgress = 0;
 
   int _beginOperation() => ++_operationGeneration;
   bool _isCurrent(int generation) =>
@@ -202,13 +206,33 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   void initState() {
     super.initState();
+    _resultsScrollController.addListener(_updateHeaderCollapseProgress);
     _bootstrap();
   }
 
   @override
   void dispose() {
     _operationGeneration++;
+    _resultsScrollController
+      ..removeListener(_updateHeaderCollapseProgress)
+      ..dispose();
     super.dispose();
+  }
+
+  void _updateHeaderCollapseProgress() {
+    if (!_resultsScrollController.hasClients) return;
+    final nextProgress = (_resultsScrollController.offset / 64)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    if ((nextProgress - _headerCollapseProgress).abs() < 0.01) return;
+    setState(() => _headerCollapseProgress = nextProgress);
+  }
+
+  void _resetResultsScroll() {
+    if (_resultsScrollController.hasClients) {
+      _resultsScrollController.jumpTo(0);
+    }
+    _headerCollapseProgress = 0;
   }
 
   @override
@@ -222,6 +246,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _bootstrap() async {
     final generation = _beginOperation();
+    _resetResultsScroll();
     setState(() {
       _phase = _Phase.loading;
       _error = null;
@@ -360,8 +385,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _loadPreviousResult() async {
     final generation = _beginOperation();
     final l10n = context.l10n;
-    final key =
-        _resultCacheKey.isNotEmpty ? _resultCacheKey : widget.snapshotId;
+    final key = _resultCacheKey.isNotEmpty
+        ? _resultCacheKey
+        : widget.snapshotId;
     var raw = widget.gateway.loadResult(key);
     if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
         key != widget.snapshotId) {
@@ -464,13 +490,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     try {
       final verdicts = await provider.analyze(_unknown);
       if (!_isCurrent(generation)) return;
-      final model =
-          provider is ByokAiProvider ? provider.model : 'deepseek-v4-flash';
+      final model = provider is ByokAiProvider
+          ? provider.model
+          : 'deepseek-v4-flash';
       final byokUsage =
           provider is ByokAiProvider && provider.hasReliableTokenUsage
-              ? provider.lastTokenUsage
-              : null;
-      final inputTokens = byokUsage?.promptTokens ??
+          ? provider.lastTokenUsage
+          : null;
+      final inputTokens =
+          byokUsage?.promptTokens ??
           (_estimatedTokens > 0
               ? _estimatedTokens
               : (_unknown.length * 8 + 200));
@@ -576,8 +604,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'empty_api_key' ||
         'ai_contract_unavailable' ||
         'platform_api_unconfigured' ||
-        'link_account_required' =>
-          true,
+        'link_account_required' => true,
         _ => false,
       };
       setState(() {
@@ -596,8 +623,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       'network_error' => context.l10n.aiErrorNetwork,
       'invalid_api_key' || 'empty_api_key' => context.l10n.aiNoApiKey,
       'ai_contract_unavailable' ||
-      'platform_api_unconfigured' =>
-        context.l10n.aiContractUnavailable,
+      'platform_api_unconfigured' => context.l10n.aiContractUnavailable,
       'link_account_required' => context.l10n.aiSettingsSessionExpired,
       _ => context.l10n.aiErrorUnknown,
     };
@@ -710,7 +736,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ? failed.whereType<String>().toList(growable: false)
           : const <String>[];
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
-      final deletedCount = (report['deleted_count'] as num?)?.toInt() ??
+      final deletedCount =
+          (report['deleted_count'] as num?)?.toInt() ??
           (targets.length - failedCount);
       if (!_isCurrent(generation)) return;
       unawaited(
@@ -780,6 +807,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
+    final headerCollapseProgress =
+        _phase == _Phase.results || _phase == _Phase.deleting
+        ? _headerCollapseProgress
+        : 0.0;
     return DecoratedBox(
       key: AiAnalysisWorkspace.workspaceKey,
       decoration: BoxDecoration(
@@ -793,6 +824,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             targetLabel: widget.targetLabel,
             phaseLabel: _phaseLabel(context),
             phaseStep: _phaseStep,
+            collapseProgress: headerCollapseProgress,
             onBack: _deleting ? null : widget.onExit,
           ),
           Divider(height: 1, color: tokens.dividerSoft),
@@ -816,24 +848,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   int get _phaseStep => switch (_phase) {
-        _Phase.loading || _Phase.error => 1,
-        _Phase.precheck => 2,
-        _Phase.privacy || _Phase.analyzing => 3,
-        _Phase.results => 4,
-        _Phase.deleting => 5,
-      };
+    _Phase.loading || _Phase.error => 1,
+    _Phase.precheck => 2,
+    _Phase.privacy || _Phase.analyzing => 3,
+    _Phase.results => 4,
+    _Phase.deleting => 5,
+  };
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(
-          label: context.l10n.aiWorkspacePhaseLoading,
-          candidateCount: 0,
-        ),
+        label: context.l10n.aiWorkspacePhaseLoading,
+        candidateCount: 0,
+      ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
       _Phase.analyzing => _buildProgressBody(
-          label: context.l10n.aiWorkspacePhaseAnalyzing,
-          candidateCount: _unknown.length,
-        ),
+        label: context.l10n.aiWorkspacePhaseAnalyzing,
+        candidateCount: _unknown.length,
+      ),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -883,9 +915,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
         ? (_error ??
-            (_mode == AiMode.platform
-                ? l10n.aiSettingsSessionExpired
-                : l10n.aiNoApiKey))
+              (_mode == AiMode.platform
+                  ? l10n.aiSettingsSessionExpired
+                  : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -1041,8 +1073,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
 
     final l10n = context.l10n;
-    final selectedSafeCount =
-        safe.where((item) => _selected.contains(item.path)).length;
+    final selectedSafeCount = safe
+        .where((item) => _selected.contains(item.path))
+        .length;
     return _ResultSummaryData(
       safe: _ResultBucketData(
         title: l10n.aiResultsMetricSafeTitle,
@@ -1083,87 +1116,93 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       ...localKeep,
       ..._verdicts.where((verdict) => verdict.verdict == 'keep'),
     ];
-    final summary = _resultSummaryFor(
-      safe: safe,
-      review: review,
-      keep: keep,
-    );
+    final summary = _resultSummaryFor(safe: safe, review: review, keep: keep);
     final topSuggestions = [...safe, ...review];
     topSuggestions.sort((a, b) {
       int rank(AiVerdict item) => switch (item.verdict) {
-            'safe_to_remove' => 0,
-            'review_needed' => 1,
-            _ => 2,
-          };
+        'safe_to_remove' => 0,
+        'review_needed' => 1,
+        _ => 2,
+      };
       final actionableDiff = (rank(a) == 2 ? 1 : 0).compareTo(
         rank(b) == 2 ? 1 : 0,
       );
       if (actionableDiff != 0) return actionableDiff;
-      final sizeDiff =
-          (_sizeByPath[b.path] ?? 0).compareTo(_sizeByPath[a.path] ?? 0);
+      final sizeDiff = (_sizeByPath[b.path] ?? 0).compareTo(
+        _sizeByPath[a.path] ?? 0,
+      );
       if (sizeDiff != 0) return sizeDiff;
       final rankDiff = rank(a).compareTo(rank(b));
       if (rankDiff != 0) return rankDiff;
       return a.path.compareTo(b.path);
     });
-    final visibleTopSuggestions =
-        topSuggestions.take(8).toList(growable: false);
-    final resultsList = ListView(
-      key: AiAnalysisWorkspace.resultsListKey,
-      padding: const EdgeInsets.all(AppleSpacing.lg),
-      children: [
-        _buildResultsOverview(summary: summary),
-        if (_showAllResults) ...[
-          const SizedBox(height: AppleSpacing.lg),
-          _verdictSection(
-            title: l10n.aiVerdictSafe(safe.length),
-            items: safe,
-            selectable: true,
-          ),
-          _verdictSection(
-            title: l10n.aiVerdictReview(review.length),
-            items: review,
-            selectable: true,
-          ),
-          _verdictSection(
-            title: l10n.aiVerdictKeep(keep.length),
-            items: keep,
-            selectable: false,
-          ),
-        ] else ...[
-          const SizedBox(height: AppleSpacing.lg),
-          _buildTopSuggestions(
-            l10n: l10n,
-            items: visibleTopSuggestions,
-          ),
-        ],
-        if (!_showAllResults) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          TextButton(
-            key: AiAnalysisWorkspace.showAllResultsKey,
-            onPressed: () => setState(() => _showAllResults = true),
-            child: Text(l10n.aiShowAllResults),
-          ),
-        ],
+    final visibleTopSuggestions = topSuggestions
+        .take(8)
+        .toList(growable: false);
+    final resultChildren = <Widget>[
+      _buildResultsOverview(summary: summary),
+      if (_showAllResults) ...[
+        const SizedBox(height: AppleSpacing.lg),
+        _verdictSection(
+          title: l10n.aiVerdictSafe(safe.length),
+          items: safe,
+          selectable: true,
+        ),
+        _verdictSection(
+          title: l10n.aiVerdictReview(review.length),
+          items: review,
+          selectable: true,
+        ),
+        _verdictSection(
+          title: l10n.aiVerdictKeep(keep.length),
+          items: keep,
+          selectable: false,
+        ),
+      ] else ...[
+        const SizedBox(height: AppleSpacing.lg),
+        _buildTopSuggestions(l10n: l10n, items: visibleTopSuggestions),
       ],
-    );
+      if (!_showAllResults) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        TextButton(
+          key: AiAnalysisWorkspace.showAllResultsKey,
+          onPressed: () => setState(() => _showAllResults = true),
+          child: Text(l10n.aiShowAllResults),
+        ),
+      ],
+    ];
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth >= 720) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          return ListView(
+            key: AiAnalysisWorkspace.resultsListKey,
+            controller: _resultsScrollController,
+            padding: const EdgeInsets.all(AppleSpacing.lg),
             children: [
-              Expanded(child: resultsList),
-              const VerticalDivider(width: 1),
-              SizedBox(
-                key: AiAnalysisWorkspace.summaryKey,
-                width: 260,
-                child: _buildSelectionSummary(),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: resultChildren,
+                    ),
+                  ),
+                  const SizedBox(width: AppleSpacing.lg),
+                  SizedBox(
+                    key: AiAnalysisWorkspace.summaryKey,
+                    width: 260,
+                    child: _buildSelectionSummary(),
+                  ),
+                ],
               ),
             ],
           );
         }
-        return Column(
+        return ListView(
+          key: AiAnalysisWorkspace.resultsListKey,
+          controller: _resultsScrollController,
+          padding: EdgeInsets.zero,
           children: [
             SizedBox(
               key: AiAnalysisWorkspace.summaryKey,
@@ -1171,7 +1210,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               child: _buildSelectionSummary(compact: true),
             ),
             const Divider(height: 1),
-            Expanded(child: resultsList),
+            Padding(
+              padding: const EdgeInsets.all(AppleSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: resultChildren,
+              ),
+            ),
           ],
         );
       },
@@ -1186,9 +1231,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         Text(l10n.aiResultsSummaryEyebrow, style: context.vwFinePrintInk),
         const SizedBox(height: AppleSpacing.xs),
         Text(
-          l10n.aiResultsSelectedForCleanup(
-            _formatBytes(summary.selectedBytes),
-          ),
+          l10n.aiResultsSelectedForCleanup(_formatBytes(summary.selectedBytes)),
           style: context.vwBodyStrong.copyWith(fontSize: 26, height: 1.18),
         ),
         const SizedBox(height: AppleSpacing.xs),
@@ -1239,7 +1282,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return Padding(
       padding: EdgeInsets.all(compact ? AppleSpacing.sm : AppleSpacing.lg),
       child: Column(
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(l10n.aiResultsSelectedLabel, style: context.vwFinePrintInk),
@@ -1253,8 +1296,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           const SizedBox(height: AppleSpacing.md),
           Divider(height: 1, color: tokens.dividerSoft),
           const SizedBox(height: AppleSpacing.md),
-          Text(l10n.aiResultsDeleteGuidanceTitle,
-              style: context.vwCaptionStrong),
+          Text(
+            l10n.aiResultsDeleteGuidanceTitle,
+            style: context.vwCaptionStrong,
+          ),
           const SizedBox(height: AppleSpacing.xs),
           Text(l10n.aiResultsDeleteGuidanceBody, style: context.vwCaption),
           if (_error != null && _partialDeleteFailedCount == null) ...[
@@ -1292,8 +1337,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               onPressed: _deleting ? null : widget.onExit,
             ),
           ],
-          if (!compact) const Spacer(),
-          SizedBox(height: compact ? AppleSpacing.xs : AppleSpacing.md),
+          const SizedBox(height: AppleSpacing.md),
           AppleButton(
             key: AiAnalysisWorkspace.deleteKey,
             label: _deleting
@@ -1684,12 +1728,14 @@ class _WorkspaceHeader extends StatelessWidget {
     required this.targetLabel,
     required this.phaseLabel,
     required this.phaseStep,
+    required this.collapseProgress,
     required this.onBack,
   });
 
   final String targetLabel;
   final String phaseLabel;
   final int phaseStep;
+  final double collapseProgress;
   final VoidCallback? onBack;
 
   @override
@@ -1697,70 +1743,95 @@ class _WorkspaceHeader extends StatelessWidget {
     final l10n = context.l10n;
     final tokens = context.volward;
     final phaseSemantics = '$phaseLabel, step $phaseStep of 5';
-    return SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppleSpacing.md,
-          vertical: AppleSpacing.sm,
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              key: AiAnalysisWorkspace.backKey,
-              tooltip: l10n.aiWorkspaceBack,
-              onPressed: onBack,
-              icon: const Icon(Icons.arrow_back),
-            ),
-            const SizedBox(width: AppleSpacing.xs),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    l10n.aiWorkspaceTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.vwBodyStrong,
-                  ),
-                  if (targetLabel.isNotEmpty)
-                    Text(
-                      targetLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.vwFinePrint,
-                    ),
-                ],
+    final t = collapseProgress.clamp(0.0, 1.0).toDouble();
+    final verticalPadding = ui.lerpDouble(AppleSpacing.sm, AppleSpacing.xs, t)!;
+    final targetProgress = 1 - t;
+    return DecoratedBox(
+      key: AiAnalysisWorkspace.headerKey,
+      decoration: BoxDecoration(
+        color: tokens.canvas.withValues(alpha: ui.lerpDouble(0, 0.72, t)!),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: AppleSpacing.md,
+            vertical: verticalPadding,
+          ),
+          child: Row(
+            children: [
+              Tooltip(
+                message: l10n.aiWorkspaceBack,
+                child: AppleButton(
+                  key: AiAnalysisWorkspace.backKey,
+                  label: l10n.aiWorkspaceBack,
+                  icon: Icons.arrow_back,
+                  variant: AppleButtonVariant.pearl,
+                  onPressed: onBack,
+                ),
               ),
-            ),
-            const SizedBox(width: AppleSpacing.sm),
-            Semantics(
-              value: phaseSemantics,
-              child: ExcludeSemantics(
-                child: Row(
+              const SizedBox(width: AppleSpacing.xs),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(phaseLabel, style: context.vwCaptionStrong),
-                    const SizedBox(width: AppleSpacing.xs),
-                    for (var step = 1; step <= 5; step++) ...[
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: step <= phaseStep
-                              ? tokens.primary
-                              : tokens.inkMuted48.withValues(alpha: 0.35),
-                          shape: BoxShape.circle,
+                    Text(
+                      l10n.aiWorkspaceTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.vwBodyStrong.copyWith(
+                        fontSize: ui.lerpDouble(17, 15, t),
+                        height: ui.lerpDouble(1.24, 1.12, t),
+                      ),
+                    ),
+                    if (targetLabel.isNotEmpty)
+                      ClipRect(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          heightFactor: targetProgress,
+                          child: Opacity(
+                            opacity: targetProgress,
+                            child: Text(
+                              targetLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.vwFinePrint,
+                            ),
+                          ),
                         ),
                       ),
-                      if (step < 5) const SizedBox(width: AppleSpacing.xxs),
-                    ],
                   ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: AppleSpacing.sm),
+              Semantics(
+                value: phaseSemantics,
+                child: ExcludeSemantics(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(phaseLabel, style: context.vwCaptionStrong),
+                      const SizedBox(width: AppleSpacing.xs),
+                      for (var step = 1; step <= 5; step++) ...[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: step <= phaseStep
+                                ? tokens.primary
+                                : tokens.inkMuted48.withValues(alpha: 0.35),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        if (step < 5) const SizedBox(width: AppleSpacing.xxs),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

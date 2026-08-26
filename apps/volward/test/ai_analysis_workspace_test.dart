@@ -85,7 +85,7 @@ class _ThrowingProvider implements AiProvider {
 
 class _UsageByokProvider extends ByokAiProvider {
   _UsageByokProvider(this.verdicts)
-      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -102,7 +102,7 @@ class _UsageByokProvider extends ByokAiProvider {
 
 class _IncompleteUsageByokProvider extends ByokAiProvider {
   _IncompleteUsageByokProvider(this.verdicts)
-      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -131,8 +131,7 @@ class _FakeUsageContract implements AiContract {
   List<AiVerdict> parseResponseJson(
     String responseBody,
     List<AiCandidate> batch,
-  ) =>
-      const [];
+  ) => const [];
 
   @override
   String upstreamEndpoint() => 'https://example.test/v1/chat';
@@ -708,8 +707,9 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
   });
 
-  testWidgets('analysis groups verdicts and keep items cannot be selected',
-      (tester) async {
+  testWidgets('analysis groups verdicts and keep items cannot be selected', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _openResults(
@@ -1138,7 +1138,9 @@ void main() {
     });
   }
 
-  testWidgets('wide results use list and stable side summary', (tester) async {
+  testWidgets('wide results keep the side summary inside the results list', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1280, 800);
     addTearDown(tester.view.reset);
@@ -1150,7 +1152,15 @@ void main() {
     final summaryRect = tester.getRect(
       find.byKey(AiAnalysisWorkspace.summaryKey),
     );
-    expect(summaryRect.left, greaterThanOrEqualTo(listRect.right));
+    expect(
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.resultsListKey),
+        matching: find.byKey(AiAnalysisWorkspace.summaryKey),
+      ),
+      findsOneWidget,
+    );
+    expect(summaryRect.left, greaterThan(listRect.center.dx));
+    expect(summaryRect.right, lessThanOrEqualTo(listRect.right));
     expect(summaryRect.width, 260);
     expect(find.text('Selected'), findsOneWidget);
     expect(find.text('1 item'), findsOneWidget);
@@ -1299,6 +1309,62 @@ void main() {
     expect(find.text('Top 8'), findsNothing);
   });
 
+  testWidgets('results pin return action while selection summary scrolls', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final result = <AiVerdict>[
+      for (var i = 0; i < 18; i++)
+        AiVerdict(
+          path: '/tmp/safe-$i.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+    ];
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: result,
+      candidatesJson: _candidatePayload(
+        unknownCandidates: [
+          for (var i = 0; i < 18; i++)
+            {'path': '/tmp/safe-$i.cache', 'size_bytes': 10, 'is_dir': false},
+        ],
+      ),
+    );
+
+    final backAction = find.byKey(AiAnalysisWorkspace.backKey);
+    expect(find.text('Back to Overview'), findsOneWidget);
+    expect(backAction, findsOneWidget);
+    expect(tester.getSize(backAction).width, greaterThan(96));
+    final expandedHeaderHeight = tester
+        .getSize(find.byKey(AiAnalysisWorkspace.headerKey))
+        .height;
+    final summary = find.byKey(AiAnalysisWorkspace.summaryKey);
+    final summaryTopBeforeScroll = tester.getTopLeft(summary).dy;
+
+    await tester.tap(find.text('Show all results'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(AiAnalysisWorkspace.resultsListKey),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Back to Overview'), findsOneWidget);
+    expect(backAction, findsOneWidget);
+    expect(
+      tester.getTopLeft(summary).dy,
+      lessThan(summaryTopBeforeScroll - 200),
+    );
+    expect(
+      tester.getSize(find.byKey(AiAnalysisWorkspace.headerKey)).height,
+      lessThan(expandedHeaderHeight),
+    );
+  });
+
   testWidgets('top suggestions surface large review items before small safe', (
     tester,
   ) async {
@@ -1329,7 +1395,7 @@ void main() {
             {
               'path': '/tmp/small-safe-$i.cache',
               'size_bytes': 1,
-              'is_dir': false
+              'is_dir': false,
             },
           {
             'path': '/tmp/large-review.log',
@@ -1344,21 +1410,53 @@ void main() {
     expect(find.text('/tmp/small-safe-7.cache'), findsNothing);
   });
 
-  testWidgets('compact results place summary above the internal list', (
+  testWidgets('compact results scroll the summary with result content', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(719, 800);
     addTearDown(tester.view.reset);
-    await _openResults(tester, _FakeGateway());
+    final result = <AiVerdict>[
+      for (var i = 0; i < 18; i++)
+        AiVerdict(
+          path: '/tmp/compact-safe-$i.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+    ];
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: result,
+      candidatesJson: _candidatePayload(
+        unknownCandidates: [
+          for (var i = 0; i < 18; i++)
+            {
+              'path': '/tmp/compact-safe-$i.cache',
+              'size_bytes': 10,
+              'is_dir': false,
+            },
+        ],
+      ),
+    );
 
-    final listRect = tester.getRect(
-      find.byKey(AiAnalysisWorkspace.resultsListKey),
+    final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
+    final summary = find.byKey(AiAnalysisWorkspace.summaryKey);
+    expect(find.descendant(of: resultsList, matching: summary), findsOneWidget);
+
+    await tester.drag(resultsList, const Offset(0, -400));
+    await tester.pumpAndSettle();
+
+    final scrollable = find.descendant(
+      of: resultsList,
+      matching: find.byType(Scrollable),
     );
-    final summaryRect = tester.getRect(
-      find.byKey(AiAnalysisWorkspace.summaryKey),
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      greaterThan(300),
     );
-    expect(summaryRect.bottom, lessThanOrEqualTo(listRect.top));
+    expect(summary, findsNothing);
     expect(tester.takeException(), isNull);
   });
 
