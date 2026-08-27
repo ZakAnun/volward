@@ -61,12 +61,16 @@ impl UpstreamClient for MockUpstream {
     }
 }
 
-async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
+async fn test_ctx_with_config(
+    upstream: Arc<dyn UpstreamClient>,
+    configure: impl FnOnce(&mut crate::config::Config),
+) -> TestCtx {
     let dir = tempfile::tempdir().expect("tempdir");
     let db_path = dir.path().join("platform.db");
     let url = format!("sqlite:{}?mode=rwc", db_path.display());
 
-    let config = crate::config::Config::for_test(url.clone());
+    let mut config = crate::config::Config::for_test(url.clone());
+    configure(&mut config);
     let pool = db::init_pool(&url).await.expect("init pool");
     let mailer = TestMailer::default();
     let app = app(AppState::new(
@@ -81,6 +85,10 @@ async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
         pool,
         _dir: dir,
     }
+}
+
+async fn test_ctx_with_upstream(upstream: Arc<dyn UpstreamClient>) -> TestCtx {
+    test_ctx_with_config(upstream, |_| {}).await
 }
 
 async fn test_ctx() -> TestCtx {
@@ -509,6 +517,28 @@ async fn checkout_returns_url_for_known_pack() {
     assert_eq!(status, StatusCode::OK);
     let url = body["checkout_url"].as_str().unwrap();
     assert!(url.contains("starter"));
+}
+
+#[tokio::test]
+async fn live_checkout_rejects_placeholder_product_id() {
+    let ctx = test_ctx_with_config(
+        Arc::new(MockUpstream {
+            mode: MockMode::OkKeep,
+        }),
+        |config| config.paddle_env = "live".into(),
+    )
+    .await;
+    let token = register_and_link(&ctx, "d-live-co", "live-co@example.com", 0).await;
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/billing/checkout",
+        &token,
+        r#"{"pack_id":"starter"}"#,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body["error"], "internal_error");
 }
 
 #[tokio::test]

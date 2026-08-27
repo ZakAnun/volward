@@ -70,7 +70,14 @@ pub async fn checkout(
         return Err(AppError::BadRequest("unknown_pack".into()));
     };
     if product_id.starts_with("FILL_ME") {
-        // Dev fallback: return a placeholder URL so UI can be exercised.
+        if state.config.paddle_env == "live" {
+            tracing::error!(
+                pack_id = %body.pack_id,
+                "live Paddle checkout requested with an unconfigured product id"
+            );
+            return Err(AppError::Internal("paddle_product_id_unconfigured".into()));
+        }
+        // Sandbox fallback keeps the purchase UI locally testable.
         return Ok(Json(CheckoutResponse {
             checkout_url: format!(
                 "https://example.com/checkout?pack={}&user={}",
