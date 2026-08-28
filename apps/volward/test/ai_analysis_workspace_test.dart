@@ -85,7 +85,7 @@ class _ThrowingProvider implements AiProvider {
 
 class _UsageByokProvider extends ByokAiProvider {
   _UsageByokProvider(this.verdicts)
-    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -102,7 +102,7 @@ class _UsageByokProvider extends ByokAiProvider {
 
 class _IncompleteUsageByokProvider extends ByokAiProvider {
   _IncompleteUsageByokProvider(this.verdicts)
-    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   final List<AiVerdict> verdicts;
 
@@ -122,7 +122,7 @@ class _IncompleteUsageByokProvider extends ByokAiProvider {
 
 class _PartialUsageFailureByokProvider extends ByokAiProvider {
   _PartialUsageFailureByokProvider()
-    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   @override
   Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
@@ -137,7 +137,7 @@ class _PartialUsageFailureByokProvider extends ByokAiProvider {
 
 class _EstimatedPartialUsageFailureByokProvider extends ByokAiProvider {
   _EstimatedPartialUsageFailureByokProvider()
-    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+      : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   @override
   bool get hasReliableTokenUsage => false;
@@ -164,7 +164,8 @@ class _FakeUsageContract implements AiContract {
   List<AiVerdict> parseResponseJson(
     String responseBody,
     List<AiCandidate> batch,
-  ) => const [];
+  ) =>
+      const [];
 
   @override
   String upstreamEndpoint() => 'https://example.test/v1/chat';
@@ -907,6 +908,107 @@ void main() {
     ]);
   });
 
+  testWidgets('review requires an explicit decision before selection', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final gateway = _FakeGateway();
+    await _openResults(
+      tester,
+      gateway,
+      result: const [
+        AiVerdict(
+          path: '/tmp/safe.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+        AiVerdict(
+          path: '/tmp/review.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Old log with uncertain ownership',
+        ),
+        AiVerdict(
+          path: '/tmp/review-2.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Different uncertain log',
+        ),
+        AiVerdict(
+          path: '/tmp/keep.db',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'Application data',
+        ),
+      ],
+      candidatesJson: _candidatePayload(
+        unknownCandidates: const [
+          {'path': '/tmp/safe.cache', 'size_bytes': 100, 'is_dir': false},
+          {'path': '/tmp/review.log', 'size_bytes': 200, 'is_dir': false},
+          {'path': '/tmp/review-2.log', 'size_bytes': 50, 'is_dir': false},
+          {'path': '/tmp/keep.db', 'size_bytes': 300, 'is_dir': false},
+        ],
+      ),
+    );
+
+    expect(find.text('Review'), findsAtLeastNWidgets(1));
+    expect(find.text('Add to cleanup'), findsNothing);
+    expect(find.text('Keep this item'), findsNothing);
+
+    await tester.tap(
+      find
+          .ancestor(
+            of: find.text('/tmp/review.log'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    await tester.pump();
+
+    expect(find.text('Add to cleanup'), findsOneWidget);
+    expect(find.text('Keep this item'), findsOneWidget);
+    expect(find.text('1 item'), findsOneWidget);
+
+    await tester.tap(find.text('Add to cleanup'));
+    await tester.pump();
+    expect(find.text('2 items'), findsOneWidget);
+
+    await tester.tap(
+      find
+          .ancestor(
+            of: find.text('/tmp/review-2.log'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    await tester.pump();
+    await tester.tap(find.text('Keep this item').last);
+    await tester.pump();
+    expect(find.text('2 items'), findsOneWidget);
+
+    await tester.tap(find.text('/tmp/safe.cache'));
+    await tester.pump();
+    expect(find.text('1 item'), findsOneWidget);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('/tmp/keep.db'),
+        matching: find.byType(Checkbox),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+    await tester.pump();
+    expect(gateway.deleteCalls.single.targets, contains('/tmp/review.log'));
+    expect(gateway.deleteCalls.single.targets,
+        isNot(contains('/tmp/review-2.log')));
+  });
+
   testWidgets('selection summary tracks count and bytes', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -919,8 +1021,104 @@ void main() {
         .first;
     await tester.tap(reviewTile);
     await tester.pump();
+    expect(find.text('Add to cleanup'), findsOneWidget);
+    await tester.tap(find.text('Add to cleanup'));
+    await tester.pump();
     expect(find.text('2 items'), findsOneWidget);
     expect(find.text('300 B'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('safe group selection stays scoped to the group', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: const [
+        AiVerdict(
+          path: '/tmp/group-a/safe-a.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Build cache',
+        ),
+        AiVerdict(
+          path: '/tmp/group-a/review-a.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Needs review',
+        ),
+        AiVerdict(
+          path: '/tmp/group-a/keep-a.db',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'Data file',
+        ),
+        AiVerdict(
+          path: '/tmp/group-b/safe-b.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Build cache',
+        ),
+        AiVerdict(
+          path: '/tmp/group-b/review-b.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Needs review',
+        ),
+        AiVerdict(
+          path: '/tmp/group-b/keep-b.db',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'Data file',
+        ),
+      ],
+      candidatesJson: _candidatePayload(
+        unknownCandidates: const [
+          {
+            'path': '/tmp/group-a/safe-a.cache',
+            'size_bytes': 100,
+            'is_dir': false,
+          },
+          {
+            'path': '/tmp/group-a/review-a.log',
+            'size_bytes': 50,
+            'is_dir': false,
+          },
+          {
+            'path': '/tmp/group-a/keep-a.db',
+            'size_bytes': 25,
+            'is_dir': false,
+          },
+          {
+            'path': '/tmp/group-b/safe-b.cache',
+            'size_bytes': 40,
+            'is_dir': false,
+          },
+          {
+            'path': '/tmp/group-b/review-b.log',
+            'size_bytes': 60,
+            'is_dir': false,
+          },
+          {
+            'path': '/tmp/group-b/keep-b.db',
+            'size_bytes': 30,
+            'is_dir': false,
+          },
+        ],
+      ),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+    await tester.pumpAndSettle();
+
+    final firstGroupCheckbox = find.byType(Checkbox).first;
+    await tester.tap(firstGroupCheckbox);
+    await tester.pump();
+    expect(find.text('1 item'), findsOneWidget);
+
+    await tester.tap(find.byType(Checkbox).first);
+    await tester.pump();
+    expect(find.text('2 items'), findsOneWidget);
   });
 
   testWidgets('results keep local preclassified selections visible', (
@@ -1456,9 +1654,21 @@ void main() {
       result: result,
       candidatesJson: _candidatePayload(
         unknownCandidates: const [
-          {'path': '/tmp/project-a/cache/a.bin', 'size_bytes': 10, 'is_dir': false},
-          {'path': '/tmp/project-b/cache/b.bin', 'size_bytes': 20, 'is_dir': false},
-          {'path': '/tmp/project-a/review/log.txt', 'size_bytes': 30, 'is_dir': false},
+          {
+            'path': '/tmp/project-a/cache/a.bin',
+            'size_bytes': 10,
+            'is_dir': false
+          },
+          {
+            'path': '/tmp/project-b/cache/b.bin',
+            'size_bytes': 20,
+            'is_dir': false
+          },
+          {
+            'path': '/tmp/project-a/review/log.txt',
+            'size_bytes': 30,
+            'is_dir': false
+          },
           {'path': '/tmp/project-b/keep.db', 'size_bytes': 40, 'is_dir': false},
         ],
       ),
@@ -1528,9 +1738,8 @@ void main() {
     expect(find.text('Back to Overview'), findsOneWidget);
     expect(backAction, findsOneWidget);
     expect(tester.getSize(backAction).width, greaterThan(96));
-    final expandedHeaderHeight = tester
-        .getSize(find.byKey(AiAnalysisWorkspace.headerKey))
-        .height;
+    final expandedHeaderHeight =
+        tester.getSize(find.byKey(AiAnalysisWorkspace.headerKey)).height;
     final summary = find.byKey(AiAnalysisWorkspace.summaryKey);
     final summaryTopBeforeScroll = tester.getTopLeft(summary).dy;
 
@@ -1637,10 +1846,12 @@ void main() {
     await tester.drag(resultsList, const Offset(0, -400));
     await tester.pumpAndSettle();
 
-    final scrollable = find.descendant(
-      of: resultsList,
-      matching: find.byType(Scrollable),
-    ).first;
+    final scrollable = find
+        .descendant(
+          of: resultsList,
+          matching: find.byType(Scrollable),
+        )
+        .first;
     expect(
       tester.state<ScrollableState>(scrollable).position.pixels,
       greaterThan(300),
