@@ -963,6 +963,17 @@ void main() {
     expect(_resultGroup('/tmp'), findsOneWidget);
     expect(find.text('/tmp/review.log'), findsNothing);
     await _expandGroup(tester, '/tmp');
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.text('Safe 1 · Review 2 · Keep 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('1 safe item is selected. 2 items need review before deleting.'),
+      findsOneWidget,
+    );
 
     expect(find.text('Add to cleanup'), findsNothing);
     expect(find.text('Keep this item'), findsNothing);
@@ -977,12 +988,34 @@ void main() {
     await tester.tap(find.text('Add to cleanup'));
     await tester.pumpAndSettle();
     expect(find.text('2 items'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.text('Safe 1 · Review 1 · Keep 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('1 safe item is selected. 1 item needs review before deleting.'),
+      findsOneWidget,
+    );
 
     await tester.tap(_resultItem('/tmp/review-2.log'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Keep this item').last);
     await tester.pumpAndSettle();
     expect(find.text('2 items'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.text('Safe 1 · Review 0 · Keep 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('1 safe item is selected. 0 items need review before deleting.'),
+      findsOneWidget,
+    );
 
     await tester.tap(_resultItem('/tmp/safe.cache'));
     await tester.pumpAndSettle();

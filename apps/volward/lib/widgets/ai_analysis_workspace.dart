@@ -1237,6 +1237,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  bool _isPendingReview(AiVerdict item) {
+    return item.verdict == 'review_needed' &&
+        (_reviewDecisions[item.path] ?? _ReviewDecision.pending) ==
+            _ReviewDecision.pending;
+  }
+
+  int _pendingReviewCountFor(Iterable<AiVerdict> items) {
+    return items.where(_isPendingReview).length;
+  }
+
   List<_ResultListRow> _resultRows(List<AiResultGroup> groups) {
     final rows = <_ResultListRow>[];
     for (final group in groups) {
@@ -1295,7 +1305,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   String _groupMetadataLabel(AiResultGroup group) {
     return [
       '${context.l10n.aiResultsStatusSafe} ${_formatCount(group.safeCount)}',
-      '${context.l10n.aiResultsStatusReview} ${_formatCount(group.reviewCount)}',
+      '${context.l10n.aiResultsStatusReview} ${_formatCount(_pendingReviewCountFor(group.items))}',
       '${context.l10n.aiResultsStatusKeep} ${_formatCount(group.keepCount)}',
     ].join(' · ');
   }
@@ -1392,7 +1402,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         .toList(growable: false);
     final review = normalizedGroups
         .expand((group) => group.items)
-        .where((item) => item.verdict == 'review_needed')
+        .where(_isPendingReview)
         .toList(growable: false);
     final keep = normalizedGroups
         .expand((group) => group.items)
