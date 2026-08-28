@@ -1124,7 +1124,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return items;
   }
 
-  List<AiVerdict> _normalizedVerdicts() {
+  List<AiResultGroup> _normalizedResultGroups() {
     final localSafe = _preClassifiedVerdicts(deletable: true);
     final localKeep = _preClassifiedVerdicts(deletable: false);
     final aiSafe = _verdicts
@@ -1138,8 +1138,37 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       ..._verdicts.where((verdict) => verdict.verdict == 'review_needed'),
       ..._verdicts.where((verdict) => verdict.verdict == 'keep'),
     ];
-    groupAiResults(merged, _sizeByPath);
-    return merged;
+    return groupAiResults(merged, _sizeByPath);
+  }
+
+  List<_VerdictGroupView> _groupViewsForVerdict({
+    required List<AiResultGroup> groups,
+    required String verdict,
+  }) {
+    final views = <_VerdictGroupView>[];
+    for (final group in groups) {
+      final items = group.items
+          .where((item) => item.verdict == verdict)
+          .toList(growable: false);
+      if (items.isEmpty) continue;
+      views.add(
+        _VerdictGroupView(
+          path: group.path,
+          items: items,
+          totalBytes: items.fold<int>(
+            0,
+            (total, item) => total + (_sizeByPath[item.path] ?? 0),
+          ),
+        ),
+      );
+    }
+    return views;
+  }
+
+  List<AiVerdict> _flattenGroupViews(List<_VerdictGroupView> groups) {
+    return groups
+        .expand((group) => group.items)
+        .toList(growable: false);
   }
 
   _ResultSummaryData _resultSummaryFor({
@@ -1181,16 +1210,22 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _buildResults() {
     final l10n = context.l10n;
-    final normalized = _normalizedVerdicts();
-    final safe = normalized
-        .where((verdict) => verdict.verdict == 'safe_to_remove')
-        .toList();
-    final review = normalized
-        .where((verdict) => verdict.verdict == 'review_needed')
-        .toList();
-    final keep = normalized
-        .where((verdict) => verdict.verdict == 'keep')
-        .toList();
+    final normalizedGroups = _normalizedResultGroups();
+    final safeGroups = _groupViewsForVerdict(
+      groups: normalizedGroups,
+      verdict: 'safe_to_remove',
+    );
+    final reviewGroups = _groupViewsForVerdict(
+      groups: normalizedGroups,
+      verdict: 'review_needed',
+    );
+    final keepGroups = _groupViewsForVerdict(
+      groups: normalizedGroups,
+      verdict: 'keep',
+    );
+    final safe = _flattenGroupViews(safeGroups);
+    final review = _flattenGroupViews(reviewGroups);
+    final keep = _flattenGroupViews(keepGroups);
     final summary = _resultSummaryFor(safe: safe, review: review, keep: keep);
     final topSuggestions = [...safe, ...review];
     topSuggestions.sort((a, b) {
@@ -1220,17 +1255,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         const SizedBox(height: AppleSpacing.lg),
         _verdictSection(
           title: l10n.aiVerdictSafe(safe.length),
-          items: safe,
+          groups: safeGroups,
           selectable: true,
         ),
         _verdictSection(
           title: l10n.aiVerdictReview(review.length),
-          items: review,
+          groups: reviewGroups,
           selectable: true,
         ),
         _verdictSection(
           title: l10n.aiVerdictKeep(keep.length),
-          items: keep,
+          groups: keepGroups,
           selectable: false,
         ),
       ] else ...[
@@ -1333,9 +1368,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       title: l10n.aiResultsRecommendedTitle,
       subtitle: l10n.aiResultsRecommendedSubtitle,
       countLabel: l10n.aiResultsTopLimit(items.length),
-      children: [
-        for (final item in items)
-          _ResultRow(
+      child: _ResultRowList(
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return _ResultRow(
             item: item,
             sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
             statusLabel: _statusLabel(item),
@@ -1346,8 +1383,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                 ? null
                 : (value) => _toggle(item.path, value),
             cleanupMeta: _cleanupMetaLabel(item),
-          ),
-      ],
+          );
+        },
+      ),
     );
   }
 
@@ -1456,20 +1494,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _verdictSection({
     required String title,
-    required List<AiVerdict> items,
+    required List<_VerdictGroupView> groups,
     required bool selectable,
   }) {
-    if (items.isEmpty) return const SizedBox.shrink();
+    if (groups.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: AppleSpacing.md),
       child: _RecommendedResultsCard(
         title: title,
         subtitle: '',
-        countLabel: items.length.toString(),
-        children: [
-          for (final item in items)
-            _verdictTile(item: item, selectable: selectable),
-        ],
+        countLabel: groups.fold<int>(
+          0,
+          (total, group) => total + group.items.length,
+        ).toString(),
+        child: _GroupedResultList(
+          groups: groups,
+          selectable: selectable,
+          itemBuilder: _verdictTile,
+        ),
       ),
     );
   }
@@ -1536,13 +1578,13 @@ class _RecommendedResultsCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.countLabel,
-    required this.children,
+    required this.child,
   });
 
   final String title;
   final String subtitle;
   final String countLabel;
-  final List<Widget> children;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -1581,12 +1623,154 @@ class _RecommendedResultsCard extends StatelessWidget {
               ),
             ),
             Divider(height: 1, color: tokens.dividerSoft),
-            ...children,
+            child,
           ],
         ),
       ),
     );
   }
+}
+
+class _ResultRowList extends StatelessWidget {
+  const _ResultRowList({
+    required this.itemCount,
+    required this.itemBuilder,
+  });
+
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    if (itemCount == 0) return const SizedBox.shrink();
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: itemCount,
+      itemBuilder: itemBuilder,
+    );
+  }
+}
+
+class _GroupedResultList extends StatelessWidget {
+  const _GroupedResultList({
+    required this.groups,
+    required this.selectable,
+    required this.itemBuilder,
+  });
+
+  final List<_VerdictGroupView> groups;
+  final bool selectable;
+  final Widget Function({required AiVerdict item, required bool selectable})
+      itemBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = <_GroupedResultEntry>[];
+    for (final group in groups) {
+      entries.add(_GroupedResultEntry.header(group));
+      for (final item in group.items) {
+        entries.add(_GroupedResultEntry.item(group, item));
+      }
+    }
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return switch (entry) {
+          _GroupedResultEntryHeader(:final group) => _GroupHeaderRow(
+              path: group.path,
+              itemCount: group.items.length,
+              totalBytes: group.totalBytes,
+            ),
+          _GroupedResultEntryItem(:final item) =>
+            itemBuilder(item: item, selectable: selectable),
+        };
+      },
+    );
+  }
+}
+
+class _GroupHeaderRow extends StatelessWidget {
+  const _GroupHeaderRow({
+    required this.path,
+    required this.itemCount,
+    required this.totalBytes,
+  });
+
+  final String path;
+  final int itemCount;
+  final int totalBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.canvas,
+        border: Border(
+          bottom: BorderSide(color: tokens.dividerSoft),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppleSpacing.sm,
+          vertical: AppleSpacing.xs,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(path, style: context.vwCaptionStrong),
+            ),
+            const SizedBox(width: AppleSpacing.sm),
+            Text(
+              '$itemCount · ${_AiAnalysisWorkspaceState._formatBytes(totalBytes)}',
+              style: context.vwFinePrint,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VerdictGroupView {
+  const _VerdictGroupView({
+    required this.path,
+    required this.items,
+    required this.totalBytes,
+  });
+
+  final String path;
+  final List<AiVerdict> items;
+  final int totalBytes;
+}
+
+sealed class _GroupedResultEntry {
+  const _GroupedResultEntry();
+
+  factory _GroupedResultEntry.header(_VerdictGroupView group) =
+      _GroupedResultEntryHeader;
+
+  factory _GroupedResultEntry.item(_VerdictGroupView group, AiVerdict item) =
+      _GroupedResultEntryItem;
+}
+
+final class _GroupedResultEntryHeader extends _GroupedResultEntry {
+  const _GroupedResultEntryHeader(this.group);
+
+  final _VerdictGroupView group;
+}
+
+final class _GroupedResultEntryItem extends _GroupedResultEntry {
+  const _GroupedResultEntryItem(this.group, this.item);
+
+  final _VerdictGroupView group;
+  final AiVerdict item;
 }
 
 class _ResultRow extends StatelessWidget {

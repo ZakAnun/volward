@@ -1419,6 +1419,85 @@ void main() {
     expect(find.text('Top 8'), findsNothing);
   });
 
+  testWidgets('expanded results render grouped parent directories', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final result = <AiVerdict>[
+      const AiVerdict(
+        path: '/tmp/project-a/cache/a.bin',
+        verdict: 'safe_to_remove',
+        confidence: 'high',
+        reason: 'Cache A',
+      ),
+      const AiVerdict(
+        path: '/tmp/project-b/cache/b.bin',
+        verdict: 'safe_to_remove',
+        confidence: 'high',
+        reason: 'Cache B',
+      ),
+      const AiVerdict(
+        path: '/tmp/project-a/review/log.txt',
+        verdict: 'review_needed',
+        confidence: 'medium',
+        reason: 'Needs review',
+      ),
+      const AiVerdict(
+        path: '/tmp/project-b/keep.db',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'User data',
+      ),
+    ];
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: result,
+      candidatesJson: _candidatePayload(
+        unknownCandidates: const [
+          {'path': '/tmp/project-a/cache/a.bin', 'size_bytes': 10, 'is_dir': false},
+          {'path': '/tmp/project-b/cache/b.bin', 'size_bytes': 20, 'is_dir': false},
+          {'path': '/tmp/project-a/review/log.txt', 'size_bytes': 30, 'is_dir': false},
+          {'path': '/tmp/project-b/keep.db', 'size_bytes': 40, 'is_dir': false},
+        ],
+      ),
+    );
+
+    await tester.tap(find.text('Show all results'));
+    await tester.pumpAndSettle();
+
+    final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
+    expect(
+      find.descendant(
+        of: resultsList,
+        matching: find.text('/tmp/project-a/cache'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: resultsList,
+        matching: find.text('/tmp/project-b/cache'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: resultsList,
+        matching: find.text('/tmp/project-a/review'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: resultsList,
+        matching: find.text('/tmp/project-b'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('results pin return action while selection summary scrolls', (
     tester,
   ) async {
@@ -1561,7 +1640,7 @@ void main() {
     final scrollable = find.descendant(
       of: resultsList,
       matching: find.byType(Scrollable),
-    );
+    ).first;
     expect(
       tester.state<ScrollableState>(scrollable).position.pixels,
       greaterThan(300),
