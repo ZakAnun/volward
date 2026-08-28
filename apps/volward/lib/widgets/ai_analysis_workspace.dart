@@ -481,6 +481,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (!_isCurrent(generation)) return;
     final providerLabel = mode == AiMode.platform ? 'platform' : 'byok';
     final stopwatch = Stopwatch()..start();
+    var byokUsageRecorded = false;
     unawaited(
       Analytics.instance.track(AnalyticsEvents.aiAnalysisStarted, {
         'provider': providerLabel,
@@ -489,12 +490,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
     try {
       final verdicts = await provider.analyze(_unknown);
-      if (!_isCurrent(generation)) return;
       final model = provider is ByokAiProvider
           ? provider.model
           : 'deepseek-v4-flash';
-      final byokUsage =
-          provider is ByokAiProvider && provider.hasReliableTokenUsage
+      final byokUsage = provider is ByokAiProvider
           ? provider.lastTokenUsage
           : null;
       final inputTokens =
@@ -503,6 +502,18 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               ? _estimatedTokens
               : (_unknown.length * 8 + 200));
       final outputTokens = byokUsage?.completionTokens ?? verdicts.length * 40;
+      final totalTokens = byokUsage?.totalTokens ?? inputTokens + outputTokens;
+      if (provider is ByokAiProvider) {
+        await _recordByokTokenUsage(
+          inputTokens: inputTokens,
+          outputTokens: outputTokens,
+          totalTokens: totalTokens,
+          estimated: !provider.hasReliableTokenUsage,
+          partial: false,
+        );
+        byokUsageRecorded = true;
+      }
+      if (!_isCurrent(generation)) return;
       final cost = (inputTokens / 1e6) * 0.14 + (outputTokens / 1e6) * 0.28;
       final enrichedVerdicts = verdicts.map(_withCandidateMeta).toList();
       final entries = enrichedVerdicts
@@ -570,6 +581,18 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _phase = _Phase.results;
       });
     } catch (error) {
+      if (!byokUsageRecorded && provider is ByokAiProvider) {
+        final partialUsage = provider.lastTokenUsage;
+        if (partialUsage != null) {
+          await _recordByokTokenUsage(
+            inputTokens: partialUsage.promptTokens,
+            outputTokens: partialUsage.completionTokens,
+            totalTokens: partialUsage.totalTokens,
+            estimated: !provider.hasReliableTokenUsage,
+            partial: true,
+          );
+        }
+      }
       if (!_isCurrent(generation)) return;
       final message = error.toString();
       if (message.contains('insufficient_credits')) {
@@ -613,6 +636,46 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _hasProvider = configurationError ? false : _hasProvider;
         _error = _localizedAiError(error);
       });
+    }
+  }
+
+  Future<void> _recordByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  }) async {
+    try {
+      final totals = await widget.gateway.recordByokTokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: totalTokens,
+        estimated: estimated,
+        partial: partial,
+      );
+      unawaited(
+        Analytics.instance.track(AnalyticsEvents.aiByokTokenUsageRecorded, {
+          'input_tokens': inputTokens,
+          'output_tokens': outputTokens,
+          'total_tokens': totalTokens,
+          'usage_source': partial
+              ? estimated
+                    ? 'estimate_partial'
+                    : 'provider_partial'
+              : estimated
+              ? 'estimate'
+              : 'provider',
+          'cumulative_input_tokens': totals.inputTokens,
+          'cumulative_output_tokens': totals.outputTokens,
+          'cumulative_total_tokens': totals.totalTokens,
+          'cumulative_analysis_count': totals.analysisCount,
+          'cumulative_estimated_count': totals.estimatedAnalysisCount,
+          'cumulative_partial_count': totals.partialAnalysisCount,
+        }),
+      );
+    } catch (_) {
+      // Usage accounting must not turn a completed AI request into failure.
     }
   }
 

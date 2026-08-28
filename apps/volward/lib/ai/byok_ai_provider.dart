@@ -30,8 +30,8 @@ class ByokAiProvider implements AiProvider {
     this.contract,
     http.Client? client,
     this.requestTimeout = _kRequestTimeout,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null;
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null;
 
   final String apiKey;
   final Duration requestTimeout;
@@ -119,40 +119,65 @@ class ByokAiProvider implements AiProvider {
       if (response.statusCode != 200) {
         throw Exception('api_error:${response.statusCode}');
       }
-      _recordTokenUsage(response.body);
+      _recordTokenUsage(response.body, batch);
       return contract.parseResponseJson(response.body, batch);
     }
     throw Exception('rate_limited_after_retries');
   }
 
-  void _recordTokenUsage(String responseBody) {
+  void _recordTokenUsage(String responseBody, List<AiCandidate> batch) {
     try {
       final decoded = jsonDecode(responseBody);
       if (decoded is! Map) {
-        _tokenUsageComplete = false;
+        _recordEstimatedTokenUsage(batch);
         return;
       }
       final usage = decoded['usage'];
       if (usage is! Map) {
-        _tokenUsageComplete = false;
+        _recordEstimatedTokenUsage(batch);
         return;
       }
       final promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
       final completionTokens = (usage['completion_tokens'] as num?)?.toInt();
       if (promptTokens == null || completionTokens == null) {
-        _tokenUsageComplete = false;
+        _recordEstimatedTokenUsage(batch);
         return;
       }
-      final totalTokens = (usage['total_tokens'] as num?)?.toInt() ??
+      final totalTokens =
+          (usage['total_tokens'] as num?)?.toInt() ??
           promptTokens + completionTokens;
-      final previous = lastTokenUsage;
-      lastTokenUsage = ByokTokenUsage(
-        promptTokens: (previous?.promptTokens ?? 0) + promptTokens,
-        completionTokens: (previous?.completionTokens ?? 0) + completionTokens,
-        totalTokens: (previous?.totalTokens ?? 0) + totalTokens,
+      _accumulateTokenUsage(
+        ByokTokenUsage(
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          totalTokens: totalTokens,
+        ),
       );
     } catch (_) {
-      _tokenUsageComplete = false;
+      _recordEstimatedTokenUsage(batch);
     }
+  }
+
+  void _recordEstimatedTokenUsage(List<AiCandidate> batch) {
+    _tokenUsageComplete = false;
+    final promptTokens = batch.length * 8 + 200;
+    final completionTokens = batch.length * 40;
+    _accumulateTokenUsage(
+      ByokTokenUsage(
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+        totalTokens: promptTokens + completionTokens,
+      ),
+    );
+  }
+
+  void _accumulateTokenUsage(ByokTokenUsage usage) {
+    final previous = lastTokenUsage;
+    lastTokenUsage = ByokTokenUsage(
+      promptTokens: (previous?.promptTokens ?? 0) + usage.promptTokens,
+      completionTokens:
+          (previous?.completionTokens ?? 0) + usage.completionTokens,
+      totalTokens: (previous?.totalTokens ?? 0) + usage.totalTokens,
+    );
   }
 }

@@ -7,6 +7,13 @@ abstract interface class AiAnalysisGateway {
   Future<AiProvider?> resolveProvider();
   Future<bool> isPrivacyAccepted();
   Future<void> setPrivacyAccepted(bool value);
+  Future<ByokTokenUsageTotals> recordByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  });
   Future<String?> buildCandidates(String snapshotId);
   String? loadResult(String key);
   bool saveResult(String snapshotId, String resultJson);
@@ -38,6 +45,21 @@ class ProductionAiAnalysisGateway implements AiAnalysisGateway {
   @override
   Future<void> setPrivacyAccepted(bool value) =>
       AiSettingsStore.instance.setPrivacyAccepted(value);
+
+  @override
+  Future<ByokTokenUsageTotals> recordByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  }) => AiSettingsStore.instance.addByokTokenUsage(
+    inputTokens: inputTokens,
+    outputTokens: outputTokens,
+    totalTokens: totalTokens,
+    estimated: estimated,
+    partial: partial,
+  );
 
   @override
   Future<String?> buildCandidates(String snapshotId) async =>

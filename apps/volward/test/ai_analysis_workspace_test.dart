@@ -112,11 +112,44 @@ class _IncompleteUsageByokProvider extends ByokAiProvider {
   @override
   Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
     lastTokenUsage = const ByokTokenUsage(
-      promptTokens: 321,
-      completionTokens: 45,
-      totalTokens: 366,
+      promptTokens: 640,
+      completionTokens: 120,
+      totalTokens: 760,
     );
     return verdicts;
+  }
+}
+
+class _PartialUsageFailureByokProvider extends ByokAiProvider {
+  _PartialUsageFailureByokProvider()
+    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    lastTokenUsage = const ByokTokenUsage(
+      promptTokens: 120,
+      completionTokens: 20,
+      totalTokens: 140,
+    );
+    throw Exception('api_error:500');
+  }
+}
+
+class _EstimatedPartialUsageFailureByokProvider extends ByokAiProvider {
+  _EstimatedPartialUsageFailureByokProvider()
+    : super(apiKey: 'sk-test', contract: _FakeUsageContract());
+
+  @override
+  bool get hasReliableTokenUsage => false;
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    lastTokenUsage = const ByokTokenUsage(
+      promptTokens: 500,
+      completionTokens: 100,
+      totalTokens: 600,
+    );
+    throw Exception('api_error:500');
   }
 }
 
@@ -172,6 +205,8 @@ class _FakeGateway implements AiAnalysisGateway {
   final deleteCalls =
       <({List<String> targets, bool dryRun, bool rescanAfterDelete})>[];
   final candidateRequests = <String>[];
+  final byokUsageRecords =
+      <({int input, int output, int total, bool estimated, bool partial})>[];
 
   @override
   Future<AiMode> getMode() async => mode;
@@ -185,6 +220,32 @@ class _FakeGateway implements AiAnalysisGateway {
   @override
   Future<void> setPrivacyAccepted(bool value) async {
     privacyAccepted = value;
+  }
+
+  @override
+  Future<ByokTokenUsageTotals> recordByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  }) async {
+    byokUsageRecords.add((
+      input: inputTokens,
+      output: outputTokens,
+      total: totalTokens,
+      estimated: estimated,
+      partial: partial,
+    ));
+    return ByokTokenUsageTotals(
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      totalTokens: totalTokens,
+      analysisCount: byokUsageRecords.length,
+      estimatedAnalysisCount: byokUsageRecords.where((e) => e.estimated).length,
+      partialAnalysisCount: byokUsageRecords.where((e) => e.partial).length,
+      updatedAtMs: 1,
+    );
   }
 
   @override
@@ -615,6 +676,7 @@ void main() {
       await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
       await tester.pumpAndSettle();
       expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+      expect(validGateway.byokUsageRecords, isEmpty);
 
       final invalidGateway = _FakeGateway()
         ..candidatesJson = _candidatePayload()
@@ -775,6 +837,9 @@ void main() {
     final result = jsonDecode(gateway.cache['snapshot-1']!) as Map;
     expect(result['token_usage'], {'input': 321, 'output': 45});
     expect(result['credits_used'], 0);
+    expect(gateway.byokUsageRecords, [
+      (input: 321, output: 45, total: 366, estimated: false, partial: false),
+    ]);
   });
 
   testWidgets('BYOK falls back to estimates when usage is incomplete', (
@@ -795,6 +860,51 @@ void main() {
     final result = jsonDecode(gateway.cache['snapshot-1']!) as Map;
     expect(result['token_usage'], {'input': 640, 'output': 120});
     expect(result['credits_used'], 0);
+    expect(gateway.byokUsageRecords, [
+      (input: 640, output: 120, total: 760, estimated: true, partial: false),
+    ]);
+  });
+
+  testWidgets('BYOK failure records usage from completed batches', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..provider = _PartialUsageFailureByokProvider()
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+
+    expect(gateway.cache, isEmpty);
+    expect(gateway.byokUsageRecords, [
+      (input: 120, output: 20, total: 140, estimated: false, partial: true),
+    ]);
+  });
+
+  testWidgets('BYOK failure marks estimated completed usage as partial', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..provider = _EstimatedPartialUsageFailureByokProvider()
+      ..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await tester.pumpAndSettle();
+
+    expect(gateway.cache, isEmpty);
+    expect(gateway.byokUsageRecords, [
+      (input: 500, output: 100, total: 600, estimated: true, partial: true),
+    ]);
   });
 
   testWidgets('selection summary tracks count and bytes', (tester) async {

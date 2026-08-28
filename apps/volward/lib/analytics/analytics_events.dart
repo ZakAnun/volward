@@ -11,6 +11,7 @@ abstract final class AnalyticsEvents {
   static const aiAnalysisStarted = 'ai_analysis_started';
   static const aiAnalysisCompleted = 'ai_analysis_completed';
   static const aiAnalysisFailed = 'ai_analysis_failed';
+  static const aiByokTokenUsageRecorded = 'ai_byok_token_usage_recorded';
   static const aiDeletionConfirmed = 'ai_deletion_confirmed';
   static const aiModeChanged = 'ai_mode_changed';
   static const aiAccountLinked = 'ai_account_linked';

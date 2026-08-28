@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
+import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/ai_settings_store.dart';
+import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/home_page.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/scan_preview.dart';
@@ -108,6 +110,8 @@ class _HomeAiGateway implements AiAnalysisGateway {
       <({List<String> targets, bool dryRun, bool rescanAfterDelete})>[];
   final deleteResponses = <Future<Map<String, dynamic>>>[];
   final snapshotIds = <String?>[];
+  final byokUsageRecords =
+      <({int input, int output, int total, bool estimated, bool partial})>[];
   int saveCalls = 0;
 
   @override
@@ -121,6 +125,32 @@ class _HomeAiGateway implements AiAnalysisGateway {
 
   @override
   Future<void> setPrivacyAccepted(bool value) async {}
+
+  @override
+  Future<ByokTokenUsageTotals> recordByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  }) async {
+    byokUsageRecords.add((
+      input: inputTokens,
+      output: outputTokens,
+      total: totalTokens,
+      estimated: estimated,
+      partial: partial,
+    ));
+    return ByokTokenUsageTotals(
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      totalTokens: totalTokens,
+      analysisCount: byokUsageRecords.length,
+      estimatedAnalysisCount: byokUsageRecords.where((e) => e.estimated).length,
+      partialAnalysisCount: byokUsageRecords.where((e) => e.partial).length,
+      updatedAtMs: 1,
+    );
+  }
 
   @override
   Future<String?> buildCandidates(String snapshotId) => _candidates;
@@ -162,6 +192,41 @@ class _HomeResultProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+}
+
+class _HomePendingByokProvider extends ByokAiProvider {
+  _HomePendingByokProvider(this.analysis)
+    : super(apiKey: 'sk-test', contract: _HomeAiContract());
+
+  final Future<List<AiVerdict>> analysis;
+
+  @override
+  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+    final verdicts = await analysis;
+    lastTokenUsage = const ByokTokenUsage(
+      promptTokens: 12,
+      completionTokens: 3,
+      totalTokens: 15,
+    );
+    return verdicts;
+  }
+}
+
+class _HomeAiContract implements AiContract {
+  @override
+  int batchSize() => 40;
+
+  @override
+  String buildRequestJson(List<AiCandidate> batch) => '{}';
+
+  @override
+  List<AiVerdict> parseResponseJson(
+    String responseBody,
+    List<AiCandidate> batch,
+  ) => const [];
+
+  @override
+  String upstreamEndpoint() => 'https://example.test/v1/chat';
 }
 
 const _homeDeleteCandidates = '''
@@ -624,7 +689,7 @@ void main() {
     final gateway =
         _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
           ..mode = AiMode.byok
-          ..provider = _HomeResultProvider(analysisGate.future);
+          ..provider = _HomePendingByokProvider(analysisGate.future);
     final session = _Session(aiSessionApi: true)
       ..snapshotForTest = _completedSnapshot()
       ..rootExistsForTest = ((_) => true);
@@ -665,6 +730,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsNothing);
     expect(gateway.saveCalls, 0);
+    expect(gateway.byokUsageRecords, [
+      (input: 12, output: 3, total: 15, estimated: false, partial: false),
+    ]);
     expect(
       tester
           .widget<StorageStewardHome>(find.byType(StorageStewardHome))

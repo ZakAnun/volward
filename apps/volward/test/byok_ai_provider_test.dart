@@ -90,7 +90,7 @@ void main() {
     expect(provider.lastTokenUsage?.totalTokens, 36);
   });
 
-  test('leaves token usage empty when upstream omits usage', () async {
+  test('estimates token usage when upstream omits usage', () async {
     final client = MockClient(
       (req) async => http.Response('{"choices":[]}', 200),
     );
@@ -104,7 +104,10 @@ void main() {
       const AiCandidate(path: '/a', sizeBytes: 1, isDir: false),
     ]);
 
-    expect(provider.lastTokenUsage, isNull);
+    expect(provider.lastTokenUsage?.promptTokens, 208);
+    expect(provider.lastTokenUsage?.completionTokens, 40);
+    expect(provider.lastTokenUsage?.totalTokens, 248);
+    expect(provider.hasReliableTokenUsage, isFalse);
   });
 
   test('marks token usage unreliable when a batch omits usage', () async {
@@ -135,8 +138,70 @@ void main() {
     await provider.analyze(candidates);
 
     expect(requestCount, 2);
+    expect(provider.lastTokenUsage?.promptTokens, 218);
+    expect(provider.lastTokenUsage?.completionTokens, 42);
+    expect(provider.lastTokenUsage?.totalTokens, 260);
+    expect(provider.hasReliableTokenUsage, isFalse);
+  });
+
+  test('estimates completed batch usage before a later failure', () async {
+    var requestCount = 0;
+    final client = MockClient((req) async {
+      requestCount++;
+      if (requestCount == 1) {
+        return http.Response('{"choices":[]}', 200);
+      }
+      return http.Response('upstream failed', 500);
+    });
+    final provider = ByokAiProvider(
+      apiKey: 'sk-x',
+      client: client,
+      contract: _FakeContract(),
+    );
+    final candidates = List.generate(
+      41,
+      (index) => AiCandidate(path: '/$index', sizeBytes: 1, isDir: false),
+    );
+
+    await expectLater(provider.analyze(candidates), throwsException);
+
+    expect(requestCount, 2);
+    expect(provider.lastTokenUsage?.promptTokens, 520);
+    expect(provider.lastTokenUsage?.completionTokens, 1600);
+    expect(provider.lastTokenUsage?.totalTokens, 2120);
+    expect(provider.hasReliableTokenUsage, isFalse);
+  });
+
+  test('keeps completed batch usage when a later batch fails', () async {
+    var requestCount = 0;
+    final client = MockClient((req) async {
+      requestCount++;
+      if (requestCount == 1) {
+        return http.Response(
+          '{"choices":[],"usage":{'
+          '"prompt_tokens":10,'
+          '"completion_tokens":2,'
+          '"total_tokens":12}}',
+          200,
+        );
+      }
+      return http.Response('upstream failed', 500);
+    });
+    final provider = ByokAiProvider(
+      apiKey: 'sk-x',
+      client: client,
+      contract: _FakeContract(),
+    );
+    final candidates = List.generate(
+      41,
+      (index) => AiCandidate(path: '/$index', sizeBytes: 1, isDir: false),
+    );
+
+    await expectLater(provider.analyze(candidates), throwsException);
+
+    expect(requestCount, 2);
     expect(provider.lastTokenUsage?.promptTokens, 10);
     expect(provider.lastTokenUsage?.completionTokens, 2);
-    expect(provider.hasReliableTokenUsage, isFalse);
+    expect(provider.lastTokenUsage?.totalTokens, 12);
   });
 }

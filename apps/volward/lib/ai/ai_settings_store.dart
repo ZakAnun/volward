@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -13,6 +14,36 @@ import 'platform_ai_provider.dart';
 import 'platform_auth_store.dart';
 
 enum AiMode { off, byok, platform }
+
+class ByokTokenUsageTotals {
+  const ByokTokenUsageTotals({
+    required this.inputTokens,
+    required this.outputTokens,
+    required this.totalTokens,
+    required this.analysisCount,
+    required this.estimatedAnalysisCount,
+    required this.partialAnalysisCount,
+    required this.updatedAtMs,
+  });
+
+  static const empty = ByokTokenUsageTotals(
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    analysisCount: 0,
+    estimatedAnalysisCount: 0,
+    partialAnalysisCount: 0,
+    updatedAtMs: 0,
+  );
+
+  final int inputTokens;
+  final int outputTokens;
+  final int totalTokens;
+  final int analysisCount;
+  final int estimatedAnalysisCount;
+  final int partialAnalysisCount;
+  final int updatedAtMs;
+}
 
 class AiSettingsStore {
   AiSettingsStore._();
@@ -33,14 +64,17 @@ class AiSettingsStore {
   /// `keychain-access-groups` + a Mac App Development profile, which breaks
   /// Flutter CLI builds that omit `-allowProvisioningUpdates` (-34018 otherwise).
   final _secure = const FlutterSecureStorage(
-    mOptions: MacOsOptions(
-      useDataProtectionKeyChain: false,
-    ),
+    mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
   File _settingsFile() =>
       settingsFileForTest ??
       File('${SnapshotCache.cacheDir().path}/settings.json');
+
+  File _byokUsageFile() =>
+      File('${_settingsFile().parent.path}/ai_byok_usage.json');
+
+  Future<void> _byokUsageWriteTail = Future<void>.value();
 
   Future<Map<String, dynamic>> _readMap() async {
     final file = _settingsFile();
@@ -98,6 +132,109 @@ class AiSettingsStore {
       _secure.write(key: _kByokKeyName, value: key);
   Future<void> clearByokKey() => _secure.delete(key: _kByokKeyName);
 
+  Future<ByokTokenUsageTotals> getByokTokenUsageTotals() async {
+    await _byokUsageWriteTail;
+    return _readByokUsageTotals();
+  }
+
+  Future<ByokTokenUsageTotals> addByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  }) async {
+    final operation = _byokUsageWriteTail.then(
+      (_) => _addByokTokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: totalTokens,
+        estimated: estimated,
+        partial: partial,
+      ),
+    );
+    _byokUsageWriteTail = operation.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+    return operation;
+  }
+
+  Future<ByokTokenUsageTotals> _addByokTokenUsage({
+    required int inputTokens,
+    required int outputTokens,
+    required int totalTokens,
+    required bool estimated,
+    required bool partial,
+  }) async {
+    final file = _byokUsageFile();
+    await file.parent.create(recursive: true);
+    final lockFile = File('${file.path}.lock');
+    final lock = await lockFile.open(mode: FileMode.append);
+    try {
+      await lock.lock(FileLock.exclusive);
+      final current = await _readByokUsageTotals();
+      final updated = ByokTokenUsageTotals(
+        inputTokens: current.inputTokens + _nonNegativeInt(inputTokens),
+        outputTokens: current.outputTokens + _nonNegativeInt(outputTokens),
+        totalTokens: current.totalTokens + _nonNegativeInt(totalTokens),
+        analysisCount: current.analysisCount + 1,
+        estimatedAnalysisCount:
+            current.estimatedAnalysisCount + (estimated ? 1 : 0),
+        partialAnalysisCount: current.partialAnalysisCount + (partial ? 1 : 0),
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      final temporaryFile = File(
+        '${file.path}.$pid.${Isolate.current.hashCode}.'
+        '${DateTime.now().microsecondsSinceEpoch}.tmp',
+      );
+      await temporaryFile.writeAsString(
+        jsonEncode({
+          'input_tokens': updated.inputTokens,
+          'output_tokens': updated.outputTokens,
+          'total_tokens': updated.totalTokens,
+          'analysis_count': updated.analysisCount,
+          'estimated_analysis_count': updated.estimatedAnalysisCount,
+          'partial_analysis_count': updated.partialAnalysisCount,
+          'updated_at_ms': updated.updatedAtMs,
+        }),
+        flush: true,
+      );
+      try {
+        await temporaryFile.rename(file.path);
+      } catch (_) {
+        if (await temporaryFile.exists()) await temporaryFile.delete();
+        rethrow;
+      }
+      return updated;
+    } finally {
+      await lock.unlock();
+      await lock.close();
+    }
+  }
+
+  Future<ByokTokenUsageTotals> _readByokUsageTotals() async {
+    final file = _byokUsageFile();
+    if (!await file.exists()) return ByokTokenUsageTotals.empty;
+    try {
+      final raw = jsonDecode(await file.readAsString());
+      if (raw is! Map) return ByokTokenUsageTotals.empty;
+      return ByokTokenUsageTotals(
+        inputTokens: _nonNegativeInt(raw['input_tokens']),
+        outputTokens: _nonNegativeInt(raw['output_tokens']),
+        totalTokens: _nonNegativeInt(raw['total_tokens']),
+        analysisCount: _nonNegativeInt(raw['analysis_count']),
+        estimatedAnalysisCount: _nonNegativeInt(
+          raw['estimated_analysis_count'],
+        ),
+        partialAnalysisCount: _nonNegativeInt(raw['partial_analysis_count']),
+        updatedAtMs: _nonNegativeInt(raw['updated_at_ms']),
+      );
+    } catch (_) {
+      return ByokTokenUsageTotals.empty;
+    }
+  }
+
   Future<AiProvider?> resolveProvider() async {
     final mode = await getMode();
     switch (mode) {
@@ -126,4 +263,9 @@ class AiSettingsStore {
         }
     }
   }
+}
+
+int _nonNegativeInt(Object? value) {
+  final parsed = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+  return parsed < 0 ? 0 : parsed;
 }
