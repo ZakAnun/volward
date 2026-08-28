@@ -12,6 +12,7 @@ import '../ai/byok_ai_provider.dart';
 import '../ai/platform_ai_provider.dart';
 import '../analytics/analytics.dart';
 import '../analytics/analytics_events.dart';
+import '../ai/ai_result_groups.dart';
 import '../l10n/l10n.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../theme/apple_tokens.dart';
@@ -1123,6 +1124,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return items;
   }
 
+  List<AiVerdict> _normalizedVerdicts() {
+    final localSafe = _preClassifiedVerdicts(deletable: true);
+    final localKeep = _preClassifiedVerdicts(deletable: false);
+    final aiSafe = _verdicts
+        .where((verdict) => verdict.verdict == 'safe_to_remove')
+        .toList();
+    final aiPaths = _verdicts.map((verdict) => verdict.path).toSet();
+    final merged = [
+      ...localSafe.where((verdict) => !aiPaths.contains(verdict.path)),
+      ...aiSafe,
+      ...localKeep,
+      ..._verdicts.where((verdict) => verdict.verdict == 'review_needed'),
+      ..._verdicts.where((verdict) => verdict.verdict == 'keep'),
+    ];
+    groupAiResults(merged, _sizeByPath);
+    return merged;
+  }
+
   _ResultSummaryData _resultSummaryFor({
     required List<AiVerdict> safe,
     required List<AiVerdict> review,
@@ -1162,23 +1181,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _buildResults() {
     final l10n = context.l10n;
-    final localSafe = _preClassifiedVerdicts(deletable: true);
-    final localKeep = _preClassifiedVerdicts(deletable: false);
-    final aiSafe = _verdicts
+    final normalized = _normalizedVerdicts();
+    final safe = normalized
         .where((verdict) => verdict.verdict == 'safe_to_remove')
         .toList();
-    final aiPaths = _verdicts.map((verdict) => verdict.path).toSet();
-    final safe = [
-      ...localSafe.where((verdict) => !aiPaths.contains(verdict.path)),
-      ...aiSafe,
-    ];
-    final review = _verdicts
+    final review = normalized
         .where((verdict) => verdict.verdict == 'review_needed')
         .toList();
-    final keep = [
-      ...localKeep,
-      ..._verdicts.where((verdict) => verdict.verdict == 'keep'),
-    ];
+    final keep = normalized
+        .where((verdict) => verdict.verdict == 'keep')
+        .toList();
     final summary = _resultSummaryFor(safe: safe, review: review, keep: keep);
     final topSuggestions = [...safe, ...review];
     topSuggestions.sort((a, b) {
