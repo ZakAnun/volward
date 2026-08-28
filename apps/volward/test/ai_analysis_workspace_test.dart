@@ -995,6 +995,12 @@ void main() {
     await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
     await tester.pumpAndSettle();
     expect(
+        find.byKey(const Key('ai-item-toggle:/tmp/review.log')), findsNothing);
+    expect(
+      find.byKey(const Key('ai-item-toggle:/tmp/review-2.log')),
+      findsNothing,
+    );
+    expect(
       find.ancestor(
         of: find.text('/tmp/keep.db'),
         matching: find.byType(Checkbox),
@@ -1028,12 +1034,20 @@ void main() {
     expect(find.text('300 B'), findsAtLeastNWidgets(1));
   });
 
-  testWidgets('safe group selection stays scoped to the group', (tester) async {
+  testWidgets('safe group selection stays scoped to the exact visible group', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1100, 1100));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final gateway = _FakeGateway()
+      ..deleteReports.add({
+        'deleted_count': 1,
+        'freed_bytes': 40,
+        'failed_paths': const [],
+      });
     await _openResults(
       tester,
-      _FakeGateway(),
+      gateway,
       result: const [
         AiVerdict(
           path: '/tmp/group-a/safe-a.cache',
@@ -1111,14 +1125,96 @@ void main() {
     await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
     await tester.pumpAndSettle();
 
-    final firstGroupCheckbox = find.byType(Checkbox).first;
-    await tester.tap(firstGroupCheckbox);
-    await tester.pump();
-    expect(find.text('1 item'), findsOneWidget);
+    expect(
+      find.byKey(const Key('ai-group-toggle:/tmp/group-a')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('ai-group-toggle:/tmp/group-b')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('ai-item-toggle:/tmp/group-a/review-a.log')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('ai-item-toggle:/tmp/group-b/review-b.log')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('ai-item-toggle:/tmp/group-a/keep-a.db')),
+      findsNothing,
+    );
 
-    await tester.tap(find.byType(Checkbox).first);
+    await tester
+        .tap(find.byKey(const Key('ai-item-toggle:/tmp/group-a/safe-a.cache')));
     await tester.pump();
-    expect(find.text('2 items'), findsOneWidget);
+    expect(
+      tester
+          .widget<Checkbox>(
+            find.byKey(const Key('ai-item-toggle:/tmp/group-a/safe-a.cache')),
+          )
+          .value,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<Checkbox>(
+            find.byKey(const Key('ai-item-toggle:/tmp/group-b/safe-b.cache')),
+          )
+          .value,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const Key('ai-group-toggle:/tmp/group-a')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Checkbox>(
+            find.byKey(const Key('ai-item-toggle:/tmp/group-a/safe-a.cache')),
+          )
+          .value,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<Checkbox>(
+            find.byKey(const Key('ai-item-toggle:/tmp/group-b/safe-b.cache')),
+          )
+          .value,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
+    await tester.pump();
+    expect(
+      gateway.deleteCalls.single.targets,
+      unorderedEquals(const [
+        '/tmp/group-a/safe-a.cache',
+        '/tmp/group-b/safe-b.cache',
+      ]),
+    );
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ai-group-toggle:/tmp/group-a')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Checkbox>(
+            find.byKey(const Key('ai-item-toggle:/tmp/group-a/safe-a.cache')),
+          )
+          .value,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<Checkbox>(
+            find.byKey(const Key('ai-item-toggle:/tmp/group-b/safe-b.cache')),
+          )
+          .value,
+      isTrue,
+    );
   });
 
   testWidgets('results keep local preclassified selections visible', (

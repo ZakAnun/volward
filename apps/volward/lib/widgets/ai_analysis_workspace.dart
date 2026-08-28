@@ -900,10 +900,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     });
   }
 
-  void _toggleSafeGroup(AiResultGroup group, bool selected) {
+  void _toggleSafeGroup(Iterable<AiVerdict> items, bool selected) {
     setState(() {
-      for (final item in group.items) {
-        if (item.verdict != 'safe_to_remove') continue;
+      for (final item in items) {
         if (selected) {
           _selected.add(item.path);
         } else {
@@ -1213,7 +1212,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       views.add(
         _VerdictGroupView(
           path: group.path,
-          group: group,
           items: items,
           totalBytes: items.fold<int>(
             0,
@@ -1319,7 +1317,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _verdictSection(
           title: l10n.aiVerdictReview(review.length),
           groups: reviewGroups,
-          selectable: true,
+          selectable: false,
         ),
         _verdictSection(
           title: l10n.aiVerdictKeep(keep.length),
@@ -1588,7 +1586,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           groups: groups,
           selectable: selectable,
           onGroupChanged: selectable
-              ? (group, value) => _toggleSafeGroup(group.group, value ?? false)
+              ? (group, value) => _toggleSafeGroup(group.items, value ?? false)
               : null,
           itemBuilder: _verdictTile,
         ),
@@ -1597,6 +1595,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget _verdictTile({required AiVerdict item, required bool selectable}) {
+    final rowSelectable = selectable && item.verdict == 'safe_to_remove';
     final selected = _selected.contains(item.path);
     final isReview = item.verdict == 'review_needed';
     return _ResultRow(
@@ -1605,8 +1604,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       statusLabel: _statusLabel(item),
       statusColor: _statusColor(item),
       selected: selected,
-      selectable: selectable,
-      onChanged: selectable ? (value) => _toggle(item.path, value) : null,
+      selectable: rowSelectable,
+      onChanged: rowSelectable ? (value) => _toggle(item.path, value) : null,
       onTap: isReview
           ? () => setState(() {
                 if (!_expandedGroupPaths.add(item.path)) {
@@ -1833,6 +1832,7 @@ class _GroupHeaderRow extends StatelessWidget {
               SizedBox(
                 width: 28,
                 child: Checkbox(
+                  key: Key('ai-group-toggle:$path'),
                   tristate: true,
                   value: selectedCount == 0
                       ? false
@@ -1864,14 +1864,12 @@ class _GroupHeaderRow extends StatelessWidget {
 class _VerdictGroupView {
   const _VerdictGroupView({
     required this.path,
-    required this.group,
     required this.items,
     required this.totalBytes,
     required this.selectedCount,
   });
 
   final String path;
-  final AiResultGroup group;
   final List<AiVerdict> items;
   final int totalBytes;
   final int selectedCount;
@@ -1946,6 +1944,7 @@ class _ResultRow extends StatelessWidget {
             width: 28,
             child: selectable
                 ? Checkbox(
+                    key: Key('ai-item-toggle:${item.path}'),
                     value: selected,
                     onChanged: onChanged,
                     visualDensity: VisualDensity.compact,
