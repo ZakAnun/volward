@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../ai/ai_analysis_gateway.dart';
 import '../ai/ai_provider.dart';
@@ -14,7 +15,6 @@ import '../analytics/analytics.dart';
 import '../analytics/analytics_events.dart';
 import '../ai/ai_result_groups.dart';
 import '../l10n/l10n.dart';
-import '../l10n/generated/app_localizations.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'apple_widgets.dart';
@@ -139,7 +139,6 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const resultsListKey = Key('ai-analysis-results-list');
   static const summaryKey = Key('ai-analysis-summary');
   static const deleteKey = Key('ai-analysis-delete');
-  static const showAllResultsKey = Key('ai-analysis-show-all-results');
   static const headerKey = Key('ai-analysis-header');
 
   final String snapshotId;
@@ -169,6 +168,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   final Set<String> _selected = {};
   final Map<String, _ReviewDecision> _reviewDecisions = {};
   final Set<String> _expandedGroupPaths = {};
+  final Set<String> _expandedReviewPaths = {};
   final Map<String, int> _sizeByPath = {};
   final Map<String, String> _deleteTargetsByPath = {};
   bool _hasProvider = false;
@@ -180,7 +180,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   AiMode _mode = AiMode.off;
   int? _platformCredits;
   int _operationGeneration = 0;
-  bool _showAllResults = false;
   final ScrollController _resultsScrollController = ScrollController();
   double _headerCollapseProgress = 0;
 
@@ -226,8 +225,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   void _updateHeaderCollapseProgress() {
     if (!_resultsScrollController.hasClients) return;
-    final nextProgress =
-        (_resultsScrollController.offset / 64).clamp(0.0, 1.0).toDouble();
+    final nextProgress = (_resultsScrollController.offset / 64)
+        .clamp(0.0, 1.0)
+        .toDouble();
     if ((nextProgress - _headerCollapseProgress).abs() < 0.01) return;
     setState(() => _headerCollapseProgress = nextProgress);
   }
@@ -259,6 +259,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _selected.clear();
       _reviewDecisions.clear();
       _expandedGroupPaths.clear();
+      _expandedReviewPaths.clear();
       _preClassified = [];
       _unknown = [];
       _verdicts = [];
@@ -273,7 +274,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _partialDeleteFailedCount = null;
       _partialDeleteFreedBytes = null;
       _retryTargets = [];
-      _showAllResults = false;
     });
     try {
       final mode = await widget.gateway.getMode();
@@ -391,8 +391,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _loadPreviousResult() async {
     final generation = _beginOperation();
     final l10n = context.l10n;
-    final key =
-        _resultCacheKey.isNotEmpty ? _resultCacheKey : widget.snapshotId;
+    final key = _resultCacheKey.isNotEmpty
+        ? _resultCacheKey
+        : widget.snapshotId;
     var raw = widget.gateway.loadResult(key);
     if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
         key != widget.snapshotId) {
@@ -447,7 +448,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _selected.clear();
         _reviewDecisions.clear();
         _expandedGroupPaths.clear();
-        _showAllResults = false;
+        _expandedReviewPaths.clear();
         _sizeByPath.addAll(resultSizes);
         _verdicts = verdicts;
         for (final verdict in verdicts) {
@@ -493,7 +494,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _selected.clear();
       _reviewDecisions.clear();
       _expandedGroupPaths.clear();
-      _showAllResults = false;
+      _expandedReviewPaths.clear();
     });
     final mode = await widget.gateway.getMode();
     if (!_isCurrent(generation)) return;
@@ -508,11 +509,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
     try {
       final verdicts = await provider.analyze(_unknown);
-      final model =
-          provider is ByokAiProvider ? provider.model : 'deepseek-v4-flash';
-      final byokUsage =
-          provider is ByokAiProvider ? provider.lastTokenUsage : null;
-      final inputTokens = byokUsage?.promptTokens ??
+      final model = provider is ByokAiProvider
+          ? provider.model
+          : 'deepseek-v4-flash';
+      final byokUsage = provider is ByokAiProvider
+          ? provider.lastTokenUsage
+          : null;
+      final inputTokens =
+          byokUsage?.promptTokens ??
           (_estimatedTokens > 0
               ? _estimatedTokens
               : (_unknown.length * 8 + 200));
@@ -601,10 +605,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             enrichedVerdicts
                 .where((verdict) => verdict.verdict == 'review_needed')
                 .map(
-                  (verdict) => MapEntry(
-                    verdict.path,
-                    _ReviewDecision.pending,
-                  ),
+                  (verdict) => MapEntry(verdict.path, _ReviewDecision.pending),
                 ),
           );
         _hasExistingResult = true;
@@ -658,8 +659,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'empty_api_key' ||
         'ai_contract_unavailable' ||
         'platform_api_unconfigured' ||
-        'link_account_required' =>
-          true,
+        'link_account_required' => true,
         _ => false,
       };
       setState(() {
@@ -693,11 +693,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           'total_tokens': totalTokens,
           'usage_source': partial
               ? estimated
-                  ? 'estimate_partial'
-                  : 'provider_partial'
+                    ? 'estimate_partial'
+                    : 'provider_partial'
               : estimated
-                  ? 'estimate'
-                  : 'provider',
+              ? 'estimate'
+              : 'provider',
           'cumulative_input_tokens': totals.inputTokens,
           'cumulative_output_tokens': totals.outputTokens,
           'cumulative_total_tokens': totals.totalTokens,
@@ -718,8 +718,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       'network_error' => context.l10n.aiErrorNetwork,
       'invalid_api_key' || 'empty_api_key' => context.l10n.aiNoApiKey,
       'ai_contract_unavailable' ||
-      'platform_api_unconfigured' =>
-        context.l10n.aiContractUnavailable,
+      'platform_api_unconfigured' => context.l10n.aiContractUnavailable,
       'link_account_required' => context.l10n.aiSettingsSessionExpired,
       _ => context.l10n.aiErrorUnknown,
     };
@@ -832,7 +831,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ? failed.whereType<String>().toList(growable: false)
           : const <String>[];
       final freedAfter = (report['freed_bytes'] as num?)?.toInt() ?? 0;
-      final deletedCount = (report['deleted_count'] as num?)?.toInt() ??
+      final deletedCount =
+          (report['deleted_count'] as num?)?.toInt() ??
           (targets.length - failedCount);
       if (!_isCurrent(generation)) return;
       unawaited(
@@ -903,6 +903,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void _toggleSafeGroup(Iterable<AiVerdict> items, bool selected) {
     setState(() {
       for (final item in items) {
+        if (item.verdict != 'safe_to_remove') continue;
         if (selected) {
           _selected.add(item.path);
         } else {
@@ -931,8 +932,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final tokens = context.volward;
     final headerCollapseProgress =
         _phase == _Phase.results || _phase == _Phase.deleting
-            ? _headerCollapseProgress
-            : 0.0;
+        ? _headerCollapseProgress
+        : 0.0;
     return DecoratedBox(
       key: AiAnalysisWorkspace.workspaceKey,
       decoration: BoxDecoration(
@@ -970,24 +971,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   int get _phaseStep => switch (_phase) {
-        _Phase.loading || _Phase.error => 1,
-        _Phase.precheck => 2,
-        _Phase.privacy || _Phase.analyzing => 3,
-        _Phase.results => 4,
-        _Phase.deleting => 5,
-      };
+    _Phase.loading || _Phase.error => 1,
+    _Phase.precheck => 2,
+    _Phase.privacy || _Phase.analyzing => 3,
+    _Phase.results => 4,
+    _Phase.deleting => 5,
+  };
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(
-          label: context.l10n.aiWorkspacePhaseLoading,
-          candidateCount: 0,
-        ),
+        label: context.l10n.aiWorkspacePhaseLoading,
+        candidateCount: 0,
+      ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
       _Phase.analyzing => _buildProgressBody(
-          label: context.l10n.aiWorkspacePhaseAnalyzing,
-          candidateCount: _unknown.length,
-        ),
+        label: context.l10n.aiWorkspacePhaseAnalyzing,
+        candidateCount: _unknown.length,
+      ),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -1037,9 +1038,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
         ? (_error ??
-            (_mode == AiMode.platform
-                ? l10n.aiSettingsSessionExpired
-                : l10n.aiNoApiKey))
+              (_mode == AiMode.platform
+                  ? l10n.aiSettingsSessionExpired
+                  : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -1199,36 +1200,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return groupAiResults(merged, _sizeByPath);
   }
 
-  List<_VerdictGroupView> _groupViewsForVerdict({
-    required List<AiResultGroup> groups,
-    required String verdict,
-  }) {
-    final views = <_VerdictGroupView>[];
-    for (final group in groups) {
-      final items = group.items
-          .where((item) => item.verdict == verdict)
-          .toList(growable: false);
-      if (items.isEmpty) continue;
-      views.add(
-        _VerdictGroupView(
-          path: group.path,
-          items: items,
-          totalBytes: items.fold<int>(
-            0,
-            (total, item) => total + (_sizeByPath[item.path] ?? 0),
-          ),
-          selectedCount:
-              items.where((item) => _selected.contains(item.path)).length,
-        ),
-      );
-    }
-    return views;
-  }
-
-  List<AiVerdict> _flattenGroupViews(List<_VerdictGroupView> groups) {
-    return groups.expand((group) => group.items).toList(growable: false);
-  }
-
   _ResultSummaryData _resultSummaryFor({
     required List<AiVerdict> safe,
     required List<AiVerdict> review,
@@ -1242,8 +1213,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
 
     final l10n = context.l10n;
-    final selectedSafeCount =
-        safe.where((item) => _selected.contains(item.path)).length;
+    final selectedSafeCount = safe
+        .where((item) => _selected.contains(item.path))
+        .length;
     return _ResultSummaryData(
       safe: _ResultBucketData(
         title: l10n.aiResultsMetricSafeTitle,
@@ -1265,125 +1237,224 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
-  Widget _buildResults() {
-    final l10n = context.l10n;
-    final normalizedGroups = _normalizedResultGroups();
-    final safeGroups = _groupViewsForVerdict(
-      groups: normalizedGroups,
-      verdict: 'safe_to_remove',
-    );
-    final reviewGroups = _groupViewsForVerdict(
-      groups: normalizedGroups,
-      verdict: 'review_needed',
-    );
-    final keepGroups = _groupViewsForVerdict(
-      groups: normalizedGroups,
-      verdict: 'keep',
-    );
-    final safe = _flattenGroupViews(safeGroups);
-    final review = _flattenGroupViews(reviewGroups);
-    final keep = _flattenGroupViews(keepGroups);
-    final summary = _resultSummaryFor(safe: safe, review: review, keep: keep);
-    final topSuggestions = [...safe, ...review];
-    topSuggestions.sort((a, b) {
-      int rank(AiVerdict item) => switch (item.verdict) {
-            'safe_to_remove' => 0,
-            'review_needed' => 1,
-            _ => 2,
-          };
-      final actionableDiff = (rank(a) == 2 ? 1 : 0).compareTo(
-        rank(b) == 2 ? 1 : 0,
-      );
-      if (actionableDiff != 0) return actionableDiff;
-      final sizeDiff = (_sizeByPath[b.path] ?? 0).compareTo(
-        _sizeByPath[a.path] ?? 0,
-      );
-      if (sizeDiff != 0) return sizeDiff;
-      final rankDiff = rank(a).compareTo(rank(b));
-      if (rankDiff != 0) return rankDiff;
-      return a.path.compareTo(b.path);
+  List<_ResultListRow> _resultRows(List<AiResultGroup> groups) {
+    final rows = <_ResultListRow>[];
+    for (final group in groups) {
+      rows.add(_ResultListRow.group(group));
+      if (_expandedGroupPaths.contains(group.path)) {
+        for (final item in group.items) {
+          rows.add(_ResultListRow.item(group, item));
+        }
+      }
+    }
+    return rows;
+  }
+
+  void _toggleGroupExpanded(String path) {
+    setState(() {
+      if (!_expandedGroupPaths.add(path)) {
+        _expandedGroupPaths.remove(path);
+      }
     });
-    final visibleTopSuggestions =
-        topSuggestions.take(8).toList(growable: false);
-    final resultChildren = <Widget>[
-      _buildResultsOverview(summary: summary),
-      if (_showAllResults) ...[
-        const SizedBox(height: AppleSpacing.lg),
-        _verdictSection(
-          title: l10n.aiVerdictSafe(safe.length),
-          groups: safeGroups,
-          selectable: true,
+  }
+
+  void _toggleReviewExpanded(String path) {
+    setState(() {
+      if (!_expandedReviewPaths.add(path)) {
+        _expandedReviewPaths.remove(path);
+      }
+    });
+  }
+
+  bool? _safeGroupSelectionValue(AiResultGroup group) {
+    if (group.safeCount == 0) return false;
+    final selectedSafeCount = group.items
+        .where((item) => item.verdict == 'safe_to_remove')
+        .where((item) => _selected.contains(item.path))
+        .length;
+    if (selectedSafeCount == 0) return false;
+    if (selectedSafeCount == group.safeCount) return true;
+    return null;
+  }
+
+  String _formatCount(int count) {
+    return NumberFormat.decimalPattern(
+      Localizations.localeOf(context).toLanguageTag(),
+    ).format(count);
+  }
+
+  String _itemCountLabel(int count) {
+    final formatted = _formatCount(count);
+    return count == 1 ? '$formatted item' : '$formatted items';
+  }
+
+  String _groupSummaryLabel(AiResultGroup group) {
+    return '${_itemCountLabel(group.items.length)} · ${_formatBytes(group.totalBytes)}';
+  }
+
+  String _groupMetadataLabel(AiResultGroup group) {
+    return [
+      '${context.l10n.aiResultsStatusSafe} ${_formatCount(group.safeCount)}',
+      '${context.l10n.aiResultsStatusReview} ${_formatCount(group.reviewCount)}',
+      '${context.l10n.aiResultsStatusKeep} ${_formatCount(group.keepCount)}',
+    ].join(' · ');
+  }
+
+  String _reviewStatusLabel(_ReviewDecision decision) {
+    return switch (decision) {
+      _ReviewDecision.pending => 'Needs your decision',
+      _ReviewDecision.include => 'Added to cleanup',
+      _ReviewDecision.keep => 'Kept out of cleanup',
+    };
+  }
+
+  Widget _buildWideResultsHeader(_ResultSummaryData summary) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _buildResultsOverview(summary: summary)),
+        const SizedBox(width: AppleSpacing.lg),
+        SizedBox(
+          key: AiAnalysisWorkspace.summaryKey,
+          width: 260,
+          child: _buildSelectionSummary(),
         ),
-        _verdictSection(
-          title: l10n.aiVerdictReview(review.length),
-          groups: reviewGroups,
-          selectable: false,
-        ),
-        _verdictSection(
-          title: l10n.aiVerdictKeep(keep.length),
-          groups: keepGroups,
-          selectable: false,
-        ),
-      ] else ...[
-        const SizedBox(height: AppleSpacing.lg),
-        _buildTopSuggestions(l10n: l10n, items: visibleTopSuggestions),
       ],
-      if (!_showAllResults) ...[
-        const SizedBox(height: AppleSpacing.xs),
-        TextButton(
-          key: AiAnalysisWorkspace.showAllResultsKey,
-          onPressed: () => setState(() => _showAllResults = true),
-          child: Text(l10n.aiShowAllResults),
+    );
+  }
+
+  Widget _buildWideRowShell({required Widget child, required bool first}) {
+    return Padding(
+      padding: EdgeInsets.only(top: first ? AppleSpacing.lg : 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: child),
+          const SizedBox(width: AppleSpacing.lg),
+          const SizedBox(width: 260),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultStreamRow(_ResultListRow row) {
+    return switch (row) {
+      _ResultListGroupRow(:final group) => _ResultGroupRow(
+        key: row.key,
+        group: group,
+        expanded: _expandedGroupPaths.contains(group.path),
+        selectionValue: _safeGroupSelectionValue(group),
+        onSelectionChanged: group.safeCount == 0
+            ? null
+            : (value) => _toggleSafeGroup(group.items, value == true),
+        onTap: () => _toggleGroupExpanded(group.path),
+        summaryLabel: _groupSummaryLabel(group),
+        metadataLabel: _groupMetadataLabel(group),
+      ),
+      _ResultListItemRow(:final item) => _ResultRow(
+        key: row.key,
+        item: item,
+        sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
+        selected: _selected.contains(item.path),
+        reviewDecision: _reviewDecisions[item.path] ?? _ReviewDecision.pending,
+        onChanged: item.verdict == 'safe_to_remove'
+            ? (value) => _toggle(item.path, value)
+            : null,
+        onTap: switch (item.verdict) {
+          'safe_to_remove' => () => _toggle(
+            item.path,
+            !_selected.contains(item.path),
+          ),
+          'review_needed' => () => _toggleReviewExpanded(item.path),
+          _ => null,
+        },
+        expanded:
+            item.verdict == 'review_needed' &&
+            _expandedReviewPaths.contains(item.path),
+        onDecisionChanged: item.verdict == 'review_needed'
+            ? (decision) => _confirmReviewDecision(item.path, decision)
+            : null,
+        cleanupMeta: _cleanupMetaLabel(item),
+        cleanupSource: _cleanupSourceLabel(item),
+        retentionHint: _retentionHintLabel(item),
+        reviewStatusLabel: _reviewStatusLabel(
+          _reviewDecisions[item.path] ?? _ReviewDecision.pending,
         ),
-      ],
-    ];
+      ),
+    };
+  }
+
+  Widget _buildResults() {
+    final normalizedGroups = _normalizedResultGroups();
+    final safe = normalizedGroups
+        .expand((group) => group.items)
+        .where((item) => item.verdict == 'safe_to_remove')
+        .toList(growable: false);
+    final review = normalizedGroups
+        .expand((group) => group.items)
+        .where((item) => item.verdict == 'review_needed')
+        .toList(growable: false);
+    final keep = normalizedGroups
+        .expand((group) => group.items)
+        .where((item) => item.verdict == 'keep')
+        .toList(growable: false);
+    final summary = _resultSummaryFor(safe: safe, review: review, keep: keep);
+    final rows = _resultRows(normalizedGroups);
     return LayoutBuilder(
       builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 720;
         if (constraints.maxWidth >= 720) {
-          return ListView(
+          return ListView.builder(
             key: AiAnalysisWorkspace.resultsListKey,
             controller: _resultsScrollController,
             padding: const EdgeInsets.all(AppleSpacing.lg),
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: resultChildren,
-                    ),
-                  ),
-                  const SizedBox(width: AppleSpacing.lg),
-                  SizedBox(
-                    key: AiAnalysisWorkspace.summaryKey,
-                    width: 260,
-                    child: _buildSelectionSummary(),
-                  ),
-                ],
-              ),
-            ],
+            itemCount: rows.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return _buildWideResultsHeader(summary);
+              }
+              return _buildWideRowShell(
+                first: index == 1,
+                child: _buildResultStreamRow(rows[index - 1]),
+              );
+            },
           );
         }
-        return ListView(
+        return ListView.builder(
           key: AiAnalysisWorkspace.resultsListKey,
           controller: _resultsScrollController,
           padding: EdgeInsets.zero,
-          children: [
-            SizedBox(
-              key: AiAnalysisWorkspace.summaryKey,
-              width: double.infinity,
-              child: _buildSelectionSummary(compact: true),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(AppleSpacing.lg),
-              child: Column(
+          itemCount: rows.length + 2,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return SizedBox(
+                key: AiAnalysisWorkspace.summaryKey,
+                width: double.infinity,
+                child: _buildSelectionSummary(compact: true),
+              );
+            }
+            if (index == 1) {
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: resultChildren,
-              ),
-            ),
-          ],
+                children: [
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppleSpacing.lg,
+                      AppleSpacing.lg,
+                      AppleSpacing.lg,
+                      AppleSpacing.lg,
+                    ),
+                    child: _buildResultsOverview(summary: summary),
+                  ),
+                ],
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.lg),
+              child: _buildResultStreamRow(rows[index - 2]),
+            );
+          },
         );
       },
     );
@@ -1413,52 +1484,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           buckets: [summary.safe, summary.review, summary.keep],
         ),
       ],
-    );
-  }
-
-  Widget _buildTopSuggestions({
-    required AppLocalizations l10n,
-    required List<AiVerdict> items,
-  }) {
-    return _RecommendedResultsCard(
-      title: l10n.aiResultsRecommendedTitle,
-      subtitle: l10n.aiResultsRecommendedSubtitle,
-      countLabel: l10n.aiResultsTopLimit(items.length),
-      child: _ResultRowList(
-        itemCount: items.length,
-        itemBuilder: (context, index) {
-          final item = items[index];
-          final isReview = item.verdict == 'review_needed';
-          return _ResultRow(
-            item: item,
-            sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
-            statusLabel: _statusLabel(item),
-            statusColor: _statusColor(item),
-            selected: _selected.contains(item.path),
-            selectable: item.verdict == 'safe_to_remove',
-            onChanged: item.verdict == 'safe_to_remove'
-                ? (value) => _toggle(item.path, value)
-                : null,
-            onTap: isReview
-                ? () => setState(() {
-                      if (!_expandedGroupPaths.add(item.path)) {
-                        _expandedGroupPaths.remove(item.path);
-                      }
-                    })
-                : null,
-            expanded: isReview && _expandedGroupPaths.contains(item.path),
-            actionButtons: isReview
-                ? _ReviewDecisionButtons(
-                    decision:
-                        _reviewDecisions[item.path] ?? _ReviewDecision.pending,
-                    onChanged: (decision) =>
-                        _confirmReviewDecision(item.path, decision),
-                  )
-                : null,
-            cleanupMeta: _cleanupMetaLabel(item),
-          );
-        },
-      ),
     );
   }
 
@@ -1565,121 +1590,85 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
-  Widget _verdictSection({
-    required String title,
-    required List<_VerdictGroupView> groups,
-    required bool selectable,
-  }) {
-    if (groups.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppleSpacing.md),
-      child: _RecommendedResultsCard(
-        title: title,
-        subtitle: '',
-        countLabel: groups
-            .fold<int>(
-              0,
-              (total, group) => total + group.items.length,
-            )
-            .toString(),
-        child: _GroupedResultList(
-          groups: groups,
-          selectable: selectable,
-          onGroupChanged: selectable
-              ? (group, value) => _toggleSafeGroup(group.items, value ?? false)
-              : null,
-          itemBuilder: _verdictTile,
-        ),
-      ),
-    );
-  }
-
-  Widget _verdictTile({required AiVerdict item, required bool selectable}) {
-    final rowSelectable = selectable && item.verdict == 'safe_to_remove';
-    final selected = _selected.contains(item.path);
-    final isReview = item.verdict == 'review_needed';
-    return _ResultRow(
-      item: item,
-      sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
-      statusLabel: _statusLabel(item),
-      statusColor: _statusColor(item),
-      selected: selected,
-      selectable: rowSelectable,
-      onChanged: rowSelectable ? (value) => _toggle(item.path, value) : null,
-      onTap: isReview
-          ? () => setState(() {
-                if (!_expandedGroupPaths.add(item.path)) {
-                  _expandedGroupPaths.remove(item.path);
-                }
-              })
-          : null,
-      expanded: isReview && _expandedGroupPaths.contains(item.path),
-      actionButtons: isReview
-          ? _ReviewDecisionButtons(
-              decision: _reviewDecisions[item.path] ?? _ReviewDecision.pending,
-              onChanged: (decision) =>
-                  _confirmReviewDecision(item.path, decision),
-            )
-          : null,
-      cleanupMeta: _cleanupMetaLabel(item),
-    );
-  }
-
-  String _statusLabel(AiVerdict item) {
-    final l10n = context.l10n;
-    return switch (item.verdict) {
-      'safe_to_remove' => l10n.aiResultsStatusSafe,
-      'review_needed' => l10n.aiResultsStatusReview,
-      _ => l10n.aiResultsStatusKeep,
-    };
-  }
-
-  Color _statusColor(AiVerdict item) {
-    final tokens = context.volward;
-    return switch (item.verdict) {
-      'safe_to_remove' => const Color(0xFF267A42),
-      'review_needed' => tokens.warning,
-      _ => tokens.inkMuted48,
-    };
-  }
-
   String? _cleanupMetaLabel(AiVerdict item) {
+    final parts = <String>[
+      if (_cleanupSourceLabel(item) case final source?) source,
+      if (_retentionHintLabel(item) case final retention?) retention,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  String? _cleanupSourceLabel(AiVerdict item) {
     final source = item.cleanupSource;
-    final hint = item.cleanupHint;
-    final days = item.retentionDays;
-    if ((source == null || source.isEmpty) &&
-        (hint == null || hint.isEmpty) &&
-        days == null) {
-      return null;
-    }
+    if (source == null || source.isEmpty) return null;
     final l10n = context.l10n;
-    final sourceLabel = switch (source) {
+    return switch (source) {
       'ai_tool_cache' => l10n.aiCleanupSourceAiToolCache,
       'ai_generated_output' => l10n.aiCleanupSourceAiGeneratedOutput,
       'system_temp' => l10n.aiCleanupSourceSystemTemp,
-      _ => null,
+      _ => source,
     };
+  }
+
+  String? _retentionHintLabel(AiVerdict item) {
     final parts = <String>[
-      if (sourceLabel != null) sourceLabel,
-      if (days != null) l10n.aiCleanupRetentionDays(days),
-      if (hint != null && hint.isNotEmpty) hint,
+      if (item.retentionDays != null)
+        context.l10n.aiCleanupRetentionDays(item.retentionDays!),
+      if (item.cleanupHint case final hint? when hint.isNotEmpty) hint,
     ];
     return parts.isEmpty ? null : parts.join(' · ');
   }
 }
 
-class _RecommendedResultsCard extends StatelessWidget {
-  const _RecommendedResultsCard({
-    required this.title,
-    required this.subtitle,
-    required this.countLabel,
-    required this.child,
+sealed class _ResultListRow {
+  const _ResultListRow();
+
+  factory _ResultListRow.group(AiResultGroup group) = _ResultListGroupRow;
+
+  factory _ResultListRow.item(AiResultGroup group, AiVerdict item) =
+      _ResultListItemRow;
+
+  Key get key;
+}
+
+final class _ResultListGroupRow extends _ResultListRow {
+  const _ResultListGroupRow(this.group);
+
+  final AiResultGroup group;
+
+  @override
+  Key get key => ValueKey<String>('ai-result-group:${group.path}');
+}
+
+final class _ResultListItemRow extends _ResultListRow {
+  const _ResultListItemRow(this.group, this.item);
+
+  final AiResultGroup group;
+  final AiVerdict item;
+
+  @override
+  Key get key => ValueKey<String>('ai-result-item:${item.path}');
+}
+
+class _ResultGroupRow extends StatelessWidget {
+  const _ResultGroupRow({
+    super.key,
+    required this.group,
+    required this.expanded,
+    required this.selectionValue,
+    required this.onSelectionChanged,
+    required this.onTap,
+    required this.summaryLabel,
+    required this.metadataLabel,
   });
 
-  final String title;
-  final String subtitle;
-  final String countLabel;
-  final Widget child;
+  final AiResultGroup group;
+  final bool expanded;
+  final bool? selectionValue;
+  final ValueChanged<bool?>? onSelectionChanged;
+  final VoidCallback onTap;
+  final String summaryLabel;
+  final String metadataLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1687,309 +1676,196 @@ class _RecommendedResultsCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.canvas,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tokens.hairline),
+        border: Border(bottom: BorderSide(color: tokens.dividerSoft)),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppleSpacing.sm,
-                vertical: AppleSpacing.xs,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppleSpacing.sm,
+              AppleSpacing.sm,
+              AppleSpacing.xs,
+              AppleSpacing.sm,
+            ),
+            child: SizedBox(
+              width: 28,
+              child: Checkbox(
+                key: Key('ai-group-toggle:${group.path}'),
+                tristate: true,
+                value: selectionValue,
+                onChanged: onSelectionChanged,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: AppleSpacing.xs,
-                      children: [
-                        Text(title, style: context.vwCaptionStrong),
-                        Text(subtitle, style: context.vwFinePrint),
-                      ],
-                    ),
+            ),
+          ),
+          Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    0,
+                    AppleSpacing.sm,
+                    AppleSpacing.sm,
+                    AppleSpacing.sm,
                   ),
-                  Text(countLabel, style: context.vwFinePrint),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: tokens.dividerSoft),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ResultRowList extends StatelessWidget {
-  const _ResultRowList({
-    required this.itemCount,
-    required this.itemBuilder,
-  });
-
-  final int itemCount;
-  final IndexedWidgetBuilder itemBuilder;
-
-  @override
-  Widget build(BuildContext context) {
-    if (itemCount == 0) return const SizedBox.shrink();
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: itemCount,
-      itemBuilder: itemBuilder,
-    );
-  }
-}
-
-class _GroupedResultList extends StatelessWidget {
-  const _GroupedResultList({
-    required this.groups,
-    required this.selectable,
-    required this.onGroupChanged,
-    required this.itemBuilder,
-  });
-
-  final List<_VerdictGroupView> groups;
-  final bool selectable;
-  final void Function(_VerdictGroupView group, bool? value)? onGroupChanged;
-  final Widget Function({required AiVerdict item, required bool selectable})
-      itemBuilder;
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = <_GroupedResultEntry>[];
-    for (final group in groups) {
-      entries.add(_GroupedResultEntry.header(group));
-      for (final item in group.items) {
-        entries.add(_GroupedResultEntry.item(group, item));
-      }
-    }
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        return switch (entry) {
-          _GroupedResultEntryHeader(:final group) => _GroupHeaderRow(
-              path: group.path,
-              itemCount: group.items.length,
-              totalBytes: group.totalBytes,
-              selectedCount: group.selectedCount,
-              onChanged: onGroupChanged == null
-                  ? null
-                  : (value) => onGroupChanged!(group, value),
-            ),
-          _GroupedResultEntryItem(:final item) =>
-            itemBuilder(item: item, selectable: selectable),
-        };
-      },
-    );
-  }
-}
-
-class _GroupHeaderRow extends StatelessWidget {
-  const _GroupHeaderRow({
-    required this.path,
-    required this.itemCount,
-    required this.totalBytes,
-    required this.selectedCount,
-    required this.onChanged,
-  });
-
-  final String path;
-  final int itemCount;
-  final int totalBytes;
-  final int selectedCount;
-  final ValueChanged<bool?>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.volward;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.canvas,
-        border: Border(
-          bottom: BorderSide(color: tokens.dividerSoft),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppleSpacing.sm,
-          vertical: AppleSpacing.xs,
-        ),
-        child: Row(
-          children: [
-            if (onChanged != null) ...[
-              SizedBox(
-                width: 28,
-                child: Checkbox(
-                  key: Key('ai-group-toggle:$path'),
-                  tristate: true,
-                  value: selectedCount == 0
-                      ? false
-                      : selectedCount == itemCount
-                          ? true
-                          : null,
-                  onChanged: onChanged,
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          AnimatedRotation(
+                            turns: expanded ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 160),
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: tokens.inkMuted80,
+                            ),
+                          ),
+                          const SizedBox(width: AppleSpacing.xs),
+                          Expanded(
+                            child: _PathLabel(
+                              group.path,
+                              style: context.vwCaptionStrong,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppleSpacing.xxs),
+                      Text(
+                        summaryLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwCaption,
+                      ),
+                      const SizedBox(height: AppleSpacing.xxs),
+                      Text(
+                        metadataLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwFinePrint,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: AppleSpacing.xs),
-            ],
-            Expanded(
-              child: Text(path, style: context.vwCaptionStrong),
             ),
-            const SizedBox(width: AppleSpacing.sm),
-            Text(
-              '$itemCount · ${_AiAnalysisWorkspaceState._formatBytes(totalBytes)}',
-              style: context.vwFinePrint,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
-}
-
-class _VerdictGroupView {
-  const _VerdictGroupView({
-    required this.path,
-    required this.items,
-    required this.totalBytes,
-    required this.selectedCount,
-  });
-
-  final String path;
-  final List<AiVerdict> items;
-  final int totalBytes;
-  final int selectedCount;
-}
-
-sealed class _GroupedResultEntry {
-  const _GroupedResultEntry();
-
-  factory _GroupedResultEntry.header(_VerdictGroupView group) =
-      _GroupedResultEntryHeader;
-
-  factory _GroupedResultEntry.item(_VerdictGroupView group, AiVerdict item) =
-      _GroupedResultEntryItem;
-}
-
-final class _GroupedResultEntryHeader extends _GroupedResultEntry {
-  const _GroupedResultEntryHeader(this.group);
-
-  final _VerdictGroupView group;
-}
-
-final class _GroupedResultEntryItem extends _GroupedResultEntry {
-  const _GroupedResultEntryItem(this.group, this.item);
-
-  final _VerdictGroupView group;
-  final AiVerdict item;
 }
 
 class _ResultRow extends StatelessWidget {
   const _ResultRow({
+    super.key,
     required this.item,
     required this.sizeLabel,
-    required this.statusLabel,
-    required this.statusColor,
     required this.selected,
-    required this.selectable,
+    required this.reviewDecision,
     required this.onChanged,
     required this.onTap,
     required this.expanded,
-    required this.actionButtons,
+    required this.onDecisionChanged,
     required this.cleanupMeta,
+    required this.cleanupSource,
+    required this.retentionHint,
+    required this.reviewStatusLabel,
   });
 
   final AiVerdict item;
   final String sizeLabel;
-  final String statusLabel;
-  final Color statusColor;
   final bool selected;
-  final bool selectable;
+  final _ReviewDecision reviewDecision;
   final ValueChanged<bool?>? onChanged;
   final VoidCallback? onTap;
   final bool expanded;
-  final Widget? actionButtons;
+  final ValueChanged<_ReviewDecision>? onDecisionChanged;
   final String? cleanupMeta;
+  final String? cleanupSource;
+  final String? retentionHint;
+  final String reviewStatusLabel;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
-    final subtitleParts = <String>[
-      item.confidence,
-      if (item.reason.isNotEmpty) item.reason,
-      if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
-    ];
+    final isSafe = item.verdict == 'safe_to_remove';
+    final isReview = item.verdict == 'review_needed';
+    final subtitle = switch (item.verdict) {
+      'safe_to_remove' => [
+        selected ? 'Selected' : 'Not selected',
+        item.confidence,
+        if (item.reason.isNotEmpty) item.reason,
+        if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
+      ].join(' · '),
+      'review_needed' => reviewStatusLabel,
+      _ => [
+        context.l10n.aiResultsMetricProtected,
+        item.confidence,
+        if (item.reason.isNotEmpty) item.reason,
+        if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
+      ].join(' · '),
+    };
+    final leading = switch (item.verdict) {
+      'safe_to_remove' => Checkbox(
+        key: Key('ai-item-toggle:${item.path}'),
+        value: selected,
+        onChanged: onChanged,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      'review_needed' => Icon(
+        Icons.pending_actions_outlined,
+        size: 18,
+        color: tokens.warning,
+      ),
+      _ => Icon(Icons.lock_outline, size: 18, color: tokens.inkMuted48),
+    };
     final body = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppleSpacing.sm,
-        vertical: 10,
+        vertical: AppleSpacing.xs,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 28,
-            child: selectable
-                ? Checkbox(
-                    key: Key('ai-item-toggle:${item.path}'),
-                    value: selected,
-                    onChanged: onChanged,
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  )
-                : Icon(Icons.lock_outline, size: 18, color: tokens.inkMuted48),
-          ),
+          SizedBox(width: 28, child: leading),
           const SizedBox(width: AppleSpacing.xs),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _PathLabel(item.path),
-                if (subtitleParts.isNotEmpty) ...[
-                  const SizedBox(height: AppleSpacing.xxs),
-                  Text(
-                    subtitleParts.join(' · '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.vwFinePrint,
+                _PathLabel(item.path, style: context.vwCaptionStrong),
+                const SizedBox(height: AppleSpacing.xxs),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.vwFinePrint.copyWith(
+                    color: isReview ? tokens.warning : null,
                   ),
-                ],
+                ),
               ],
             ),
           ),
           const SizedBox(width: AppleSpacing.sm),
-          SizedBox(
-            width: 88,
-            child: Text(
-              sizeLabel,
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.vwCaptionStrong,
-            ),
-          ),
-          const SizedBox(width: AppleSpacing.sm),
-          SizedBox(
-            width: 72,
-            child: Text(
-              statusLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.vwCaptionStrong.copyWith(color: statusColor),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: SizedBox(
+              width: 88,
+              child: Text(
+                sizeLabel,
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.vwCaptionStrong,
+              ),
             ),
           ),
         ],
@@ -1997,30 +1873,66 @@ class _ResultRow extends StatelessWidget {
     );
     final row = DecoratedBox(
       decoration: BoxDecoration(
+        color: isSafe && selected ? tokens.canvasParchment : tokens.canvas,
         border: Border(bottom: BorderSide(color: tokens.dividerSoft)),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap:
-              onTap ?? (selectable ? () => onChanged?.call(!selected) : null),
-          child: body,
-        ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(width: AppleSpacing.lg),
+          Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(onTap: onTap, child: body),
+            ),
+          ),
+        ],
       ),
     );
-    if (!expanded || actionButtons == null) return row;
+    if (!expanded || !isReview || onDecisionChanged == null) return row;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         row,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppleSpacing.lg,
-            0,
-            AppleSpacing.lg,
-            AppleSpacing.sm,
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: tokens.canvas,
+            border: Border(bottom: BorderSide(color: tokens.dividerSoft)),
           ),
-          child: actionButtons!,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppleSpacing.xl + 28,
+              0,
+              AppleSpacing.lg,
+              AppleSpacing.sm,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.path, style: context.vwFinePrint),
+                const SizedBox(height: AppleSpacing.xs),
+                _ResultDetailLine(label: 'Size', value: sizeLabel),
+                _ResultDetailLine(label: 'Confidence', value: item.confidence),
+                if (item.reason.isNotEmpty)
+                  _ResultDetailLine(label: 'Reason', value: item.reason),
+                if (cleanupSource != null && cleanupSource!.isNotEmpty)
+                  _ResultDetailLine(
+                    label: 'Cleanup source',
+                    value: cleanupSource!,
+                  ),
+                if (retentionHint != null && retentionHint!.isNotEmpty)
+                  _ResultDetailLine(
+                    label: 'Retention hint',
+                    value: retentionHint!,
+                  ),
+                const SizedBox(height: AppleSpacing.sm),
+                _ReviewDecisionButtons(
+                  decision: reviewDecision,
+                  onChanged: onDecisionChanged!,
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
@@ -2038,22 +1950,41 @@ class _ReviewDecisionButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: AppleSpacing.xs,
+      runSpacing: AppleSpacing.xs,
       children: [
-        TextButton(
+        AppleButton(
+          label: 'Add to cleanup',
+          icon: Icons.add_task_outlined,
           onPressed: decision == _ReviewDecision.include
               ? null
               : () => onChanged(_ReviewDecision.include),
-          child: const Text('Add to cleanup'),
         ),
-        const SizedBox(width: AppleSpacing.xs),
-        TextButton(
+        AppleButton(
+          label: 'Keep this item',
+          icon: Icons.lock_outline,
+          variant: AppleButtonVariant.pearl,
           onPressed: decision == _ReviewDecision.keep
               ? null
               : () => onChanged(_ReviewDecision.keep),
-          child: const Text('Keep this item'),
         ),
       ],
+    );
+  }
+}
+
+class _ResultDetailLine extends StatelessWidget {
+  const _ResultDetailLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppleSpacing.xxs),
+      child: Text('$label: $value', style: context.vwFinePrint),
     );
   }
 }
@@ -2276,9 +2207,10 @@ class _WorkspaceHeader extends StatelessWidget {
 }
 
 class _PathLabel extends StatelessWidget {
-  const _PathLabel(this.path);
+  const _PathLabel(this.path, {this.style});
 
   final String path;
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -2286,7 +2218,12 @@ class _PathLabel extends StatelessWidget {
       value: path,
       child: Tooltip(
         message: path,
-        child: Text(path, maxLines: 1, overflow: TextOverflow.ellipsis),
+        child: Text(
+          path,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
       ),
     );
   }
