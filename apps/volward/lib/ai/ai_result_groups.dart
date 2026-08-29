@@ -1,5 +1,4 @@
-import 'dart:collection';
-
+import '../scan_tree.dart';
 import 'ai_provider.dart';
 
 class AiResultGroup {
@@ -60,14 +59,25 @@ class _GroupBuilder {
 
 List<AiResultGroup> groupAiResults(
   Iterable<AiVerdict> verdicts,
-  Map<String, int> sizeByPath,
-) {
-  final builders = LinkedHashMap<String, _GroupBuilder>();
+  Map<String, int> sizeByPath, {
+  String rootPath = '',
+  Set<String> directoryPaths = const {},
+}) {
+  final normalizedRoot = normalizeFsPath(rootPath);
+  final normalizedDirectoryPaths = directoryPaths
+      .map(normalizeFsPath)
+      .map(_pathKey)
+      .toSet();
+  final builders = <String, _GroupBuilder>{};
   for (final verdict in verdicts) {
-    final parentPath = _parentDirectory(verdict.path);
+    final groupPath = _groupDirectory(
+      verdict.path,
+      rootPath: normalizedRoot,
+      directoryPaths: normalizedDirectoryPaths,
+    );
     final builder = builders.putIfAbsent(
-      parentPath,
-      () => _GroupBuilder(parentPath),
+      groupPath,
+      () => _GroupBuilder(groupPath),
     );
     builder.add(verdict, sizeByPath[verdict.path] ?? 0);
   }
@@ -83,14 +93,49 @@ List<AiResultGroup> groupAiResults(
   return groups;
 }
 
-String _parentDirectory(String path) {
-  if (path.isEmpty) return '';
-  var normalized = path;
-  while (normalized.length > 1 && normalized.endsWith('/')) {
-    normalized = normalized.substring(0, normalized.length - 1);
+String _groupDirectory(
+  String path, {
+  String rootPath = '',
+  Set<String> directoryPaths = const {},
+}) {
+  final normalizedRoot = normalizeFsPath(rootPath);
+  final normalizedPath = normalizeFsPath(path);
+  if (normalizedRoot.isNotEmpty &&
+      _isWithinRoot(normalizedPath, normalizedRoot)) {
+    if (normalizedPath == normalizedRoot) return normalizedRoot;
+    final relativePath = normalizedRoot == '/'
+        ? normalizedPath.substring(1)
+        : normalizedRoot.endsWith('/')
+        ? normalizedPath.substring(normalizedRoot.length)
+        : normalizedPath.substring(normalizedRoot.length + 1);
+    final separator = relativePath.indexOf('/');
+    if (separator == -1 && !directoryPaths.contains(_pathKey(normalizedPath))) {
+      return normalizedRoot;
+    }
+    final firstDirectory = separator == -1
+        ? relativePath
+        : relativePath.substring(0, separator);
+    return joinFsPath(normalizedRoot, firstDirectory);
   }
-  if (normalized == '/') return '/';
-  final separator = normalized.lastIndexOf('/');
-  if (separator <= 0) return '/';
-  return normalized.substring(0, separator);
+
+  return _fallbackGroupDirectory(normalizedPath);
+}
+
+String _fallbackGroupDirectory(String path) {
+  final parent = parentFsPath(path);
+  if (parent == '/' || parent.isEmpty) return parent;
+  final secondary = parentFsPath(parent);
+  return secondary == '/' ? parent : secondary;
+}
+
+String _pathKey(String path) {
+  final normalized = normalizeFsPath(path);
+  final windowsStyle =
+      (normalized.length >= 3 && normalized.codeUnitAt(1) == 58) ||
+      normalized.startsWith('//');
+  return windowsStyle ? normalized.toLowerCase() : normalized;
+}
+
+bool _isWithinRoot(String path, String root) {
+  return isUnderFsRoot(path, root);
 }

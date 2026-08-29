@@ -770,123 +770,125 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiWorkspaceAnalyzeAgain => 'Analyze Again';
 
   @override
-  String aiResultsSummaryTitle(int count) {
-    return '$count results found';
+  String aiResultsAnalyzedSummary(
+    int analyzed,
+    String bytes,
+    int safe,
+    int review,
+    int keep,
+  ) {
+    return '$analyzed analyzed · $bytes total · $safe safe · $review pending review · $keep kept';
   }
 
   @override
-  String aiResultsSummaryBody(int safe, int review) {
-    return '$safe safe to remove · $review to review';
-  }
+  String get aiResultsNeedsDecision => 'Needs decision';
 
   @override
-  String get aiResultsSafeSubtitle => 'Ready to remove';
+  String get aiResultsSearchHint => 'Search path, reason, source, or hint';
 
   @override
-  String get aiResultsReviewSubtitle => 'Needs a final check';
+  String get aiResultsFilterAll => 'All';
 
   @override
-  String get aiResultsKeepSubtitle => 'Leave in place';
+  String get aiResultsFilterReview => 'Review';
 
   @override
-  String get aiResultsTopTitle => 'Top suggestions';
+  String get aiResultsFilterSelected => 'Selected';
 
   @override
-  String aiResultsTopCount(int shown, int total) {
-    return '$shown of $total';
-  }
+  String get aiResultsSortPriority => 'Priority';
 
   @override
-  String get aiShowAllResults => 'Show all results';
+  String get aiResultsSortSize => 'Size';
 
   @override
-  String get aiResultsSummaryEyebrow => 'AI cleanup summary';
-
-  @override
-  String aiResultsSelectedForCleanup(String size) {
-    return '$size selected for cleanup';
-  }
-
-  @override
-  String aiResultsSelectedReviewBody(int safeSelected, int review) {
-    String _temp0 = intl.Intl.pluralLogic(
-      safeSelected,
-      locale: localeName,
-      other: 'items are',
-      one: 'item is',
-    );
-    String _temp1 = intl.Intl.pluralLogic(
-      review,
-      locale: localeName,
-      other: 'items need',
-      one: 'item needs',
-    );
-    return '$safeSelected safe $_temp0 selected. $review $_temp1 review before deleting.';
-  }
-
-  @override
-  String get aiResultsMetricSafeTitle => 'Safe to remove';
-
-  @override
-  String get aiResultsMetricReviewTitle => 'Review needed';
-
-  @override
-  String get aiResultsMetricKeepTitle => 'Kept by AI';
-
-  @override
-  String aiResultsMetricTotalSize(String size) {
-    return '$size total';
-  }
-
-  @override
-  String get aiResultsMetricProtected => 'Protected';
-
-  @override
-  String get aiResultsRecommendedTitle => 'Recommended first';
-
-  @override
-  String get aiResultsRecommendedSubtitle =>
-      'largest safe items + review items';
-
-  @override
-  String aiResultsTopLimit(int count) {
-    return 'Top $count';
-  }
-
-  @override
-  String get aiResultsStatusSafe => 'Safe';
-
-  @override
-  String get aiResultsStatusReview => 'Review';
-
-  @override
-  String get aiResultsStatusKeep => 'Keep';
-
-  @override
-  String get aiResultsSelectedLabel => 'Selected';
-
-  @override
-  String aiResultsSelectedCount(int count) {
+  String aiResultsGroupItems(int count, String bytes) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
       other: '$count items',
       one: '1 item',
     );
+    return '$_temp0 · $bytes';
+  }
+
+  @override
+  String aiResultsGroupSafe(int count) {
+    return 'Safe $count';
+  }
+
+  @override
+  String aiResultsGroupReview(int count) {
+    return 'Review $count';
+  }
+
+  @override
+  String aiResultsGroupKeep(int count) {
+    return 'Keep $count';
+  }
+
+  @override
+  String aiResultsSelectedForCleanup(int count, String bytes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items selected',
+      one: '1 item selected',
+    );
+    return '$_temp0 · $bytes';
+  }
+
+  @override
+  String aiResultsPendingReviewExcluded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pending review items are excluded until you decide.',
+      one: '1 pending review item is excluded until you decide.',
+    );
     return '$_temp0';
   }
 
   @override
-  String get aiResultsDeleteGuidanceTitle => 'Review before deleting';
+  String get aiResultsMetricProtected => 'Protected';
 
   @override
-  String get aiResultsDeleteGuidanceBody =>
-      'Items marked Review are not selected by default. Safe items can still be unchecked.';
+  String get aiResultsNeedsYourDecision => 'Needs your decision';
 
   @override
-  String aiWorkspaceSelectedSummary(int count, String size) {
-    return '$count selected · $size';
+  String get aiResultsAddToCleanup => 'Add to cleanup';
+
+  @override
+  String get aiResultsKeepItem => 'Keep this item';
+
+  @override
+  String get aiResultsAddedToCleanup => 'Added to cleanup';
+
+  @override
+  String get aiResultsKeptOutOfCleanup => 'Kept out of cleanup';
+
+  @override
+  String aiResultsSelectedInGroup(int count) {
+    return 'Selected $count';
   }
+
+  @override
+  String get aiResultsClearGroupSelection => 'Clear group selection';
+
+  @override
+  String get aiResultsDetailSize => 'Size';
+
+  @override
+  String get aiResultsDetailConfidence => 'Confidence';
+
+  @override
+  String get aiResultsDetailReason => 'Reason';
+
+  @override
+  String get aiResultsDetailCleanupSource => 'Cleanup source';
+
+  @override
+  String get aiResultsDetailRetentionHint => 'Retention hint';
 
   @override
   String aiWorkspacePartialDelete(int count, String size) {

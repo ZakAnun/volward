@@ -470,82 +470,79 @@
   "aiWorkspacePhaseRecovery": "恢复",
   "aiWorkspaceLoadPrevious": "加载上次结果",
   "aiWorkspaceAnalyzeAgain": "重新分析",
-  "aiResultsSummaryTitle": "共发现 {count} 项结果",
-  "@aiResultsSummaryTitle": {
+  "aiResultsAnalyzedSummary": "共分析 {analyzed} 项 · 总计 {bytes} · {safe} 项安全 · {review} 项待确认 · {keep} 项保留",
+  "@aiResultsAnalyzedSummary": {
+    "placeholders": {
+      "analyzed": {"type": "int"},
+      "bytes": {"type": "String"},
+      "safe": {"type": "int"},
+      "review": {"type": "int"},
+      "keep": {"type": "int"}
+    }
+  },
+  "aiResultsNeedsDecision": "待决定",
+  "aiResultsSearchHint": "搜索路径、原因、来源或提示",
+  "aiResultsFilterAll": "全部",
+  "aiResultsFilterReview": "待确认",
+  "aiResultsFilterSelected": "已选择",
+  "aiResultsSortPriority": "优先级",
+  "aiResultsSortSize": "大小",
+  "aiResultsGroupItems": "{count} 项 · {bytes}",
+  "@aiResultsGroupItems": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsGroupSafe": "安全 {count}",
+  "@aiResultsGroupSafe": {
     "placeholders": {
       "count": {"type": "int"}
     }
   },
-  "aiResultsSummaryBody": "{safe} 项可直接删除 · {review} 项需要确认",
-  "@aiResultsSummaryBody": {
+  "aiResultsGroupReview": "待确认 {count}",
+  "@aiResultsGroupReview": {
     "placeholders": {
-      "safe": {"type": "int"},
-      "review": {"type": "int"}
+      "count": {"type": "int"}
     }
   },
-  "aiResultsSafeSubtitle": "可直接删除",
-  "aiResultsReviewSubtitle": "需要再确认",
-  "aiResultsKeepSubtitle": "建议保留",
-  "aiResultsTopTitle": "优先建议",
-  "aiResultsTopCount": "显示 {shown}/{total}",
-  "@aiResultsTopCount": {
+  "aiResultsGroupKeep": "保留 {count}",
+  "@aiResultsGroupKeep": {
     "placeholders": {
-      "shown": {"type": "int"},
-      "total": {"type": "int"}
+      "count": {"type": "int"}
     }
   },
-  "aiShowAllResults": "查看全部结果",
-  "aiResultsSummaryEyebrow": "AI 清理总结",
-  "aiResultsSelectedForCleanup": "已选择 {size} 可清理内容",
+  "aiResultsSelectedForCleanup": "已选择 {count} 项 · {bytes}",
   "@aiResultsSelectedForCleanup": {
     "placeholders": {
-      "size": {"type": "String"}
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
     }
   },
-  "aiResultsSelectedReviewBody": "{safeSelected} 项安全内容已选择。{review} 项需要删除前确认。",
-  "@aiResultsSelectedReviewBody": {
+  "aiResultsPendingReviewExcluded": "{count} 项待确认内容在你决定前不会加入清理。",
+  "@aiResultsPendingReviewExcluded": {
     "placeholders": {
-      "safeSelected": {"type": "int"},
-      "review": {"type": "int"}
-    }
-  },
-  "aiResultsMetricSafeTitle": "可安全删除",
-  "aiResultsMetricReviewTitle": "需要确认",
-  "aiResultsMetricKeepTitle": "AI 建议保留",
-  "aiResultsMetricTotalSize": "共 {size}",
-  "@aiResultsMetricTotalSize": {
-    "placeholders": {
-      "size": {"type": "String"}
+      "count": {"type": "int"}
     }
   },
   "aiResultsMetricProtected": "受保护",
-  "aiResultsRecommendedTitle": "优先建议",
-  "aiResultsRecommendedSubtitle": "按体积优先展示安全项和需确认项",
-  "aiResultsTopLimit": "前 {count} 项",
-  "@aiResultsTopLimit": {
+  "aiResultsNeedsYourDecision": "需要你决定",
+  "aiResultsAddToCleanup": "加入清理",
+  "aiResultsKeepItem": "保留此项",
+  "aiResultsAddedToCleanup": "已加入清理",
+  "aiResultsKeptOutOfCleanup": "已保留，不清理",
+  "aiResultsSelectedInGroup": "已选择 {count}",
+  "@aiResultsSelectedInGroup": {
     "placeholders": {
       "count": {"type": "int"}
     }
   },
-  "aiResultsStatusSafe": "安全",
-  "aiResultsStatusReview": "确认",
-  "aiResultsStatusKeep": "保留",
-  "aiResultsSelectedLabel": "已选择",
-  "aiResultsSelectedCount": "{count} 项",
-  "@aiResultsSelectedCount": {
-    "placeholders": {
-      "count": {"type": "int"}
-    }
-  },
-  "aiResultsDeleteGuidanceTitle": "删除前确认",
-  "aiResultsDeleteGuidanceBody": "需确认的项目默认不会选中。安全项目仍可取消勾选。",
-  "aiWorkspaceSelectedSummary": "{count} 项已选择 · {size}",
-  "@aiWorkspaceSelectedSummary": {
-    "placeholders": {
-      "count": {"type": "int"},
-      "size": {"type": "String"}
-    }
-  },
+  "aiResultsClearGroupSelection": "清除此组选择",
+  "aiResultsDetailSize": "大小",
+  "aiResultsDetailConfidence": "置信度",
+  "aiResultsDetailReason": "原因",
+  "aiResultsDetailCleanupSource": "清理来源",
+  "aiResultsDetailRetentionHint": "保留提示",
   "aiWorkspacePartialDelete": "{count} 项未能删除 · 已释放 {size}",
   "@aiWorkspacePartialDelete": {
     "placeholders": {

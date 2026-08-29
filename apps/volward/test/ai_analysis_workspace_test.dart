@@ -181,6 +181,7 @@ String _candidatePayload({
   bool hasExistingResult = true,
   bool truncated = false,
   int candidatesBeforeCap = 3,
+  String rootPath = '/tmp',
 }) {
   return jsonEncode({
     'pre_classified': preClassified,
@@ -190,7 +191,7 @@ String _candidatePayload({
     'truncated': truncated,
     'candidates_total_before_cap': candidatesBeforeCap,
     'result_cache_key': 'cache-key',
-    'root_path': '/home',
+    'root_path': rootPath,
   });
 }
 
@@ -331,11 +332,12 @@ Widget _workspaceShell(
   VoidCallback? onDeleteCompleted,
   VoidCallback? onExit,
   VoidCallback? onOpenSettings,
+  Locale locale = const Locale('en'),
 }) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
-    locale: const Locale('en'),
+    locale: locale,
     theme: buildVolwardTheme(brightness: Brightness.light),
     home: Scaffold(
       body: AiAnalysisWorkspace(
@@ -369,6 +371,7 @@ Future<void> _openResults(
   String? candidatesJson,
   ValueChanged<bool>? onDeletingChanged,
   VoidCallback? onDeleteCompleted,
+  Locale locale = const Locale('en'),
 }) async {
   gateway
     ..candidatesJson = candidatesJson ?? _candidatePayload()
@@ -378,6 +381,7 @@ Future<void> _openResults(
       gateway,
       onDeletingChanged: onDeletingChanged,
       onDeleteCompleted: onDeleteCompleted,
+      locale: locale,
     ),
   );
   await _pumpUntilFound(
@@ -727,6 +731,7 @@ void main() {
         candidatesBeforeCap: 1,
       )
       ..cache['cache-key'] = jsonEncode({
+        'root_path': '/Users/x',
         'entries': [
           {
             'path': '/Users/x/Library/Application Support/Cursor/CachedData/a',
@@ -746,6 +751,7 @@ void main() {
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
     await tester.pumpAndSettle();
+    expect(_resultGroup('/Users/x/Library'), findsOneWidget);
 
     expect(find.textContaining('AI tool cache/temp'), findsOneWidget);
     expect(find.textContaining('Review after 30 days'), findsOneWidget);
@@ -807,8 +813,7 @@ void main() {
     expect(find.text('/tmp/review.log'), findsNothing);
     expect(find.text('/tmp/keep.db'), findsNothing);
     expect(find.text('/tmp/local-keep.db'), findsNothing);
-    expect(find.text('1 item'), findsOneWidget);
-    expect(find.text('100 B'), findsAtLeastNWidgets(1));
+    expect(find.text('1 item selected · 100 B'), findsOneWidget);
 
     await _expandGroup(tester, '/tmp');
     expect(find.text('/tmp/keep.db'), findsOneWidget);
@@ -823,8 +828,7 @@ void main() {
 
     await tester.tap(_resultItem('/tmp/safe.cache'));
     await tester.pumpAndSettle();
-    expect(find.text('1 item'), findsOneWidget);
-    expect(find.text('100 B'), findsAtLeastNWidgets(1));
+    expect(find.text('0 items selected · 0 B'), findsOneWidget);
   });
 
   testWidgets('BYOK result persists provider-reported token usage', (
@@ -966,12 +970,14 @@ void main() {
     expect(
       find.descendant(
         of: _resultGroup('/tmp'),
-        matching: find.text('Safe 1 · Review 2 · Keep 1'),
+        matching: find.text(
+          '4 items · 650 B · Safe 1 · Review 2 · Keep 1 · Selected 1',
+        ),
       ),
       findsOneWidget,
     );
     expect(
-      find.text('1 safe item is selected. 2 items need review before deleting.'),
+      find.text('2 pending review items are excluded until you decide.'),
       findsOneWidget,
     );
 
@@ -983,20 +989,42 @@ void main() {
 
     expect(find.text('Add to cleanup'), findsOneWidget);
     expect(find.text('Keep this item'), findsOneWidget);
-    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('1 item selected · 100 B'), findsOneWidget);
 
     await tester.tap(find.text('Add to cleanup'));
     await tester.pumpAndSettle();
-    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('2 items selected · 300 B'), findsOneWidget);
+    expect(find.textContaining('300 B'), findsWidgets);
     expect(
       find.descendant(
         of: _resultGroup('/tmp'),
-        matching: find.text('Safe 1 · Review 1 · Keep 1'),
+        matching: find.textContaining('Safe 1'),
       ),
       findsOneWidget,
     );
     expect(
-      find.text('1 safe item is selected. 1 item needs review before deleting.'),
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.textContaining('Review 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.textContaining('Keep 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.textContaining('Selected 2'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('1 pending review item is excluded until you decide.'),
       findsOneWidget,
     );
 
@@ -1004,22 +1032,44 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Keep this item').last);
     await tester.pumpAndSettle();
-    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('2 items selected · 300 B'), findsOneWidget);
+    expect(find.textContaining('300 B'), findsWidgets);
     expect(
       find.descendant(
         of: _resultGroup('/tmp'),
-        matching: find.text('Safe 1 · Review 0 · Keep 1'),
+        matching: find.textContaining('Safe 1'),
       ),
       findsOneWidget,
     );
     expect(
-      find.text('1 safe item is selected. 0 items need review before deleting.'),
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.textContaining('Review 0'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.textContaining('Keep 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.textContaining('Selected 2'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('0 pending review items are excluded until you decide.'),
       findsOneWidget,
     );
 
     await tester.tap(_resultItem('/tmp/safe.cache'));
     await tester.pumpAndSettle();
-    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('1 item selected · 200 B'), findsOneWidget);
 
     expect(
       find.byKey(const Key('ai-item-toggle:/tmp/review.log')),
@@ -1056,8 +1106,7 @@ void main() {
     expect(find.text('Add to cleanup'), findsOneWidget);
     await tester.tap(find.text('Add to cleanup'));
     await tester.pumpAndSettle();
-    expect(find.text('2 items'), findsOneWidget);
-    expect(find.text('300 B'), findsAtLeastNWidgets(1));
+    expect(find.text('2 items selected · 300 B'), findsOneWidget);
   });
 
   testWidgets('safe group selection stays scoped to the exact visible group', (
@@ -1266,11 +1315,10 @@ void main() {
       ),
     );
 
-    expect(find.text('200 B selected for cleanup'), findsOneWidget);
+    expect(find.textContaining('3 items selected'), findsOneWidget);
+    expect(find.textContaining('200 B'), findsWidgets);
     expect(
-      find.text(
-        '3 safe items are selected. 1 item needs review before deleting.',
-      ),
+      find.text('1 pending review item is excluded until you decide.'),
       findsOneWidget,
     );
     expect(find.text('/tmp/local-1.cache'), findsNothing);
@@ -1280,14 +1328,12 @@ void main() {
 
     expect(find.text('/tmp/local-1.cache'), findsOneWidget);
     expect(find.text('/tmp/local-2.cache'), findsOneWidget);
-    expect(find.text('3 items'), findsOneWidget);
-    expect(find.text('200 B'), findsAtLeastNWidgets(1));
+    expect(find.textContaining('5 items · 700 B'), findsOneWidget);
 
     await tester.tap(_resultItem('/tmp/local-1.cache'));
     await tester.pumpAndSettle();
-    expect(find.text('2 items'), findsOneWidget);
-    expect(find.text('160 B'), findsAtLeastNWidgets(1));
-    expect(find.text('3 items'), findsNothing);
+    expect(find.text('2 items selected · 160 B'), findsOneWidget);
+    expect(find.textContaining('5 items · 700 B'), findsOneWidget);
   });
 
   testWidgets(
@@ -1306,8 +1352,8 @@ void main() {
         candidatesJson: _aggregateCandidates,
       );
 
-      expect(find.text('1 item'), findsOneWidget);
-      expect(find.text('300 B'), findsAtLeastNWidgets(1));
+      expect(find.text('1 item selected · 300 B'), findsOneWidget);
+      expect(_resultGroup('/tmp/build-output'), findsOneWidget);
       await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
       await _pumpUntilFound(tester, find.byType(AlertDialog));
 
@@ -1319,8 +1365,7 @@ void main() {
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.text('1 item'), findsOneWidget);
-      expect(find.text('300 B'), findsAtLeastNWidgets(1));
+      expect(find.text('1 item selected · 300 B'), findsOneWidget);
       expect(gateway.deleteCalls, hasLength(1));
     },
   );
@@ -1562,7 +1607,7 @@ void main() {
     });
   }
 
-  testWidgets('wide results keep the side summary inside the results list', (
+  testWidgets('wide results show one compact summary toolbar and action bar', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -1570,91 +1615,115 @@ void main() {
     addTearDown(tester.view.reset);
     await _openResults(tester, _FakeGateway());
 
-    final listRect = tester.getRect(
-      find.byKey(AiAnalysisWorkspace.resultsListKey),
-    );
-    final summaryRect = tester.getRect(
-      find.byKey(AiAnalysisWorkspace.summaryKey),
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.resultsListKey),
-        matching: find.byKey(AiAnalysisWorkspace.summaryKey),
-      ),
-      findsOneWidget,
-    );
-    expect(summaryRect.left, greaterThan(listRect.center.dx));
-    expect(summaryRect.right, lessThanOrEqualTo(listRect.right));
-    expect(summaryRect.width, 260);
-    expect(find.text('Selected'), findsOneWidget);
-    expect(find.text('1 item'), findsOneWidget);
-    expect(find.text('100 B'), findsAtLeastNWidgets(1));
-    expect(find.text('Review before deleting'), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
     expect(
       find.text(
-        'Items marked Review are not selected by default. Safe items can still be unchecked.',
+        '3 analyzed · 600 B total · 1 safe · 1 pending review · 1 kept',
       ),
       findsOneWidget,
     );
+    expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Priority'), findsOneWidget);
+    expect(find.text('Recommended first'), findsNothing);
+    expect(find.text('Show all results'), findsNothing);
+    expect(find.text('Safe to remove'), findsNothing);
+    expect(find.text('Review needed'), findsNothing);
+    expect(find.text('Kept by AI'), findsNothing);
+    expect(find.text('1 item selected · 100 B'), findsOneWidget);
+    expect(
+      find.text('1 pending review item is excluded until you decide.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
   });
 
-  Finder eightPxDecoratedContainerFinder() {
-    return find.byWidgetPredicate((widget) {
-      if (widget is! DecoratedBox) return false;
-      final decoration = widget.decoration;
-      return decoration is BoxDecoration &&
-          decoration.borderRadius == BorderRadius.circular(8) &&
-          decoration.border != null;
-    });
-  }
-
-  testWidgets('results match refined summary and grouped directory stream', (
+  testWidgets('toolbar search filter and sort only change visible rows', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1280, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _openResults(tester, _FakeGateway());
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: const [
+        AiVerdict(
+          path: '/tmp/alpha-safe.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Safe alpha cache',
+          cleanupSource: 'system_temp',
+        ),
+        AiVerdict(
+          path: '/tmp/bravo-review.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Needs review',
+          cleanupHint: 'owner unclear',
+        ),
+        AiVerdict(
+          path: '/tmp/charlie-safe.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Safe charlie cache',
+          cleanupSource: 'ai_generated_output',
+        ),
+      ],
+      candidatesJson: _candidatePayload(
+        unknownCandidates: const [
+          {'path': '/tmp/alpha-safe.cache', 'size_bytes': 500, 'is_dir': false},
+          {'path': '/tmp/bravo-review.log', 'size_bytes': 120, 'is_dir': false},
+          {
+            'path': '/tmp/charlie-safe.cache',
+            'size_bytes': 300,
+            'is_dir': false,
+          },
+        ],
+      ),
+    );
 
-    expect(find.text('AI cleanup summary'), findsOneWidget);
-    expect(find.text('100 B selected for cleanup'), findsOneWidget);
+    await _expandGroup(tester, '/tmp');
+
+    expect(find.text('2 items selected · 800 B'), findsOneWidget);
+    expect(find.text('/tmp/alpha-safe.cache'), findsOneWidget);
+    expect(find.text('/tmp/bravo-review.log'), findsOneWidget);
+    expect(find.text('/tmp/charlie-safe.cache'), findsOneWidget);
     expect(
-      find.text(
-        '1 safe item is selected. 1 item needs review before deleting.',
-      ),
-      findsOneWidget,
+      tester.getTopLeft(find.text('/tmp/bravo-review.log')).dy,
+      lessThan(tester.getTopLeft(find.text('/tmp/alpha-safe.cache')).dy),
     );
-    expect(find.text('Safe to remove'), findsOneWidget);
-    expect(find.text('Review needed'), findsOneWidget);
-    expect(find.text('Kept by AI'), findsOneWidget);
-    expect(find.text('Show all results'), findsNothing);
-    expect(_resultGroup('/tmp'), findsOneWidget);
-    expect(_resultItem('/tmp/safe.cache'), findsNothing);
-    final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
+
+    await tester.tap(find.text('Priority'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Size').last);
+    await tester.pumpAndSettle();
+
     expect(
-      find.ancestor(
-        of: find.text('Safe to remove'),
-        matching: eightPxDecoratedContainerFinder(),
-      ),
-      findsOneWidget,
+      tester.getTopLeft(find.text('/tmp/alpha-safe.cache')).dy,
+      lessThan(tester.getTopLeft(find.text('/tmp/bravo-review.log')).dy),
     );
     expect(
-      find.ancestor(
-        of: find.text('Review needed'),
-        matching: eightPxDecoratedContainerFinder(),
-      ),
-      findsOneWidget,
+      tester.getTopLeft(find.text('/tmp/bravo-review.log')).dy,
+      greaterThan(tester.getTopLeft(find.text('/tmp/charlie-safe.cache')).dy),
     );
-    expect(
-      find.ancestor(
-        of: find.text('Kept by AI'),
-        matching: eightPxDecoratedContainerFinder(),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: resultsList, matching: _resultGroup('/tmp')),
-      findsOneWidget,
-    );
+
+    await tester.enterText(find.byType(TextField), 'owner unclear');
+    await tester.pumpAndSettle();
+    expect(find.text('/tmp/alpha-safe.cache'), findsNothing);
+    expect(find.text('/tmp/bravo-review.log'), findsOneWidget);
+    expect(find.text('/tmp/charlie-safe.cache'), findsNothing);
+    expect(find.text('2 items selected · 800 B'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Selected').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('/tmp/alpha-safe.cache'), findsOneWidget);
+    expect(find.text('/tmp/bravo-review.log'), findsNothing);
+    expect(find.text('/tmp/charlie-safe.cache'), findsOneWidget);
   });
 
   testWidgets('results overview is concise until expanded', (tester) async {
@@ -1682,14 +1751,30 @@ void main() {
         reason: 'Application data',
       ),
     ];
-    await _openResults(tester, _FakeGateway(), result: result);
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: result,
+      candidatesJson: _candidatePayload(
+        unknownCandidates: [
+          for (var i = 0; i < 9; i++)
+            {'path': '/tmp/safe-$i.cache', 'size_bytes': 10, 'is_dir': false},
+          for (var i = 0; i < 2; i++)
+            {'path': '/tmp/review-$i.log', 'size_bytes': 10, 'is_dir': false},
+          {'path': '/tmp/keep.db', 'size_bytes': 10, 'is_dir': false},
+        ],
+      ),
+    );
 
-    expect(find.text('AI cleanup summary'), findsOneWidget);
-    expect(find.text('0 B selected for cleanup'), findsOneWidget);
     expect(
       find.text(
-        '9 safe items are selected. 2 items need review before deleting.',
+        '12 analyzed · 120 B total · 9 safe · 2 pending review · 1 kept',
       ),
+      findsOneWidget,
+    );
+    expect(find.text('9 items selected · 90 B'), findsOneWidget);
+    expect(
+      find.text('2 pending review items are excluded until you decide.'),
       findsOneWidget,
     );
     expect(find.text('Show all results'), findsNothing);
@@ -1717,6 +1802,32 @@ void main() {
       find.descendant(of: resultsList, matching: find.text('/tmp/keep.db')),
       findsAtLeastNWidgets(1),
     );
+  });
+
+  testWidgets('small result groups expand by default', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: const [
+        AiVerdict(
+          path: '/tmp/small-group/cache/a.bin',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+        AiVerdict(
+          path: '/tmp/small-group/cache/b.bin',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'Application data',
+        ),
+      ],
+    );
+
+    expect(find.text('/tmp/small-group/cache/a.bin'), findsOneWidget);
+    expect(find.text('/tmp/small-group/cache/b.bin'), findsOneWidget);
   });
 
   testWidgets('expanded results render grouped parent directories', (
@@ -1778,34 +1889,25 @@ void main() {
 
     final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
     expect(
-      find.descendant(
-        of: resultsList,
-        matching: find.text('/tmp/project-a/cache'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: resultsList,
-        matching: find.text('/tmp/project-b/cache'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: resultsList,
-        matching: find.text('/tmp/project-a/review'),
-      ),
+      find.descendant(of: resultsList, matching: find.text('/tmp/project-a')),
       findsOneWidget,
     );
     expect(
       find.descendant(of: resultsList, matching: find.text('/tmp/project-b')),
       findsOneWidget,
     );
-    expect(find.text('/tmp/project-a/cache/a.bin'), findsNothing);
+    expect(
+      find.descendant(of: resultsList, matching: find.text('/tmp/project-a')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: resultsList, matching: find.text('/tmp/project-b')),
+      findsOneWidget,
+    );
+    expect(find.text('/tmp/project-a/cache/a.bin'), findsOneWidget);
   });
 
-  testWidgets('results pin return action while selection summary scrolls', (
+  testWidgets('header stays pinned while results stream scrolls beneath it', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1280, 900));
@@ -1838,8 +1940,12 @@ void main() {
     final expandedHeaderHeight = tester
         .getSize(find.byKey(AiAnalysisWorkspace.headerKey))
         .height;
-    final summary = find.byKey(AiAnalysisWorkspace.summaryKey);
-    final summaryTopBeforeScroll = tester.getTopLeft(summary).dy;
+    final summaryTopBeforeScroll = tester
+        .getTopLeft(find.byKey(AiAnalysisWorkspace.summaryKey))
+        .dy;
+    final deleteTopBeforeScroll = tester
+        .getTopLeft(find.byKey(AiAnalysisWorkspace.deleteKey))
+        .dy;
 
     await _expandGroup(tester, '/tmp');
     expect(_resultItem('/tmp/safe-0.cache'), findsOneWidget);
@@ -1850,19 +1956,31 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final resultsScrollable = find.descendant(
+      of: find.byKey(AiAnalysisWorkspace.resultsListKey),
+      matching: find.byType(Scrollable),
+    );
+    final scrollableState = tester.state<ScrollableState>(
+      resultsScrollable.first,
+    );
+
     expect(find.text('Back to Overview'), findsOneWidget);
     expect(backAction, findsOneWidget);
     expect(
-      tester.getTopLeft(summary).dy,
-      lessThan(summaryTopBeforeScroll - 200),
+      tester.getTopLeft(find.byKey(AiAnalysisWorkspace.summaryKey)).dy,
+      closeTo(summaryTopBeforeScroll, 12),
+    );
+    expect(
+      tester.getTopLeft(find.byKey(AiAnalysisWorkspace.deleteKey)).dy,
+      closeTo(deleteTopBeforeScroll, 12),
     );
     expect(
       tester.getSize(find.byKey(AiAnalysisWorkspace.headerKey)).height,
       lessThan(expandedHeaderHeight),
     );
-    await _expandGroup(tester, '/tmp');
+    expect(scrollableState.position.pixels, greaterThan(0));
     expect(_resultItem('/tmp/safe-0.cache'), findsNothing);
-    expect(find.text('180 B selected for cleanup'), findsOneWidget);
+    expect(find.text('18 items selected · 180 B'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1896,11 +2014,18 @@ void main() {
       ),
     );
 
-    expect(find.text('/tmp/large-tree/group-0'), findsOneWidget);
+    expect(find.text('/tmp/large-tree'), findsOneWidget);
     expect(
       find.descendant(
-        of: _resultGroup('/tmp/large-tree/group-0'),
-        matching: find.text('3,334 items · 3.3 MB'),
+        of: _resultGroup('/tmp/large-tree'),
+        matching: find.textContaining('10000 items'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp/large-tree'),
+        matching: find.textContaining('9.8 MB'),
       ),
       findsOneWidget,
     );
@@ -1910,7 +2035,7 @@ void main() {
       findsNothing,
     );
 
-    await _expandGroup(tester, '/tmp/large-tree/group-2');
+    await _expandGroup(tester, '/tmp/large-tree');
     expect(find.text('/tmp/large-tree/group-2/item-9998.cache'), findsNothing);
 
     final resultsScrollable = find.descendant(
@@ -1929,7 +2054,7 @@ void main() {
     );
   });
 
-  testWidgets('compact results scroll the summary with result content', (
+  testWidgets('compact results stack summary toolbar stream and action bar', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -1961,24 +2086,41 @@ void main() {
     );
 
     final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
-    final summary = find.byKey(AiAnalysisWorkspace.summaryKey);
-    expect(find.descendant(of: resultsList, matching: summary), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
+    expect(
+      find.text(
+        '18 analyzed · 180 B total · 18 safe · 0 pending review · 0 kept',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
     await _expandGroup(tester, '/tmp');
     expect(_resultItem('/tmp/compact-safe-0.cache'), findsOneWidget);
 
     await tester.drag(resultsList, const Offset(0, -400));
     await tester.pumpAndSettle();
 
-    final scrollable = find
-        .descendant(of: resultsList, matching: find.byType(Scrollable))
-        .first;
-    expect(
-      tester.state<ScrollableState>(scrollable).position.pixels,
-      greaterThan(300),
-    );
-    expect(summary, findsNothing);
-    expect(find.text('/tmp/compact-safe-17.cache'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
+    expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('new result stream copy localizes in Chinese', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _openResults(tester, _FakeGateway(), locale: const Locale('zh'));
+
+    expect(
+      find.text('共分析 3 项 · 总计 600 B · 1 项安全 · 1 项待确认 · 1 项保留'),
+      findsOneWidget,
+    );
+    expect(find.text('搜索路径、原因、来源或提示'), findsOneWidget);
+    expect(find.text('全部'), findsOneWidget);
+    expect(find.text('优先级'), findsOneWidget);
+    expect(find.text('已选择 1 项 · 100 B'), findsOneWidget);
+    expect(find.text('1 项待确认内容在你决定前不会加入清理。'), findsOneWidget);
   });
 
   testWidgets('long paths expose tooltip and full semantic value', (
@@ -1989,6 +2131,8 @@ void main() {
         'nested/folder/that/needs/the/full/path/cache.data';
     final semantics = tester.ensureSemantics();
     try {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await _openResults(
         tester,
         _FakeGateway(),
@@ -2001,11 +2145,6 @@ void main() {
           ),
         ],
       );
-      await _expandGroup(
-        tester,
-        '/Users/example/Library/Application Support/Very Long App/Cache/'
-        'nested/folder/that/needs/the/full/path',
-      );
 
       final tooltip = find.byWidgetPredicate(
         (widget) => widget is Tooltip && widget.message == longPath,
@@ -2013,6 +2152,7 @@ void main() {
       expect(tooltip, findsOneWidget);
       final semanticsNode = tester.getSemantics(find.text(longPath));
       expect(semanticsNode.value, longPath);
+      expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();
     }
