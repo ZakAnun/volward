@@ -2459,6 +2459,7 @@ class _ResultRow extends StatelessWidget {
               ),
             ),
           );
+    final showsDetails = expanded && isReview && onDecisionChanged != null;
     final row = DecoratedBox(
       decoration: BoxDecoration(
         color: isSafe && selected ? tokens.canvasParchment : tokens.canvas,
@@ -2468,67 +2469,63 @@ class _ResultRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(width: AppleSpacing.lg),
-          Expanded(child: rowBody),
-        ],
-      ),
-    );
-    if (!expanded || !isReview || onDecisionChanged == null) return row;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        row,
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: tokens.canvas,
-            border: Border(bottom: BorderSide(color: tokens.dividerSoft)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppleSpacing.xl + 28,
-              0,
-              AppleSpacing.lg,
-              AppleSpacing.sm,
-            ),
+          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(item.path, style: context.vwFinePrint),
-                const SizedBox(height: AppleSpacing.xs),
-                _ResultDetailLine(
-                  label: context.l10n.aiResultsDetailSize,
-                  value: sizeLabel,
-                ),
-                _ResultDetailLine(
-                  label: context.l10n.aiResultsDetailConfidence,
-                  value: item.confidence,
-                ),
-                if (item.reason.isNotEmpty)
-                  _ResultDetailLine(
-                    label: context.l10n.aiResultsDetailReason,
-                    value: item.reason,
+                rowBody,
+                if (showsDetails)
+                  Padding(
+                    key: Key('ai-review-detail:${item.path}'),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppleSpacing.sm + 40 + AppleSpacing.xs,
+                      0,
+                      AppleSpacing.sm,
+                      AppleSpacing.sm,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ResultDetailLine(
+                          label: context.l10n.aiResultsDetailSize,
+                          value: sizeLabel,
+                        ),
+                        _ResultDetailLine(
+                          label: context.l10n.aiResultsDetailConfidence,
+                          value: item.confidence,
+                        ),
+                        if (item.reason.isNotEmpty)
+                          _ResultDetailLine(
+                            label: context.l10n.aiResultsDetailReason,
+                            value: item.reason,
+                          ),
+                        if (cleanupSource != null && cleanupSource!.isNotEmpty)
+                          _ResultDetailLine(
+                            label: context.l10n.aiResultsDetailCleanupSource,
+                            value: cleanupSource!,
+                          ),
+                        if (retentionHint != null && retentionHint!.isNotEmpty)
+                          _ResultDetailLine(
+                            label: context.l10n.aiResultsDetailRetentionHint,
+                            value: retentionHint!,
+                          ),
+                        const SizedBox(height: AppleSpacing.xs),
+                        _ReviewDecisionButtons(
+                          path: item.path,
+                          decision: reviewDecision,
+                          onChanged: onDecisionChanged!,
+                        ),
+                      ],
+                    ),
                   ),
-                if (cleanupSource != null && cleanupSource!.isNotEmpty)
-                  _ResultDetailLine(
-                    label: context.l10n.aiResultsDetailCleanupSource,
-                    value: cleanupSource!,
-                  ),
-                if (retentionHint != null && retentionHint!.isNotEmpty)
-                  _ResultDetailLine(
-                    label: context.l10n.aiResultsDetailRetentionHint,
-                    value: retentionHint!,
-                  ),
-                const SizedBox(height: AppleSpacing.sm),
-                _ReviewDecisionButtons(
-                  path: item.path,
-                  decision: reviewDecision,
-                  onChanged: onDecisionChanged!,
-                ),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
+    return row;
   }
 }
 

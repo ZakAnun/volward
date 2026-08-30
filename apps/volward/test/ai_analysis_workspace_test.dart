@@ -1066,6 +1066,14 @@ void main() {
     expect(find.text('Keep this item'), findsOneWidget);
     expect(find.text('1 item selected · 100 B'), findsOneWidget);
     expect(
+      find.byKey(const Key('ai-review-detail:/tmp/review.log')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(find.text('Size: 200 B')).dx,
+      tester.getTopLeft(find.text('/tmp/review.log')).dx,
+    );
+    expect(
       find.descendant(
         of: _resultItem('/tmp/review.log'),
         matching: find.byWidgetPredicate(
