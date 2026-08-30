@@ -781,10 +781,39 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get aiResultsMetricAnalyzed => 'Analyzed';
+
+  @override
+  String get aiResultsMetricSafe => 'Safe to remove';
+
+  @override
+  String get aiResultsMetricReview => 'Needs review';
+
+  @override
+  String get aiResultsMetricKept => 'Kept';
+
+  @override
+  String aiResultsTotalSize(String bytes) {
+    return '$bytes total';
+  }
+
+  @override
   String get aiResultsNeedsDecision => 'Needs decision';
 
   @override
   String get aiResultsSearchHint => 'Search path, reason, source, or hint';
+
+  @override
+  String get aiResultsClearSearch => 'Clear search';
+
+  @override
+  String get aiResultsNoMatches => 'No matching results';
+
+  @override
+  String get aiResultsEmpty => 'No cleanup suggestions were found';
+
+  @override
+  String get aiResultsResetFilters => 'Reset search and filters';
 
   @override
   String get aiResultsFilterAll => 'All';

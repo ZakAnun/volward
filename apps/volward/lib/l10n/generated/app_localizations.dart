@@ -1381,6 +1381,36 @@ abstract class AppLocalizations {
     int keep,
   );
 
+  /// No description provided for @aiResultsMetricAnalyzed.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzed'**
+  String get aiResultsMetricAnalyzed;
+
+  /// No description provided for @aiResultsMetricSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to remove'**
+  String get aiResultsMetricSafe;
+
+  /// No description provided for @aiResultsMetricReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs review'**
+  String get aiResultsMetricReview;
+
+  /// No description provided for @aiResultsMetricKept.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept'**
+  String get aiResultsMetricKept;
+
+  /// No description provided for @aiResultsTotalSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} total'**
+  String aiResultsTotalSize(String bytes);
+
   /// No description provided for @aiResultsNeedsDecision.
   ///
   /// In en, this message translates to:
@@ -1392,6 +1422,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search path, reason, source, or hint'**
   String get aiResultsSearchHint;
+
+  /// No description provided for @aiResultsClearSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get aiResultsClearSearch;
+
+  /// No description provided for @aiResultsNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching results'**
+  String get aiResultsNoMatches;
+
+  /// No description provided for @aiResultsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No cleanup suggestions were found'**
+  String get aiResultsEmpty;
+
+  /// No description provided for @aiResultsResetFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset search and filters'**
+  String get aiResultsResetFilters;
 
   /// No description provided for @aiResultsFilterAll.
   ///

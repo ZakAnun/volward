@@ -750,10 +750,39 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get aiResultsMetricAnalyzed => '已分析';
+
+  @override
+  String get aiResultsMetricSafe => '安全可移除';
+
+  @override
+  String get aiResultsMetricReview => '需要确认';
+
+  @override
+  String get aiResultsMetricKept => '已保留';
+
+  @override
+  String aiResultsTotalSize(String bytes) {
+    return '总计 $bytes';
+  }
+
+  @override
   String get aiResultsNeedsDecision => '待决定';
 
   @override
   String get aiResultsSearchHint => '搜索路径、原因、来源或提示';
+
+  @override
+  String get aiResultsClearSearch => '清除搜索';
+
+  @override
+  String get aiResultsNoMatches => '没有匹配的结果';
+
+  @override
+  String get aiResultsEmpty => '未发现可清理建议';
+
+  @override
+  String get aiResultsResetFilters => '重置搜索和筛选';
 
   @override
   String get aiResultsFilterAll => '全部';

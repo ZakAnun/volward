@@ -615,6 +615,31 @@ void main() {
 
     expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
+    RoundedRectangleBorder buttonShape(Key key) {
+      return tester
+              .widgetList<Material>(
+                find.descendant(
+                  of: find.byKey(key),
+                  matching: find.byType(Material),
+                ),
+              )
+              .first
+              .shape
+          as RoundedRectangleBorder;
+    }
+
+    expect(
+      buttonShape(AiAnalysisWorkspace.loadPreviousKey).borderRadius,
+      buttonShape(AiAnalysisWorkspace.analyzeAgainKey).borderRadius,
+    );
+    expect(
+      buttonShape(AiAnalysisWorkspace.loadPreviousKey).side,
+      isNot(BorderSide.none),
+    );
+    expect(
+      buttonShape(AiAnalysisWorkspace.analyzeAgainKey).side,
+      BorderSide.none,
+    );
     expect(find.byType(AlertDialog), findsNothing);
   });
 
@@ -756,6 +781,26 @@ void main() {
     expect(find.textContaining('AI tool cache/temp'), findsOneWidget);
     expect(find.textContaining('Review after 30 days'), findsOneWidget);
     expect(find.textContaining('Known AI/editor cache'), findsOneWidget);
+  });
+
+  testWidgets('empty cached result shows a true empty state', (tester) async {
+    final gateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload()
+      ..cache['cache-key'] = jsonEncode({'entries': <Object>[]});
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No cleanup suggestions were found'), findsOneWidget);
+    expect(find.text('No matching results'), findsNothing);
+    expect(find.text('Reset search and filters'), findsNothing);
+    expect(find.text('Search path, reason, source, or hint'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsNothing);
   });
 
   testWidgets('privacy decline stays in precheck and accept starts analysis', (
@@ -970,9 +1015,29 @@ void main() {
     expect(
       find.descendant(
         of: _resultGroup('/tmp'),
-        matching: find.text(
-          '4 items · 650 B · Safe 1 · Review 2 · Keep 1 · Selected 1',
-        ),
+        matching: find.text('4 items · 650 B'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: _resultGroup('/tmp'), matching: find.text('Safe 1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.text('Review 2'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: _resultGroup('/tmp'), matching: find.text('Keep 1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: _resultGroup('/tmp'),
+        matching: find.text('Selected 1'),
       ),
       findsOneWidget,
     );
@@ -983,6 +1048,16 @@ void main() {
 
     expect(find.text('Add to cleanup'), findsNothing);
     expect(find.text('Keep this item'), findsNothing);
+    expect(
+      find.descendant(
+        of: _resultItem('/tmp/review.log'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.expanded == false,
+        ),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(_resultItem('/tmp/review.log'));
     await tester.pumpAndSettle();
@@ -990,6 +1065,15 @@ void main() {
     expect(find.text('Add to cleanup'), findsOneWidget);
     expect(find.text('Keep this item'), findsOneWidget);
     expect(find.text('1 item selected · 100 B'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: _resultItem('/tmp/review.log'),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.expanded == true,
+        ),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Add to cleanup'));
     await tester.pumpAndSettle();
@@ -1617,17 +1701,29 @@ void main() {
 
     expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
     expect(
-      find.text(
-        '3 analyzed · 600 B total · 1 safe · 1 pending review · 1 kept',
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.summaryKey),
+        matching: find.text('3'),
       ),
       findsOneWidget,
     );
+    expect(find.text('Analyzed'), findsOneWidget);
+    expect(find.text('Safe to remove'), findsOneWidget);
+    expect(find.text('Needs review'), findsOneWidget);
+    expect(find.text('Kept'), findsOneWidget);
+    expect(find.text('600 B total'), findsOneWidget);
     expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
     expect(find.text('All'), findsOneWidget);
     expect(find.text('Priority'), findsOneWidget);
     expect(find.text('Recommended first'), findsNothing);
     expect(find.text('Show all results'), findsNothing);
-    expect(find.text('Safe to remove'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.summaryKey),
+        matching: find.text('Safe to remove'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Review needed'), findsNothing);
     expect(find.text('Kept by AI'), findsNothing);
     expect(find.text('1 item selected · 100 B'), findsOneWidget);
@@ -1726,6 +1822,23 @@ void main() {
     expect(find.text('/tmp/charlie-safe.cache'), findsOneWidget);
   });
 
+  testWidgets('empty result filters offer a reset action', (tester) async {
+    await _openResults(tester, _FakeGateway());
+
+    await tester.enterText(find.byType(TextField), 'does-not-exist');
+    await tester.pumpAndSettle();
+
+    expect(find.text('No matching results'), findsOneWidget);
+    expect(find.text('Reset search and filters'), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsNothing);
+
+    await tester.tap(find.text('Reset search and filters'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+    expect(find.text('No matching results'), findsNothing);
+  });
+
   testWidgets('results overview is concise until expanded', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1767,11 +1880,14 @@ void main() {
     );
 
     expect(
-      find.text(
-        '12 analyzed · 120 B total · 9 safe · 2 pending review · 1 kept',
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.summaryKey),
+        matching: find.text('12'),
       ),
       findsOneWidget,
     );
+    expect(find.text('120 B total'), findsOneWidget);
+    expect(find.text('Analyzed'), findsOneWidget);
     expect(find.text('9 items selected · 90 B'), findsOneWidget);
     expect(
       find.text('2 pending review items are excluded until you decide.'),
@@ -2088,11 +2204,13 @@ void main() {
     final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
     expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
     expect(
-      find.text(
-        '18 analyzed · 180 B total · 18 safe · 0 pending review · 0 kept',
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.summaryKey),
+        matching: find.text('Analyzed'),
       ),
       findsOneWidget,
     );
+    expect(find.text('180 B total'), findsOneWidget);
     expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
     await _expandGroup(tester, '/tmp');
@@ -2113,9 +2231,17 @@ void main() {
     await _openResults(tester, _FakeGateway(), locale: const Locale('zh'));
 
     expect(
-      find.text('共分析 3 项 · 总计 600 B · 1 项安全 · 1 项待确认 · 1 项保留'),
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.summaryKey),
+        matching: find.text('3'),
+      ),
       findsOneWidget,
     );
+    expect(find.text('已分析'), findsOneWidget);
+    expect(find.text('安全可移除'), findsOneWidget);
+    expect(find.text('需要确认'), findsOneWidget);
+    expect(find.text('已保留'), findsOneWidget);
+    expect(find.text('总计 600 B'), findsOneWidget);
     expect(find.text('搜索路径、原因、来源或提示'), findsOneWidget);
     expect(find.text('全部'), findsOneWidget);
     expect(find.text('优先级'), findsOneWidget);

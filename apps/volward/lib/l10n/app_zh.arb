@@ -480,8 +480,22 @@
       "keep": {"type": "int"}
     }
   },
+  "aiResultsMetricAnalyzed": "已分析",
+  "aiResultsMetricSafe": "安全可移除",
+  "aiResultsMetricReview": "需要确认",
+  "aiResultsMetricKept": "已保留",
+  "aiResultsTotalSize": "总计 {bytes}",
+  "@aiResultsTotalSize": {
+    "placeholders": {
+      "bytes": {"type": "String"}
+    }
+  },
   "aiResultsNeedsDecision": "待决定",
   "aiResultsSearchHint": "搜索路径、原因、来源或提示",
+  "aiResultsClearSearch": "清除搜索",
+  "aiResultsNoMatches": "没有匹配的结果",
+  "aiResultsEmpty": "未发现可清理建议",
+  "aiResultsResetFilters": "重置搜索和筛选",
   "aiResultsFilterAll": "全部",
   "aiResultsFilterReview": "待确认",
   "aiResultsFilterSelected": "已选择",

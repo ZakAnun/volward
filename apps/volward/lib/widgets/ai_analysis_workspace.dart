@@ -1193,7 +1193,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               AppleButton(
                 key: AiAnalysisWorkspace.loadPreviousKey,
                 label: l10n.aiWorkspaceLoadPrevious,
-                variant: AppleButtonVariant.pearl,
+                variant: AppleButtonVariant.secondary,
                 expanded: true,
                 onPressed: _loadPreviousResult,
               ),
@@ -1527,7 +1527,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
-  String _groupMetadataLabel(_VisibleResultGroup group) {
+  List<String> _groupMetadataLabels(_VisibleResultGroup group) {
     final visibleSafeCount = group.items
         .where((item) => item.verdict == 'safe_to_remove')
         .length;
@@ -1542,7 +1542,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       ),
       if (visibleSelectedCount > 0)
         context.l10n.aiResultsSelectedInGroup(visibleSelectedCount),
-    ].join(' · ');
+    ];
   }
 
   String _reviewStatusLabel(_ReviewDecision decision) {
@@ -1572,7 +1572,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             : (value) => _toggleSafeGroup(visibleGroup.items, value == true),
         onTap: () => _toggleGroupExpanded(visibleGroup.group.path),
         summaryLabel: _groupSummaryLabel(visibleGroup),
-        metadataLabel: _groupMetadataLabel(visibleGroup),
+        metadataLabels: _groupMetadataLabels(visibleGroup),
       ),
       _ResultListItemRow(:final item) => _ResultRow(
         key: row.key,
@@ -1629,32 +1629,31 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                 key: AiAnalysisWorkspace.summaryKey,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    context.l10n.aiResultsAnalyzedSummary(
-                      summary.analyzedCount,
-                      _formatBytes(summary.totalBytes),
-                      summary.safeCount,
-                      summary.reviewCount,
-                      summary.keepCount,
-                    ),
-                    style: context.vwCaption.copyWith(color: tokens.inkMuted80),
-                  ),
-                  const SizedBox(height: AppleSpacing.sm),
-                  _buildResultsToolbar(wide: wide),
+                  _buildResultsOverview(summary: summary, wide: wide),
+                  if (normalizedGroups.isNotEmpty) ...[
+                    const SizedBox(height: AppleSpacing.sm),
+                    _buildResultsToolbar(wide: wide),
+                  ],
                 ],
               ),
             ),
             Divider(height: 1, color: tokens.dividerSoft),
             Expanded(
-              child: ListView.builder(
-                key: AiAnalysisWorkspace.resultsListKey,
-                controller: _resultsScrollController,
-                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                itemCount: rows.length,
-                itemBuilder: (context, index) {
-                  return _buildResultStreamRow(rows[index]);
-                },
-              ),
+              child: rows.isEmpty
+                  ? _buildResultsEmptyState(
+                      filtered: normalizedGroups.isNotEmpty,
+                    )
+                  : ListView.builder(
+                      key: AiAnalysisWorkspace.resultsListKey,
+                      controller: _resultsScrollController,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
+                      ),
+                      itemCount: rows.length,
+                      itemBuilder: (context, index) {
+                        return _buildResultStreamRow(rows[index]);
+                      },
+                    ),
             ),
             _buildResultsActionBar(
               horizontalPadding: horizontalPadding,
@@ -1663,6 +1662,106 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildResultsOverview({
+    required _OverallResultSummaryData summary,
+    required bool wide,
+  }) {
+    final tokens = context.volward;
+    final metrics = [
+      _ResultMetricData(
+        value: '${summary.analyzedCount}',
+        label: context.l10n.aiResultsMetricAnalyzed,
+      ),
+      _ResultMetricData(
+        value: '${summary.safeCount}',
+        label: context.l10n.aiResultsMetricSafe,
+        color: tokens.primary,
+      ),
+      _ResultMetricData(
+        value: '${summary.reviewCount}',
+        label: context.l10n.aiResultsMetricReview,
+        color: summary.reviewCount > 0 ? tokens.warning : null,
+      ),
+      _ResultMetricData(
+        value: '${summary.keepCount}',
+        label: context.l10n.aiResultsMetricKept,
+        color: tokens.inkMuted80,
+      ),
+    ];
+    final metricStrip = wide
+        ? Row(
+            children: [
+              for (var index = 0; index < metrics.length; index++)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: index == metrics.length - 1 ? 0 : AppleSpacing.sm,
+                    ),
+                    child: _ResultMetric(data: metrics[index]),
+                  ),
+                ),
+            ],
+          )
+        : Wrap(
+            spacing: AppleSpacing.lg,
+            runSpacing: AppleSpacing.sm,
+            children: metrics
+                .map((metric) => _ResultMetric(data: metric))
+                .toList(),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        metricStrip,
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          context.l10n.aiResultsTotalSize(_formatBytes(summary.totalBytes)),
+          style: context.vwFinePrint,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultsEmptyState({required bool filtered}) {
+    final l10n = context.l10n;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppleSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              filtered
+                  ? Icons.search_off_rounded
+                  : Icons.check_circle_outline_rounded,
+              size: 28,
+              color: context.volward.inkMuted48,
+            ),
+            const SizedBox(height: AppleSpacing.sm),
+            Text(
+              filtered ? l10n.aiResultsNoMatches : l10n.aiResultsEmpty,
+              style: context.vwCaptionStrong,
+            ),
+            if (filtered) ...[
+              const SizedBox(height: AppleSpacing.xs),
+              AppleButton(
+                label: l10n.aiResultsResetFilters,
+                icon: Icons.filter_alt_off_outlined,
+                variant: AppleButtonVariant.pearl,
+                onPressed: () => setState(() {
+                  _resultsSearchController.clear();
+                  _resultsQuery = '';
+                  _resultFilterMode = _ResultFilterMode.all;
+                  _invalidateVisibleGroups();
+                }),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -1693,6 +1792,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             horizontal: AppleSpacing.sm,
             vertical: AppleSpacing.sm,
           ),
+          suffixIcon: _resultsQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: context.l10n.aiResultsClearSearch,
+                  icon: const Icon(Icons.clear_rounded, size: 18),
+                  onPressed: () => setState(() {
+                    _resultsSearchController.clear();
+                    _resultsQuery = '';
+                    _invalidateVisibleGroups();
+                  }),
+                ),
         ),
       ),
     );
@@ -2032,7 +2142,7 @@ class _ResultGroupRow extends StatelessWidget {
     required this.onSelectionChanged,
     required this.onTap,
     required this.summaryLabel,
-    required this.metadataLabel,
+    required this.metadataLabels,
   });
 
   final AiResultGroup group;
@@ -2042,7 +2152,7 @@ class _ResultGroupRow extends StatelessWidget {
   final ValueChanged<bool?>? onSelectionChanged;
   final VoidCallback onTap;
   final String summaryLabel;
-  final String metadataLabel;
+  final List<String> metadataLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -2086,6 +2196,9 @@ class _ResultGroupRow extends StatelessWidget {
               color: Colors.transparent,
               child: InkWell(
                 onTap: onTap,
+                hoverColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     0,
@@ -2097,6 +2210,7 @@ class _ResultGroupRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           AnimatedRotation(
                             turns: expanded ? 0.25 : 0,
@@ -2108,6 +2222,12 @@ class _ResultGroupRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: AppleSpacing.xs),
+                          Icon(
+                            Icons.folder_outlined,
+                            size: 18,
+                            color: tokens.folderIcon,
+                          ),
+                          const SizedBox(width: AppleSpacing.xs),
                           Expanded(
                             child: _PathLabel(
                               group.path,
@@ -2115,15 +2235,43 @@ class _ResultGroupRow extends StatelessWidget {
                               maxLines: 2,
                             ),
                           ),
+                          const SizedBox(width: AppleSpacing.sm),
+                          Flexible(
+                            child: Text(
+                              summaryLabel,
+                              textAlign: TextAlign.right,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.vwFinePrintInk,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: AppleSpacing.xxs),
-                      Text(
-                        '$summaryLabel · $metadataLabel',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.vwFinePrint.copyWith(
-                          color: tokens.inkMuted80,
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 18 + AppleSpacing.xs,
+                        ),
+                        child: Wrap(
+                          spacing: AppleSpacing.sm,
+                          runSpacing: AppleSpacing.xxs,
+                          children: [
+                            for (
+                              var index = 0;
+                              index < metadataLabels.length;
+                              index++
+                            )
+                              Text(
+                                metadataLabels[index],
+                                style: context.vwFinePrint.copyWith(
+                                  color: switch (index) {
+                                    0 => tokens.primary,
+                                    1 => tokens.warning,
+                                    _ => null,
+                                  },
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -2225,6 +2373,17 @@ class _ResultRow extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: context.vwCaptionStrong,
     );
+    final reviewDisclosure = isReview
+        ? AnimatedRotation(
+            turns: expanded ? 0.25 : 0,
+            duration: const Duration(milliseconds: 160),
+            child: Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: tokens.warning,
+            ),
+          )
+        : null;
     final body = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppleSpacing.sm,
@@ -2249,7 +2408,13 @@ class _ResultRow extends StatelessWidget {
                     left: 40 + AppleSpacing.xs,
                     top: AppleSpacing.xxs,
                   ),
-                  child: sizeText,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      sizeText,
+                      if (reviewDisclosure != null) reviewDisclosure,
+                    ],
+                  ),
                 ),
               ],
             );
@@ -2263,7 +2428,16 @@ class _ResultRow extends StatelessWidget {
               const SizedBox(width: AppleSpacing.sm),
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: SizedBox(width: 88, child: sizeText),
+                child: SizedBox(
+                  width: reviewDisclosure == null ? 88 : 110,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      sizeText,
+                      if (reviewDisclosure != null) reviewDisclosure,
+                    ],
+                  ),
+                ),
               ),
             ],
           );
@@ -2272,12 +2446,17 @@ class _ResultRow extends StatelessWidget {
     );
     final rowBody = onTap == null
         ? body
-        : Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              hoverColor: Colors.transparent,
-              child: body,
+        : Semantics(
+            expanded: isReview ? expanded : null,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                hoverColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                child: body,
+              ),
             ),
           );
     final row = DecoratedBox(
@@ -2433,6 +2612,48 @@ class _OverallResultSummaryData {
   final int safeCount;
   final int reviewCount;
   final int keepCount;
+}
+
+class _ResultMetricData {
+  const _ResultMetricData({
+    required this.value,
+    required this.label,
+    this.color,
+  });
+
+  final String value;
+  final String label;
+  final Color? color;
+}
+
+class _ResultMetric extends StatelessWidget {
+  const _ResultMetric({required this.data});
+
+  final _ResultMetricData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          data.value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.vwBodyStrong.copyWith(color: data.color ?? tokens.ink),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          data.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.vwFinePrint,
+        ),
+      ],
+    );
+  }
 }
 
 class _WorkspaceHeader extends StatelessWidget {

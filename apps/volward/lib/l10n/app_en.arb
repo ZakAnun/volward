@@ -480,8 +480,22 @@
       "keep": {"type": "int"}
     }
   },
+  "aiResultsMetricAnalyzed": "Analyzed",
+  "aiResultsMetricSafe": "Safe to remove",
+  "aiResultsMetricReview": "Needs review",
+  "aiResultsMetricKept": "Kept",
+  "aiResultsTotalSize": "{bytes} total",
+  "@aiResultsTotalSize": {
+    "placeholders": {
+      "bytes": {"type": "String"}
+    }
+  },
   "aiResultsNeedsDecision": "Needs decision",
   "aiResultsSearchHint": "Search path, reason, source, or hint",
+  "aiResultsClearSearch": "Clear search",
+  "aiResultsNoMatches": "No matching results",
+  "aiResultsEmpty": "No cleanup suggestions were found",
+  "aiResultsResetFilters": "Reset search and filters",
   "aiResultsFilterAll": "All",
   "aiResultsFilterReview": "Review",
   "aiResultsFilterSelected": "Selected",
