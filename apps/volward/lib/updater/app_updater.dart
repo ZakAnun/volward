@@ -165,11 +165,11 @@ class AppUpdater extends ChangeNotifier {
         ),
       );
     } catch (error, stackTrace) {
-      debugPrint('AppUpdater.check failed: $error\n$stackTrace');
       if (!userInitiated) {
         _setStatus(UpdateStatus.idle);
         return;
       }
+      debugPrint('AppUpdater.check failed: $error\n$stackTrace');
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.error,

@@ -838,24 +838,24 @@ class VolwardSession extends ChangeNotifier {
 
   Future<bool> _restoreCachedSnapshot() async {
     if (!_ready || _scanning) return false;
-    await loadSessionStateIfNeeded();
-    final generation = ++_cacheRestoreGeneration;
-
-    final preferredRoot = _preferredRestoreRoot();
-    final path = await SnapshotCache.latestSnapshotPath(
-      preferredRoot: preferredRoot,
-    );
-    if (path == null) return false;
-    if (generation != _cacheRestoreGeneration) return false;
-    if (ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot()) !=
-        ScanTreeBuilder.normalizeRoot(preferredRoot)) {
-      return false;
-    }
-
     _restoringSnapshot = true;
     notifyListeners();
     var restoredSnapshot = false;
     try {
+      await loadSessionStateIfNeeded();
+      final generation = ++_cacheRestoreGeneration;
+
+      final preferredRoot = _preferredRestoreRoot();
+      final path = await SnapshotCache.latestSnapshotPath(
+        preferredRoot: preferredRoot,
+      );
+      if (path == null) return false;
+      if (generation != _cacheRestoreGeneration) return false;
+      if (ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot()) !=
+          ScanTreeBuilder.normalizeRoot(preferredRoot)) {
+        return false;
+      }
+
       ScanSnapshotState? restored;
       if (hasIndexApi) {
         // Always try the Rust catalog loader before applying the Dart JSON

@@ -353,6 +353,27 @@ void main() {
   );
 
   test(
+    'restoreCachedSnapshotIfNeeded marks restore in flight before cache lookup',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-restore-state',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      final session = VolwardSession.test()..setScanRoots(['/Users/test/Home']);
+      final restore = session.restoreCachedSnapshotIfNeeded();
+
+      expect(session.restoringSnapshot, isTrue);
+      await restore;
+      expect(session.restoringSnapshot, isFalse);
+    },
+  );
+
+  test(
     'restoreCachedSnapshotIfNeeded replaces a completed scan from another root',
     () async {
       final temp = await Directory.systemTemp.createTemp(

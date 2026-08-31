@@ -154,6 +154,9 @@ class _HangingRestoreSession extends _PendingPreviewSession {
   final Completer<void> restoreGate = Completer<void>();
 
   @override
+  bool get restoringSnapshot => true;
+
+  @override
   Future<void> restoreCachedSnapshotIfNeeded() {
     restoreCalls++;
     return restoreGate.future;
@@ -279,15 +282,13 @@ void main() {
     tester,
   ) async {
     final completedPreview = Completer<void>()..complete();
-    final session =
-        _PendingPreviewSession(
-            root: '/',
-            previewGate: completedPreview,
-            failPreview: true,
-          )
-          ..sessionStateFileForTest = File(
-            '${Directory.systemTemp.path}/volward-startup-preview-error.json',
-          );
+    final session = _PendingPreviewSession(
+      root: '/',
+      previewGate: completedPreview,
+      failPreview: true,
+    )..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-startup-preview-error.json',
+      );
     final themeSettings = VolwardThemeSettings();
     final updater = AppUpdater.test();
     addTearDown(themeSettings.dispose);
@@ -390,7 +391,7 @@ void main() {
     },
   );
 
-  testWidgets('Start Scan stays enabled while cache restore is still loading', (
+  testWidgets('Start Scan stays hidden while cache restore is still loading', (
     tester,
   ) async {
     final previewGate = Completer<void>()..complete();
@@ -417,10 +418,7 @@ void main() {
 
     expect(session.previewCalls, 1);
     expect(session.restoreCalls, 1);
-    expect(
-      tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
-      isNotNull,
-    );
+    expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
   });
 
   testWidgets(

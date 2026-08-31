@@ -574,8 +574,7 @@ class _WideBoard extends StatelessWidget {
           Expanded(
             child: KeyedSubtree(
               key: StorageStewardHome.mainPaneKey,
-              child:
-                  mainPaneOverride ??
+              child: mainPaneOverride ??
                   _MainPane(
                     summary: summary,
                     compact: false,
@@ -675,10 +674,9 @@ class _Sidebar extends StatelessWidget {
     final selectedPath = summary.selectedLocation?.path ?? '';
     final selectedCustom =
         summary.selectedLocation?.kind == StorageLocationKind.custom
-        ? summary.selectedLocation
-        : null;
-    final recentMenuLocation =
-        selectedCustom ??
+            ? summary.selectedLocation
+            : null;
+    final recentMenuLocation = selectedCustom ??
         (recentLocations.isNotEmpty ? recentLocations.first : null);
     final recentMenuChoices = [
       if (selectedCustom != null) selectedCustom,
@@ -690,8 +688,7 @@ class _Sidebar extends StatelessWidget {
     Widget targetTile(int index) {
       final location = targetLocations[index];
       final selected = _samePath(location.path, selectedPath);
-      final choices =
-          location.kind == StorageLocationKind.custom &&
+      final choices = location.kind == StorageLocationKind.custom &&
               recentMenuChoices.length > 1
           ? recentMenuChoices
           : const <StorageLocationInfo>[];
@@ -715,8 +712,7 @@ class _Sidebar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final recentFallback =
-              recentMenuLocation != null &&
+          final recentFallback = recentMenuLocation != null &&
               !targetLocations.any(
                 (location) => _samePath(location.path, recentMenuLocation.path),
               );
@@ -752,11 +748,9 @@ class _Sidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: _sidebarLogoGap),
-                for (
-                  var index = 0;
-                  index < targetLocations.length;
-                  index++
-                ) ...[
+                for (var index = 0;
+                    index < targetLocations.length;
+                    index++) ...[
                   targetTile(index),
                   if (index < targetLocations.length - 1)
                     const SizedBox(height: _targetTileGap),
@@ -998,9 +992,8 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = summary.hasUsableCapacity
-        ? summary.selectedVolume?.usedFraction
-        : null;
+    final progress =
+        summary.hasUsableCapacity ? summary.selectedVolume?.usedFraction : null;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,
@@ -1054,8 +1047,8 @@ class _BrowseCard extends StatelessWidget {
     final scanLabel = summary.canCancelScan
         ? l10n.homeCancelScan
         : summary.hasCompletedScan
-        ? l10n.homeRescan
-        : l10n.homeStartScan;
+            ? l10n.homeRescan
+            : l10n.homeStartScan;
     final scanCallback = summary.canCancelScan ? onCancelScan : onScan;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1075,31 +1068,31 @@ class _BrowseCard extends StatelessWidget {
                 // Loading/scanning with no categories: show skeleton
                 ? _buildCategorySkeleton()
                 : showSkeleton
-                // Partial results are real data — show them, greyed out to read
-                // as in-progress. An opaque skeleton on top would build the
-                // breakdown and then hide it.
-                ? CategoryBreakdown(
-                    categories: summary.categories,
-                    enabled: false,
-                    onSelectCategory: onSelectCategory,
-                  )
-                : summary.categories.isEmpty
-                ? Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      summary.hasCompletedScan
-                          ? l10n.homeFolderEmpty
-                          : l10n.homeLargestItemsEmpty,
-                      style: context.vwFinePrint.copyWith(
-                        color: _onDashboard.withValues(alpha: 0.42),
-                      ),
-                    ),
-                  )
-                : CategoryBreakdown(
-                    categories: summary.categories,
-                    enabled: true,
-                    onSelectCategory: onSelectCategory,
-                  ),
+                    // Partial results are real data — show them, greyed out to read
+                    // as in-progress. An opaque skeleton on top would build the
+                    // breakdown and then hide it.
+                    ? CategoryBreakdown(
+                        categories: summary.categories,
+                        enabled: false,
+                        onSelectCategory: onSelectCategory,
+                      )
+                    : summary.categories.isEmpty
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              summary.hasCompletedScan
+                                  ? l10n.homeFolderEmpty
+                                  : l10n.homeLargestItemsEmpty,
+                              style: context.vwFinePrint.copyWith(
+                                color: _onDashboard.withValues(alpha: 0.42),
+                              ),
+                            ),
+                          )
+                        : CategoryBreakdown(
+                            categories: summary.categories,
+                            enabled: true,
+                            onSelectCategory: onSelectCategory,
+                          ),
           );
           final actions = KeyedSubtree(
             key: StorageStewardHome.actionsKey,
@@ -1179,28 +1172,30 @@ class _BrowseCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: SizedBox(
-                      width: 168,
-                      child: FocusTraversalOrder(
-                        order: const NumericFocusOrder(_scanFocusOrder),
-                        child: _DashboardActionButton(
-                          key: StorageStewardHome.scanActionKey,
-                          label: scanLabel,
-                          icon: summary.canCancelScan
-                              ? Icons.stop_circle_outlined
-                              : Icons.radar_outlined,
-                          primary: true,
-                          semanticColor: summary.canCancelScan
-                              ? context.volward.danger
-                              : null,
-                          onPressed: interactionsLocked ? null : scanCallback,
+                  if (!summary.restoringSnapshot) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: SizedBox(
+                        width: 168,
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(_scanFocusOrder),
+                          child: _DashboardActionButton(
+                            key: StorageStewardHome.scanActionKey,
+                            label: scanLabel,
+                            icon: summary.canCancelScan
+                                ? Icons.stop_circle_outlined
+                                : Icons.radar_outlined,
+                            primary: true,
+                            semanticColor: summary.canCancelScan
+                                ? context.volward.danger
+                                : null,
+                            onPressed: interactionsLocked ? null : scanCallback,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1362,36 +1357,36 @@ class _BrowseCard extends StatelessWidget {
                                     icon: Icons.auto_awesome_outlined,
                                     primary: false,
                                     accentOutline: true,
-                                    onPressed: interactionsLocked
-                                        ? null
-                                        : onOpenAi,
+                                    onPressed:
+                                        interactionsLocked ? null : onOpenAi,
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ],
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          width: 140,
-                          child: FocusTraversalOrder(
-                            order: const NumericFocusOrder(_scanFocusOrder),
-                            child: _DashboardActionButton(
-                              key: StorageStewardHome.scanActionKey,
-                              label: scanLabel,
-                              icon: summary.canCancelScan
-                                  ? Icons.stop_circle_outlined
-                                  : Icons.radar_outlined,
-                              primary: true,
-                              semanticColor: summary.canCancelScan
-                                  ? context.volward.danger
-                                  : null,
-                              onPressed: interactionsLocked
-                                  ? null
-                                  : scanCallback,
+                        if (!summary.restoringSnapshot) ...[
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 140,
+                            child: FocusTraversalOrder(
+                              order: const NumericFocusOrder(_scanFocusOrder),
+                              child: _DashboardActionButton(
+                                key: StorageStewardHome.scanActionKey,
+                                label: scanLabel,
+                                icon: summary.canCancelScan
+                                    ? Icons.stop_circle_outlined
+                                    : Icons.radar_outlined,
+                                primary: true,
+                                semanticColor: summary.canCancelScan
+                                    ? context.volward.danger
+                                    : null,
+                                onPressed:
+                                    interactionsLocked ? null : scanCallback,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -1509,8 +1504,8 @@ class _StatusChip extends StatelessWidget {
     final foreground = switch (tone) {
       _StatusChipTone.live => _liveChipText,
       _StatusChipTone.cached => _highestContrastForeground(
-        Color.alphaBlend(fill, parentBackground),
-      ),
+          Color.alphaBlend(fill, parentBackground),
+        ),
       _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.84),
     };
     return SizedBox(
@@ -1654,14 +1649,14 @@ class _DashboardActionButton extends StatelessWidget {
     final actionColor = semanticColor ?? context.volward.primary;
     final background = enabled
         ? primary
-              ? actionColor
-              : Colors.white.withValues(alpha: 0.08)
+            ? actionColor
+            : Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
         : enabled && accentOutline
-        ? actionColor
-        : _onDashboard.withValues(alpha: enabled ? 1 : 0.42);
+            ? actionColor
+            : _onDashboard.withValues(alpha: enabled ? 1 : 0.42);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       excludeFromSemantics: true,
@@ -1764,9 +1759,8 @@ class _TargetMenuTile extends StatelessWidget {
         ),
       ),
       child: Tooltip(
-        message: recentFallback
-            ? context.l10n.homeRecentFolders
-            : location.path,
+        message:
+            recentFallback ? context.l10n.homeRecentFolders : location.path,
         child: hasMenu
             ? KeyedSubtree(
                 key: tileKey,
@@ -2057,20 +2051,17 @@ double _wideDashboardHeight(StorageHomeSummary summary, BuildContext context) {
   final recentLocations = _recentCustomLocations(summary);
   final selectedCustom =
       summary.selectedLocation?.kind == StorageLocationKind.custom
-      ? summary.selectedLocation
-      : null;
-  final recentMenuLocation =
-      selectedCustom ??
+          ? summary.selectedLocation
+          : null;
+  final recentMenuLocation = selectedCustom ??
       (recentLocations.isNotEmpty ? recentLocations.first : null);
-  final hasRecentFallback =
-      recentMenuLocation != null &&
+  final hasRecentFallback = recentMenuLocation != null &&
       !targetLocations.any(
         (location) => _samePath(location.path, recentMenuLocation.path),
       );
   final visibleTargets = targetLocations.length + (hasRecentFallback ? 1 : 0);
 
-  final sidebarHeight =
-      _sidebarPadding * 2 +
+  final sidebarHeight = _sidebarPadding * 2 +
       _sidebarLogoHeight +
       _sidebarLogoGap +
       visibleTargets * _targetTileHeight +
@@ -2155,8 +2146,7 @@ double _finePrintLineHeight(BuildContext context) {
 double _rightColumnHeight(StorageHomeSummary summary, BuildContext context) {
   final textLineH = _finePrintLineHeight(context);
   // Capacity panel intrinsic height
-  final capacityHeight =
-      _capacityPanelPaddingTop +
+  final capacityHeight = _capacityPanelPaddingTop +
       textLineH + // path (finePrint)
       _capacityPathBottomGap +
       _capacityUsedHeight +
@@ -2173,15 +2163,13 @@ double _rightColumnHeight(StorageHomeSummary summary, BuildContext context) {
   final largestBodyHeight = largestItemCount > 0
       ? largestItemCount * _largestItemHeight
       : _largestEmptyBodyHeight;
-  final largestHeight =
-      _largestPanelPadding +
+  final largestHeight = _largestPanelPadding +
       textLineH + // header (finePrint)
       _largestHeaderBottomGap +
       largestBodyHeight;
 
   // Browse card intrinsic height (new vertical layout in wide mode)
-  final browseHeight =
-      _browsePanelPadding +
+  final browseHeight = _browsePanelPadding +
       _browseTopRowHeight +
       _browseTopRowBottomGap +
       _browseCategoryBreakdownHeight +

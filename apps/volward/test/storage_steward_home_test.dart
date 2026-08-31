@@ -433,16 +433,16 @@ final invalidLiveSummary = StorageHomeSummary(
 );
 
 Finder targetTiles() => find.byWidgetPredicate((widget) {
-  final key = widget.key;
-  return widget is InkWell &&
-      key is ValueKey<String> &&
-      key.value.startsWith('storage-target-');
-});
+      final key = widget.key;
+      return widget is InkWell &&
+          key is ValueKey<String> &&
+          key.value.startsWith('storage-target-');
+    });
 
 Finder capacityMeterFill() => find.descendant(
-  of: find.byKey(StorageStewardHome.capacityMeterKey),
-  matching: find.byType(FractionallySizedBox),
-);
+      of: find.byKey(StorageStewardHome.capacityMeterKey),
+      matching: find.byType(FractionallySizedBox),
+    );
 
 ({Rect targets, Rect capacity, Rect scan}) homeGeometry(WidgetTester tester) {
   return (
@@ -465,12 +465,10 @@ void expectButtonSemantics(SemanticsNode node, {required bool enabled}) {
 double contrastRatio(Color first, Color second) {
   final firstLuminance = first.computeLuminance();
   final secondLuminance = second.computeLuminance();
-  final lighter = firstLuminance > secondLuminance
-      ? firstLuminance
-      : secondLuminance;
-  final darker = firstLuminance > secondLuminance
-      ? secondLuminance
-      : firstLuminance;
+  final lighter =
+      firstLuminance > secondLuminance ? firstLuminance : secondLuminance;
+  final darker =
+      firstLuminance > secondLuminance ? secondLuminance : firstLuminance;
   return (lighter + 0.05) / (darker + 0.05);
 }
 
@@ -902,9 +900,8 @@ void main() {
     final tokens = Theme.of(
       tester.element(find.byKey(StorageStewardHome.capacityMeterKey)),
     ).extension<VolwardTokens>()!;
-    final gradient =
-        (fillDecoration.decoration as BoxDecoration).gradient!
-            as LinearGradient;
+    final gradient = (fillDecoration.decoration as BoxDecoration).gradient!
+        as LinearGradient;
     expect(gradient.colors, [
       Color.lerp(tokens.primary, Colors.white, 0.46),
       Color.lerp(tokens.primary, Colors.black, 0.06),
@@ -917,29 +914,21 @@ void main() {
     await pumpOverview(tester, onScan: () {});
 
     final statusHeight = tester.getSize(statusChipFinder()).height;
-    final browseHeight = tester
-        .getSize(find.byKey(StorageStewardHome.browseKey))
-        .height;
-    final scanHeight = tester
-        .getSize(find.byKey(StorageStewardHome.scanActionKey))
-        .height;
+    final browseHeight =
+        tester.getSize(find.byKey(StorageStewardHome.browseKey)).height;
+    final scanHeight =
+        tester.getSize(find.byKey(StorageStewardHome.scanActionKey)).height;
 
     expect(statusHeight, closeTo(32, 1));
     expect(browseHeight, closeTo(statusHeight, 1));
     expect(scanHeight, closeTo(statusHeight, 1));
 
-    final statusFont = tester
-        .widget<Text>(find.text('Live disk data'))
-        .style!
-        .fontSize;
-    final browseFont = tester
-        .widget<Text>(find.text('Browse Files'))
-        .style!
-        .fontSize;
-    final scanFont = tester
-        .widget<Text>(find.text('Start Scan'))
-        .style!
-        .fontSize;
+    final statusFont =
+        tester.widget<Text>(find.text('Live disk data')).style!.fontSize;
+    final browseFont =
+        tester.widget<Text>(find.text('Browse Files')).style!.fontSize;
+    final scanFont =
+        tester.widget<Text>(find.text('Start Scan')).style!.fontSize;
     expect(browseFont, statusFont);
     expect(scanFont, statusFont);
   });
@@ -2011,15 +2000,25 @@ void main() {
     expect(cancels, 1);
   });
 
-  testWidgets('restoring a snapshot still offers to scan, not to cancel', (
-    tester,
-  ) async {
+  testWidgets('compact scanning exposes cancel action', (tester) async {
+    var cancels = 0;
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: scanningSummary,
+      onCancelScan: () => cancels++,
+    );
+
+    expect(find.text('Cancel Scan'), findsOneWidget);
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(cancels, 1);
+  });
+
+  testWidgets('restoring a snapshot hides scan action', (tester) async {
     // A cold launch with a cached snapshot sets `scanning` so the dashboard
     // reads as busy, but there is no scan behind it. Keying the CTA off
     // `scanning` alone put a permanently disabled "Cancel Scan" on screen for
     // the whole restore.
-    var scans = 0;
-    var cancels = 0;
     await pumpOverview(
       tester,
       summary: StorageHomeSummary(
@@ -2030,16 +2029,30 @@ void main() {
         restoringSnapshot: true,
         hasCompletedScan: false,
       ),
-      onScan: () => scans++,
-      onCancelScan: () => cancels++,
     );
 
     expect(find.text('Cancel Scan'), findsNothing);
-    expect(find.text('Start Scan'), findsOneWidget);
+    expect(find.text('Start Scan'), findsNothing);
+    expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
+  });
 
-    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
-    expect(scans, 1);
-    expect(cancels, 0);
+  testWidgets('restoring a snapshot hides scan action in compact layout', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: StorageHomeSummary(
+        overview: readySummary.overview,
+        selectedLocation: readySummary.selectedLocation,
+        selectedVolume: readySummary.selectedVolume,
+        scanning: true,
+        restoringSnapshot: true,
+        hasCompletedScan: false,
+      ),
+    );
+
+    expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
   });
 
   testWidgets('disabled scan targets and folder action absorb real taps', (
@@ -2078,6 +2091,20 @@ void main() {
     expect(find.text('Rescan'), findsOneWidget);
     expect(find.text('256 B reclaimable'), findsOneWidget);
     expect(find.textContaining('Last scan'), findsOneWidget);
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(scans, 1);
+  });
+
+  testWidgets('compact completed scan exposes rescan action', (tester) async {
+    var scans = 0;
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: completedSummary,
+      onScan: () => scans++,
+    );
+
+    expect(find.text('Rescan'), findsOneWidget);
     await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
     expect(scans, 1);
   });
@@ -2295,7 +2322,8 @@ void main() {
         Size(640, 600),
         Size(620, 600),
       ]) {
-        testWidgets('no overflow $locale $brightness '
+        testWidgets(
+            'no overflow $locale $brightness '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(
             tester,
@@ -2321,7 +2349,8 @@ void main() {
         Size(700, 600),
         Size(620, 600),
       ]) {
-        testWidgets('long platform data does not overflow '
+        testWidgets(
+            'long platform data does not overflow '
             '$platformLabel ${locale.languageCode} '
             '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
           await pumpOverview(

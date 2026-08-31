@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'checksum.dart';
@@ -10,6 +9,7 @@ import 'version_source.dart';
 
 const kDefaultGitHubOwner = 'ZakAnun';
 const kDefaultGitHubRepo = 'volward';
+const _kGitHubRequestTimeout = Duration(seconds: 15);
 
 ReleaseInfo parseGitHubLatestRelease(Map<String, dynamic> json) {
   final tag = json['tag_name'] as String? ?? '';
@@ -111,19 +111,12 @@ class GitHubVersionSource implements VersionSource {
     Object? pageError;
     try {
       return await _fetchLatestViaReleasePage();
-    } catch (error, stackTrace) {
+    } catch (error) {
       pageError = error;
-      debugPrint(
-        'GitHubVersionSource: release-page lookup failed: $error\n$stackTrace',
-      );
     }
     try {
       return await _fetchLatestViaAtom();
-    } catch (error, stackTrace) {
-      debugPrint(
-        'GitHubVersionSource: atom lookup failed, falling back to API: '
-        '$error\n$stackTrace',
-      );
+    } catch (error) {
       try {
         return await _fetchLatestViaApi();
       } catch (apiError) {
@@ -177,7 +170,7 @@ class GitHubVersionSource implements VersionSource {
         'User-Agent': 'Volward-Updater',
         'Accept': 'application/atom+xml, application/xml, text/xml, */*',
       },
-    );
+    ).timeout(_kGitHubRequestTimeout);
     if (response.statusCode != 200) {
       throw GitHubHttpException(
         'GitHub releases.atom failed: HTTP ${response.statusCode}',
@@ -199,13 +192,13 @@ class GitHubVersionSource implements VersionSource {
       ..followRedirects = false
       ..headers['User-Agent'] = 'Volward-Updater'
       ..headers['Accept'] = 'text/html';
-    final streamed = await _client.send(request);
-    await streamed.stream.drain<void>();
+    final streamed =
+        await _client.send(request).timeout(_kGitHubRequestTimeout);
+    await streamed.stream.drain<void>().timeout(_kGitHubRequestTimeout);
 
     final location = streamed.headers['location'];
-    final redirected = (location == null || location.isEmpty)
-        ? null
-        : uri.resolve(location);
+    final redirected =
+        (location == null || location.isEmpty) ? null : uri.resolve(location);
     final tagUrl = redirected ?? streamed.request?.url ?? uri;
     // Some environments still land on 200 with the final URL after a proxy.
     if (streamed.statusCode != 302 &&
@@ -240,7 +233,7 @@ class GitHubVersionSource implements VersionSource {
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'Volward-Updater',
       },
-    );
+    ).timeout(_kGitHubRequestTimeout);
     if (response.statusCode != 200) {
       final hint = response.statusCode == 403
           ? ' (API rate limit exceeded for unauthenticated requests)'
