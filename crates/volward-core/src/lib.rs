@@ -5,8 +5,10 @@ pub mod classify;
 pub mod capability;
 pub mod capability_job;
 pub mod capability_registry;
+pub mod cleanup_candidates;
 pub mod delete;
 pub mod index;
+pub mod large_files;
 pub mod manifest;
 pub mod model;
 pub mod platform;
@@ -22,6 +24,8 @@ pub use ai_analysis::{
 pub use capability::*;
 pub use capability_job::*;
 pub use capability_registry::*;
+pub use cleanup_candidates::*;
+pub use large_files::*;
 pub use ai_candidates::{
     ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, AiCandidate,
     AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,

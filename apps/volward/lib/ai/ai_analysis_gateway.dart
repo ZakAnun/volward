@@ -1,3 +1,4 @@
+import '../capabilities/capability_models.dart';
 import '../volward_session.dart';
 import 'ai_provider.dart';
 import 'ai_settings_store.dart';
@@ -17,6 +18,11 @@ abstract interface class AiAnalysisGateway {
   Future<String?> buildCandidates(String snapshotId);
   String? loadResult(String key);
   bool saveResult(String snapshotId, String resultJson);
+  Future<CapabilityAnalysisResult> analyzeCapability({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  });
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
     String? snapshotId,
@@ -71,6 +77,23 @@ class ProductionAiAnalysisGateway implements AiAnalysisGateway {
   @override
   bool saveResult(String snapshotId, String resultJson) =>
       _session?.saveAiResultJson(snapshotId, resultJson) ?? false;
+
+  @override
+  Future<CapabilityAnalysisResult> analyzeCapability({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  }) async {
+    final current = _session;
+    if (current == null) {
+      throw StateError('Native session unavailable');
+    }
+    return current.analyzeCapability(
+      snapshotId: snapshotId,
+      capability: capability,
+      options: options,
+    );
+  }
 
   @override
   Future<Map<String, dynamic>> deleteEntries(

@@ -12,6 +12,7 @@ import 'analytics/analytics_events.dart';
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
 import 'capabilities/capability_models.dart';
+import 'capabilities/capability_result_cache.dart';
 import 'proto/snapshot_pb_decoder.dart';
 import 'scan_entry_record.dart';
 import 'scan_preview.dart';
@@ -169,6 +170,7 @@ class VolwardSession extends ChangeNotifier {
   final Set<String> _refreshingDirectoryPaths = {};
   final Set<String> _postDeleteRefreshPaths = {};
   final Map<String, String> _refreshErrors = {};
+  final CapabilityAnalysisCache _capabilityCache = CapabilityAnalysisCache();
   // Monotonic token for root switches. If the user picks folders quickly, only
   // the latest preview/scan handoff may update the visible snapshot.
   int _rootSwitchGeneration = 0;
@@ -2648,13 +2650,25 @@ class VolwardSession extends ChangeNotifier {
     AnalysisOptions? options,
   }) async {
     final resolved = options ?? const AnalysisOptions(rootPath: '');
+    // Paginated requests carry a cursor and must always hit the analyzer;
+    // only terminal (cursor-less) results are cached.
+    if (resolved.cursor == null) {
+      final cached = _capabilityCache.get(snapshotId, capability, resolved);
+      if (cached != null) {
+        return cached;
+      }
+    }
     final raw = _capabilityCall(
       mode: 'analyze',
       snapshotId: snapshotId,
       capability: capability,
       options: resolved,
     );
-    return _decodeCapabilityResult(raw, capability);
+    final result = _decodeCapabilityResult(raw, capability);
+    if (resolved.cursor == null) {
+      _capabilityCache.put(snapshotId, capability, resolved, result);
+    }
+    return result;
   }
 
   /// Starts an async capability job and returns its job id.

@@ -46,6 +46,19 @@ pub struct SnapshotEntryRecord {
     pub deletable: bool,
 }
 
+/// Lightweight flat file record used by capability analyzers. Produced by
+/// [`SnapshotIndex::capability_files_page`] in bounded, cursor-paginated
+/// pages; never clones the recursive tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityFileRecord {
+    pub path: String,
+    pub size_bytes: u64,
+    /// Classified category when the file has a StorageEntry row
+    /// (e.g. "Cache", "BuildArtifact"); `None` for unclassified files.
+    pub category: Option<String>,
+    pub deletable: bool,
+}
+
 /// Result of a single `query_directory` / `refresh_directory` call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapshotQueryResult {
@@ -737,6 +750,63 @@ impl SnapshotIndex {
             .filter(|(path_id, _)| !self.entry_id_by_path.contains_key(path_id))
             .map(|(path_id, size)| (self.table.resolve(*path_id).to_string(), *size))
             .collect()
+    }
+
+    /// Returns a bounded page of all flat file records (classified entries
+    /// plus unclassified size records), ordered by size descending then path
+    /// ascending, continuing after `cursor` (a path string). Used by
+    /// capability analyzers so tens of thousands of candidates never cross
+    /// the FFI boundary in one call.
+    pub fn capability_files_page(
+        &self,
+        cursor: Option<&str>,
+        page_size: usize,
+    ) -> (Vec<CapabilityFileRecord>, Option<String>) {
+        let page_size = page_size.max(1);
+        let mut files: Vec<CapabilityFileRecord> = Vec::new();
+        for entry in self.entry_by_id.values() {
+            if self.directory_by_id.contains_key(&entry.path) {
+                continue;
+            }
+            files.push(CapabilityFileRecord {
+                path: self.table.resolve(entry.path).to_string(),
+                size_bytes: entry.size_bytes,
+                category: Some(self.table.resolve(entry.category).to_string()),
+                deletable: entry.deletable,
+            });
+        }
+        for (path_id, size_bytes) in &self.file_size_by_path {
+            if self.entry_id_by_path.contains_key(path_id)
+                || self.directory_by_id.contains_key(path_id)
+            {
+                continue;
+            }
+            files.push(CapabilityFileRecord {
+                path: self.table.resolve(*path_id).to_string(),
+                size_bytes: *size_bytes,
+                category: None,
+                deletable: false,
+            });
+        }
+        files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
+
+        let mut page = Vec::with_capacity(page_size.min(files.len()));
+        let mut next_cursor = None;
+        let mut started = cursor.is_none();
+        for file in files {
+            if !started {
+                if Some(file.path.as_str()) == cursor {
+                    started = true;
+                }
+                continue;
+            }
+            if page.len() >= page_size {
+                next_cursor = Some(file.path);
+                break;
+            }
+            page.push(file);
+        }
+        (page, next_cursor)
     }
 
     // ------------------------------------------------------------------
@@ -1435,7 +1505,7 @@ fn paths_equal(left: &str, right: &str) -> bool {
     }
 }
 
-fn path_is_at_or_below(path: &str, root: &str) -> bool {
+pub(crate) fn path_is_at_or_below(path: &str, root: &str) -> bool {
     let path = normalize_path(path);
     let root = normalize_path(root);
     if root.is_empty() {

@@ -297,13 +297,13 @@ impl AiCandidateBuilder {
     }
 }
 
-struct AiCleanupHint {
-    source: &'static str,
-    hint: &'static str,
-    retention_days: u32,
+pub(crate) struct AiCleanupHint {
+    pub(crate) source: &'static str,
+    pub(crate) hint: &'static str,
+    pub(crate) retention_days: u32,
 }
 
-fn ai_cleanup_hint_for_path(path: &str) -> Option<AiCleanupHint> {
+pub(crate) fn ai_cleanup_hint_for_path(path: &str) -> Option<AiCleanupHint> {
     let normalized = path.replace('\\', "/");
     let lower = normalized.to_ascii_lowercase();
     let file_name = lower.rsplit('/').next().unwrap_or(lower.as_str());

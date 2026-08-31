@@ -19,7 +19,7 @@ use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, AiCandidateBuilder, AnalysisOptions, Capability,
     CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
-    OsKnowledgeBase, DEFAULT_CANDIDATE_CAP,
+    CleanupCandidateAnalyzer, LargeFileAnalyzer, OsKnowledgeBase, DEFAULT_CANDIDATE_CAP,
 };
 
 use crate::proto;
@@ -79,8 +79,14 @@ impl Default for VolwardEngine {
 
 impl VolwardEngine {
     pub fn new() -> Self {
+        let platform = Arc::new(DesktopPlatform::new());
+        let mut capability_registry = CapabilityRegistry::new();
+        capability_registry.register(Arc::new(LargeFileAnalyzer));
+        capability_registry.register(Arc::new(CleanupCandidateAnalyzer::new(load_classifier(
+            platform.as_ref(),
+        ))));
         Self {
-            platform: Arc::new(DesktopPlatform::new()),
+            platform,
             cancel: Arc::new(AtomicBool::new(false)),
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: Arc::new(Mutex::new(None)),
@@ -95,7 +101,7 @@ impl VolwardEngine {
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
+            capability_registry: Arc::new(Mutex::new(capability_registry)),
             capability_jobs: CapabilityJobStore::new(),
         }
     }
@@ -1579,8 +1585,10 @@ mod tests {
         .unwrap();
         assert_eq!(mismatch["error"]["code"], "snapshot_mismatch");
 
+        // large_files/cleanup_candidates are registered by `new()`; an
+        // unregistered capability must still return a structured error.
         let unsupported: serde_json::Value = serde_json::from_str(
-            &engine.analyze_capability_json("test-snap", "large_files", &options_json()),
+            &engine.analyze_capability_json("test-snap", "similar_photos", &options_json()),
         )
         .unwrap();
         assert_eq!(unsupported["error"]["code"], "unsupported_capability");

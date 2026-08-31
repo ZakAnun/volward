@@ -8,6 +8,7 @@ import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
+import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
@@ -211,6 +212,15 @@ class _FakeGateway implements AiAnalysisGateway {
 
   @override
   Future<AiMode> getMode() async => mode;
+
+  @override
+  Future<CapabilityAnalysisResult> analyzeCapability({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  }) async {
+    throw UnimplementedError('fake gateway does not run capability analysis');
+  }
 
   @override
   Future<AiProvider?> resolveProvider() async => provider;
