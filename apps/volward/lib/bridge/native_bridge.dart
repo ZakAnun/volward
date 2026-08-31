@@ -188,6 +188,24 @@ typedef VolwardReplaceDirectoryWithSubtreeNative =
 typedef VolwardReplaceDirectoryWithSubtree =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
+typedef VolwardAnalyzeCapabilityJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAnalyzeCapabilityJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef VolwardStartCapabilityAnalysisJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardStartCapabilityAnalysisJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef VolwardGetCapabilityJobStatusJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardGetCapabilityJobStatusJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardCancelCapabilityAnalysisNative = Bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardCancelCapabilityAnalysis = bool Function(Pointer<Void>, Pointer<Utf8>);
+
 abstract interface class VolwardBridge {
   bool get hasSnapshotFileApi;
   bool get hasSnapshotFilePbApi;
@@ -297,6 +315,10 @@ final class VolwardNativeBridge implements VolwardBridge {
     _getIndexSummaryJson = _tryLookupGetIndexSummaryJson();
     _indexVersion = _tryLookupIndexVersion();
     _replaceDirectoryWithSubtree = _tryLookupReplaceDirectoryWithSubtree();
+    _analyzeCapabilityJson = _tryLookupAnalyzeCapabilityJson();
+    _startCapabilityAnalysisJson = _tryLookupStartCapabilityAnalysisJson();
+    _getCapabilityJobStatusJson = _tryLookupGetCapabilityJobStatusJson();
+    _cancelCapabilityAnalysis = _tryLookupCancelCapabilityAnalysis();
   }
 
   VolwardReplaceDirectoryWithSubtree? _tryLookupReplaceDirectoryWithSubtree() {
@@ -304,6 +326,54 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardReplaceDirectoryWithSubtreeNative>>(
             'volward_replace_directory_with_subtree',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAnalyzeCapabilityJson? _tryLookupAnalyzeCapabilityJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAnalyzeCapabilityJsonNative>>(
+            'volward_analyze_capability_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardStartCapabilityAnalysisJson? _tryLookupStartCapabilityAnalysisJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardStartCapabilityAnalysisJsonNative>>(
+            'volward_start_capability_analysis_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardGetCapabilityJobStatusJson? _tryLookupGetCapabilityJobStatusJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardGetCapabilityJobStatusJsonNative>>(
+            'volward_get_capability_job_status_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardCancelCapabilityAnalysis? _tryLookupCancelCapabilityAnalysis() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardCancelCapabilityAnalysisNative>>(
+            'volward_cancel_capability_analysis',
           )
           .asFunction();
     } on Object {
@@ -452,6 +522,10 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardGetIndexSummaryJson? _getIndexSummaryJson;
   late final VolwardIndexVersion? _indexVersion;
   late final VolwardReplaceDirectoryWithSubtree? _replaceDirectoryWithSubtree;
+  late final VolwardAnalyzeCapabilityJson? _analyzeCapabilityJson;
+  late final VolwardStartCapabilityAnalysisJson? _startCapabilityAnalysisJson;
+  late final VolwardGetCapabilityJobStatusJson? _getCapabilityJobStatusJson;
+  late final VolwardCancelCapabilityAnalysis? _cancelCapabilityAnalysis;
 
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
   @override
@@ -492,6 +566,14 @@ final class VolwardNativeBridge implements VolwardBridge {
   /// True when the dylib supports splicing a peek subtree into the catalog
   /// (volward_replace_directory_with_subtree — added 2026-08-06).
   bool get hasReplaceSubtreeApi => _replaceDirectoryWithSubtree != null;
+
+  /// True when the bundled dylib exposes the capability analysis FFI
+  /// (synchronous analyze + async start/status/cancel).
+  bool get hasCapabilityApi =>
+      _analyzeCapabilityJson != null &&
+      _startCapabilityAnalysisJson != null &&
+      _getCapabilityJobStatusJson != null &&
+      _cancelCapabilityAnalysis != null;
 
   bool get hasAsyncIndexLoadApi =>
       _startLoadIndexFromPathAsync != null &&
@@ -1294,5 +1376,85 @@ final class VolwardNativeBridge implements VolwardBridge {
     final fn = _indexVersion;
     if (fn == null) return 0;
     return fn(engine);
+  }
+
+  // ── Capability analysis APIs ──────────────────────────────────────────
+
+  /// Runs a capability analysis synchronously against the current snapshot.
+  /// Returns `{"result": …}` / `{"error": …}` JSON from Rust.
+  String analyzeCapability(
+    Pointer<Void> engine,
+    String snapshotId,
+    String capability,
+    String optionsJson,
+  ) {
+    final fn = _analyzeCapabilityJson;
+    if (fn == null) {
+      return 'error:native dylib missing volward_analyze_capability_json — rebuild Rust';
+    }
+    final snapshotPtr = snapshotId.toNativeUtf8();
+    final capabilityPtr = capability.toNativeUtf8();
+    final optionsPtr = optionsJson.toNativeUtf8();
+    try {
+      final out = fn(engine, snapshotPtr, capabilityPtr, optionsPtr);
+      return _decodeStringPtr(out) ?? 'error:null capability response';
+    } finally {
+      calloc.free(snapshotPtr);
+      calloc.free(capabilityPtr);
+      calloc.free(optionsPtr);
+    }
+  }
+
+  /// Starts an async capability analysis and returns `{"job_id": …}` /
+  /// `{"error": …}` JSON from Rust.
+  String startCapabilityAnalysis(
+    Pointer<Void> engine,
+    String snapshotId,
+    String capability,
+    String optionsJson,
+  ) {
+    final fn = _startCapabilityAnalysisJson;
+    if (fn == null) {
+      return 'error:native dylib missing volward_start_capability_analysis_json — rebuild Rust';
+    }
+    final snapshotPtr = snapshotId.toNativeUtf8();
+    final capabilityPtr = capability.toNativeUtf8();
+    final optionsPtr = optionsJson.toNativeUtf8();
+    try {
+      final out = fn(engine, snapshotPtr, capabilityPtr, optionsPtr);
+      return _decodeStringPtr(out) ?? 'error:null capability start response';
+    } finally {
+      calloc.free(snapshotPtr);
+      calloc.free(capabilityPtr);
+      calloc.free(optionsPtr);
+    }
+  }
+
+  /// Reads the current status of a capability job as `{"progress": …,
+  /// "result": …}` / `{"error": …}` JSON from Rust.
+  String getCapabilityJobStatus(Pointer<Void> engine, String jobId) {
+    final fn = _getCapabilityJobStatusJson;
+    if (fn == null) {
+      return 'error:native dylib missing volward_get_capability_job_status_json — rebuild Rust';
+    }
+    final jobPtr = jobId.toNativeUtf8();
+    try {
+      final out = fn(engine, jobPtr);
+      return _decodeStringPtr(out) ?? 'error:null capability status';
+    } finally {
+      calloc.free(jobPtr);
+    }
+  }
+
+  /// Requests cancellation of an in-flight capability job.
+  bool cancelCapabilityAnalysis(Pointer<Void> engine, String jobId) {
+    final fn = _cancelCapabilityAnalysis;
+    if (fn == null) return false;
+    final jobPtr = jobId.toNativeUtf8();
+    try {
+      return fn(engine, jobPtr);
+    } finally {
+      calloc.free(jobPtr);
+    }
   }
 }

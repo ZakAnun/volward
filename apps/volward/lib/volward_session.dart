@@ -11,6 +11,7 @@ import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
+import 'capabilities/capability_models.dart';
 import 'proto/snapshot_pb_decoder.dart';
 import 'scan_entry_record.dart';
 import 'scan_preview.dart';
@@ -218,6 +219,16 @@ class VolwardSession extends ChangeNotifier {
   @visibleForTesting
   Future<List<Map<String, dynamic>>> Function(String path)?
   scanRootPreviewReaderForTest;
+  @visibleForTesting
+  String Function(String snapshotId, String capability, String optionsJson)?
+  capabilityAnalyzeRunnerForTest;
+  @visibleForTesting
+  String Function(String snapshotId, String capability, String optionsJson)?
+  capabilityStartRunnerForTest;
+  @visibleForTesting
+  String Function(String jobId)? capabilityStatusReaderForTest;
+  @visibleForTesting
+  bool Function(String jobId)? capabilityCancelRunnerForTest;
 
   Completer<ScanSnapshotState?>? _activeScanCompleter;
   StreamSubscription<dynamic>? _scanProgressSub;
@@ -2622,6 +2633,191 @@ class VolwardSession extends ChangeNotifier {
       VolwardNativeBridge.instance.freeEngine(engine);
     }
     super.dispose();
+  }
+
+  // ── Capability analysis (Lemon-style storage capabilities) ─────────────
+
+  bool get hasCapabilityApi =>
+      _ready && _engine != null && VolwardNativeBridge.instance.hasCapabilityApi;
+
+  /// Synchronous capability analysis against the current snapshot. Returns
+  /// the typed result, or throws [StateError] / [FormatException] on failure.
+  Future<CapabilityAnalysisResult> analyzeCapability({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  }) async {
+    final resolved = options ?? const AnalysisOptions(rootPath: '');
+    final raw = _capabilityCall(
+      mode: 'analyze',
+      snapshotId: snapshotId,
+      capability: capability,
+      options: resolved,
+    );
+    return _decodeCapabilityResult(raw, capability);
+  }
+
+  /// Starts an async capability job and returns its job id.
+  String startCapabilityAnalysis({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  }) {
+    final resolved = options ?? const AnalysisOptions(rootPath: '');
+    final raw = _capabilityCall(
+      mode: 'start',
+      snapshotId: snapshotId,
+      capability: capability,
+      options: resolved,
+    );
+    final decoded = _decodeCapabilityJson(raw, capability, 'start');
+    final error = decoded['error'];
+    if (error != null) {
+      throw StateError(
+        'capability ${capability.wireValue} start failed: '
+        '${error is Map<String, dynamic> ? '${error['code']}: ${error['message']}' : error}',
+      );
+    }
+    final jobId = decoded['job_id'];
+    if (jobId is! String || jobId.isEmpty) {
+      throw FormatException(
+        'capability ${capability.wireValue} start response missing job_id',
+      );
+    }
+    return jobId;
+  }
+
+  /// Reads the current typed status of a capability job.
+  CapabilityJobStatus getCapabilityJobStatus(String jobId) {
+    final runner = capabilityStatusReaderForTest;
+    final raw = runner != null
+        ? runner(jobId)
+        : _capabilityCall(mode: 'status', jobId: jobId);
+    final decoded = _decodeCapabilityJson(
+      raw,
+      Capability.spaceAnalysis,
+      'status',
+    );
+    final error = decoded['error'];
+    if (error != null) {
+      throw StateError(
+        'capability job failed: ${error is Map<String, dynamic> ? '${error['code']}: ${error['message']}' : error}',
+      );
+    }
+    return CapabilityJobStatus.fromJson(decoded);
+  }
+
+  /// Requests cancellation of an in-flight capability job.
+  bool cancelCapabilityAnalysis(String jobId) {
+    final runner = capabilityCancelRunnerForTest;
+    if (runner != null) return runner(jobId);
+    final engine = _requireCapabilityEngine();
+    return VolwardNativeBridge.instance.cancelCapabilityAnalysis(engine, jobId);
+  }
+
+  /// Polls a capability job until it reaches a terminal state, yielding each
+  /// progress snapshot. Use [getCapabilityJobStatus] for the final typed
+  /// result after the stream completes.
+  Stream<CapabilityAnalysisProgress> watchCapabilityJob(
+    String jobId, {
+    Duration pollInterval = const Duration(milliseconds: 300),
+  }) async* {
+    while (true) {
+      final status = getCapabilityJobStatus(jobId);
+      yield status.progress;
+      if (status.isTerminal) {
+        return;
+      }
+      await Future<void>.delayed(pollInterval);
+    }
+  }
+
+  String _capabilityCall({
+    required String mode,
+    String? snapshotId,
+    Capability? capability,
+    AnalysisOptions? options,
+    String? jobId,
+  }) {
+    final runner = switch (mode) {
+      'analyze' => capabilityAnalyzeRunnerForTest,
+      'start' => capabilityStartRunnerForTest,
+      _ => null,
+    };
+    if (runner != null) {
+      return runner(
+        snapshotId!,
+        capability!.wireValue,
+        jsonEncode(options!.toJson()),
+      );
+    }
+    final engine = _requireCapabilityEngine();
+    final bridge = VolwardNativeBridge.instance;
+    return switch (mode) {
+      'analyze' => bridge.analyzeCapability(
+        engine,
+        snapshotId!,
+        capability!.wireValue,
+        jsonEncode(options!.toJson()),
+      ),
+      'start' => bridge.startCapabilityAnalysis(
+        engine,
+        snapshotId!,
+        capability!.wireValue,
+        jsonEncode(options!.toJson()),
+      ),
+      'status' => bridge.getCapabilityJobStatus(engine, jobId!),
+      _ => throw ArgumentError('unknown capability mode $mode'),
+    };
+  }
+
+  Pointer<Void> _requireCapabilityEngine() {
+    if (!_ready || _engine == null) {
+      throw StateError(_initError ?? 'Native engine not ready');
+    }
+    return _engine!;
+  }
+
+  Map<String, dynamic> _decodeCapabilityJson(
+    String raw,
+    Capability capability,
+    String context,
+  ) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw FormatException(
+        'invalid capability $context response for ${capability.wireValue}: $raw',
+      );
+    }
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    throw FormatException(
+      'invalid capability $context response for ${capability.wireValue}: $raw',
+    );
+  }
+
+  CapabilityAnalysisResult _decodeCapabilityResult(
+    String raw,
+    Capability capability,
+  ) {
+    final decoded = _decodeCapabilityJson(raw, capability, 'analyze');
+    final error = decoded['error'];
+    if (error != null) {
+      throw StateError(
+        'capability ${capability.wireValue} failed: '
+        '${error is Map<String, dynamic> ? '${error['code']}: ${error['message']}' : error}',
+      );
+    }
+    final result = decoded['result'];
+    if (result is! Map<String, dynamic>) {
+      throw FormatException(
+        'capability ${capability.wireValue} analyze response missing result',
+      );
+    }
+    return CapabilityAnalysisResult.fromJson(result);
   }
 }
 

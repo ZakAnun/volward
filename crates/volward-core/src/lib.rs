@@ -3,6 +3,8 @@ pub mod ai_candidates;
 pub mod os_knowledge;
 pub mod classify;
 pub mod capability;
+pub mod capability_job;
+pub mod capability_registry;
 pub mod delete;
 pub mod index;
 pub mod manifest;
@@ -18,6 +20,8 @@ pub use ai_analysis::{
     compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry,
 };
 pub use capability::*;
+pub use capability_job::*;
+pub use capability_registry::*;
 pub use ai_candidates::{
     ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, AiCandidate,
     AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,

@@ -831,6 +831,43 @@ class CapabilityAnalysisProgress {
   };
 }
 
+/// Terminal job state returned by the async capability job API: the latest
+/// [progress] plus the optional [result] once the job completes successfully.
+class CapabilityJobStatus {
+  const CapabilityJobStatus({required this.progress, this.result});
+
+  final CapabilityAnalysisProgress progress;
+  final CapabilityAnalysisResult? result;
+
+  factory CapabilityJobStatus.fromJson(Map<String, dynamic> json) {
+    const unknownCapability = 'unknown';
+    final progress = CapabilityAnalysisProgress.fromJson(
+      _json(json['progress'], unknownCapability, 'progress'),
+    );
+    final context = progress.capability.wireValue;
+    final resultValue = json['result'];
+    return CapabilityJobStatus(
+      progress: progress,
+      result: resultValue == null
+          ? null
+          : CapabilityAnalysisResult.fromJson(
+              _json(resultValue, context, 'result'),
+            ),
+    );
+  }
+
+  /// True once the job reached a terminal state: completed, cancelled,
+  /// or failed (a failure is reported as a completed phase with an error).
+  bool get isTerminal =>
+      progress.phase == CapabilityAnalysisPhase.completed ||
+      progress.cancelled;
+
+  Map<String, dynamic> toJson() => {
+    'progress': progress.toJson(),
+    'result': result?.toJson(),
+  };
+}
+
 Capability _capability(String value, String capability, String field) =>
     switch (value) {
       'large_files' => Capability.largeFiles,

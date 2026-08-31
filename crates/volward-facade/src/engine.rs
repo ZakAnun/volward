@@ -17,8 +17,9 @@ use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
-    ai_aggregate_path_from_delete_target, AiCandidateBuilder, OsKnowledgeBase,
-    DEFAULT_CANDIDATE_CAP,
+    ai_aggregate_path_from_delete_target, AiCandidateBuilder, AnalysisOptions, Capability,
+    CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
+    OsKnowledgeBase, DEFAULT_CANDIDATE_CAP,
 };
 
 use crate::proto;
@@ -65,6 +66,9 @@ pub struct VolwardEngine {
     is_ai_candidates_building: Arc<AtomicBool>,
     ai_candidates_json: Arc<Mutex<Option<String>>>,
     ai_candidates_generation: Arc<std::sync::atomic::AtomicU64>,
+    capability_registry: Arc<Mutex<CapabilityRegistry>>,
+    /// Async capability jobs keyed by job id; clone-safe interior mutability.
+    capability_jobs: CapabilityJobStore,
 }
 
 impl Default for VolwardEngine {
@@ -91,7 +95,18 @@ impl VolwardEngine {
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
+            capability_jobs: CapabilityJobStore::new(),
         }
+    }
+
+    /// Engine with a pre-registered capability analyzer set (tests / injection).
+    pub fn with_capability_registry(registry: CapabilityRegistry) -> Self {
+        let engine = Self::new();
+        if let Ok(mut current) = engine.capability_registry.lock() {
+            *current = registry;
+        }
+        engine
     }
 
     pub fn probe_capabilities(&self) -> PlatformCapabilities {
@@ -125,6 +140,203 @@ impl VolwardEngine {
     /// so cache invalidation is aligned with the Rust index.
     pub fn index_version(&self) -> u64 {
         self.index_version.load(Ordering::Relaxed)
+    }
+
+    // ------------------------------------------------------------------
+    // Capability analysis (registry + async job state)
+
+    /// Synchronous capability analysis against the current index. Returns
+    /// `{"result": <CapabilityAnalysisResult>}` or `{"error": {...}}`.
+    pub fn analyze_capability_json(
+        &self,
+        snapshot_id: &str,
+        capability: &str,
+        options_json: &str,
+    ) -> String {
+        let Some(capability) = parse_capability(capability) else {
+            return capability_error_json(&CapabilityAnalysisError::new(
+                "invalid_capability",
+                format!("unknown capability {capability:?}"),
+            ));
+        };
+        let options = match parse_capability_options(options_json, capability, snapshot_id) {
+            Ok(options) => options,
+            Err(error) => return capability_error_json(&error),
+        };
+        let registry = match self.capability_registry.lock() {
+            Ok(registry) => registry.clone(),
+            Err(_) => {
+                return capability_error_json(&CapabilityAnalysisError::new(
+                    "internal_error",
+                    "capability registry lock poisoned",
+                ));
+            }
+        };
+        let Some(index) = self.current_index() else {
+            return capability_error_json(&CapabilityAnalysisError::for_request(
+                "no_snapshot",
+                "no snapshot or index loaded",
+                capability,
+                snapshot_id,
+            ));
+        };
+        match registry.analyze(&index, snapshot_id, capability, &options) {
+            Ok(result) => serde_json::json!({ "result": result }).to_string(),
+            Err(error) => capability_error_json(&error),
+        }
+    }
+
+    /// Starts an async capability job on a worker thread and returns
+    /// `{"job_id": "..."}` or `{"error": {...}}`.
+    pub fn start_capability_analysis_json(
+        &self,
+        snapshot_id: &str,
+        capability: &str,
+        options_json: &str,
+    ) -> String {
+        let Some(capability) = parse_capability(capability) else {
+            return capability_error_json(&CapabilityAnalysisError::new(
+                "invalid_capability",
+                format!("unknown capability {capability:?}"),
+            ));
+        };
+        let options = match parse_capability_options(options_json, capability, snapshot_id) {
+            Ok(options) => options,
+            Err(error) => return capability_error_json(&error),
+        };
+        let snapshot_matches = self
+            .current_index()
+            .as_ref()
+            .map(|index| index.snapshot_id == snapshot_id)
+            .unwrap_or(false);
+        if !snapshot_matches {
+            return capability_error_json(&CapabilityAnalysisError::for_request(
+                "snapshot_mismatch",
+                format!("requested snapshot {snapshot_id} does not match the current index"),
+                capability,
+                snapshot_id,
+            ));
+        }
+        let registry = match self.capability_registry.lock() {
+            Ok(registry) => registry.clone(),
+            Err(_) => {
+                return capability_error_json(&CapabilityAnalysisError::new(
+                    "internal_error",
+                    "capability registry lock poisoned",
+                ));
+            }
+        };
+        if !registry.supports(capability) {
+            return capability_error_json(&CapabilityAnalysisError::unsupported(
+                capability,
+                snapshot_id,
+            ));
+        }
+
+        let job_handle = self.capability_jobs.create(snapshot_id, capability);
+        let job_id = job_handle.job_id().to_string();
+        let job_id_inner = job_id.clone();
+        let index = self.last_index.clone();
+        let job_snapshot = snapshot_id.to_string();
+        let job_capability = capability;
+        let job_options = options;
+
+        std::thread::spawn(move || {
+            job_handle.update_progress(CapabilityAnalysisPhase::Inspecting, 0, 0, None);
+            let result = (|| {
+                // Clone the index out of the lock so long-running analyzers
+                // never stall concurrent FFI (snapshot refresh, status polls).
+                let current = index
+                    .lock()
+                    .map_err(|_| {
+                        CapabilityAnalysisError::new("internal_error", "index lock poisoned")
+                    })?
+                    .clone()
+                    .ok_or_else(|| {
+                        CapabilityAnalysisError::for_request(
+                            "no_snapshot",
+                            "no snapshot or index loaded",
+                            job_capability,
+                            &job_snapshot,
+                        )
+                    })?;
+                if current.snapshot_id != job_snapshot {
+                    return Err(CapabilityAnalysisError::for_request(
+                        "snapshot_mismatch",
+                        format!(
+                            "requested snapshot {job_snapshot} does not match the current index {}",
+                            current.snapshot_id
+                        ),
+                        job_capability,
+                        &job_snapshot,
+                    ));
+                }
+                registry.analyze(&current, &job_snapshot, job_capability, &job_options)
+            })();
+
+            if job_handle.is_cancelled() {
+                return;
+            }
+            match result {
+                Ok(analysis) => {
+                    // Revalidate the snapshot after analysis: a refresh during
+                    // the run must invalidate the job instead of producing a
+                    // deletion plan against a stale snapshot.
+                    let current_snapshot = index
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.as_ref().map(|i| i.snapshot_id.clone()));
+                    if current_snapshot.as_deref() != Some(job_snapshot.as_str()) {
+                        job_handle.fail(
+                            serde_json::json!({
+                                "code": "snapshot_mismatch",
+                                "message": format!(
+                                    "snapshot changed while capability job {job_id_inner} was running"
+                                ),
+                                "capability": job_capability,
+                                "snapshot_id": job_snapshot,
+                            })
+                            .to_string(),
+                        );
+                        return;
+                    }
+                    job_handle.complete(Some(analysis));
+                }
+                Err(error) => {
+                    let error_json = serde_json::to_string(&error).unwrap_or_else(|_| {
+                        "{\"code\":\"internal_error\",\"message\":\"error serialization failed\"}"
+                            .to_string()
+                    });
+                    job_handle.fail(error_json);
+                }
+            }
+        });
+
+        serde_json::json!({ "job_id": job_id }).to_string()
+    }
+
+    /// Current job status as `{"progress": ..., "result": ...}` or an error envelope.
+    pub fn get_capability_job_status_json(&self, job_id: &str) -> String {
+        match self.capability_jobs.status(job_id) {
+            Some(status) => serde_json::to_string(&status).unwrap_or_else(|_| {
+                capability_error_json(&CapabilityAnalysisError::new(
+                    "internal_error",
+                    "job status serialization failed",
+                ))
+            }),
+            None => capability_error_json(&CapabilityAnalysisError::new(
+                "job_not_found",
+                format!("no capability job with id {job_id}"),
+            )),
+        }
+    }
+
+    pub fn cancel_capability_analysis(&self, job_id: &str) -> bool {
+        self.capability_jobs.cancel(job_id)
+    }
+
+    fn current_index(&self) -> Option<SnapshotIndex> {
+        self.last_index.lock().ok().and_then(|guard| guard.clone())
     }
 
     // ------------------------------------------------------------------
@@ -939,6 +1151,8 @@ impl VolwardEngine {
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
+            capability_jobs: CapabilityJobStore::new(),
         };
         shell.build_ai_candidates_json(snapshot_id)
     }
@@ -1192,13 +1406,66 @@ fn is_windows_drive_root(path: &str) -> bool {
     has_windows_drive_prefix(path) && path.len() == 3
 }
 
+fn parse_capability(value: &str) -> Option<Capability> {
+    serde_json::from_str::<Capability>(&format!("\"{value}\"")).ok()
+}
+
+fn parse_capability_options(
+    options_json: &str,
+    capability: Capability,
+    snapshot_id: &str,
+) -> Result<AnalysisOptions, CapabilityAnalysisError> {
+    serde_json::from_str::<AnalysisOptions>(options_json).map_err(|error| {
+        CapabilityAnalysisError::for_request(
+            "invalid_options",
+            format!("options JSON: {error}"),
+            capability,
+            snapshot_id,
+        )
+    })
+}
+
+fn capability_error_json(error: &CapabilityAnalysisError) -> String {
+    serde_json::json!({ "error": error }).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc::{self, Receiver, Sender};
     use volward_core::model::{
         CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
         StorageEntry, StorageSnapshot,
     };
+    use volward_core::{
+        AnalysisOptions, AnalysisSummary, Capability, CapabilityAnalysisError,
+        CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityRegistry, DeletionPlan,
+        CAPABILITY_SCHEMA_VERSION,
+    };
+
+    struct BlockingAnalyzer {
+        started: Mutex<Option<Sender<()>>>,
+        release: Mutex<Receiver<()>>,
+    }
+
+    impl CapabilityAnalyzer for BlockingAnalyzer {
+        fn capability(&self) -> Capability {
+            Capability::LargeFiles
+        }
+
+        fn analyze(
+            &self,
+            index: &SnapshotIndex,
+            normalized_root: &str,
+            _options: &AnalysisOptions,
+        ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
+            if let Some(started) = self.started.lock().unwrap().take() {
+                started.send(()).unwrap();
+            }
+            self.release.lock().unwrap().recv().unwrap();
+            Ok(capability_result(index, normalized_root))
+        }
+    }
 
     fn minimal_snapshot() -> StorageSnapshot {
         StorageSnapshot {
@@ -1230,6 +1497,130 @@ mod tests {
             stats: ScanStats::default(),
             warnings: vec![],
         }
+    }
+
+    fn capability_result(index: &SnapshotIndex, root_path: &str) -> CapabilityAnalysisResult {
+        CapabilityAnalysisResult {
+            schema_version: CAPABILITY_SCHEMA_VERSION,
+            capability: Capability::LargeFiles,
+            snapshot_id: index.snapshot_id.clone(),
+            root_path: root_path.to_string(),
+            analyzer_version: "fake-v1".to_string(),
+            generated_at_ms: 1,
+            capability_level: CapabilityLevel::FullPath,
+            summary: AnalysisSummary::default(),
+            groups: vec![],
+            next_cursor: None,
+            deletion_plan: DeletionPlan {
+                snapshot_id: index.snapshot_id.clone(),
+                target_count: 0,
+                target_bytes: 0,
+                targets: vec![],
+                blocked_targets: vec![],
+                requires_confirmation: true,
+            },
+            warnings: vec![],
+        }
+    }
+
+    fn options_json() -> String {
+        serde_json::to_string(&AnalysisOptions {
+            root_path: "/".to_string(),
+            ..AnalysisOptions::default()
+        })
+        .unwrap()
+    }
+
+    fn blocking_engine() -> (VolwardEngine, Receiver<()>, Sender<()>) {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let mut registry = CapabilityRegistry::new();
+        registry.register(Arc::new(BlockingAnalyzer {
+            started: Mutex::new(Some(started_tx)),
+            release: Mutex::new(release_rx),
+        }));
+        let engine = VolwardEngine::with_capability_registry(registry);
+        engine.set_last_snapshot(minimal_snapshot());
+        (engine, started_rx, release_tx)
+    }
+
+    fn start_capability_job(engine: &VolwardEngine) -> String {
+        let raw = engine.start_capability_analysis_json(
+            "test-snap",
+            "large_files",
+            &options_json(),
+        );
+        let value: serde_json::Value = serde_json::from_str(&raw).expect("start response JSON");
+        value["job_id"].as_str().expect("job_id").to_string()
+    }
+
+    fn wait_for_completed_status(engine: &VolwardEngine, job_id: &str) -> serde_json::Value {
+        for _ in 0..100 {
+            let raw = engine.get_capability_job_status_json(job_id);
+            let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            if status["progress"]["phase"] == "completed"
+                || status["progress"]["cancelled"] == true
+            {
+                return status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("capability job did not finish");
+    }
+
+    #[test]
+    fn capability_analysis_rejects_snapshot_mismatch_and_unsupported_capability() {
+        let engine = VolwardEngine::new();
+        engine.set_last_snapshot(minimal_snapshot());
+
+        let mismatch: serde_json::Value = serde_json::from_str(
+            &engine.analyze_capability_json("stale", "large_files", &options_json()),
+        )
+        .unwrap();
+        assert_eq!(mismatch["error"]["code"], "snapshot_mismatch");
+
+        let unsupported: serde_json::Value = serde_json::from_str(
+            &engine.analyze_capability_json("test-snap", "large_files", &options_json()),
+        )
+        .unwrap();
+        assert_eq!(unsupported["error"]["code"], "unsupported_capability");
+    }
+
+    #[test]
+    fn async_capability_job_reports_progress_and_cancels_without_result() {
+        let (engine, started, release) = blocking_engine();
+        let job_id = start_capability_job(&engine);
+        started.recv().unwrap();
+
+        let active: serde_json::Value = serde_json::from_str(
+            &engine.get_capability_job_status_json(&job_id),
+        )
+        .unwrap();
+        assert_eq!(active["progress"]["phase"], "inspecting");
+        assert!(engine.cancel_capability_analysis(&job_id));
+        release.send(()).unwrap();
+
+        let cancelled = wait_for_completed_status(&engine, &job_id);
+        assert_eq!(cancelled["progress"]["cancelled"], true);
+        assert!(cancelled["result"].is_null());
+    }
+
+    #[test]
+    fn async_capability_job_rejects_result_when_snapshot_changes() {
+        let (engine, started, release) = blocking_engine();
+        let job_id = start_capability_job(&engine);
+        started.recv().unwrap();
+
+        let mut replacement = minimal_snapshot();
+        replacement.snapshot_id = "replacement-snap".to_string();
+        engine.set_last_snapshot(replacement);
+        release.send(()).unwrap();
+
+        let completed = wait_for_completed_status(&engine, &job_id);
+        assert!(completed["result"].is_null());
+        let error = completed["progress"]["error"].as_str().unwrap();
+        let error: serde_json::Value = serde_json::from_str(error).unwrap();
+        assert_eq!(error["code"], "snapshot_mismatch");
     }
 
     #[test]
