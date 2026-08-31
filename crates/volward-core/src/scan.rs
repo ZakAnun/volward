@@ -222,6 +222,8 @@ impl<'a> ScanOrchestrator<'a> {
                     false,
                     &job_id,
                 ) {
+                    let mut classified = classified;
+                    classified.modified_at_ms = e.modified_at_ms;
                     let id = classified.id.clone();
                     stats.files_in_snapshot += 1;
                     entries.push(classified);
@@ -521,6 +523,8 @@ impl<'a> ScanOrchestrator<'a> {
                     false,
                     &job_id,
                 ) {
+                    let mut classified = classified;
+                    classified.modified_at_ms = e.modified_at_ms;
                     stats.files_in_snapshot += 1;
                     index_builder.insert_entry(classified);
                 }
@@ -896,6 +900,7 @@ mod tests {
                 children_count: file_count.min(u32::MAX as usize) as u32,
                 max_child_mtime_secs: 0,
             }),
+            modified_at_ms: None,
         });
 
         for i in 0..file_count {
@@ -906,6 +911,7 @@ mod tests {
                 is_dir: false,
                 size_bytes: 1,
                 dir_fingerprint: None,
+                modified_at_ms: None,
             });
         }
 
@@ -1027,24 +1033,28 @@ mod tests {
                 children_count: 1,
                 max_child_mtime_secs: 1_700_000_101,
             }),
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: cache_file.to_string_lossy().to_string(),
             is_dir: false,
             size_bytes: 6,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: temp.path().join("Documents").to_string_lossy().to_string(),
             is_dir: true,
             size_bytes: 0,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: unknown_file.to_string_lossy().to_string(),
             is_dir: false,
             size_bytes: 17,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
 
         let cancel = AtomicBool::new(false);
@@ -1096,12 +1106,14 @@ mod tests {
             is_dir: true,
             size_bytes: 0,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: cache_file.to_string_lossy().to_string(),
             is_dir: false,
             size_bytes: 6,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
 
         let manifest_dir = temp.path().join("manifests");

@@ -67,6 +67,7 @@ impl From<&model::StorageEntry> for proto::StorageEntry {
             source_type: source_pb(e.source_type),
             deletable: e.deletable,
             reason: e.reason.clone(),
+            modified_at_ms: e.modified_at_ms,
         }
     }
 }
@@ -145,6 +146,7 @@ mod tests {
                 source_type: SourceType::File,
                 deletable: true,
                 reason: "test".into(),
+                modified_at_ms: None,
             }],
             tree: ScanTreeNode {
                 name: "root".into(),

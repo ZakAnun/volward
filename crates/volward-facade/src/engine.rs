@@ -1491,6 +1491,7 @@ mod tests {
                 source_type: SourceType::File,
                 deletable: true,
                 reason: "test".to_string(),
+                modified_at_ms: None,
             }],
             tree: ScanTreeNode {
                 name: "root".to_string(),
@@ -1645,6 +1646,7 @@ mod tests {
             source_type: SourceType::Directory,
             deletable: true,
             reason: "build artifact".to_string(),
+            modified_at_ms: None,
         });
         // 250 unclassified siblings fold into one aggregate candidate.
         let children: Vec<ScanTreeNode> = (0..250)
@@ -1765,6 +1767,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: false,
             reason: "media".to_string(),
+            modified_at_ms: None,
         });
         engine.set_last_snapshot(snapshot);
 

@@ -69,6 +69,10 @@ pub struct StorageEntry {
     pub source_type: SourceType,
     pub deletable: bool,
     pub reason: String,
+    /// File modification time in epoch milliseconds; `None` for directories,
+    /// unavailable metadata, or old snapshots (never guessed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +140,10 @@ pub struct RawFsEntry {
     pub is_dir: bool,
     pub size_bytes: u64,
     pub dir_fingerprint: Option<DirFingerprint>,
+    /// File modification time in epoch milliseconds, collected during the
+    /// walk without reading file contents; `None` for directories or
+    /// unavailable metadata.
+    pub modified_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,11 +167,59 @@ pub struct TrashEmptyReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry_with(modified_at_ms: Option<i64>) -> StorageEntry {
+        StorageEntry {
+            id: "e1".to_string(),
+            display_name: "a.bin".to_string(),
+            path_or_uri: "/root/a.bin".to_string(),
+            size_bytes: 10,
+            category: EntryCategory::Cache,
+            risk_level: RiskLevel::Low,
+            source_type: SourceType::File,
+            deletable: true,
+            reason: "test".to_string(),
+            modified_at_ms,
+        }
+    }
+
     #[test]
     fn build_artifact_serializes_round_trip() {
         let cat = EntryCategory::BuildArtifact;
         let json = serde_json::to_string(&cat).unwrap();
         let back: EntryCategory = serde_json::from_str(&json).unwrap();
         assert_eq!(cat, back);
+    }
+
+    #[test]
+    fn storage_entry_round_trips_mtime_present_and_absent() {
+        let with_mtime = entry_with(Some(1_700_000_000_000));
+        let json = serde_json::to_string(&with_mtime).unwrap();
+        let back: StorageEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.modified_at_ms, Some(1_700_000_000_000));
+
+        let without_mtime = entry_with(None);
+        let json = serde_json::to_string(&without_mtime).unwrap();
+        assert!(!json.contains("modified_at_ms"));
+        let back: StorageEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.modified_at_ms, None);
+    }
+
+    #[test]
+    fn storage_entry_accepts_old_payloads_without_metadata() {
+        let old_json = r#"{
+            "id": "e1",
+            "display_name": "a.bin",
+            "path_or_uri": "/root/a.bin",
+            "size_bytes": 10,
+            "category": "Cache",
+            "risk_level": "Low",
+            "source_type": "File",
+            "deletable": true,
+            "reason": "cache"
+        }"#;
+        let entry: StorageEntry = serde_json::from_str(old_json).unwrap();
+        assert_eq!(entry.modified_at_ms, None);
+        assert_eq!(entry.path_or_uri, "/root/a.bin");
     }
 }

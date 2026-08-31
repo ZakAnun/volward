@@ -40,6 +40,7 @@ impl KnownSafeEntry {
             source_type: if is_dir { SourceType::Directory } else { SourceType::File },
             deletable: self.deletable,
             reason: self.reason,
+            modified_at_ms: None,
         }
     }
 }

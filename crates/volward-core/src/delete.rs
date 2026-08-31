@@ -247,6 +247,7 @@ mod tests {
                     source_type: SourceType::File,
                     deletable: true,
                     reason: "cache".to_string(),
+                    modified_at_ms: None,
                 },
                 StorageEntry {
                     id: "e2".to_string(),
@@ -258,6 +259,7 @@ mod tests {
                     source_type: SourceType::File,
                     deletable: false,
                     reason: "protected".to_string(),
+                    modified_at_ms: None,
                 },
                 StorageEntry {
                     id: "e3".to_string(),
@@ -269,6 +271,7 @@ mod tests {
                     source_type: SourceType::File,
                     deletable: false,
                     reason: "media".to_string(),
+                    modified_at_ms: None,
                 },
             ],
         }

@@ -58,6 +58,9 @@ message StorageEntry {
   SourceType source_type = 7;
   bool deletable = 8;
   string reason = 9;
+  // File modification time in epoch milliseconds; absent for directories,
+  // unavailable metadata, or old snapshots (never guessed).
+  optional int64 modified_at_ms = 10;
 }
 
 message ScanTreeNode {

@@ -407,6 +407,15 @@ impl PlatformStorage for DesktopPlatform {
                     is_dir,
                     size_bytes,
                     dir_fingerprint,
+                    modified_at_ms: if is_dir {
+                        None
+                    } else {
+                        metadata
+                            .modified()
+                            .ok()
+                            .map(system_time_secs)
+                            .map(|secs| secs.saturating_mul(1000))
+                    },
                 }) {
                     WalkAction::Stop => return Ok(paths_skipped),
                     WalkAction::SkipSubtree => continue,
@@ -528,6 +537,15 @@ impl PlatformStorage for DesktopPlatform {
                 is_dir,
                 size_bytes: if is_dir { 0 } else { metadata.len() },
                 dir_fingerprint: None,
+                modified_at_ms: if is_dir {
+                    None
+                } else {
+                    metadata
+                        .modified()
+                        .ok()
+                        .map(system_time_secs)
+                        .map(|secs| secs.saturating_mul(1000))
+                },
             });
         }
         Ok(out)

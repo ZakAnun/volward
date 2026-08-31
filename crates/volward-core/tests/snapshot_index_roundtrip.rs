@@ -21,6 +21,7 @@ fn sample_snapshot() -> StorageSnapshot {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         }],
         tree: ScanTreeNode {
             name: "root".to_string(),
@@ -74,8 +75,8 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
 
     let json = serde_json::to_string(&index).expect("serialize index");
     assert!(
-        json.contains("\"format_version\":4"),
-        "writers should emit format_version=4"
+        json.contains("\"format_version\":5"),
+        "writers should emit format_version=5"
     );
     assert!(json.contains("\"file_size_by_path\""));
     let loaded: SnapshotIndex = serde_json::from_str(&json).expect("deserialize index");
@@ -91,8 +92,8 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
         2
     );
 
-    // Older caches with version 2–3 must still load.
-    let v2_json = json.replace("\"format_version\":4", "\"format_version\":2");
+    // Older caches with versions 2–4 must still load.
+    let v2_json = json.replace("\"format_version\":5", "\"format_version\":2");
     let loaded_v2: SnapshotIndex =
         serde_json::from_str(&v2_json).expect("deserialize format_version=2 index");
     assert_eq!(
@@ -100,7 +101,7 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
         index.summary_json().unwrap()
     );
 
-    let v3_json = json.replace("\"format_version\":4", "\"format_version\":3");
+    let v3_json = json.replace("\"format_version\":5", "\"format_version\":3");
     let loaded_v3: SnapshotIndex =
         serde_json::from_str(&v3_json).expect("deserialize format_version=3 index");
     assert_eq!(
@@ -113,5 +114,13 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
             .direct_children
             .len(),
         2
+    );
+
+    let v4_json = json.replace("\"format_version\":5", "\"format_version\":4");
+    let loaded_v4: SnapshotIndex =
+        serde_json::from_str(&v4_json).expect("deserialize format_version=4 index");
+    assert_eq!(
+        loaded_v4.summary_json().unwrap(),
+        index.summary_json().unwrap()
     );
 }

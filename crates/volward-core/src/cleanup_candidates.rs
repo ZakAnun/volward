@@ -85,9 +85,12 @@ impl CapabilityAnalyzer for CleanupCandidateAnalyzer {
                     evidence.push(format!("hint:{}", hint.source));
                     evidence.push(format!("retention_days:{}", hint.retention_days));
                 }
-                // mtime arrives with Task 4; until then age evidence is
-                // explicitly "unknown" rather than guessed.
-                evidence.push("modified_at:unavailable".to_string());
+                match record.modified_at_ms {
+                    Some(modified_at_ms) => {
+                        evidence.push(format!("modified_at_ms:{modified_at_ms}"));
+                    }
+                    None => evidence.push("modified_at:unavailable".to_string()),
+                }
 
                 let (recommendation, confidence, reason, deletable) =
                     match (category, hint.as_ref().map(|h| h.source)) {
@@ -133,7 +136,7 @@ impl CapabilityAnalyzer for CleanupCandidateAnalyzer {
                     display_name: name_of(&record.path),
                     size_bytes: record.size_bytes,
                     is_directory: false,
-                    modified_at_ms: None,
+                    modified_at_ms: record.modified_at_ms,
                     recommendation,
                     confidence,
                     reason,
@@ -291,6 +294,7 @@ mod tests {
             source_type: SourceType::File,
             deletable,
             reason: "test".to_string(),
+            modified_at_ms: None,
         }
     }
 

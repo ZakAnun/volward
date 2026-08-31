@@ -6,6 +6,7 @@ class ScanEntryRecord {
     required this.sizeBytes,
     required this.category,
     required this.deletable,
+    this.modifiedAtMs,
   });
 
   factory ScanEntryRecord.fromWire(Map<String, dynamic> wire) {
@@ -16,6 +17,7 @@ class ScanEntryRecord {
       sizeBytes: (wire['size_bytes'] as num?)?.toInt() ?? 0,
       category: wire['category']?.toString() ?? 'Unknown',
       deletable: wire['deletable'] == true,
+      modifiedAtMs: (wire['modified_at_ms'] as num?)?.toInt(),
     );
   }
 
@@ -25,6 +27,9 @@ class ScanEntryRecord {
   final int sizeBytes;
   final String category;
   final bool deletable;
+  /// File modification time in epoch milliseconds; null when the snapshot
+  /// did not collect metadata (old snapshots, directories, unknown mtime).
+  final int? modifiedAtMs;
 
   int get categoryBit => categoryMaskFor(category);
 
@@ -36,6 +41,7 @@ class ScanEntryRecord {
       'size_bytes': sizeBytes,
       'category': category,
       'deletable': deletable,
+      if (modifiedAtMs != null) 'modified_at_ms': modifiedAtMs,
     };
   }
 

@@ -284,6 +284,7 @@ fn entry(
         },
         deletable,
         reason: reason.to_string(),
+        modified_at_ms: None,
     }
 }
 

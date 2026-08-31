@@ -44,6 +44,7 @@ pub struct SnapshotEntryRecord {
     pub size_bytes: u64,
     pub category: String,
     pub deletable: bool,
+    pub modified_at_ms: Option<i64>,
 }
 
 /// Lightweight flat file record used by capability analyzers. Produced by
@@ -57,6 +58,7 @@ pub struct CapabilityFileRecord {
     /// (e.g. "Cache", "BuildArtifact"); `None` for unclassified files.
     pub category: Option<String>,
     pub deletable: bool,
+    pub modified_at_ms: Option<i64>,
 }
 
 /// Result of a single `query_directory` / `refresh_directory` call.
@@ -119,6 +121,8 @@ struct EntryRecord {
     size_bytes: u64,
     category: u32,
     deletable: bool,
+    #[serde(default)]
+    modified_at_ms: Option<i64>,
 }
 
 /// Public-facing directory record (exposed via `directory_record()`).
@@ -176,6 +180,7 @@ pub struct SnapshotIndex {
 
 // Custom serde: compact wire format (string table + u32 ids).
 // format_version=4 adds file_size_by_path for unclassified file sizes.
+// format_version=5 adds optional modified_at_ms on entry records.
 // Readers also accept 2/3 (pre-size-map caches) via #[serde(default)].
 impl Serialize for SnapshotIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -183,7 +188,7 @@ impl Serialize for SnapshotIndex {
         S: serde::Serializer,
     {
         let mut st = serializer.serialize_struct("SnapshotIndexSerde", 17)?;
-        st.serialize_field("format_version", &4u32)?;
+        st.serialize_field("format_version", &5u32)?;
         st.serialize_field("snapshot_id", &self.snapshot_id)?;
         st.serialize_field("root_path", &self.root_path)?;
         st.serialize_field("scanned_at_ms", &self.scanned_at_ms)?;
@@ -217,9 +222,9 @@ impl<'de> Deserialize<'de> for SnapshotIndex {
     {
         use serde::de::Error;
         let s = SnapshotIndexSerde::deserialize(deserializer)?;
-        if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 {
+        if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 && s.format_version != 5 {
             return Err(D::Error::custom(format!(
-                "unsupported SnapshotIndex format_version {} (expected 2, 3, or 4)",
+                "unsupported SnapshotIndex format_version {} (expected 2, 3, 4, or 5)",
                 s.format_version
             )));
         }
@@ -362,6 +367,7 @@ impl SnapshotIndex {
                     size_bytes: entry.size_bytes,
                     category: category_id,
                     deletable: entry.deletable,
+                    modified_at_ms: entry.modified_at_ms,
                 },
             );
         }
@@ -589,6 +595,7 @@ impl SnapshotIndex {
                     size_bytes: entry.size_bytes,
                     category: category_id,
                     deletable: entry.deletable,
+                    modified_at_ms: entry.modified_at_ms,
                 },
             );
         }
@@ -773,6 +780,7 @@ impl SnapshotIndex {
                 size_bytes: entry.size_bytes,
                 category: Some(self.table.resolve(entry.category).to_string()),
                 deletable: entry.deletable,
+                modified_at_ms: entry.modified_at_ms,
             });
         }
         for (path_id, size_bytes) in &self.file_size_by_path {
@@ -786,6 +794,7 @@ impl SnapshotIndex {
                 size_bytes: *size_bytes,
                 category: None,
                 deletable: false,
+                modified_at_ms: None,
             });
         }
         files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
@@ -981,6 +990,7 @@ impl SnapshotIndex {
             size_bytes: entry.size_bytes,
             category: self.table.resolve(entry.category).to_string(),
             deletable: entry.deletable,
+            modified_at_ms: entry.modified_at_ms,
         }
     }
 }
@@ -1108,6 +1118,7 @@ impl SnapshotIndexBuilder {
                 size_bytes: entry.size_bytes,
                 category: category_id,
                 deletable: entry.deletable,
+                modified_at_ms: entry.modified_at_ms,
             },
         );
         self.add_child_once(parent_id, path_id);
@@ -1216,6 +1227,7 @@ impl SnapshotIndexBuilder {
                     size_bytes: entry.size_bytes,
                     category: category_id,
                     deletable: entry.deletable,
+                    modified_at_ms: entry.modified_at_ms,
                 },
             );
         }
@@ -1784,6 +1796,7 @@ mod tests {
                 source_type: SourceType::File,
                 deletable: true,
                 reason: "cache".to_string(),
+                modified_at_ms: None,
             }],
         }
     }
@@ -1823,6 +1836,7 @@ mod tests {
             source_type: SourceType::File,
             deletable,
             reason: "replacement".to_string(),
+            modified_at_ms: None,
         }
     }
 
@@ -2124,6 +2138,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         });
         let index = builder.finish(
             "snap-1".to_string(),
@@ -2213,6 +2228,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         });
         let index = builder.finish(
             "snap".to_string(),
@@ -2247,6 +2263,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         });
         let index = builder.finish(
             "snap".to_string(),

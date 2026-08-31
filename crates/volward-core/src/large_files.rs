@@ -105,7 +105,7 @@ fn item_for(record: CapabilityFileRecord) -> AnalysisItem {
         display_name: name_of(&path),
         size_bytes: record.size_bytes,
         is_directory: false,
-        modified_at_ms: None,
+        modified_at_ms: record.modified_at_ms,
         recommendation: Recommendation::ReviewNeeded,
         confidence: AnalysisConfidence::Medium,
         reason: "large_file".to_string(),
