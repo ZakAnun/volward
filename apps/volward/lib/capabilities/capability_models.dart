@@ -135,39 +135,46 @@ class AnalysisOptions {
   final int pageSize;
   final String? cursor;
 
-  factory AnalysisOptions.fromJson(Map<String, dynamic> json) {
-    const capability = 'options';
+  factory AnalysisOptions.fromJson(
+    Map<String, dynamic> json, {
+    required Capability capability,
+  }) {
+    final capabilityContext = capability.wireValue;
     final preset = _largeFileThresholdPreset(
       _string(
         json['large_file_threshold_preset'],
-        capability,
+        capabilityContext,
         'large_file_threshold_preset',
       ),
-      capability,
+      capabilityContext,
       'large_file_threshold_preset',
     );
     final options = AnalysisOptions(
-      rootPath: _string(json['root_path'], capability, 'root_path'),
+      rootPath: _string(json['root_path'], capabilityContext, 'root_path'),
       largeFileThresholdBytes: _int(
         json['large_file_threshold_bytes'],
-        capability,
+        capabilityContext,
         'large_file_threshold_bytes',
       ),
       largeFileThresholdPreset: preset,
       agePreset: _agePreset(
-        _string(json['age_preset'], capability, 'age_preset'),
-        capability,
+        _string(json['age_preset'], capabilityContext, 'age_preset'),
+        capabilityContext,
         'age_preset',
       ),
       similarityPreset: _similarityPreset(
-        _string(json['similarity_preset'], capability, 'similarity_preset'),
-        capability,
+        _string(
+          json['similarity_preset'],
+          capabilityContext,
+          'similarity_preset',
+        ),
+        capabilityContext,
         'similarity_preset',
       ),
-      pageSize: _int(json['page_size'], capability, 'page_size'),
-      cursor: _optionalString(json['cursor'], capability, 'cursor'),
+      pageSize: _int(json['page_size'], capabilityContext, 'page_size'),
+      cursor: _optionalString(json['cursor'], capabilityContext, 'cursor'),
     );
-    options._validate(capability);
+    options._validate(capabilityContext);
     return options;
   }
 
@@ -676,34 +683,41 @@ class DeletionPlan {
     Map<String, dynamic> json, {
     required String capability,
     required String fieldPrefix,
-  }) => DeletionPlan(
-    snapshotId: _string(
-      json['snapshot_id'],
-      capability,
-      '$fieldPrefix.snapshot_id',
-    ),
-    targetCount: _int(
-      json['target_count'],
-      capability,
-      '$fieldPrefix.target_count',
-    ),
-    targetBytes: _int(
-      json['target_bytes'],
-      capability,
-      '$fieldPrefix.target_bytes',
-    ),
-    targets: _strings(json['targets'], capability, '$fieldPrefix.targets'),
-    blockedTargets: _strings(
-      json['blocked_targets'],
-      capability,
-      '$fieldPrefix.blocked_targets',
-    ),
-    requiresConfirmation: _bool(
+  }) {
+    final requiresConfirmation = _bool(
       json['requires_confirmation'],
       capability,
       '$fieldPrefix.requires_confirmation',
-    ),
-  );
+    );
+    if (!requiresConfirmation) {
+      _malformed(capability, '$fieldPrefix.requires_confirmation');
+    }
+
+    return DeletionPlan(
+      snapshotId: _string(
+        json['snapshot_id'],
+        capability,
+        '$fieldPrefix.snapshot_id',
+      ),
+      targetCount: _int(
+        json['target_count'],
+        capability,
+        '$fieldPrefix.target_count',
+      ),
+      targetBytes: _int(
+        json['target_bytes'],
+        capability,
+        '$fieldPrefix.target_bytes',
+      ),
+      targets: _strings(json['targets'], capability, '$fieldPrefix.targets'),
+      blockedTargets: _strings(
+        json['blocked_targets'],
+        capability,
+        '$fieldPrefix.blocked_targets',
+      ),
+      requiresConfirmation: true,
+    );
+  }
 
   DeletionPlan copyWith({
     List<String>? targets,

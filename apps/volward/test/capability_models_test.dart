@@ -87,7 +87,59 @@ void main() {
       ),
     );
   });
+
+  test('reports malformed options with the affected capability', () {
+    final payload = _optionsPayload()..['page_size'] = 0;
+
+    expect(
+      () =>
+          AnalysisOptions.fromJson(payload, capability: Capability.largeFiles),
+      throwsA(
+        isA<FormatException>()
+            .having(
+              (error) => error.message,
+              'message',
+              contains('large_files'),
+            )
+            .having((error) => error.message, 'message', contains('page_size')),
+      ),
+    );
+  });
+
+  test('rejects deletion plans without mandatory confirmation', () {
+    final payload = _resultPayload();
+    (payload['deletion_plan']
+            as Map<String, dynamic>)['requires_confirmation'] =
+        false;
+
+    expect(
+      () => CapabilityAnalysisResult.fromJson(payload),
+      throwsA(
+        isA<FormatException>()
+            .having(
+              (error) => error.message,
+              'message',
+              contains('large_files'),
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              contains('deletion_plan.requires_confirmation'),
+            ),
+      ),
+    );
+  });
 }
+
+Map<String, dynamic> _optionsPayload() => {
+  'root_path': '/Users/me/Downloads',
+  'large_file_threshold_bytes': 50000000,
+  'large_file_threshold_preset': '50_mb',
+  'age_preset': '30_days',
+  'similarity_preset': 'balanced',
+  'page_size': 100,
+  'cursor': null,
+};
 
 Map<String, dynamic> _resultPayload() => {
   'schema_version': 1,

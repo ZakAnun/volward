@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::de::Error as DeError;
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 pub use crate::model::CapabilityLevel;
@@ -254,7 +255,7 @@ pub struct AnalysisPreview {
     pub locatable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DeletionPlan {
     pub snapshot_id: String,
     pub target_count: u64,
@@ -262,6 +263,37 @@ pub struct DeletionPlan {
     pub targets: Vec<String>,
     pub blocked_targets: Vec<String>,
     pub requires_confirmation: bool,
+}
+
+#[derive(Deserialize)]
+struct DeletionPlanWire {
+    snapshot_id: String,
+    target_count: u64,
+    target_bytes: u64,
+    targets: Vec<String>,
+    blocked_targets: Vec<String>,
+    requires_confirmation: bool,
+}
+
+impl<'de> Deserialize<'de> for DeletionPlan {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let plan = DeletionPlanWire::deserialize(deserializer)?;
+        if !plan.requires_confirmation {
+            return Err(D::Error::custom("requires_confirmation must be true"));
+        }
+
+        Ok(Self {
+            snapshot_id: plan.snapshot_id,
+            target_count: plan.target_count,
+            target_bytes: plan.target_bytes,
+            targets: plan.targets,
+            blocked_targets: plan.blocked_targets,
+            requires_confirmation: true,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -384,6 +416,21 @@ mod tests {
             serde_json::to_value(three_items).unwrap()["default_expanded"],
             false
         );
+    }
+
+    #[test]
+    fn deletion_plan_rejects_missing_confirmation() {
+        let plan = serde_json::json!({
+            "snapshot_id": "snapshot-1",
+            "target_count": 0,
+            "target_bytes": 0,
+            "targets": [],
+            "blocked_targets": [],
+            "requires_confirmation": false,
+        });
+
+        let error = serde_json::from_value::<DeletionPlan>(plan).unwrap_err();
+        assert!(error.to_string().contains("requires_confirmation"));
     }
 
     fn sample_result() -> CapabilityAnalysisResult {
