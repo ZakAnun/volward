@@ -14,8 +14,9 @@ use crate::{CapabilityAnalysisPhase, CAPABILITY_SCHEMA_VERSION};
 pub const SIMILAR_PHOTOS_ANALYZER_VERSION: &str = "similar_photos-v1";
 const PHOTO_PRESET_VERSION: u32 = 1;
 
-/// Upper bound on decoded pixels (e.g. 40 MP) so decode memory stays bounded.
-const MAX_DECODE_PIXELS: u64 = 40_000_000;
+/// Upper bound on decoded pixels (24 MP ≈ 72 MB RGB) so decode memory stays
+/// bounded; larger images are surfaced as review-only rather than decoded.
+const MAX_DECODE_PIXELS: u64 = 24_000_000;
 const IMAGE_EXTENSIONS: [&str; 8] = [
     "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff",
 ];
