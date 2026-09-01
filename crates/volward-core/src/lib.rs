@@ -7,6 +7,7 @@ pub mod capability_job;
 pub mod capability_registry;
 pub mod cleanup_candidates;
 pub mod delete;
+pub mod duplicates;
 pub mod index;
 pub mod large_files;
 pub mod manifest;
@@ -25,6 +26,7 @@ pub use capability::*;
 pub use capability_job::*;
 pub use capability_registry::*;
 pub use cleanup_candidates::*;
+pub use duplicates::*;
 pub use large_files::*;
 pub use ai_candidates::{
     ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, AiCandidate,

@@ -26,6 +26,7 @@ impl CapabilityAnalyzer for LargeFileAnalyzer {
         index: &SnapshotIndex,
         normalized_root: &str,
         options: &AnalysisOptions,
+        _progress: &dyn crate::CapabilityProgressSink,
     ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
         let threshold = options.large_file_threshold_bytes;
         let page_size = options.page_size as usize;
@@ -208,6 +209,7 @@ fn name_of(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capability_registry::NoopProgressSink;
     use crate::index::SnapshotIndexBuilder;
     use crate::model::ScanStats;
 
@@ -233,7 +235,7 @@ mod tests {
 
     fn analyze(index: &SnapshotIndex, options: &AnalysisOptions) -> CapabilityAnalysisResult {
         LargeFileAnalyzer
-            .analyze(index, "/root", options)
+            .analyze(index, "/root", options, &NoopProgressSink)
             .expect("large file analysis")
     }
 
@@ -248,7 +250,7 @@ mod tests {
         assert_eq!(result.summary.safe_count, 0);
         assert_eq!(result.summary.total_bytes, 435_000_000);
         assert!(result.groups.iter().all(|group| group.group_path.starts_with("/root")));
-        assert!(result.groups.iter().all(|group| group.items.len() >= 1));
+        assert!(result.groups.iter().all(|group| !group.items.is_empty()));
     }
 
     #[test]

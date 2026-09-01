@@ -19,7 +19,8 @@ use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, AiCandidateBuilder, AnalysisOptions, Capability,
     CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
-    CleanupCandidateAnalyzer, LargeFileAnalyzer, OsKnowledgeBase, DEFAULT_CANDIDATE_CAP,
+    CleanupCandidateAnalyzer, DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink,
+    OsKnowledgeBase, DEFAULT_CANDIDATE_CAP,
 };
 
 use crate::proto;
@@ -85,6 +86,9 @@ impl VolwardEngine {
         capability_registry.register(Arc::new(CleanupCandidateAnalyzer::new(load_classifier(
             platform.as_ref(),
         ))));
+        capability_registry.register(Arc::new(DuplicateFileAnalyzer::new(
+            platform.protected_prefixes().to_vec(),
+        )));
         Self {
             platform,
             cancel: Arc::new(AtomicBool::new(false)),
@@ -186,7 +190,7 @@ impl VolwardEngine {
                 snapshot_id,
             ));
         };
-        match registry.analyze(&index, snapshot_id, capability, &options) {
+        match registry.analyze(&index, snapshot_id, capability, &options, &NoopProgressSink) {
             Ok(result) => serde_json::json!({ "result": result }).to_string(),
             Err(error) => capability_error_json(&error),
         }
@@ -277,7 +281,13 @@ impl VolwardEngine {
                         &job_snapshot,
                     ));
                 }
-                registry.analyze(&current, &job_snapshot, job_capability, &job_options)
+                registry.analyze(
+                    &current,
+                    &job_snapshot,
+                    job_capability,
+                    &job_options,
+                    &job_handle,
+                )
             })();
 
             if job_handle.is_cancelled() {
@@ -1464,6 +1474,7 @@ mod tests {
             index: &SnapshotIndex,
             normalized_root: &str,
             _options: &AnalysisOptions,
+            _progress: &dyn volward_core::CapabilityProgressSink,
         ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
             if let Some(started) = self.started.lock().unwrap().take() {
                 started.send(()).unwrap();

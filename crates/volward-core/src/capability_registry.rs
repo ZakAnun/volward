@@ -5,9 +5,41 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::{
-    AnalysisOptions, Capability, CapabilityAnalysisResult, SnapshotIndex,
-    CAPABILITY_SCHEMA_VERSION,
+    AnalysisOptions, Capability, CapabilityAnalysisPhase, CapabilityAnalysisResult,
+    SnapshotIndex, CAPABILITY_SCHEMA_VERSION,
 };
+
+/// Progress/cancellation view handed to analyzers for long-running work
+/// (content hashing, image decoding). Cheap analyzers may ignore it.
+pub trait CapabilityProgressSink: Send + Sync {
+    fn report(
+        &self,
+        phase: CapabilityAnalysisPhase,
+        processed: u64,
+        total: u64,
+        current_path: Option<String>,
+    );
+
+    fn is_cancelled(&self) -> bool;
+}
+
+/// No-op sink for synchronous analysis paths without a job handle.
+pub struct NoopProgressSink;
+
+impl CapabilityProgressSink for NoopProgressSink {
+    fn report(
+        &self,
+        _phase: CapabilityAnalysisPhase,
+        _processed: u64,
+        _total: u64,
+        _current_path: Option<String>,
+    ) {
+    }
+
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
 
 pub trait CapabilityAnalyzer: Send + Sync {
     fn capability(&self) -> Capability;
@@ -17,6 +49,7 @@ pub trait CapabilityAnalyzer: Send + Sync {
         index: &SnapshotIndex,
         normalized_root: &str,
         options: &AnalysisOptions,
+        progress: &dyn CapabilityProgressSink,
     ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError>;
 }
 
@@ -109,6 +142,7 @@ impl CapabilityRegistry {
         snapshot_id: &str,
         capability: Capability,
         options: &AnalysisOptions,
+        progress: &dyn CapabilityProgressSink,
     ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
         if index.snapshot_id != snapshot_id {
             return Err(CapabilityAnalysisError::for_request(
@@ -134,7 +168,7 @@ impl CapabilityRegistry {
             .get(&capability)
             .ok_or_else(|| CapabilityAnalysisError::unsupported(capability, snapshot_id))?;
         let normalized_root = normalize_root(&options.root_path, &index.root_path);
-        let result = analyzer.analyze(index, &normalized_root, options)?;
+        let result = analyzer.analyze(index, &normalized_root, options, progress)?;
         validate_result(&result, snapshot_id, capability, &normalized_root)?;
         Ok(result)
     }
@@ -219,9 +253,9 @@ mod tests {
 
     use crate::{
         AnalysisOptions, AnalysisSummary, Capability, CapabilityAnalysisError,
-        CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityLevel, CapabilityRegistry,
-        DeletionPlan, ScanStats, ScanTreeNode, SnapshotIndex, StorageSnapshot,
-        CAPABILITY_SCHEMA_VERSION,
+        CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityLevel, CapabilityProgressSink,
+        CapabilityRegistry, DeletionPlan, NoopProgressSink, ScanStats, ScanTreeNode,
+        SnapshotIndex, StorageSnapshot, CAPABILITY_SCHEMA_VERSION,
     };
 
     struct FakeAnalyzer {
@@ -238,6 +272,7 @@ mod tests {
             index: &SnapshotIndex,
             normalized_root: &str,
             _options: &AnalysisOptions,
+            _progress: &dyn CapabilityProgressSink,
         ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
             *self.observed_root.lock().unwrap() = Some(normalized_root.to_string());
             Ok(result(index, normalized_root))
@@ -258,7 +293,13 @@ mod tests {
         };
 
         let analysis = registry
-            .analyze(&index, "snapshot-1", Capability::LargeFiles, &options)
+            .analyze(
+                &index,
+                "snapshot-1",
+                Capability::LargeFiles,
+                &options,
+                &NoopProgressSink,
+            )
             .expect("registered analyzer should run");
 
         assert_eq!(observed_root.lock().unwrap().as_deref(), Some("/root/folder"));
@@ -273,6 +314,7 @@ mod tests {
                 "snapshot-1",
                 Capability::DuplicateFiles,
                 &AnalysisOptions::default(),
+                &NoopProgressSink,
             )
             .expect_err("unregistered capability should be unsupported");
 
@@ -297,6 +339,7 @@ mod tests {
                 index: &SnapshotIndex,
                 normalized_root: &str,
                 _options: &AnalysisOptions,
+                _progress: &dyn CapabilityProgressSink,
             ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
                 let mut result = result(index, normalized_root);
                 result.snapshot_id = "stale-snapshot".to_string();
@@ -312,6 +355,7 @@ mod tests {
                 "snapshot-1",
                 Capability::LargeFiles,
                 &AnalysisOptions::default(),
+                &NoopProgressSink,
             )
             .expect_err("mismatched result should be rejected");
 

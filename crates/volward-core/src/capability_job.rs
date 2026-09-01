@@ -7,6 +7,7 @@ use crate::{
     Capability, CapabilityAnalysisPhase, CapabilityAnalysisProgress,
     CapabilityAnalysisResult,
 };
+use crate::capability_registry::CapabilityProgressSink;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CapabilityJobStatus {
@@ -91,6 +92,22 @@ impl CapabilityJobHandle {
         record.status.progress.current_path = None;
         record.status.result = None;
         true
+    }
+}
+
+impl CapabilityProgressSink for CapabilityJobHandle {
+    fn report(
+        &self,
+        phase: CapabilityAnalysisPhase,
+        processed: u64,
+        total: u64,
+        current_path: Option<String>,
+    ) {
+        self.update_progress(phase, processed, total, current_path);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        CapabilityJobHandle::is_cancelled(self)
     }
 }
 

@@ -1,10 +1,7 @@
-use std::collections::HashMap;
-
 use crate::ai_candidates::ai_cleanup_hint_for_path;
 use crate::capability::{
-    AnalysisConfidence, AnalysisGroup, AnalysisItem, AnalysisOptions, AnalysisPreview,
-    AnalysisSummary, Capability, CapabilityAnalysisResult, CapabilityLevel, DeletionPlan,
-    Recommendation,
+    AnalysisConfidence, AnalysisItem, AnalysisOptions, AnalysisPreview, AnalysisSummary,
+    Capability, CapabilityAnalysisResult, CapabilityLevel, DeletionPlan, Recommendation,
 };
 use crate::capability_registry::{CapabilityAnalysisError, CapabilityAnalyzer};
 use crate::classify::Classifier;
@@ -39,6 +36,7 @@ impl CapabilityAnalyzer for CleanupCandidateAnalyzer {
         index: &SnapshotIndex,
         normalized_root: &str,
         options: &AnalysisOptions,
+        _progress: &dyn crate::CapabilityProgressSink,
     ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
         let page_size = options.page_size as usize;
         let mut items = Vec::new();
@@ -94,7 +92,7 @@ impl CapabilityAnalyzer for CleanupCandidateAnalyzer {
 
                 let (recommendation, confidence, reason, deletable) =
                     match (category, hint.as_ref().map(|h| h.source)) {
-                        (Some(category), _) if category == "BuildArtifact" => (
+                        (Some("BuildArtifact"), _) => (
                             Recommendation::SafeToRemove,
                             AnalysisConfidence::High,
                             "cleanup:build_artifact".to_string(),
@@ -161,7 +159,7 @@ impl CapabilityAnalyzer for CleanupCandidateAnalyzer {
             }
         }
 
-        let groups = group_items(&items, normalized_root);
+        let groups = crate::capability::group_items_by_direct_child(&items, normalized_root);
         let item_count = items.len() as u64;
         let total_bytes = items.iter().map(|item| item.size_bytes).sum();
         let safe_count = items
@@ -206,69 +204,6 @@ fn cleanup_category(record: &CapabilityFileRecord) -> Option<&'static str> {
         .and_then(|category| CLEANUP_CATEGORIES.iter().copied().find(|c| *c == category))
 }
 
-fn group_items(items: &[AnalysisItem], normalized_root: &str) -> Vec<AnalysisGroup> {
-    let mut groups: Vec<AnalysisGroup> = Vec::new();
-    let mut by_key: HashMap<String, usize> = HashMap::new();
-    for item in items {
-        let dir = direct_child_of(&item.path, normalized_root);
-        let key = format!("group:{dir}");
-        let index = match by_key.get(&key) {
-            Some(&index) => index,
-            None => {
-                let title = name_of(&dir);
-                groups.push(AnalysisGroup::new(key.clone(), dir, title, Vec::new()));
-                let index = groups.len() - 1;
-                by_key.insert(key, index);
-                index
-            }
-        };
-        groups[index].items.push(item.clone());
-    }
-    for group in &mut groups {
-        group.items.sort_by(|a, b| {
-            b.size_bytes
-                .cmp(&a.size_bytes)
-                .then_with(|| a.path.cmp(&b.path))
-        });
-        let item_count = group.items.len() as u64;
-        group.item_count = item_count;
-        group.total_bytes = group.items.iter().map(|item| item.size_bytes).sum();
-        group.safe_count = group
-            .items
-            .iter()
-            .filter(|item| item.recommendation == Recommendation::SafeToRemove)
-            .count() as u64;
-        group.review_count = group
-            .items
-            .iter()
-            .filter(|item| item.recommendation == Recommendation::ReviewNeeded)
-            .count() as u64;
-        group.kept_count = group
-            .items
-            .iter()
-            .filter(|item| item.recommendation == Recommendation::Keep)
-            .count() as u64;
-        group.default_expanded = (1..=2).contains(&item_count);
-    }
-    groups
-}
-
-fn direct_child_of(path: &str, root: &str) -> String {
-    let path = path.replace('\\', "/");
-    let root = root.replace('\\', "/");
-    let root = root.trim_end_matches('/');
-    let prefix = if root.is_empty() { "/" } else { root };
-    let rest = path
-        .strip_prefix(prefix)
-        .map(|rest| rest.trim_start_matches('/'))
-        .unwrap_or(path.as_str());
-    if rest.is_empty() || !rest.contains('/') {
-        return if root.is_empty() { "/".to_string() } else { root.to_string() };
-    }
-    let child = rest.split('/').next().unwrap_or("");
-    format!("{root}/{child}")
-}
-
 fn name_of(path: &str) -> String {
     path.rsplit('/')
         .next()
@@ -280,6 +215,7 @@ fn name_of(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capability_registry::NoopProgressSink;
     use crate::index::SnapshotIndexBuilder;
     use crate::model::{EntryCategory, RiskLevel, ScanStats, SourceType, StorageEntry};
 
@@ -348,7 +284,7 @@ mod tests {
         index: &SnapshotIndex,
     ) -> CapabilityAnalysisResult {
         analyzer
-            .analyze(index, "/root", &AnalysisOptions::default())
+            .analyze(index, "/root", &AnalysisOptions::default(), &NoopProgressSink)
             .expect("cleanup analysis")
     }
 

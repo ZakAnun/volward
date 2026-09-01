@@ -217,6 +217,89 @@ impl AnalysisGroup {
     }
 }
 
+/// Groups items by the root's direct child directory and recomputes each
+/// group's aggregates. Shared by directory-grouped analyzers (cleanup,
+/// duplicates); large files additionally subdivides by file type.
+pub(crate) fn group_items_by_direct_child(
+    items: &[AnalysisItem],
+    normalized_root: &str,
+) -> Vec<AnalysisGroup> {
+    use std::collections::HashMap;
+
+    let mut groups: Vec<AnalysisGroup> = Vec::new();
+    let mut by_key: HashMap<String, usize> = HashMap::new();
+    for item in items {
+        let dir = direct_child_of(&item.path, normalized_root);
+        let key = format!("group:{dir}");
+        let index = match by_key.get(&key) {
+            Some(&index) => index,
+            None => {
+                let title = name_of(&dir);
+                groups.push(AnalysisGroup::new(key.clone(), dir, title, Vec::new()));
+                let index = groups.len() - 1;
+                by_key.insert(key, index);
+                index
+            }
+        };
+        groups[index].items.push(item.clone());
+    }
+    for group in &mut groups {
+        group.items.sort_by(|a, b| {
+            b.size_bytes
+                .cmp(&a.size_bytes)
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        recompute_group(group);
+    }
+    groups
+}
+
+fn recompute_group(group: &mut AnalysisGroup) {
+    let item_count = group.items.len() as u64;
+    group.item_count = item_count;
+    group.total_bytes = group.items.iter().map(|item| item.size_bytes).sum();
+    group.safe_count = group
+        .items
+        .iter()
+        .filter(|item| item.recommendation == Recommendation::SafeToRemove)
+        .count() as u64;
+    group.review_count = group
+        .items
+        .iter()
+        .filter(|item| item.recommendation == Recommendation::ReviewNeeded)
+        .count() as u64;
+    group.kept_count = group
+        .items
+        .iter()
+        .filter(|item| item.recommendation == Recommendation::Keep)
+        .count() as u64;
+    group.default_expanded = (1..=2).contains(&item_count);
+}
+
+fn direct_child_of(path: &str, root: &str) -> String {
+    let path = path.replace('\\', "/");
+    let root = root.replace('\\', "/");
+    let root = root.trim_end_matches('/');
+    let prefix = if root.is_empty() { "/" } else { root };
+    let rest = path
+        .strip_prefix(prefix)
+        .map(|rest| rest.trim_start_matches('/'))
+        .unwrap_or(path.as_str());
+    if rest.is_empty() || !rest.contains('/') {
+        return if root.is_empty() { "/".to_string() } else { root.to_string() };
+    }
+    let child = rest.split('/').next().unwrap_or("");
+    format!("{root}/{child}")
+}
+
+fn name_of(path: &str) -> String {
+    path.rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
+        .to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisItem {
     pub id: String,
