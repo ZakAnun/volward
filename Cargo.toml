@@ -27,3 +27,4 @@ dirs = "5"
 prost = "0.13"
 prost-build = "0.13"
 sha2 = "0.10"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tiff", "webp"] }

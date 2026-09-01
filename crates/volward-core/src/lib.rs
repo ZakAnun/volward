@@ -16,6 +16,7 @@ pub mod platform;
 pub mod rules;
 pub mod scan;
 pub mod scan_tree;
+pub mod similar_photos;
 pub mod snapshot_catalog;
 pub mod string_table;
 
@@ -28,6 +29,7 @@ pub use capability_registry::*;
 pub use cleanup_candidates::*;
 pub use duplicates::*;
 pub use large_files::*;
+pub use similar_photos::*;
 pub use ai_candidates::{
     ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, AiCandidate,
     AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,

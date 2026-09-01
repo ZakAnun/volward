@@ -20,7 +20,7 @@ use volward_core::{
     ai_aggregate_path_from_delete_target, AiCandidateBuilder, AnalysisOptions, Capability,
     CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
     CleanupCandidateAnalyzer, DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink,
-    OsKnowledgeBase, DEFAULT_CANDIDATE_CAP,
+    OsKnowledgeBase, SimilarPhotoAnalyzer, DEFAULT_CANDIDATE_CAP,
 };
 
 use crate::proto;
@@ -87,6 +87,9 @@ impl VolwardEngine {
             platform.as_ref(),
         ))));
         capability_registry.register(Arc::new(DuplicateFileAnalyzer::new(
+            platform.protected_prefixes().to_vec(),
+        )));
+        capability_registry.register(Arc::new(SimilarPhotoAnalyzer::new(
             platform.protected_prefixes().to_vec(),
         )));
         Self {
@@ -1597,10 +1600,11 @@ mod tests {
         .unwrap();
         assert_eq!(mismatch["error"]["code"], "snapshot_mismatch");
 
-        // large_files/cleanup_candidates are registered by `new()`; an
-        // unregistered capability must still return a structured error.
+        // large_files/cleanup_candidates/duplicate_files/similar_photos are
+        // registered by `new()`; an unregistered capability must still
+        // return a structured error.
         let unsupported: serde_json::Value = serde_json::from_str(
-            &engine.analyze_capability_json("test-snap", "similar_photos", &options_json()),
+            &engine.analyze_capability_json("test-snap", "applications", &options_json()),
         )
         .unwrap();
         assert_eq!(unsupported["error"]["code"], "unsupported_capability");
