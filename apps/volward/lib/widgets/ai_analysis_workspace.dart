@@ -1561,9 +1561,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         group: visibleGroup.group,
         expanded: _expandedGroupPaths.contains(visibleGroup.group.path),
         selectionValue: _safeGroupSelectionValue(visibleGroup.items),
-        checkboxTooltip: _safeGroupSelectionValue(visibleGroup.items) == false
-            ? null
-            : context.l10n.aiResultsClearGroupSelection,
         onSelectionChanged:
             visibleGroup.items
                 .where((item) => item.verdict == 'safe_to_remove')
@@ -1795,7 +1792,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           suffixIcon: _resultsQuery.isEmpty
               ? null
               : IconButton(
-                  tooltip: context.l10n.aiResultsClearSearch,
                   icon: const Icon(Icons.clear_rounded, size: 18),
                   onPressed: () => setState(() {
                     _resultsSearchController.clear();
@@ -1873,8 +1869,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final tokens = context.volward;
     return PopupMenuButton<T>(
       initialValue: initialValue,
+      tooltip: null,
       onSelected: onSelected,
-      tooltip: '',
       color: tokens.canvas,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppleRadius.sm),
@@ -2138,7 +2134,6 @@ class _ResultGroupRow extends StatelessWidget {
     required this.group,
     required this.expanded,
     required this.selectionValue,
-    required this.checkboxTooltip,
     required this.onSelectionChanged,
     required this.onTap,
     required this.summaryLabel,
@@ -2148,7 +2143,6 @@ class _ResultGroupRow extends StatelessWidget {
   final AiResultGroup group;
   final bool expanded;
   final bool? selectionValue;
-  final String? checkboxTooltip;
   final ValueChanged<bool?>? onSelectionChanged;
   final VoidCallback onTap;
   final String summaryLabel;
@@ -2185,9 +2179,7 @@ class _ResultGroupRow extends StatelessWidget {
               height: 40,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: checkboxTooltip == null
-                    ? checkbox
-                    : Tooltip(message: checkboxTooltip, child: checkbox),
+                child: checkbox,
               ),
             ),
           ),
@@ -2747,15 +2739,12 @@ class _WorkspaceHeader extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 420;
-              final backButton = Tooltip(
-                message: l10n.aiWorkspaceBack,
-                child: AppleButton(
-                  key: AiAnalysisWorkspace.backKey,
-                  label: compact ? l10n.back : l10n.aiWorkspaceBack,
-                  icon: Icons.arrow_back,
-                  variant: AppleButtonVariant.pearl,
-                  onPressed: onBack,
-                ),
+              final backButton = AppleButton(
+                key: AiAnalysisWorkspace.backKey,
+                label: compact ? l10n.back : l10n.aiWorkspaceBack,
+                icon: Icons.arrow_back,
+                variant: AppleButtonVariant.pearl,
+                onPressed: onBack,
               );
               if (compact) {
                 return Column(
@@ -2819,15 +2808,12 @@ class _PathLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       value: path,
-      child: Tooltip(
-        message: path,
-        child: Text(
-          path,
-          maxLines: maxLines,
-          softWrap: true,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        ),
+      child: Text(
+        path,
+        maxLines: maxLines,
+        softWrap: true,
+        overflow: TextOverflow.ellipsis,
+        style: style,
       ),
     );
   }

@@ -1722,36 +1722,33 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                 ),
               ),
               const SizedBox(width: AppleSpacing.xs),
-              Tooltip(
-                message: _scanTargetLabel(context),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _s.scanRoots.isEmpty
-                          ? context.l10n.scanTargetHomeShort
-                          : context.l10n.scanTargetCustomShort,
-                      style: context.vwFinePrint,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _s.scanRoots.isEmpty
+                        ? context.l10n.scanTargetHomeShort
+                        : context.l10n.scanTargetCustomShort,
+                    style: context.vwFinePrint,
+                  ),
+                  if (_s.scanning) ...[
+                    const SizedBox(width: 4),
+                    ValueListenableBuilder<double?>(
+                      valueListenable: _s.scannedFractionNotifier,
+                      builder: (ctx, frac, _) {
+                        return Text(
+                          frac != null ? '${(frac * 100).round()}%' : '…',
+                          style: ctx.vwFinePrint.copyWith(
+                            color: ctx.volward.primary,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                    if (_s.scanning) ...[
-                      const SizedBox(width: 4),
-                      ValueListenableBuilder<double?>(
-                        valueListenable: _s.scannedFractionNotifier,
-                        builder: (ctx, frac, _) {
-                          return Text(
-                            frac != null ? '${(frac * 100).round()}%' : '…',
-                            style: ctx.vwFinePrint.copyWith(
-                              color: ctx.volward.primary,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
               const SizedBox(width: AppleSpacing.xs),
               IconButton(
@@ -1760,7 +1757,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                   size: 18,
                   color: context.volward.inkMuted80,
                 ),
-                tooltip: context.l10n.scanActionRescan,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: (_s.canRefreshCurrentDirectory && !busy)
@@ -2362,31 +2358,28 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       ),
       child: Row(
         children: [
-          Tooltip(
-            message: context.l10n.scanActionHome,
-            child: Semantics(
-              button: true,
-              label: context.l10n.scanActionHome,
-              child: InkWell(
-                key: DirectoryDetailsPage.logoKey,
-                onTap: _showHome,
-                borderRadius: BorderRadius.circular(AppleRadius.sm),
-                child: ExcludeSemantics(
-                  child: Row(
-                    children: [
-                      const VolwardLogoMark(size: 20),
-                      const SizedBox(width: AppleSpacing.sm),
-                      Text(
-                        'Volward',
-                        style: AppleTypography.navLink.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.12,
-                          color: v.bodyOnDark,
-                        ),
+          Semantics(
+            button: true,
+            label: context.l10n.scanActionHome,
+            child: InkWell(
+              key: DirectoryDetailsPage.logoKey,
+              onTap: _showHome,
+              borderRadius: BorderRadius.circular(AppleRadius.sm),
+              child: ExcludeSemantics(
+                child: Row(
+                  children: [
+                    const VolwardLogoMark(size: 20),
+                    const SizedBox(width: AppleSpacing.sm),
+                    Text(
+                      'Volward',
+                      style: AppleTypography.navLink.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.12,
+                        color: v.bodyOnDark,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2397,7 +2390,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
           Text(context.l10n.navSubtitle, style: context.vwNavLinkMuted),
           const Spacer(),
           IconButton(
-            tooltip: context.l10n.settingsTooltip,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             icon: Icon(Icons.settings_outlined, size: 18, color: v.bodyMuted),
@@ -2476,7 +2468,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
           ),
           IconButton(
             icon: Icon(Icons.expand_more, size: 18, color: v.inkMuted80),
-            tooltip: l10n.permissionShowDetails,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             onPressed: () => setState(() => _permissionBannerExpanded = true),
@@ -2506,7 +2497,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
               ),
               IconButton(
                 icon: Icon(Icons.expand_less, size: 18, color: v.inkMuted80),
-                tooltip: l10n.permissionHideDetails,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: () =>

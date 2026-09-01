@@ -1148,35 +1148,32 @@ class _AccentSwatch extends StatelessWidget {
       button: true,
       label: label,
       selected: selected,
-      child: Tooltip(
-        message: label,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppleRadius.pill),
-          child: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? v.ink : v.hairline,
-                width: selected ? 2.5 : 1,
-              ),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppleRadius.pill),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? v.ink : v.hairline,
+              width: selected ? 2.5 : 1,
             ),
-            child: selected
-                ? const Icon(Icons.check, size: 16, color: Colors.white)
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ]
                 : null,
           ),
+          child: selected
+              ? const Icon(Icons.check, size: 16, color: Colors.white)
+              : null,
         ),
       ),
     );

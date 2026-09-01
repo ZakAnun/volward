@@ -2267,7 +2267,7 @@ void main() {
     expect(find.text('1 项待确认内容在你决定前不会加入清理。'), findsOneWidget);
   });
 
-  testWidgets('long paths expose tooltip and full semantic value', (
+  testWidgets('long paths keep full semantic value without hover tooltip', (
     tester,
   ) async {
     const longPath =
@@ -2290,10 +2290,7 @@ void main() {
         ],
       );
 
-      final tooltip = find.byWidgetPredicate(
-        (widget) => widget is Tooltip && widget.message == longPath,
-      );
-      expect(tooltip, findsOneWidget);
+      expect(find.byTooltip(longPath), findsNothing);
       final semanticsNode = tester.getSemantics(find.text(longPath));
       expect(semanticsNode.value, longPath);
       expect(tester.takeException(), isNull);

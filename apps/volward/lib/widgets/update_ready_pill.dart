@@ -77,7 +77,6 @@ class UpdateReadyPill extends StatelessWidget {
                     key: dismissKey,
                     iconSize: 16,
                     visualDensity: VisualDensity.compact,
-                    tooltip: l10n.updateReadyDismissTooltip,
                     color: v.onPrimary,
                     icon: const Icon(Icons.close_rounded),
                     onPressed: updater.dismissReadyToInstall,

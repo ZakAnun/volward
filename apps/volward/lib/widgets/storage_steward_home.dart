@@ -459,7 +459,6 @@ class _HeroTopbar extends StatelessWidget {
             order: const NumericFocusOrder(_settingsFocusOrder),
             child: IconButton(
               key: StorageStewardHome.settingsKey,
-              tooltip: l10n.settingsTooltip,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               icon: const Icon(
@@ -887,16 +886,13 @@ class _StatPanel extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Tooltip(
-                        message: capacityPath,
-                        child: Text(
-                          capacityPath,
-                          key: StorageStewardHome.capacityPathKey,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.vwFinePrint.copyWith(
-                            color: Colors.white.withValues(alpha: 0.58),
-                          ),
+                      Text(
+                        capacityPath,
+                        key: StorageStewardHome.capacityPathKey,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwFinePrint.copyWith(
+                          color: Colors.white.withValues(alpha: 0.58),
                         ),
                       ),
                       const SizedBox(height: 8), // Reduced from 10
@@ -1575,8 +1571,8 @@ class _VolumeSelector extends StatelessWidget {
         value: selectedLabel,
         child: PopupMenuButton<StorageLocationInfo>(
           enabled: enabled,
+          tooltip: null,
           initialValue: selected,
-          tooltip: l10n.homeScanTargets,
           onSelected: onSelected,
           itemBuilder: (context) => [
             for (final location in locations)
@@ -1758,40 +1754,36 @@ class _TargetMenuTile extends StatelessWidget {
           color: selected ? selectedLine : Colors.white.withValues(alpha: 0.08),
         ),
       ),
-      child: Tooltip(
-        message:
-            recentFallback ? context.l10n.homeRecentFolders : location.path,
-        child: hasMenu
-            ? KeyedSubtree(
-                key: tileKey,
-                child: ExcludeSemantics(child: tileContent),
-              )
-            : InkWell(
-                key: tileKey,
+      child: hasMenu
+          ? KeyedSubtree(
+              key: tileKey,
+              child: ExcludeSemantics(child: tileContent),
+            )
+          : InkWell(
+              key: tileKey,
+              onTap: enabled && onSelectTarget != null
+                  ? () => onSelectTarget!(location)
+                  : null,
+              borderRadius: BorderRadius.circular(16),
+              child: Semantics(
+                key: ValueKey(
+                  recentFallback
+                      ? 'storage-recent-folders-semantics'
+                      : 'storage-target-semantics-${location.id}',
+                ),
+                selected: selected,
+                button: true,
+                enabled: enabled,
+                label: label,
+                value: recentFallback
+                    ? choices.length.toString()
+                    : location.path,
                 onTap: enabled && onSelectTarget != null
                     ? () => onSelectTarget!(location)
                     : null,
-                borderRadius: BorderRadius.circular(16),
-                child: Semantics(
-                  key: ValueKey(
-                    recentFallback
-                        ? 'storage-recent-folders-semantics'
-                        : 'storage-target-semantics-${location.id}',
-                  ),
-                  selected: selected,
-                  button: true,
-                  enabled: enabled,
-                  label: label,
-                  value: recentFallback
-                      ? choices.length.toString()
-                      : location.path,
-                  onTap: enabled && onSelectTarget != null
-                      ? () => onSelectTarget!(location)
-                      : null,
-                  child: ExcludeSemantics(child: tileContent),
-                ),
+                child: ExcludeSemantics(child: tileContent),
               ),
-      ),
+            ),
     );
     if (!hasMenu) {
       return GestureDetector(
@@ -1826,7 +1818,7 @@ class _TargetMenuTile extends StatelessWidget {
               ? StorageStewardHome.recentFoldersKey
               : ValueKey('storage-target-menu-${location.id}'),
           enabled: enabled,
-          tooltip: label,
+          tooltip: null,
           color: menuSurface,
           elevation: 0,
           shadowColor: Colors.transparent,

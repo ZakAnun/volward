@@ -1761,7 +1761,7 @@ void main() {
       );
       expect(find.text('Deep Archive'), findsWidgets);
       expect(find.text(customPath), findsNothing);
-      expect(find.byTooltip(customPath), findsOneWidget);
+      expect(find.byTooltip(customPath), findsNothing);
 
       final customData = tester
           .getSemantics(
@@ -1795,7 +1795,7 @@ void main() {
         find.byKey(const ValueKey('storage-target-selected-drive-d')),
         findsOneWidget,
       );
-      expect(find.byTooltip('d:/'), findsOneWidget);
+      expect(find.byTooltip('d:/'), findsNothing);
 
       final customData = tester
           .getSemantics(
@@ -2264,7 +2264,7 @@ void main() {
       );
       expect(capacity.getSemanticsData().flagsCollection.isButton, isFalse);
       expect(capacity.getSemanticsData().value, '/');
-      expect(find.byTooltip('/'), findsOneWidget);
+      expect(find.byTooltip('/'), findsNothing);
       expect(panel.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
       expect({target.id, choose.id, browse.id, scan.id, capacity.id}.length, 5);
     } finally {
@@ -2363,7 +2363,7 @@ void main() {
           await tester.pump();
 
           expect(tester.takeException(), isNull);
-          expect(find.byTooltip(longPath), findsOneWidget);
+          expect(find.byTooltip(longPath), findsNothing);
 
           final scanAction = find.byKey(StorageStewardHome.scanActionKey);
           final scrollableFinder = find.byType(Scrollable);
