@@ -1151,7 +1151,7 @@ impl SnapshotIndexBuilder {
         // Collect all directory IDs from the source that are under dir_path.
         // We must re-intern each path into our table since IDs differ across tables.
         let mut dir_pairs: Vec<(u32, u32)> = Vec::new(); // (source_id, our_id)
-        for (&src_id, _record) in &source.directory_by_id {
+        for &src_id in source.directory_by_id.keys() {
             let src_path = source.table.resolve(src_id);
             if path_is_at_or_below(src_path, &dir_path) {
                 let our_id = self.table.intern(src_path);
@@ -1538,6 +1538,7 @@ pub(crate) fn path_is_at_or_below(path: &str, root: &str) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_tree(
     node: &crate::model::ScanTreeNode,
     parent: Option<u32>,
@@ -1656,7 +1657,7 @@ fn passes_entry_filter(
     true
 }
 
-fn apply_sort(nodes: &mut Vec<SnapshotNodeRecord>, sort_mode: &str) {
+fn apply_sort(nodes: &mut [SnapshotNodeRecord], sort_mode: &str) {
     // Dirs always before files.
     nodes.sort_by(|a, b| {
         let primary = match (a.is_directory, b.is_directory) {
@@ -1677,7 +1678,7 @@ fn apply_sort(nodes: &mut Vec<SnapshotNodeRecord>, sort_mode: &str) {
     });
 }
 
-fn apply_entry_sort(entries: &mut Vec<SnapshotEntryRecord>, sort_mode: &str) {
+fn apply_entry_sort(entries: &mut [SnapshotEntryRecord], sort_mode: &str) {
     entries.sort_by(|a, b| {
         let primary = match sort_mode {
             "name" | "name_asc" => a

@@ -20,9 +20,10 @@ pub enum Capability {
     SpaceAnalysis,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum LargeFileThresholdPreset {
     #[serde(rename = "50_mb")]
+    #[default]
     Mb50,
     #[serde(rename = "100_mb")]
     Mb100,
@@ -43,15 +44,10 @@ impl LargeFileThresholdPreset {
     }
 }
 
-impl Default for LargeFileThresholdPreset {
-    fn default() -> Self {
-        Self::Mb50
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum AgePreset {
     #[serde(rename = "7_days")]
+    #[default]
     Days7,
     #[serde(rename = "30_days")]
     Days30,
@@ -59,24 +55,13 @@ pub enum AgePreset {
     Days90,
 }
 
-impl Default for AgePreset {
-    fn default() -> Self {
-        Self::Days30
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SimilarityPreset {
+    #[default]
     Strict,
     Balanced,
     Loose,
-}
-
-impl Default for SimilarityPreset {
-    fn default() -> Self {
-        Self::Balanced
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

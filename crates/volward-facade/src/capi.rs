@@ -128,7 +128,7 @@ pub unsafe extern "C" fn volward_get_last_snapshot_json(engine: *mut VolwardEngi
         return ptr::null_mut();
     };
     e.get_last_snapshot_json()
-        .map(|s| to_c_string(s))
+        .map(to_c_string)
         .unwrap_or(ptr::null_mut())
 }
 
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn volward_get_last_progress_json(engine: *mut VolwardEngi
         return ptr::null_mut();
     };
     e.get_last_progress_json()
-        .map(|s| to_c_string(s))
+        .map(to_c_string)
         .unwrap_or(ptr::null_mut())
 }
 

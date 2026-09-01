@@ -190,7 +190,7 @@ impl<'a> ScanOrchestrator<'a> {
             bytes_seen = bytes_seen.saturating_add(e.size_bytes);
             last_path = Some(e.path.clone());
             progress_counter += 1;
-            if progress_counter % 1000 == 0 {
+            if progress_counter.is_multiple_of(1000) {
                 on_progress(ScanProgress {
                     job_id: job_id.clone(),
                     phase: ScanPhase::Walking,
@@ -233,7 +233,9 @@ impl<'a> ScanOrchestrator<'a> {
                 }
             }
 
-            if progress_counter % 200 == 0 && last_checkpoint_at.elapsed() >= checkpoint_interval {
+            if progress_counter.is_multiple_of(200)
+                && last_checkpoint_at.elapsed() >= checkpoint_interval
+            {
                 let checkpoint_started_at = std::time::Instant::now();
                 on_checkpoint(StorageSnapshot {
                     snapshot_id: format!("{job_id}-checkpoint"),
@@ -489,7 +491,7 @@ impl<'a> ScanOrchestrator<'a> {
             bytes_seen = bytes_seen.saturating_add(e.size_bytes);
             last_path = Some(e.path.clone());
             progress_counter += 1;
-            if progress_counter % 1000 == 0 {
+            if progress_counter.is_multiple_of(1000) {
                 on_progress(ScanProgress {
                     job_id: job_id.clone(),
                     phase: ScanPhase::Walking,

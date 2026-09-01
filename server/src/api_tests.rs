@@ -240,7 +240,7 @@ async fn ai_analyze_happy_path() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["credits_used"], 1);
     assert_eq!(body["credits_remaining"], 4);
-    assert!(body["entries"].as_array().unwrap().len() >= 1);
+    assert!(!body["entries"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]
