@@ -220,7 +220,7 @@ impl AnalysisGroup {
 /// Groups items by the root's direct child directory and recomputes each
 /// group's aggregates. Shared by directory-grouped analyzers (cleanup,
 /// duplicates); large files additionally subdivides by file type.
-pub(crate) fn group_items_by_direct_child(
+pub fn group_items_by_direct_child(
     items: &[AnalysisItem],
     normalized_root: &str,
 ) -> Vec<AnalysisGroup> {

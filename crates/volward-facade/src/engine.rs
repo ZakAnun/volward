@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use platform_desktop::DesktopPlatform;
+use platform_desktop::{
+    ApplicationAnalyzer, ApplicationInventory, BrowserPrivacyAnalyzer, BrowserPrivacyInventory,
+    DesktopPlatform,
+};
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{
@@ -91,6 +94,12 @@ impl VolwardEngine {
         )));
         capability_registry.register(Arc::new(SimilarPhotoAnalyzer::new(
             platform.protected_prefixes().to_vec(),
+        )));
+        capability_registry.register(Arc::new(ApplicationAnalyzer::new(
+            ApplicationInventory::new(),
+        )));
+        capability_registry.register(Arc::new(BrowserPrivacyAnalyzer::new(
+            BrowserPrivacyInventory::new(),
         )));
         Self {
             platform,
@@ -1600,11 +1609,10 @@ mod tests {
         .unwrap();
         assert_eq!(mismatch["error"]["code"], "snapshot_mismatch");
 
-        // large_files/cleanup_candidates/duplicate_files/similar_photos are
-        // registered by `new()`; an unregistered capability must still
-        // return a structured error.
+        // All analyzer-backed capabilities are registered by `new()`; an
+        // unregistered capability must still return a structured error.
         let unsupported: serde_json::Value = serde_json::from_str(
-            &engine.analyze_capability_json("test-snap", "applications", &options_json()),
+            &engine.analyze_capability_json("test-snap", "space_analysis", &options_json()),
         )
         .unwrap();
         assert_eq!(unsupported["error"]["code"], "unsupported_capability");
