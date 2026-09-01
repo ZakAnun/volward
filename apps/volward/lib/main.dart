@@ -22,7 +22,9 @@ Future<void> main() async {
       'platform': analyticsPlatformLabel(),
     }),
   );
-  runApp(const VolwardApp());
+  // Hover tooltips are disabled app-wide (they caused display jank); the
+  // Tooltip widgets still carry accessible names for screen readers.
+  runApp(const TooltipVisibility(visible: false, child: VolwardApp()));
 }
 
 class VolwardApp extends StatefulWidget {

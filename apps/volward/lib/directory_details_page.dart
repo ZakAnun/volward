@@ -1751,17 +1751,23 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                 ],
               ),
               const SizedBox(width: AppleSpacing.xs),
-              IconButton(
-                icon: Icon(
-                  Icons.refresh_outlined,
-                  size: 18,
-                  color: context.volward.inkMuted80,
+              Tooltip(
+                message: context.l10n.scanActionRescan,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.refresh_outlined,
+                    size: 18,
+                    color: context.volward.inkMuted80,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  onPressed: (_s.canRefreshCurrentDirectory && !busy)
+                      ? () => unawaited(_s.refreshCurrentDirectory())
+                      : null,
                 ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                onPressed: (_s.canRefreshCurrentDirectory && !busy)
-                    ? () => unawaited(_s.refreshCurrentDirectory())
-                    : null,
               ),
               const SizedBox(width: AppleSpacing.xxs),
               AppleButton(
@@ -2389,11 +2395,18 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
           const SizedBox(width: AppleSpacing.sm),
           Text(context.l10n.navSubtitle, style: context.vwNavLinkMuted),
           const Spacer(),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            icon: Icon(Icons.settings_outlined, size: 18, color: v.bodyMuted),
-            onPressed: _openSettings,
+          Tooltip(
+            message: context.l10n.settingsTooltip,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: Icon(
+                Icons.settings_outlined,
+                size: 18,
+                color: v.bodyMuted,
+              ),
+              onPressed: _openSettings,
+            ),
           ),
         ],
       ),
@@ -2466,11 +2479,15 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
             variant: AppleButtonVariant.secondary,
             onPressed: _openFullDiskAccessSettings,
           ),
-          IconButton(
-            icon: Icon(Icons.expand_more, size: 18, color: v.inkMuted80),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            onPressed: () => setState(() => _permissionBannerExpanded = true),
+          Tooltip(
+            message: l10n.permissionShowDetails,
+            child: IconButton(
+              icon: Icon(Icons.expand_more, size: 18, color: v.inkMuted80),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              onPressed: () =>
+                  setState(() => _permissionBannerExpanded = true),
+            ),
           ),
         ],
       );
@@ -2495,12 +2512,22 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                   style: context.vwCaptionStrong,
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.expand_less, size: 18, color: v.inkMuted80),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                onPressed: () =>
-                    setState(() => _permissionBannerExpanded = false),
+              Tooltip(
+                message: l10n.permissionHideDetails,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.expand_less,
+                    size: 18,
+                    color: v.inkMuted80,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  onPressed: () =>
+                      setState(() => _permissionBannerExpanded = false),
+                ),
               ),
             ],
           ),

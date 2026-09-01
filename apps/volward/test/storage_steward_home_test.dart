@@ -709,6 +709,9 @@ void main() {
         tester.getSemantics(find.byKey(StorageStewardHome.settingsKey)),
         enabled: true,
       );
+      // Hover tooltip is disabled app-wide, but the icon-only settings
+      // button must keep its accessible name (semantics-only Tooltip).
+      expect(find.byTooltip('Settings'), findsOneWidget);
     } finally {
       semantics.dispose();
     }

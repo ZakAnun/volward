@@ -457,16 +457,22 @@ class _HeroTopbar extends StatelessWidget {
         ? null
         : FocusTraversalOrder(
             order: const NumericFocusOrder(_settingsFocusOrder),
-            child: IconButton(
-              key: StorageStewardHome.settingsKey,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: const Icon(
-                Icons.settings_outlined,
-                size: 18,
-                color: _onDashboard,
+            child: Tooltip(
+              message: l10n.settingsTooltip,
+              child: IconButton(
+                key: StorageStewardHome.settingsKey,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  size: 18,
+                  color: _onDashboard,
+                ),
+                onPressed: onOpenSettings,
               ),
-              onPressed: onOpenSettings,
             ),
           );
     final brand = Row(

@@ -1791,13 +1791,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ),
           suffixIcon: _resultsQuery.isEmpty
               ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear_rounded, size: 18),
-                  onPressed: () => setState(() {
-                    _resultsSearchController.clear();
-                    _resultsQuery = '';
-                    _invalidateVisibleGroups();
-                  }),
+              : Tooltip(
+                  message: context.l10n.aiResultsClearSearch,
+                  child: IconButton(
+                    icon: const Icon(Icons.clear_rounded, size: 18),
+                    onPressed: () => setState(() {
+                      _resultsSearchController.clear();
+                      _resultsQuery = '';
+                      _invalidateVisibleGroups();
+                    }),
+                  ),
                 ),
         ),
       ),
