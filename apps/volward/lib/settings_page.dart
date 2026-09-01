@@ -772,24 +772,28 @@ class _SettingsSwitch extends StatelessWidget {
     final v = context.volward;
     return Opacity(
       opacity: enabled ? 1 : 0.55,
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: context.vwCaptionStrong),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: context.vwFinePrint.copyWith(color: v.inkMuted48),
-                ),
-              ],
+      // RepaintBoundary prevents the disabled-state alpha layer from
+      // re-rasterizing the text at reduced fidelity on Intel GPUs.
+      child: RepaintBoundary(
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: context.vwCaptionStrong),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: context.vwFinePrint.copyWith(color: v.inkMuted48),
+                  ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(width: AppleSpacing.md),
           Switch.adaptive(value: value, onChanged: enabled ? onChanged : null),
         ],
+        ),
       ),
     );
   }

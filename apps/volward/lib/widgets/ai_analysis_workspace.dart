@@ -2713,11 +2713,17 @@ class _WorkspaceHeader extends StatelessWidget {
               heightFactor: targetProgress,
               child: Opacity(
                 opacity: targetProgress,
-                child: Text(
-                  targetLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.vwFinePrint,
+                // RepaintBoundary keeps the text rasterized at its natural
+                // resolution while fractional opacity/clip reveal the label;
+                // without it the text layer is re-rasterized at fractional
+                // scale and renders blurry on some GPUs (Intel Macs).
+                child: RepaintBoundary(
+                  child: Text(
+                    targetLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.vwFinePrint,
+                  ),
                 ),
               ),
             ),
