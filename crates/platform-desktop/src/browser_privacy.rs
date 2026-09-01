@@ -188,7 +188,6 @@ fn known_category_locations(browser: &str) -> Vec<(&'static str, &'static str, b
             ("cookies", "cookies.sqlite", false, false),
             ("history", "places.sqlite", false, false),
             ("website_storage", "storage", false, false),
-            ("databases", "storage", true, false),
             ("passwords", "logins.json", false, true),
         ],
         _ => vec![
@@ -274,6 +273,7 @@ impl CapabilityAnalyzer for BrowserPrivacyAnalyzer {
             }
             let is_known_dir_target = known_dir_target(&entry.path);
             let deletable = !entry.guided_only && is_known_dir_target;
+            let is_directory = std::path::Path::new(&entry.path).is_dir();
             if deletable {
                 target_paths.push(entry.path.clone());
                 target_bytes += entry.estimated_bytes;
@@ -297,7 +297,7 @@ impl CapabilityAnalyzer for BrowserPrivacyAnalyzer {
                 path: entry.path.clone(),
                 display_name: file_name(&entry.path),
                 size_bytes: entry.estimated_bytes,
-                is_directory: true,
+                is_directory,
                 modified_at_ms: None,
                 recommendation: Recommendation::ReviewNeeded,
                 confidence: AnalysisConfidence::Medium,
@@ -445,8 +445,32 @@ mod tests {
         );
         let data = inventory.scan_categories();
         assert!(data.iter().any(|d| d.category == "passwords" && d.excluded));
-        assert!(data.iter().any(|d| d.category == "databases" && d.guided_only));
         assert!(data.iter().any(|d| d.category == "cookies"));
+        // storage/ must be emitted exactly once (website_storage), never
+        // duplicated by a databases row with the same path.
+        let storage_rows = data
+            .iter()
+            .filter(|d| d.path.ends_with("storage") || d.path.ends_with("storage/foo"))
+            .count();
+        assert_eq!(storage_rows, 1, "storage must not be emitted twice");
+
+        let root = temp.path().to_string_lossy().to_string();
+        let result = BrowserPrivacyAnalyzer::new(inventory)
+            .analyze(&index(&root), &root, &AnalysisOptions::default(), &NoopProgressSink)
+            .expect("browser analysis");
+        let mut ids: Vec<&str> = result
+            .groups
+            .iter()
+            .flat_map(|g| g.items.iter())
+            .map(|item| item.id.as_str())
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(
+            ids.len(),
+            result.summary.item_count as usize,
+            "item ids must be unique"
+        );
     }
 
     #[test]
