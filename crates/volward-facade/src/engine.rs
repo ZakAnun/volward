@@ -28,6 +28,8 @@ use volward_core::{
 
 use crate::proto;
 
+const MAX_CONCURRENT_CAPABILITY_JOBS: usize = 4;
+
 fn load_classifier(platform: &DesktopPlatform) -> Classifier {
     let path = std::env::var("VOLWARD_RULES_PATH")
         .ok()
@@ -250,6 +252,14 @@ impl VolwardEngine {
         };
         if !registry.supports(capability) {
             return capability_error_json(&CapabilityAnalysisError::unsupported(
+                capability,
+                snapshot_id,
+            ));
+        }
+        if self.capability_jobs.active_count() >= MAX_CONCURRENT_CAPABILITY_JOBS {
+            return capability_error_json(&CapabilityAnalysisError::for_request(
+                "busy",
+                "too many capability jobs in flight; retry after one completes",
                 capability,
                 snapshot_id,
             ));
@@ -1482,13 +1492,14 @@ mod tests {
     };
 
     struct BlockingAnalyzer {
+        capability: Capability,
         started: Mutex<Option<Sender<()>>>,
         release: Mutex<Receiver<()>>,
     }
 
     impl CapabilityAnalyzer for BlockingAnalyzer {
         fn capability(&self) -> Capability {
-            Capability::LargeFiles
+            self.capability
         }
 
         fn analyze(
@@ -1502,7 +1513,7 @@ mod tests {
                 started.send(()).unwrap();
             }
             self.release.lock().unwrap().recv().unwrap();
-            Ok(capability_result(index, normalized_root))
+            Ok(capability_result_for(index, normalized_root, self.capability))
         }
     }
 
@@ -1539,10 +1550,14 @@ mod tests {
         }
     }
 
-    fn capability_result(index: &SnapshotIndex, root_path: &str) -> CapabilityAnalysisResult {
+    fn capability_result_for(
+        index: &SnapshotIndex,
+        root_path: &str,
+        capability: Capability,
+    ) -> CapabilityAnalysisResult {
         CapabilityAnalysisResult {
             schema_version: CAPABILITY_SCHEMA_VERSION,
-            capability: Capability::LargeFiles,
+            capability,
             snapshot_id: index.snapshot_id.clone(),
             root_path: root_path.to_string(),
             analyzer_version: "fake-v1".to_string(),
@@ -1576,12 +1591,25 @@ mod tests {
         let (release_tx, release_rx) = mpsc::channel();
         let mut registry = CapabilityRegistry::new();
         registry.register(Arc::new(BlockingAnalyzer {
+            capability: Capability::LargeFiles,
             started: Mutex::new(Some(started_tx)),
             release: Mutex::new(release_rx),
         }));
         let engine = VolwardEngine::with_capability_registry(registry);
         engine.set_last_snapshot(minimal_snapshot());
         (engine, started_rx, release_tx)
+    }
+
+    fn capability_name(capability: Capability) -> &'static str {
+        match capability {
+            Capability::LargeFiles => "large_files",
+            Capability::CleanupCandidates => "cleanup_candidates",
+            Capability::DuplicateFiles => "duplicate_files",
+            Capability::SimilarPhotos => "similar_photos",
+            Capability::Applications => "applications",
+            Capability::BrowserPrivacy => "browser_privacy",
+            Capability::SpaceAnalysis => "space_analysis",
+        }
     }
 
     fn start_capability_job(engine: &VolwardEngine) -> String {
@@ -1663,6 +1691,55 @@ mod tests {
         let error = completed["progress"]["error"].as_str().unwrap();
         let error: serde_json::Value = serde_json::from_str(error).unwrap();
         assert_eq!(error["code"], "snapshot_mismatch");
+    }
+
+    #[test]
+    fn capability_jobs_are_capped_when_many_are_in_flight() {
+        let capabilities = [
+            Capability::LargeFiles,
+            Capability::CleanupCandidates,
+            Capability::DuplicateFiles,
+            Capability::SimilarPhotos,
+        ];
+        let mut registry = CapabilityRegistry::new();
+        let mut starteds = Vec::new();
+        let mut releases = Vec::new();
+        for capability in capabilities {
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            registry.register(Arc::new(BlockingAnalyzer {
+                capability,
+                started: Mutex::new(Some(started_tx)),
+                release: Mutex::new(release_rx),
+            }));
+            starteds.push(started_rx);
+            releases.push(release_tx);
+        }
+        let engine = VolwardEngine::with_capability_registry(registry);
+        engine.set_last_snapshot(minimal_snapshot());
+
+        for (capability, started) in capabilities.iter().zip(starteds.iter()) {
+            let raw = engine.start_capability_analysis_json(
+                "test-snap",
+                capability_name(*capability),
+                &options_json(),
+            );
+            let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            assert!(value["job_id"].is_string(), "{raw}");
+            started.recv().unwrap();
+        }
+
+        let busy = engine.start_capability_analysis_json(
+            "test-snap",
+            capability_name(Capability::LargeFiles),
+            &options_json(),
+        );
+        let value: serde_json::Value = serde_json::from_str(&busy).unwrap();
+        assert_eq!(value["error"]["code"], "busy", "{busy}");
+
+        for release in releases {
+            release.send(()).unwrap();
+        }
     }
 
     #[test]

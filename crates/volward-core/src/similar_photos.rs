@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use crate::capability::{
-    group_items_by_direct_child, AnalysisConfidence, AnalysisItem, AnalysisOptions,
-    AnalysisPreview, AnalysisSummary, Capability, CapabilityAnalysisResult, CapabilityLevel,
-    DeletionPlan, Recommendation, SimilarityPreset,
+    group_items_by_direct_child, paginate_items, AnalysisConfidence, AnalysisItem,
+    AnalysisOptions, AnalysisPreview, AnalysisSummary, Capability, CapabilityAnalysisResult,
+    CapabilityLevel, DeletionPlan, Recommendation, SimilarityPreset,
 };
 use crate::capability_registry::{
     CapabilityAnalysisError, CapabilityAnalyzer, CapabilityProgressSink,
@@ -76,6 +76,7 @@ impl CapabilityAnalyzer for SimilarPhotoAnalyzer {
         progress: &dyn CapabilityProgressSink,
     ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
         let preset = options.similarity_preset;
+        let page_size = options.page_size as usize;
         let mut photos: Vec<PhotoSignature> = Vec::new();
         let mut review_only: Vec<AnalysisItem> = Vec::new();
         let mut blocked_targets = Vec::new();
@@ -123,20 +124,26 @@ impl CapabilityAnalyzer for SimilarPhotoAnalyzer {
 
         let groups = group_photos(&photos, preset);
         let mut items = Vec::new();
-        let mut target_paths = Vec::new();
-        let mut target_bytes = 0u64;
         for group in groups {
             let keep_index = keep_index(&group);
             for (position, photo) in group.into_iter().enumerate() {
                 let keep = position == keep_index;
-                if !keep {
-                    target_paths.push(photo.path.clone());
-                    target_bytes += photo.size_bytes;
-                }
                 items.push(similar_item(photo, preset, keep));
             }
         }
         items.extend(review_only);
+        let (items, next_cursor, truncated) =
+            paginate_items(items, options.cursor.as_deref(), page_size);
+        let target_paths: Vec<String> = items
+            .iter()
+            .filter(|item| item.recommendation == Recommendation::ReviewNeeded)
+            .filter_map(|item| item.delete_target.clone())
+            .collect();
+        let target_bytes = items
+            .iter()
+            .filter(|item| item.recommendation == Recommendation::ReviewNeeded)
+            .map(|item| item.size_bytes)
+            .sum();
         progress.report(
             CapabilityAnalysisPhase::Grouping,
             items.len() as u64,
@@ -170,10 +177,10 @@ impl CapabilityAnalyzer for SimilarPhotoAnalyzer {
                 safe_count: 0,
                 review_count,
                 kept_count,
-                truncated: false,
+                truncated,
             },
             groups: grouped,
-            next_cursor: None,
+            next_cursor,
             deletion_plan: DeletionPlan {
                 snapshot_id: index.snapshot_id.clone(),
                 target_count: target_paths.len() as u64,
@@ -619,5 +626,46 @@ mod tests {
             )
             .expect_err("cancelled analysis must fail");
         assert_eq!(error.code, "cancelled");
+    }
+
+    #[test]
+    fn output_pagination_pages_similar_photos_without_overlap() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().to_string_lossy().to_string();
+        let original = gradient(64, 64);
+        let a = save_png(&temp, "one/a.png", &original);
+        let b = save_png(&temp, "two/b.png", &original);
+        let index = index_for(&root, &[a, b]);
+
+        let first = SimilarPhotoAnalyzer::new(vec![])
+            .analyze(
+                &index,
+                &root,
+                &AnalysisOptions {
+                    page_size: 1,
+                    ..AnalysisOptions::default()
+                },
+                &NoopProgressSink,
+            )
+            .unwrap();
+        assert_eq!(first.summary.item_count, 1);
+        assert!(first.summary.truncated);
+        let cursor = first.next_cursor.expect("next cursor");
+
+        let second = SimilarPhotoAnalyzer::new(vec![])
+            .analyze(
+                &index,
+                &root,
+                &AnalysisOptions {
+                    page_size: 1,
+                    cursor: Some(cursor),
+                    ..AnalysisOptions::default()
+                },
+                &NoopProgressSink,
+            )
+            .unwrap();
+        assert_eq!(second.summary.item_count, 1);
+        assert!(!second.summary.truncated);
+        assert_ne!(first.groups[0].items[0].path, second.groups[0].items[0].path);
     }
 }

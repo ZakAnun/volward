@@ -9,6 +9,7 @@ import 'capability_models.dart';
 /// stored result. Task 8 adds snapshot-change invalidation.
 class CapabilityAnalysisCache {
   final Map<String, CapabilityAnalysisResult> _entries = {};
+  final Map<String, Set<String>> _snapshotKeys = {};
 
   String key(
     String snapshotId,
@@ -41,11 +42,17 @@ class CapabilityAnalysisCache {
     AnalysisOptions options,
     CapabilityAnalysisResult result,
   ) {
-    _entries[key(snapshotId, capability, options)] = result;
+    final cacheKey = key(snapshotId, capability, options);
+    _entries[cacheKey] = result;
+    _snapshotKeys.putIfAbsent(snapshotId, () => <String>{}).add(cacheKey);
   }
 
   void invalidateForSnapshot(String snapshotId) {
-    _entries.removeWhere((key, _) => key.contains('|$snapshotId|'));
+    final keys = _snapshotKeys.remove(snapshotId);
+    if (keys == null) return;
+    for (final cacheKey in keys) {
+      _entries.remove(cacheKey);
+    }
   }
 
   @visibleForTesting

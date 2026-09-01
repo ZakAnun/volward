@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -8,6 +8,10 @@ use crate::{
     CapabilityAnalysisResult,
 };
 use crate::capability_registry::CapabilityProgressSink;
+
+/// Upper bound on retained job records; terminal jobs beyond this are evicted
+/// oldest-first so a long-lived session never grows without bound.
+pub const MAX_CAPABILITY_JOBS: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CapabilityJobStatus {
@@ -93,6 +97,16 @@ impl CapabilityJobHandle {
         record.status.result = None;
         true
     }
+
+    pub fn is_terminal(&self) -> bool {
+        self.record
+            .lock()
+            .map(|record| {
+                record.status.progress.phase == CapabilityAnalysisPhase::Completed
+                    || record.status.progress.cancelled
+            })
+            .unwrap_or(true)
+    }
 }
 
 impl CapabilityProgressSink for CapabilityJobHandle {
@@ -114,11 +128,15 @@ impl CapabilityProgressSink for CapabilityJobHandle {
 #[derive(Clone, Default)]
 pub struct CapabilityJobStore {
     jobs: Arc<Mutex<HashMap<String, CapabilityJobHandle>>>,
+    order: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl CapabilityJobStore {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            jobs: Arc::new(Mutex::new(HashMap::new())),
+            order: Arc::new(Mutex::new(VecDeque::new())),
+        }
     }
 
     pub fn create(&self, snapshot_id: &str, capability: Capability) -> CapabilityJobHandle {
@@ -143,8 +161,12 @@ impl CapabilityJobStore {
             })),
         };
         if let Ok(mut jobs) = self.jobs.lock() {
-            jobs.insert(job_id, handle.clone());
+            jobs.insert(job_id.clone(), handle.clone());
         }
+        if let Ok(mut order) = self.order.lock() {
+            order.push_back(job_id.clone());
+        }
+        self.evict_if_needed();
         handle
     }
 
@@ -161,11 +183,48 @@ impl CapabilityJobStore {
             .map(|job| job.cancel())
             .unwrap_or(false)
     }
+
+    /// Number of jobs that have not reached a terminal state.
+    pub fn active_count(&self) -> usize {
+        self.jobs
+            .lock()
+            .ok()
+            .map(|jobs| {
+                jobs.values()
+                    .filter(|job| !job.is_terminal())
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    fn evict_if_needed(&self) {
+        let (Some(mut order), Ok(mut jobs)) = (self.order.lock().ok(), self.jobs.lock()) else {
+            return;
+        };
+        while jobs.len() > MAX_CAPABILITY_JOBS {
+            let Some(oldest_id) = order.pop_front() else {
+                break;
+            };
+            let terminal = jobs
+                .get(&oldest_id)
+                .map(|job| job.is_terminal())
+                .unwrap_or(true);
+            if terminal {
+                jobs.remove(&oldest_id);
+            } else {
+                // Active jobs are never evicted; move to the back and stop.
+                order.push_back(oldest_id);
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Capability, CapabilityAnalysisPhase, CapabilityJobStore};
+    use crate::{
+        Capability, CapabilityAnalysisPhase, CapabilityJobStore, MAX_CAPABILITY_JOBS,
+    };
 
     #[test]
     fn job_tracks_progress_through_completion() {
@@ -228,5 +287,43 @@ mod tests {
             status.progress.error.as_deref(),
             Some(r#"{"code":"snapshot_mismatch","message":"stale"}"#)
         );
+    }
+
+    #[test]
+    fn terminal_jobs_beyond_cap_are_evicted_oldest_first() {
+        let jobs = CapabilityJobStore::new();
+        let mut first_id = None;
+        let mut last_id = None;
+        for index in 0..(MAX_CAPABILITY_JOBS + 2) {
+            let job = jobs.create("snapshot-1", Capability::LargeFiles);
+            job.complete(None);
+            if index == 0 {
+                first_id = Some(job.job_id().to_string());
+            }
+            last_id = Some(job.job_id().to_string());
+        }
+
+        assert!(
+            jobs.status(first_id.as_ref().unwrap()).is_none(),
+            "oldest terminal job must be evicted"
+        );
+        assert!(
+            jobs.status(last_id.as_ref().unwrap()).is_some(),
+            "most recent job must be retained"
+        );
+    }
+
+    #[test]
+    fn active_count_tracks_non_terminal_jobs() {
+        let jobs = CapabilityJobStore::new();
+        let first = jobs.create("snapshot-1", Capability::LargeFiles);
+        let second = jobs.create("snapshot-1", Capability::LargeFiles);
+        jobs.create("snapshot-1", Capability::LargeFiles);
+        assert_eq!(jobs.active_count(), 3);
+
+        first.complete(None);
+        assert_eq!(jobs.active_count(), 2);
+        jobs.cancel(second.job_id());
+        assert_eq!(jobs.active_count(), 1);
     }
 }

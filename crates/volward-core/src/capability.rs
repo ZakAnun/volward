@@ -239,6 +239,33 @@ pub fn group_items_by_direct_child(
     groups
 }
 
+/// Output pagination for analyzers that compute a full bounded candidate set
+/// (duplicates, similar photos): deterministic order (path asc), skip to
+/// `cursor`, take `page_size`, and report `truncated` + the next cursor when
+/// more items remain. Prevents tens of thousands of items crossing FFI.
+pub(crate) fn paginate_items(
+    mut items: Vec<AnalysisItem>,
+    cursor: Option<&str>,
+    page_size: usize,
+) -> (Vec<AnalysisItem>, Option<String>, bool) {
+    let page_size = page_size.max(1);
+    items.sort_by(|a, b| a.path.cmp(&b.path));
+    let start = cursor
+        .and_then(|cursor| items.iter().position(|item| item.path == cursor))
+        .map(|position| position + 1)
+        .unwrap_or(0);
+    let end = start.saturating_add(page_size).min(items.len());
+    let truncated = end < items.len();
+    // The cursor names the last item of this page; the next call resumes
+    // after it (exclusive), so the first item of the next page is not lost.
+    let next_cursor = if truncated {
+        Some(items[end - 1].path.clone())
+    } else {
+        None
+    };
+    (items[start..end].to_vec(), next_cursor, truncated)
+}
+
 fn recompute_group(group: &mut AnalysisGroup) {
     let item_count = group.items.len() as u64;
     group.item_count = item_count;

@@ -235,6 +235,25 @@ void main() {
       expect(entries[1]['id'], 'b');
     });
 
+    test('StorageEntry modified_at_ms (field 10) decoded; absent stays absent', () {
+      final withMtime = _entryBuilder()
+        ..string(1, 'with-mtime') // id
+        ..varint(10, 1700000000000); // modified_at_ms
+      final withoutMtime = _entryBuilder()
+        ..string(1, 'no-mtime'); // id
+
+      final b = _snap()
+        ..string(1, 'snap-mtime')
+        ..embedded(7, withMtime)
+        ..embedded(7, withoutMtime);
+
+      final entries = decodeSnapshotPb(b.build())!['entries'] as List;
+      final first = entries.first as Map<String, dynamic>;
+      final second = entries[1] as Map<String, dynamic>;
+      expect(first['modified_at_ms'], 1700000000000);
+      expect(second.containsKey('modified_at_ms'), isFalse);
+    });
+
     // -----------------------------------------------------------------------
     // Enum fallback values
     // -----------------------------------------------------------------------

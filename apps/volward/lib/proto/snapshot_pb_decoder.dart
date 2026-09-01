@@ -96,6 +96,7 @@ Map<String, dynamic> _decodeEntry(_ProtoReader r) {
   var sourceType = 'Directory';
   var deletable = false;
   var reason = '';
+  int? modifiedAtMs;
 
   while (!r.isDone) {
     final tag = r.readVarint();
@@ -120,6 +121,8 @@ Map<String, dynamic> _decodeEntry(_ProtoReader r) {
         deletable = r.readVarint() != 0; // bool deletable
       case 9:
         reason = r.readString(); // string reason
+      case 10:
+        modifiedAtMs = r.readVarint(); // optional int64 modified_at_ms
       default:
         r.skipField(wireType);
     }
@@ -135,6 +138,7 @@ Map<String, dynamic> _decodeEntry(_ProtoReader r) {
     'source_type': sourceType,
     'deletable': deletable,
     'reason': reason,
+    if (modifiedAtMs != null) 'modified_at_ms': modifiedAtMs,
   };
 }
 
