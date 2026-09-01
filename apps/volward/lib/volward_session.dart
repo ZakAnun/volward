@@ -390,6 +390,7 @@ class VolwardSession extends ChangeNotifier {
   @visibleForTesting
   void setSnapshotForTest(ScanSnapshotState snapshot) {
     _lastSnapshot = snapshot;
+    _invalidateCapabilityCacheFor(snapshot.snapshotId);
     _directoryOverlays.clear();
     _snapshotVersion++;
     _invalidatedPrefixes.clear();
@@ -442,6 +443,7 @@ class VolwardSession extends ChangeNotifier {
     required String affectedPrefix,
   }) {
     _lastSnapshot = snapshot;
+    _invalidateCapabilityCacheFor(snapshot.snapshotId);
     _directoryOverlays.clear();
     _snapshotVersion++;
     _invalidatedPrefixes
@@ -1513,6 +1515,7 @@ class VolwardSession extends ChangeNotifier {
               'The directory could not be refreshed. The previous results are still shown.';
         }
       }
+      _invalidateCapabilityCacheFor(_lastSnapshot?.snapshotId);
     } catch (e, st) {
       _refreshErrors[target] = e.toString();
       _lastError = '$e';
@@ -1749,6 +1752,7 @@ class VolwardSession extends ChangeNotifier {
           );
           if (scanGeneration == _rootSwitchGeneration) {
             _lastSnapshot = snapshot;
+            _invalidateCapabilityCacheFor(snapshot?.snapshotId);
             _logSnapshotMemoryState('scan-complete');
             _notifyListeners();
           }
@@ -1770,6 +1774,7 @@ class VolwardSession extends ChangeNotifier {
           );
           if (scanGeneration == _rootSwitchGeneration) {
             _lastSnapshot = snapshot;
+            _invalidateCapabilityCacheFor(snapshot?.snapshotId);
             _logSnapshotMemoryState('scan-complete');
             _notifyListeners();
           }
@@ -1891,6 +1896,7 @@ class VolwardSession extends ChangeNotifier {
         final snapshot = await _awaitScanWithStallGuard(completer.future);
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
+          _invalidateCapabilityCacheFor(snapshot?.snapshotId);
           _logSnapshotMemoryState('scan-complete');
           _notifyListeners();
         }
@@ -2323,7 +2329,14 @@ class VolwardSession extends ChangeNotifier {
     if (!VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
       throw StateError('Failed to load scan snapshot into engine');
     }
+    _invalidateCapabilityCacheFor(snap['snapshot_id']?.toString());
     return ScanSnapshotState.fromWire(snap);
+  }
+
+  void _invalidateCapabilityCacheFor(String? snapshotId) {
+    if (snapshotId != null && snapshotId.isNotEmpty) {
+      _capabilityCache.invalidateForSnapshot(snapshotId);
+    }
   }
 
   void _logSnapshotMemoryState(String source) {

@@ -24,7 +24,7 @@ impl DeleteOrchestrator {
             paths.push((entry.path_or_uri.clone(), entry.size_bytes));
         }
 
-        Self::delete_paths(paths, dry_run, platform)
+        Self::delete_paths(paths, Some(&snapshot.tree.path), dry_run, platform)
     }
 
     pub fn delete_index_entries(
@@ -43,19 +43,21 @@ impl DeleteOrchestrator {
             paths.push((entry.path.clone(), entry.size_bytes));
         }
 
-        Self::delete_paths(paths, dry_run, platform)
+        Self::delete_paths(paths, None, dry_run, platform)
     }
 
     pub fn delete_explicit_paths(
         paths: Vec<(String, u64)>,
+        root: Option<&str>,
         dry_run: bool,
         platform: &dyn PlatformStorage,
     ) -> Result<DeleteReport, PlatformError> {
-        Self::delete_paths(paths, dry_run, platform)
+        Self::delete_paths(paths, root, dry_run, platform)
     }
 
     fn delete_paths(
         paths: Vec<(String, u64)>,
+        root: Option<&str>,
         dry_run: bool,
         platform: &dyn PlatformStorage,
     ) -> Result<DeleteReport, PlatformError> {
@@ -69,44 +71,79 @@ impl DeleteOrchestrator {
             }
         }
 
-        let freed_bytes = safe_paths
+        // Revalidate every target against the current filesystem before
+        // reporting dry-run counts (and again before the trash move below):
+        // missing files, size changes, and root/symlink escapes are all
+        // rejected as failed targets rather than silently deleted.
+        let mut failed_paths = Vec::new();
+        let mut validated = Vec::new();
+        for (path, size) in safe_paths {
+            match revalidate(&path, size, root) {
+                Ok(()) => validated.push((path, size)),
+                Err(reason) => failed_paths.push(format!("{path} ({reason})")),
+            }
+        }
+
+        let freed_bytes = validated
             .iter()
             .map(|(_, size)| *size)
             .fold(0u64, u64::saturating_add);
         if dry_run {
             return Ok(DeleteReport {
-                deleted_count: safe_paths.len(),
-                failed_paths: blocked_paths,
+                deleted_count: validated.len(),
+                failed_paths: blocked_paths
+                    .into_iter()
+                    .chain(failed_paths)
+                    .collect(),
                 freed_bytes,
             });
         }
 
-        if safe_paths.is_empty() {
+        if validated.is_empty() {
             return Ok(DeleteReport {
                 deleted_count: 0,
-                failed_paths: blocked_paths,
+                failed_paths: blocked_paths.into_iter().chain(failed_paths).collect(),
                 freed_bytes: 0,
             });
         }
 
-        let path_only = safe_paths
-            .iter()
-            .map(|(path, _)| path.clone())
-            .collect::<Vec<_>>();
-        let report = platform.trash_paths(&path_only)?;
-        let failed_paths = blocked_paths
+        // Second revalidation pass immediately before the trash move.
+        let mut pre_trash_failures = Vec::new();
+        let mut trash_candidates = Vec::new();
+        for (path, size) in &validated {
+            match revalidate(path, *size, root) {
+                Ok(()) => trash_candidates.push(path.clone()),
+                Err(reason) => pre_trash_failures.push(format!("{path} ({reason})")),
+            }
+        }
+        if trash_candidates.is_empty() {
+            return Ok(DeleteReport {
+                deleted_count: 0,
+                failed_paths: blocked_paths
+                    .into_iter()
+                    .chain(failed_paths)
+                    .chain(pre_trash_failures)
+                    .collect(),
+                freed_bytes: 0,
+            });
+        }
+
+        let report = platform.trash_paths(&trash_candidates)?;
+        let all_failed: Vec<String> = blocked_paths
             .into_iter()
+            .chain(failed_paths)
+            .chain(pre_trash_failures)
             .chain(report.failed_paths.iter().cloned())
-            .collect::<Vec<_>>();
-        let actual_freed = safe_paths
+            .collect();
+        let actual_freed = validated
             .iter()
-            .filter(|(path, _)| !failed_paths.contains(path))
+            .filter(|(path, _)| !all_failed.iter().any(|failed| failed.starts_with(path)))
             .map(|(_, size)| *size)
             .fold(0u64, u64::saturating_add);
 
         Ok(DeleteReport {
             deleted_count: report.deleted_count,
-            failed_paths,
+            failed_paths: all_failed,
             freed_bytes: actual_freed,
         })
     }
@@ -116,6 +153,31 @@ impl DeleteOrchestrator {
     }
 }
 
+/// Revalidates a target immediately before deletion: it must still exist,
+/// its size must match the snapshot record (when known), and its canonical
+/// path must stay inside the user-selected root (rejecting symlink escapes).
+fn revalidate(path: &str, expected_size: u64, root: Option<&str>) -> Result<(), String> {
+    let metadata = std::fs::metadata(path).map_err(|error| format!("missing:{error}"))?;
+    // Directory snapshot sizes are recursive aggregates, not metadata.len().
+    if !metadata.is_dir() && expected_size > 0 && metadata.len() != expected_size {
+        return Err(format!(
+            "size_changed:expected {} got {}",
+            expected_size,
+            metadata.len()
+        ));
+    }
+    if let Some(root) = root {
+        let canonical = std::fs::canonicalize(path)
+            .map_err(|error| format!("unresolvable:{error}"))?;
+        let canonical_root =
+            std::fs::canonicalize(root).map_err(|error| format!("unresolvable_root:{error}"))?;
+        if !canonical.starts_with(&canonical_root) {
+            return Err("outside_root".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,11 +185,14 @@ mod tests {
         CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
         StorageEntry, StorageSnapshot,
     };
+    use std::collections::HashSet;
     use std::sync::atomic::AtomicBool;
+    use tempfile::TempDir;
 
     struct MockPlatform {
         trashed: std::sync::Mutex<Vec<String>>,
         trash_cleared_count: usize,
+        fail_paths: HashSet<String>,
     }
 
     impl MockPlatform {
@@ -135,6 +200,15 @@ mod tests {
             Self {
                 trashed: std::sync::Mutex::new(Vec::new()),
                 trash_cleared_count: 2,
+                fail_paths: HashSet::new(),
+            }
+        }
+
+        fn failing(paths: Vec<String>) -> Self {
+            Self {
+                trashed: std::sync::Mutex::new(Vec::new()),
+                trash_cleared_count: 2,
+                fail_paths: paths.into_iter().collect(),
             }
         }
     }
@@ -172,12 +246,17 @@ mod tests {
 
         fn trash_paths(&self, paths: &[String]) -> Result<DeleteReport, PlatformError> {
             let mut trashed = self.trashed.lock().unwrap();
+            let mut failed_paths = Vec::new();
             for p in paths {
-                trashed.push(p.clone());
+                if self.fail_paths.contains(p) {
+                    failed_paths.push(p.clone());
+                } else {
+                    trashed.push(p.clone());
+                }
             }
             Ok(DeleteReport {
-                deleted_count: paths.len(),
-                failed_paths: vec![],
+                deleted_count: paths.len() - failed_paths.len(),
+                failed_paths,
                 freed_bytes: 0,
             })
         }
@@ -203,7 +282,12 @@ mod tests {
         }
     }
 
-    fn sample_snapshot() -> StorageSnapshot {
+    fn temp_snapshot(temp: &TempDir) -> StorageSnapshot {
+        let root = temp.path().to_string_lossy().to_string();
+        let cache = temp.path().join("cache.bin");
+        std::fs::write(&cache, vec![0u8; 40]).unwrap();
+        let movie = temp.path().join("movie.mov");
+        std::fs::write(&movie, vec![0u8; 120]).unwrap();
         StorageSnapshot {
             snapshot_id: "snap-1".to_string(),
             scanned_at_ms: 0,
@@ -213,16 +297,23 @@ mod tests {
             reclaimable_estimate_bytes: 100,
             tree: ScanTreeNode {
                 name: "tmp".to_string(),
-                path: "/tmp".to_string(),
+                path: root.clone(),
                 is_dir: true,
-                size_bytes: 40,
+                size_bytes: 160,
                 entry_id: None,
                 children: vec![ScanTreeNode {
                     name: "cache.bin".to_string(),
-                    path: "/tmp/cache.bin".to_string(),
+                    path: format!("{root}/cache.bin"),
                     is_dir: false,
                     size_bytes: 40,
                     entry_id: Some("e1".to_string()),
+                    children: vec![],
+                }, ScanTreeNode {
+                    name: "movie.mov".to_string(),
+                    path: format!("{root}/movie.mov"),
+                    is_dir: false,
+                    size_bytes: 120,
+                    entry_id: Some("e3".to_string()),
                     children: vec![],
                 }],
             },
@@ -240,7 +331,7 @@ mod tests {
                 StorageEntry {
                     id: "e1".to_string(),
                     display_name: "cache.bin".to_string(),
-                    path_or_uri: "/tmp/cache.bin".to_string(),
+                    path_or_uri: format!("{root}/cache.bin"),
                     size_bytes: 40,
                     category: EntryCategory::Cache,
                     risk_level: RiskLevel::Low,
@@ -264,7 +355,7 @@ mod tests {
                 StorageEntry {
                     id: "e3".to_string(),
                     display_name: "movie.mov".to_string(),
-                    path_or_uri: "/Users/x/Movies/movie.mov".to_string(),
+                    path_or_uri: format!("{root}/movie.mov"),
                     size_bytes: 120,
                     category: EntryCategory::Media,
                     risk_level: RiskLevel::High,
@@ -279,8 +370,9 @@ mod tests {
 
     #[test]
     fn dry_run_does_not_trash() {
+        let temp = TempDir::new().unwrap();
         let platform = MockPlatform::new();
-        let snap = sample_snapshot();
+        let snap = temp_snapshot(&temp);
         let report = DeleteOrchestrator::delete_entries(
             &snap,
             &["e1".to_string(), "e2".to_string()],
@@ -295,8 +387,9 @@ mod tests {
 
     #[test]
     fn delete_trashes_deletable_paths() {
+        let temp = TempDir::new().unwrap();
         let platform = MockPlatform::new();
-        let snap = sample_snapshot();
+        let snap = temp_snapshot(&temp);
         let report =
             DeleteOrchestrator::delete_entries(&snap, &["e1".to_string()], false, &platform)
                 .unwrap();
@@ -304,14 +397,15 @@ mod tests {
         assert_eq!(report.freed_bytes, 40);
         assert_eq!(
             *platform.trashed.lock().unwrap(),
-            vec!["/tmp/cache.bin".to_string()]
+            vec![temp.path().join("cache.bin").to_string_lossy().to_string()]
         );
     }
 
     #[test]
     fn delete_allows_explicit_non_protected_media() {
+        let temp = TempDir::new().unwrap();
         let platform = MockPlatform::new();
-        let snap = sample_snapshot();
+        let snap = temp_snapshot(&temp);
         let report =
             DeleteOrchestrator::delete_entries(&snap, &["e3".to_string()], false, &platform)
                 .unwrap();
@@ -319,7 +413,114 @@ mod tests {
         assert_eq!(report.freed_bytes, 120);
         assert_eq!(
             *platform.trashed.lock().unwrap(),
-            vec!["/Users/x/Movies/movie.mov".to_string()]
+            vec![temp.path().join("movie.mov").to_string_lossy().to_string()]
+        );
+    }
+
+    #[test]
+    fn dry_run_rejects_missing_and_size_changed_targets() {
+        let temp = TempDir::new().unwrap();
+        let platform = MockPlatform::new();
+        let root = temp.path().to_string_lossy().to_string();
+        let stable = temp.path().join("stable.bin");
+        std::fs::write(&stable, vec![0u8; 10]).unwrap();
+        let changed = temp.path().join("changed.bin");
+        std::fs::write(&changed, vec![0u8; 10]).unwrap();
+        std::fs::write(&changed, vec![0u8; 99]).unwrap();
+        let missing = temp.path().join("missing.bin");
+
+        let report = DeleteOrchestrator::delete_explicit_paths(
+            vec![
+                (stable.to_string_lossy().to_string(), 10),
+                (changed.to_string_lossy().to_string(), 10),
+                (missing.to_string_lossy().to_string(), 10),
+            ],
+            Some(&root),
+            true,
+            &platform,
+        )
+        .unwrap();
+
+        assert_eq!(report.deleted_count, 1, "only the unchanged file counts");
+        assert!(
+            report
+                .failed_paths
+                .iter()
+                .any(|failed| failed.contains("size_changed"))
+        );
+        assert!(
+            report
+                .failed_paths
+                .iter()
+                .any(|failed| failed.contains("missing"))
+        );
+        assert!(platform.trashed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn root_escape_and_symlink_escape_are_rejected() {
+        let temp = TempDir::new().unwrap();
+        let platform = MockPlatform::new();
+        let root = temp.path().join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = temp.path().join("outside.bin");
+        std::fs::write(&outside, vec![0u8; 8]).unwrap();
+        let outside_str = outside.to_string_lossy().to_string();
+        let root_str = root.to_string_lossy().to_string();
+
+        let report = DeleteOrchestrator::delete_explicit_paths(
+            vec![(outside_str.clone(), 8)],
+            Some(&root_str),
+            true,
+            &platform,
+        )
+        .unwrap();
+        assert_eq!(report.deleted_count, 0);
+        assert!(report.failed_paths.iter().any(|f| f.contains("outside_root")));
+
+        #[cfg(unix)]
+        {
+            let link = root.join("escape.link");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            let report = DeleteOrchestrator::delete_explicit_paths(
+                vec![(link.to_string_lossy().to_string(), 8)],
+                Some(&root_str),
+                true,
+                &platform,
+            )
+            .unwrap();
+            assert_eq!(report.deleted_count, 0);
+            assert!(report.failed_paths.iter().any(|f| f.contains("outside_root")));
+        }
+    }
+
+    #[test]
+    fn partial_trash_failures_are_reported_as_retry_targets() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().to_string_lossy().to_string();
+        let ok = temp.path().join("ok.bin");
+        let fail = temp.path().join("fail.bin");
+        std::fs::write(&ok, vec![0u8; 5]).unwrap();
+        std::fs::write(&fail, vec![0u8; 7]).unwrap();
+        let fail_str = fail.to_string_lossy().to_string();
+        let platform = MockPlatform::failing(vec![fail_str.clone()]);
+
+        let report = DeleteOrchestrator::delete_explicit_paths(
+            vec![
+                (ok.to_string_lossy().to_string(), 5),
+                (fail_str.clone(), 7),
+            ],
+            Some(&root),
+            false,
+            &platform,
+        )
+        .unwrap();
+
+        assert_eq!(report.deleted_count, 1);
+        assert_eq!(platform.trashed.lock().unwrap().len(), 1);
+        assert!(
+            report.failed_paths.iter().any(|failed| failed == &fail_str),
+            "failed paths are the retry targets"
         );
     }
 

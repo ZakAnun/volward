@@ -753,8 +753,13 @@ impl VolwardEngine {
                         paths.push((path, size_bytes));
                     }
                 }
-                return DeleteOrchestrator::delete_explicit_paths(paths, dry_run, &*self.platform)
-                    .map_err(|e| e.to_string());
+                return DeleteOrchestrator::delete_explicit_paths(
+                    paths,
+                    Some(&index.root_path),
+                    dry_run,
+                    &*self.platform,
+                )
+                .map_err(|e| e.to_string());
             }
         }
 
@@ -776,8 +781,13 @@ impl VolwardEngine {
                 paths.push((path, size_bytes));
             }
         }
-        DeleteOrchestrator::delete_explicit_paths(paths, dry_run, &*self.platform)
-            .map_err(|e| e.to_string())
+        DeleteOrchestrator::delete_explicit_paths(
+            paths,
+            Some(&snapshot.tree.path),
+            dry_run,
+            &*self.platform,
+        )
+        .map_err(|e| e.to_string())
     }
 
     pub fn empty_trash(&self) -> Result<TrashEmptyReport, String> {
@@ -1658,6 +1668,9 @@ mod tests {
     #[test]
     fn build_ai_candidates_json_caps_aggregates_and_lists_build_artifacts() {
         let engine = VolwardEngine::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let scratch_root = temp.path().join("scratch");
+        std::fs::create_dir_all(&scratch_root).unwrap();
         let mut snapshot = minimal_snapshot();
         snapshot.entries.push(StorageEntry {
             id: "e-node".to_string(),
@@ -1673,18 +1686,22 @@ mod tests {
         });
         // 250 unclassified siblings fold into one aggregate candidate.
         let children: Vec<ScanTreeNode> = (0..250)
-            .map(|i| ScanTreeNode {
-                name: format!("blob_{i}.dat"),
-                path: format!("/Users/x/scratch/blob_{i}.dat"),
-                is_dir: false,
-                size_bytes: 1,
-                entry_id: None,
-                children: vec![],
+            .map(|i| {
+                let path = scratch_root.join(format!("blob_{i}.dat"));
+                std::fs::write(&path, [0u8]).unwrap();
+                ScanTreeNode {
+                    name: format!("blob_{i}.dat"),
+                    path: path.to_string_lossy().to_string(),
+                    is_dir: false,
+                    size_bytes: 1,
+                    entry_id: None,
+                    children: vec![],
+                }
             })
             .collect();
         snapshot.tree.children.push(ScanTreeNode {
             name: "scratch".to_string(),
-            path: "/Users/x/scratch".to_string(),
+            path: scratch_root.to_string_lossy().to_string(),
             is_dir: true,
             size_bytes: 250,
             entry_id: None,
@@ -1696,7 +1713,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json: {json}");
         let candidates = parsed["unknown_candidates"].as_array().expect("candidates");
         assert_eq!(candidates.len(), 1, "{json}");
-        assert_eq!(candidates[0]["path"], "/Users/x/scratch");
+        assert_eq!(
+            candidates[0]["path"],
+            scratch_root.to_string_lossy().to_string()
+        );
         assert_eq!(
             candidates[0]["member_paths"].as_array().map(Vec::len),
             Some(200),
@@ -1704,7 +1724,7 @@ mod tests {
         );
         assert_eq!(
             candidates[0]["delete_target"],
-            "volward-ai-aggregate:v1:/Users/x/scratch"
+            format!("volward-ai-aggregate:v1:{}", scratch_root.to_string_lossy())
         );
         assert!(candidates[0].get("delete_member_paths").is_none(), "{json}");
         assert_eq!(parsed["truncated"], false);
@@ -1779,11 +1799,15 @@ mod tests {
     #[test]
     fn delete_entries_json_allows_explicit_non_deletable_media_in_index_mode() {
         let engine = VolwardEngine::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let movie = temp.path().join("movie.mov");
+        std::fs::write(&movie, vec![0u8; 120]).unwrap();
+        let movie_path = movie.to_string_lossy().to_string();
         let mut snapshot = minimal_snapshot();
         snapshot.entries.push(StorageEntry {
             id: "e3".to_string(),
             display_name: "movie.mov".to_string(),
-            path_or_uri: "/Users/x/Movies/movie.mov".to_string(),
+            path_or_uri: movie_path.clone(),
             size_bytes: 120,
             category: EntryCategory::Media,
             risk_level: RiskLevel::High,
@@ -1798,21 +1822,28 @@ mod tests {
         assert!(report.contains(r#""deleted_count":1"#), "{report}");
         assert!(report.contains(r#""freed_bytes":120"#), "{report}");
         assert!(!report.contains(r#""error""#), "{report}");
+        let _ = movie_path;
     }
 
     #[test]
     fn delete_entries_json_allows_directory_paths_in_index_mode() {
         let engine = VolwardEngine::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let users_dir = temp.path().join("Users");
+        std::fs::create_dir_all(&users_dir).unwrap();
+        let notes = users_dir.join("notes.txt");
+        std::fs::write(&notes, vec![0u8; 40]).unwrap();
+        let users_path = users_dir.to_string_lossy().to_string();
         let mut snapshot = minimal_snapshot();
         snapshot.tree.children.push(ScanTreeNode {
             name: "Users".to_string(),
-            path: "/Users".to_string(),
+            path: users_path.clone(),
             is_dir: true,
             size_bytes: 40,
             entry_id: None,
             children: vec![ScanTreeNode {
                 name: "notes.txt".to_string(),
-                path: "/Users/notes.txt".to_string(),
+                path: notes.to_string_lossy().to_string(),
                 is_dir: false,
                 size_bytes: 40,
                 entry_id: Some("dir-child".to_string()),
@@ -1821,10 +1852,11 @@ mod tests {
         });
         engine.set_last_snapshot(snapshot);
 
-        let report = engine.delete_entries_json("test-snap", vec!["/Users".to_string()], true);
+        let report = engine.delete_entries_json("test-snap", vec![users_path.clone()], true);
         assert!(report.contains(r#""deleted_count":1"#), "{report}");
         assert!(report.contains(r#""freed_bytes":40"#), "{report}");
         assert!(!report.contains(r#""error""#), "{report}");
+        let _ = users_path;
     }
 
     #[test]

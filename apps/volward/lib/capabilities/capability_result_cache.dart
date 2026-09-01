@@ -14,13 +14,26 @@ class CapabilityAnalysisCache {
     String snapshotId,
     Capability capability,
     AnalysisOptions options,
-  ) => '${capability.wireValue}|$snapshotId|${jsonEncode(options.toJson())}';
+    {
+    int schemaVersion = capabilitySchemaVersion,
+    String? analyzerVersion,
+  }) {
+    final version = analyzerVersion ?? capabilityAnalyzerVersions[capability] ?? 'unknown';
+    return '${capability.wireValue}|$snapshotId|$schemaVersion|$version|'
+        '${jsonEncode(options.toJson())}';
+  }
 
   CapabilityAnalysisResult? get(
     String snapshotId,
     Capability capability,
     AnalysisOptions options,
-  ) => _entries[key(snapshotId, capability, options)];
+  ) {
+    final entry = _entries[key(snapshotId, capability, options)];
+    if (entry != null && entry.schemaVersion != capabilitySchemaVersion) {
+      return null;
+    }
+    return entry;
+  }
 
   void put(
     String snapshotId,

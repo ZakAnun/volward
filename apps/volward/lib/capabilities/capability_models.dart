@@ -35,6 +35,17 @@ enum CapabilityAnalysisPhase {
   completed,
 }
 
+/// Analyzer versions shared with the Rust analyzers. Bump in lockstep when a
+/// Rust analyzer version changes so the result cache invalidates.
+const Map<Capability, String> capabilityAnalyzerVersions = {
+  Capability.largeFiles: 'large_files-v1',
+  Capability.cleanupCandidates: 'cleanup_candidates-v1',
+  Capability.duplicateFiles: 'duplicate_files-v1',
+  Capability.similarPhotos: 'similar_photos-v1',
+  Capability.applications: 'applications-v1',
+  Capability.browserPrivacy: 'browser_privacy-v1',
+};
+
 extension CapabilityWire on Capability {
   String get wireValue => switch (this) {
     Capability.largeFiles => 'large_files',
