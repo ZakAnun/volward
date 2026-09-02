@@ -42,6 +42,8 @@ case "$paddle_env" in
     ;;
 esac
 
+platform_image="$(printf '%s' "$PLATFORM_IMAGE" | tr '[:upper:]' '[:lower:]')"
+
 ssh_port="$deploy_port"
 ssh_key_file="$(mktemp)"
 env_file="$(mktemp)"
@@ -65,7 +67,7 @@ scp_cmd=(scp "${ssh_common_opts[@]}" -P "$ssh_port")
 remote="${deploy_user}@${deploy_host}"
 
 cat >"$env_file" <<EOF
-VOLWARD_PLATFORM_IMAGE=${PLATFORM_IMAGE}
+VOLWARD_PLATFORM_IMAGE=${platform_image}
 JWT_SECRET=${PLATFORM_JWT_SECRET}
 DEEPSEEK_API_KEY=${PLATFORM_DEEPSEEK_API_KEY}
 RESEND_API_KEY=${PLATFORM_RESEND_API_KEY}
@@ -141,4 +143,4 @@ if [[ -n "${PLATFORM_HEALTHCHECK_URL:-}" ]]; then
   echo "Platform API public health check passed: $PLATFORM_HEALTHCHECK_URL"
 fi
 
-echo "Platform API deployed to ${remote} (${PLATFORM_IMAGE})"
+echo "Platform API deployed to ${remote} (${platform_image})"
