@@ -403,10 +403,7 @@ Future<void> _openResults(
     find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
   );
   await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
-  await _pumpUntilFound(
-    tester,
-    find.byKey(AiAnalysisWorkspace.resultsListKey),
-  );
+  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.resultsListKey));
   await tester.pump();
 }
 
