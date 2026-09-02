@@ -27,6 +27,7 @@ class ScanEntryRecord {
   final int sizeBytes;
   final String category;
   final bool deletable;
+
   /// File modification time in epoch milliseconds; null when the snapshot
   /// did not collect metadata (old snapshots, directories, unknown mtime).
   final int? modifiedAtMs;

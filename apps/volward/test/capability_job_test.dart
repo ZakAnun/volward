@@ -10,11 +10,11 @@ void main() {
       final session = VolwardSession.test();
       session.capabilityAnalyzeRunnerForTest =
           (snapshotId, capability, optionsJson) {
-        expect(snapshotId, 'snapshot-1');
-        expect(capability, 'large_files');
-        expect(jsonDecode(optionsJson)['page_size'], 100);
-        return jsonEncode({'result': _resultPayload()});
-      };
+            expect(snapshotId, 'snapshot-1');
+            expect(capability, 'large_files');
+            expect(jsonDecode(optionsJson)['page_size'], 100);
+            return jsonEncode({'result': _resultPayload()});
+          };
 
       final result = await session.analyzeCapability(
         snapshotId: 'snapshot-1',
@@ -27,59 +27,65 @@ void main() {
       expect(result.groups.single.items.single.id, 'entry-42');
     });
 
-    test('analyzeCapability surfaces structured errors as StateError', () async {
-      final session = VolwardSession.test();
-      session.capabilityAnalyzeRunnerForTest = (_, __, ___) => jsonEncode({
-        'error': {
-          'code': 'unsupported_capability',
-          'message': 'capability is not implemented',
-          'capability': 'large_files',
-          'snapshot_id': 'snapshot-1',
-        },
-      });
+    test(
+      'analyzeCapability surfaces structured errors as StateError',
+      () async {
+        final session = VolwardSession.test();
+        session.capabilityAnalyzeRunnerForTest = (_, __, ___) => jsonEncode({
+          'error': {
+            'code': 'unsupported_capability',
+            'message': 'capability is not implemented',
+            'capability': 'large_files',
+            'snapshot_id': 'snapshot-1',
+          },
+        });
 
-      await expectLater(
-        session.analyzeCapability(
-          snapshotId: 'snapshot-1',
-          capability: Capability.largeFiles,
-        ),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            'message',
-            contains('unsupported_capability'),
+        await expectLater(
+          session.analyzeCapability(
+            snapshotId: 'snapshot-1',
+            capability: Capability.largeFiles,
           ),
-        ),
-      );
-    });
-
-    test('analyzeCapability reports malformed responses with capability', () async {
-      final session = VolwardSession.test();
-      session.capabilityAnalyzeRunnerForTest = (_, __, ___) => 'not-json';
-
-      await expectLater(
-        session.analyzeCapability(
-          snapshotId: 'snapshot-1',
-          capability: Capability.largeFiles,
-        ),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message',
-            contains('large_files'),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains('unsupported_capability'),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
+
+    test(
+      'analyzeCapability reports malformed responses with capability',
+      () async {
+        final session = VolwardSession.test();
+        session.capabilityAnalyzeRunnerForTest = (_, __, ___) => 'not-json';
+
+        await expectLater(
+          session.analyzeCapability(
+            snapshotId: 'snapshot-1',
+            capability: Capability.largeFiles,
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains('large_files'),
+            ),
+          ),
+        );
+      },
+    );
 
     test('startCapabilityAnalysis returns the job id', () {
       final session = VolwardSession.test();
       session.capabilityStartRunnerForTest =
           (snapshotId, capability, optionsJson) {
-        expect(snapshotId, 'snapshot-1');
-        expect(capability, 'duplicate_files');
-        return jsonEncode({'job_id': 'job-42'});
-      };
+            expect(snapshotId, 'snapshot-1');
+            expect(capability, 'duplicate_files');
+            return jsonEncode({'job_id': 'job-42'});
+          };
 
       final jobId = session.startCapabilityAnalysis(
         snapshotId: 'snapshot-1',

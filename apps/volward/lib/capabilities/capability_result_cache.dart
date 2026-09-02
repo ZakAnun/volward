@@ -14,12 +14,12 @@ class CapabilityAnalysisCache {
   String key(
     String snapshotId,
     Capability capability,
-    AnalysisOptions options,
-    {
+    AnalysisOptions options, {
     int schemaVersion = capabilitySchemaVersion,
     String? analyzerVersion,
   }) {
-    final version = analyzerVersion ?? capabilityAnalyzerVersions[capability] ?? 'unknown';
+    final version =
+        analyzerVersion ?? capabilityAnalyzerVersions[capability] ?? 'unknown';
     return '${capability.wireValue}|$snapshotId|$schemaVersion|$version|'
         '${jsonEncode(options.toJson())}';
   }

@@ -25,7 +25,9 @@ void main() {
       expect(result.summary.keptCount, 1);
       expect(result.summary.reviewCount, 2);
       final items = result.groups.single.items;
-      final kept = items.singleWhere((item) => item.recommendation == Recommendation.keep);
+      final kept = items.singleWhere(
+        (item) => item.recommendation == Recommendation.keep,
+      );
       expect(kept.deleteTarget, isNull);
       expect(
         kept.evidence.any((evidence) => evidence.startsWith('width:')),

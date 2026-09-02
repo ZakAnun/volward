@@ -6,44 +6,55 @@ import 'package:volward/volward_session.dart';
 
 void main() {
   group('platform capability fallback', () {
-    test('decodes GuidedOnly results with warnings and blocked targets', () async {
-      final session = VolwardSession.test();
-      session.capabilityAnalyzeRunnerForTest = (_, __, ___) =>
-          jsonEncode({'result': _guidedOnlyPayload()});
+    test(
+      'decodes GuidedOnly results with warnings and blocked targets',
+      () async {
+        final session = VolwardSession.test();
+        session.capabilityAnalyzeRunnerForTest = (_, __, ___) =>
+            jsonEncode({'result': _guidedOnlyPayload()});
 
-      final result = await session.analyzeCapability(
-        snapshotId: 'snapshot-1',
-        capability: Capability.browserPrivacy,
-      );
+        final result = await session.analyzeCapability(
+          snapshotId: 'snapshot-1',
+          capability: Capability.browserPrivacy,
+        );
 
-      expect(result.capabilityLevel, CapabilityLevel.guidedOnly);
-      expect(result.warnings, contains(contains('running')));
-      expect(result.deletionPlan.targetCount, 0);
-      expect(result.deletionPlan.blockedTargets, isNotEmpty);
-      expect(result.summary.reviewCount, result.summary.itemCount);
-    });
+        expect(result.capabilityLevel, CapabilityLevel.guidedOnly);
+        expect(result.warnings, contains(contains('running')));
+        expect(result.deletionPlan.targetCount, 0);
+        expect(result.deletionPlan.blockedTargets, isNotEmpty);
+        expect(result.summary.reviewCount, result.summary.itemCount);
+      },
+    );
 
-    test('decodes FullPath application results with keep + residual targets', () async {
-      final session = VolwardSession.test();
-      session.capabilityAnalyzeRunnerForTest = (_, __, ___) =>
-          jsonEncode({'result': _applicationsPayload()});
+    test(
+      'decodes FullPath application results with keep + residual targets',
+      () async {
+        final session = VolwardSession.test();
+        session.capabilityAnalyzeRunnerForTest = (_, __, ___) =>
+            jsonEncode({'result': _applicationsPayload()});
 
-      final result = await session.analyzeCapability(
-        snapshotId: 'snapshot-1',
-        capability: Capability.applications,
-      );
+        final result = await session.analyzeCapability(
+          snapshotId: 'snapshot-1',
+          capability: Capability.applications,
+        );
 
-      expect(result.capabilityLevel, CapabilityLevel.fullPath);
-      final kept = result.groups
-          .expand((group) => group.items)
-          .singleWhere((item) => item.recommendation == Recommendation.keep);
-      expect(
-        kept.evidence.any((evidence) => evidence.startsWith('uninstall_hint:')),
-        isTrue,
-      );
-      expect(result.deletionPlan.targetCount, 1);
-      expect(result.deletionPlan.targets.single, endsWith('Application Support/Example'));
-    });
+        expect(result.capabilityLevel, CapabilityLevel.fullPath);
+        final kept = result.groups
+            .expand((group) => group.items)
+            .singleWhere((item) => item.recommendation == Recommendation.keep);
+        expect(
+          kept.evidence.any(
+            (evidence) => evidence.startsWith('uninstall_hint:'),
+          ),
+          isTrue,
+        );
+        expect(result.deletionPlan.targetCount, 1);
+        expect(
+          result.deletionPlan.targets.single,
+          endsWith('Application Support/Example'),
+        );
+      },
+    );
   });
 }
 
@@ -85,7 +96,11 @@ Map<String, dynamic> _guidedOnlyPayload() => {
           'recommendation': 'review_needed',
           'confidence': 'medium',
           'reason': 'browser:databases',
-          'evidence': ['category:databases', 'estimated_bytes:0', 'guided_only'],
+          'evidence': [
+            'category:databases',
+            'estimated_bytes:0',
+            'guided_only',
+          ],
           'delete_target': null,
           'preview': {'kind': 'directory', 'locatable': true},
         },
@@ -142,7 +157,10 @@ Map<String, dynamic> _applicationsPayload() => {
           'recommendation': 'keep',
           'confidence': 'high',
           'reason': 'application',
-          'evidence': ['confidence:high', 'uninstall_hint:open -R /Applications/Example.app'],
+          'evidence': [
+            'confidence:high',
+            'uninstall_hint:open -R /Applications/Example.app',
+          ],
           'delete_target': null,
           'preview': {'kind': 'directory', 'locatable': true},
         },

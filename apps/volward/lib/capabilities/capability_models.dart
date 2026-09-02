@@ -870,8 +870,7 @@ class CapabilityJobStatus {
   /// True once the job reached a terminal state: completed, cancelled,
   /// or failed (a failure is reported as a completed phase with an error).
   bool get isTerminal =>
-      progress.phase == CapabilityAnalysisPhase.completed ||
-      progress.cancelled;
+      progress.phase == CapabilityAnalysisPhase.completed || progress.cancelled;
 
   Map<String, dynamic> toJson() => {
     'progress': progress.toJson(),

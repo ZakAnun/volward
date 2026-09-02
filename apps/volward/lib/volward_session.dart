@@ -2653,7 +2653,9 @@ class VolwardSession extends ChangeNotifier {
   // ── Capability analysis (Lemon-style storage capabilities) ─────────────
 
   bool get hasCapabilityApi =>
-      _ready && _engine != null && VolwardNativeBridge.instance.hasCapabilityApi;
+      _ready &&
+      _engine != null &&
+      VolwardNativeBridge.instance.hasCapabilityApi;
 
   /// Synchronous capability analysis against the current snapshot. Returns
   /// the typed result, or throws [StateError] / [FormatException] on failure.

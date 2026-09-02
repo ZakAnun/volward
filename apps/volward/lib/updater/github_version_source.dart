@@ -164,13 +164,15 @@ class GitHubVersionSource implements VersionSource {
 
   Future<ReleaseInfo> _fetchLatestViaAtom() async {
     final uri = Uri.https('github.com', '/$owner/$repo/releases.atom');
-    final response = await _client.get(
-      uri,
-      headers: const {
-        'User-Agent': 'Volward-Updater',
-        'Accept': 'application/atom+xml, application/xml, text/xml, */*',
-      },
-    ).timeout(_kGitHubRequestTimeout);
+    final response = await _client
+        .get(
+          uri,
+          headers: const {
+            'User-Agent': 'Volward-Updater',
+            'Accept': 'application/atom+xml, application/xml, text/xml, */*',
+          },
+        )
+        .timeout(_kGitHubRequestTimeout);
     if (response.statusCode != 200) {
       throw GitHubHttpException(
         'GitHub releases.atom failed: HTTP ${response.statusCode}',
@@ -192,13 +194,15 @@ class GitHubVersionSource implements VersionSource {
       ..followRedirects = false
       ..headers['User-Agent'] = 'Volward-Updater'
       ..headers['Accept'] = 'text/html';
-    final streamed =
-        await _client.send(request).timeout(_kGitHubRequestTimeout);
+    final streamed = await _client
+        .send(request)
+        .timeout(_kGitHubRequestTimeout);
     await streamed.stream.drain<void>().timeout(_kGitHubRequestTimeout);
 
     final location = streamed.headers['location'];
-    final redirected =
-        (location == null || location.isEmpty) ? null : uri.resolve(location);
+    final redirected = (location == null || location.isEmpty)
+        ? null
+        : uri.resolve(location);
     final tagUrl = redirected ?? streamed.request?.url ?? uri;
     // Some environments still land on 200 with the final URL after a proxy.
     if (streamed.statusCode != 302 &&
@@ -227,13 +231,15 @@ class GitHubVersionSource implements VersionSource {
       'api.github.com',
       '/repos/$owner/$repo/releases/latest',
     );
-    final response = await _client.get(
-      uri,
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'Volward-Updater',
-      },
-    ).timeout(_kGitHubRequestTimeout);
+    final response = await _client
+        .get(
+          uri,
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'Volward-Updater',
+          },
+        )
+        .timeout(_kGitHubRequestTimeout);
     if (response.statusCode != 200) {
       final hint = response.statusCode == 403
           ? ' (API rate limit exceeded for unauthenticated requests)'

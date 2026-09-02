@@ -404,7 +404,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         const SizedBox(height: AppleSpacing.xs),
                         Text(
                           l10n.aiSettingsCreditsRemaining(
-                              _platformUser!.credits),
+                            _platformUser!.credits,
+                          ),
                           style: context.vwCaptionStrong,
                         ),
                         const SizedBox(height: AppleSpacing.xs),
@@ -426,15 +427,11 @@ class _SettingsPageState extends State<SettingsPage> {
                           filled: true,
                           fillColor: v.surfacePearl,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppleRadius.sm,
-                            ),
+                            borderRadius: BorderRadius.circular(AppleRadius.sm),
                             borderSide: BorderSide(color: v.hairline),
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppleRadius.sm,
-                            ),
+                            borderRadius: BorderRadius.circular(AppleRadius.sm),
                             borderSide: BorderSide(color: v.hairline),
                           ),
                         ),
@@ -460,23 +457,18 @@ class _SettingsPageState extends State<SettingsPage> {
                             variant: AppleButtonVariant.pearl,
                             onPressed:
                                 _hasByokKey || _apiKeyController.text.isNotEmpty
-                                    ? _clearApiKey
-                                    : null,
+                                ? _clearApiKey
+                                : null,
                           ),
                         ],
                       ),
                     ],
                     const SizedBox(height: AppleSpacing.md),
-                    Text(
-                      l10n.aiPrivacyTitle,
-                      style: context.vwCaptionStrong,
-                    ),
+                    Text(l10n.aiPrivacyTitle, style: context.vwCaptionStrong),
                     const SizedBox(height: AppleSpacing.xs),
                     Text(
                       l10n.aiPrivacyBody,
-                      style: context.vwFinePrint.copyWith(
-                        color: v.inkMuted48,
-                      ),
+                      style: context.vwFinePrint.copyWith(color: v.inkMuted48),
                     ),
                   ],
                 ),
@@ -529,7 +521,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             color: preset.$2,
                             selected:
                                 widget.themeSettings.accentColor.toARGB32() ==
-                                    preset.$2.toARGB32(),
+                                preset.$2.toARGB32(),
                             onTap: () =>
                                 widget.themeSettings.setAccentColor(preset.$2),
                           ),
@@ -599,7 +591,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           ? l10n.settingsIncrementalScanDescription
                           : l10n.settingsIncrementalScanUnsupported,
                       value: widget.session.incrementalScan,
-                      enabled: !widget.session.scanning &&
+                      enabled:
+                          !widget.session.scanning &&
                           widget.session.canUseIncrementalScan,
                       onChanged: widget.session.setIncrementalScan,
                     ),
@@ -630,8 +623,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           future: widget.updater.localVersion(),
                           builder: (context, snap) {
                             final version = snap.data ?? '…';
-                            final percent =
-                                ((status.progress ?? 0) * 100).round();
+                            final percent = ((status.progress ?? 0) * 100)
+                                .round();
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
@@ -790,9 +783,12 @@ class _SettingsSwitch extends StatelessWidget {
                 ],
               ),
             ),
-          const SizedBox(width: AppleSpacing.md),
-          Switch.adaptive(value: value, onChanged: enabled ? onChanged : null),
-        ],
+            const SizedBox(width: AppleSpacing.md),
+            Switch.adaptive(
+              value: value,
+              onChanged: enabled ? onChanged : null,
+            ),
+          ],
         ),
       ),
     );
@@ -821,7 +817,9 @@ class _SettingsSectionCard extends StatelessWidget {
     final bg = featured ? Color.alphaBlend(tint, tokens.canvas) : tokens.canvas;
     final border = featured
         ? Color.alphaBlend(
-            scheme.primary.withValues(alpha: 0.18), tokens.hairline)
+            scheme.primary.withValues(alpha: 0.18),
+            tokens.hairline,
+          )
         : tokens.hairline;
 
     return DecoratedBox(
@@ -854,12 +852,7 @@ class _SettingsSectionCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppleSpacing.sm),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: context.vwCaptionStrong,
-                  ),
-                ),
+                Expanded(child: Text(title, style: context.vwCaptionStrong)),
               ],
             ),
             const SizedBox(height: AppleSpacing.md),
@@ -882,21 +875,9 @@ class _AiModePicker extends StatelessWidget {
     final v = context.volward;
     final l10n = context.l10n;
     final options = [
-      (
-        AiMode.off,
-        l10n.aiSettingsOffLabel,
-        Icons.do_not_disturb_on_outlined,
-      ),
-      (
-        AiMode.byok,
-        l10n.aiSettingsByokLabel,
-        Icons.key_outlined,
-      ),
-      (
-        AiMode.platform,
-        l10n.aiSettingsPlatformLabel,
-        Icons.cloud_outlined,
-      ),
+      (AiMode.off, l10n.aiSettingsOffLabel, Icons.do_not_disturb_on_outlined),
+      (AiMode.byok, l10n.aiSettingsByokLabel, Icons.key_outlined),
+      (AiMode.platform, l10n.aiSettingsPlatformLabel, Icons.cloud_outlined),
     ];
 
     return DecoratedBox(

@@ -105,7 +105,8 @@ typedef VolwardAiStartBuildCandidatesAsync =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 typedef VolwardAiIsCandidatesBuildingNative = Bool Function(Pointer<Void>);
 typedef VolwardAiIsCandidatesBuilding = bool Function(Pointer<Void>);
-typedef VolwardAiGetCandidatesJsonNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardAiGetCandidatesJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardAiGetCandidatesJson = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardAiSaveResultJsonNative =
     Bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
@@ -189,22 +190,44 @@ typedef VolwardReplaceDirectoryWithSubtree =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
 typedef VolwardAnalyzeCapabilityJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
 typedef VolwardAnalyzeCapabilityJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
 
 typedef VolwardStartCapabilityAnalysisJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
 typedef VolwardStartCapabilityAnalysisJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
 
 typedef VolwardGetCapabilityJobStatusJsonNative =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 typedef VolwardGetCapabilityJobStatusJson =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 
-typedef VolwardCancelCapabilityAnalysisNative = Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardCancelCapabilityAnalysis = bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardCancelCapabilityAnalysisNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardCancelCapabilityAnalysis =
+    bool Function(Pointer<Void>, Pointer<Utf8>);
 
 abstract interface class VolwardBridge {
   bool get hasSnapshotFileApi;

@@ -1740,9 +1740,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                           frac != null ? '${(frac * 100).round()}%' : '…',
                           style: ctx.vwFinePrint.copyWith(
                             color: ctx.volward.primary,
-                            fontFeatures: const [
-                              FontFeature.tabularFigures(),
-                            ],
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         );
                       },
@@ -2400,11 +2398,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
             child: IconButton(
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: Icon(
-                Icons.settings_outlined,
-                size: 18,
-                color: v.bodyMuted,
-              ),
+              icon: Icon(Icons.settings_outlined, size: 18, color: v.bodyMuted),
               onPressed: _openSettings,
             ),
           ),
@@ -2485,8 +2479,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
               icon: Icon(Icons.expand_more, size: 18, color: v.inkMuted80),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              onPressed: () =>
-                  setState(() => _permissionBannerExpanded = true),
+              onPressed: () => setState(() => _permissionBannerExpanded = true),
             ),
           ),
         ],
@@ -2515,11 +2508,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
               Tooltip(
                 message: l10n.permissionHideDetails,
                 child: IconButton(
-                  icon: Icon(
-                    Icons.expand_less,
-                    size: 18,
-                    color: v.inkMuted80,
-                  ),
+                  icon: Icon(Icons.expand_less, size: 18, color: v.inkMuted80),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
                     minWidth: 28,

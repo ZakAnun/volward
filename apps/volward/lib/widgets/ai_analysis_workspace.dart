@@ -2180,10 +2180,7 @@ class _ResultGroupRow extends StatelessWidget {
             child: SizedBox(
               width: 40,
               height: 40,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: checkbox,
-              ),
+              child: FittedBox(fit: BoxFit.scaleDown, child: checkbox),
             ),
           ),
           Expanded(

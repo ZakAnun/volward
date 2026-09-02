@@ -55,13 +55,14 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
 
   Future<void> _load() async {
     try {
-      final token =
-          await PlatformAuthStore.instance.ensureDeviceRegistered();
+      final token = await PlatformAuthStore.instance.ensureDeviceRegistered();
       const base = PlatformAuthStore.defaultBaseUrl;
-      final res = await http.get(
-        Uri.parse('$base/billing/packs'),
-        headers: {'Authorization': 'Bearer $token'},
-      ).timeout(const Duration(seconds: 30));
+      final res = await http
+          .get(
+            Uri.parse('$base/billing/packs'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode != 200) {
         throw Exception('packs_failed:${res.statusCode}');
       }
@@ -175,7 +176,9 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
                       ListTile(
                         title: Text(pack.label),
                         subtitle: Text('${pack.credits} credits'),
-                        trailing: Text('¥${(pack.priceCny / 100).toStringAsFixed(2)}'),
+                        trailing: Text(
+                          '¥${(pack.priceCny / 100).toStringAsFixed(2)}',
+                        ),
                         onTap: () => _checkout(pack),
                       ),
                     if (_packs.isEmpty && _error == null)
@@ -223,9 +226,9 @@ class _Pack {
   final String label;
 
   factory _Pack.fromJson(Map<String, dynamic> j) => _Pack(
-        id: j['id'] as String,
-        credits: (j['credits'] as num).toInt(),
-        priceCny: (j['price_cny'] as num?)?.toInt() ?? 0,
-        label: (j['label_zh'] ?? j['label_en'] ?? j['id']) as String,
-      );
+    id: j['id'] as String,
+    credits: (j['credits'] as num).toInt(),
+    priceCny: (j['price_cny'] as num?)?.toInt() ?? 0,
+    label: (j['label_zh'] ?? j['label_en'] ?? j['id']) as String,
+  );
 }
