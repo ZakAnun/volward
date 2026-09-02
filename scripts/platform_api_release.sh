@@ -53,12 +53,14 @@ trap cleanup EXIT
 printf '%s\n' "$deploy_key" >"$ssh_key_file"
 chmod 600 "$ssh_key_file"
 
-ssh_opts=(
+ssh_common_opts=(
   -i "$ssh_key_file"
-  -p "$ssh_port"
   -o StrictHostKeyChecking=no
   -o UserKnownHostsFile=/dev/null
+  -o IdentitiesOnly=yes
 )
+ssh_cmd=(ssh "${ssh_common_opts[@]}" -p "$ssh_port")
+scp_cmd=(scp "${ssh_common_opts[@]}" -P "$ssh_port")
 
 remote="${deploy_user}@${deploy_host}"
 
@@ -73,14 +75,14 @@ PADDLE_WEBHOOK_SECRET=${PLATFORM_PADDLE_WEBHOOK_SECRET}
 PADDLE_ENV=${paddle_env}
 EOF
 
-scp "${ssh_opts[@]}" \
+"${scp_cmd[@]}" \
   "$DEPLOY_DIR/docker-compose.extend.yml" \
   "$DEPLOY_DIR/deploy.sh" \
   "$DEPLOY_DIR/backup.sh" \
   "${remote}:/tmp/"
-scp "${ssh_opts[@]}" "$env_file" "${remote}:/tmp/volward-platform.env"
+"${scp_cmd[@]}" "$env_file" "${remote}:/tmp/volward-platform.env"
 
-ssh "${ssh_opts[@]}" "$remote" bash -s <<'REMOTE'
+"${ssh_cmd[@]}" "$remote" bash -s <<'REMOTE'
 set -euo pipefail
 
 if [[ "$(id -u)" -eq 0 ]]; then
@@ -104,11 +106,11 @@ if [[ -n "${PLATFORM_GHCR_READ_TOKEN:-}" ]]; then
     echo "PLATFORM_GHCR_READ_TOKEN is set but GHCR username is missing." >&2
     exit 1
   fi
-  printf '%s' "$PLATFORM_GHCR_READ_TOKEN" | ssh "${ssh_opts[@]}" "$remote" \
+  printf '%s' "$PLATFORM_GHCR_READ_TOKEN" | "${ssh_cmd[@]}" "$remote" \
     docker login ghcr.io -u "$ghcr_user" --password-stdin
 fi
 
-ssh "${ssh_opts[@]}" "$remote" bash -s <<'REMOTE'
+"${ssh_cmd[@]}" "$remote" bash -s <<'REMOTE'
 set -euo pipefail
 if [[ "$(id -u)" -eq 0 ]]; then
   /usr/local/sbin/volward-platform-deploy
@@ -123,7 +125,7 @@ if [[ -z "${PLATFORM_HEALTHCHECK_URL:-}" && -n "${VOLWARD_API_BASE:-}" ]]; then
   esac
 fi
 
-health_body="$(ssh "${ssh_opts[@]}" "$remote" "curl -fsS http://127.0.0.1:8080/health")"
+health_body="$("${ssh_cmd[@]}" "$remote" "curl -fsS http://127.0.0.1:8080/health")"
 if [[ "$health_body" != *'"ok":true'* ]]; then
   echo "Platform API local health check failed: $health_body" >&2
   exit 1
