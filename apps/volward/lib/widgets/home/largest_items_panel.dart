@@ -240,15 +240,12 @@ class _LargestItemRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 7),
                       Expanded(
-                        child: Tooltip(
-                          message: item.path,
-                          child: Text(
-                            item.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.vwFinePrint.copyWith(
-                              color: kOnDashboard.withValues(alpha: 0.86),
-                            ),
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.vwFinePrint.copyWith(
+                            color: kOnDashboard.withValues(alpha: 0.86),
                           ),
                         ),
                       ),

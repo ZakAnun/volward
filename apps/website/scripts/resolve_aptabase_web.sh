@@ -52,7 +52,7 @@ PY
       IFS=$'\t' read -r file_key file_host <<<"$parsed"
       if [[ -z "$file_key" ]]; then
         echo "❌ Aptabase: $json has empty APTABASE_WEB_KEY" >&2
-        echo "   Copy from aptabase.json.example and fill the key, or export APTABASE_WEB_KEY/HOST." >&2
+        echo "   Fill APTABASE_WEB_KEY in $json, or export APTABASE_WEB_KEY/HOST." >&2
         return 1
       fi
       export APTABASE_WEB_KEY="$file_key"
@@ -68,7 +68,7 @@ PY
   if [[ "$require" -eq 1 ]]; then
     echo "❌ Aptabase: required for this build, but neither env nor aptabase.json is configured" >&2
     echo "   Export APTABASE_WEB_KEY + APTABASE_HOST, or create apps/website/aptabase.json" >&2
-    echo "   (see apps/website/aptabase.json.example)." >&2
+    echo "   Create $json with APTABASE_WEB_KEY and APTABASE_HOST, or export both variables." >&2
     return 1
   fi
 

@@ -53,7 +53,7 @@ PY
       )"
       if [[ -z "$file_key" ]]; then
         echo "❌ Aptabase: $json has empty APTABASE_APP_KEY" >&2
-        echo "   Copy from aptabase.json.example and fill the key, or export APTABASE_APP_KEY/HOST." >&2
+        echo "   Fill APTABASE_APP_KEY in $json, or export APTABASE_APP_KEY/HOST." >&2
         return 1
       fi
     fi
@@ -65,7 +65,7 @@ PY
   if [[ "$require" -eq 1 ]]; then
     echo "❌ Aptabase: required for this build, but neither env nor aptabase.json is configured" >&2
     echo "   Export APTABASE_APP_KEY + APTABASE_HOST, or create apps/volward/aptabase.json" >&2
-    echo "   (see apps/volward/aptabase.json.example)." >&2
+    echo "   Create $json with APTABASE_APP_KEY and APTABASE_HOST, or export both variables." >&2
     return 1
   fi
 

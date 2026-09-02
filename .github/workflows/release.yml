@@ -60,21 +60,31 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
+          case "$VOLWARD_API_BASE" in
+            https://*/v1) ;;
+            *)
+              echo "Missing or invalid repository variable: VOLWARD_API_BASE (expected https://.../v1 without a trailing slash)"
+              exit 1
+              ;;
+          esac
           # Nested Rust dylib is ad-hoc signed in macos/build_rust.sh (required on
           # Intel CI). Do not pass xcodebuild args after "--": flutter treats them
           # as Dart entrypoints ("Target file CODE_SIGN_IDENTITY=- not found").
           flutter build macos --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            --dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE"
 
       - name: Verify macOS bundle
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           APP=apps/volward/build/macos/Build/Products/Release/volward.app
           DYLIB="$APP/Contents/Frameworks/libvolward_facade.dylib"
@@ -93,6 +103,11 @@ jobs:
             exit 1
           fi
           echo "Aptabase key present in macOS App.framework"
+          if ! strings "$APP_SNAPSHOT" | grep -Fq "$VOLWARD_API_BASE"; then
+            echo "Volward API base not found in macOS App.framework — dart-define may be missing"
+            exit 1
+          fi
+          echo "Volward API base present in macOS App.framework"
 
       - name: Get version
         id: version
@@ -173,15 +188,24 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         shell: bash
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
+          case "$VOLWARD_API_BASE" in
+            https://*/v1) ;;
+            *)
+              echo "Missing or invalid repository variable: VOLWARD_API_BASE (expected https://.../v1 without a trailing slash)"
+              exit 1
+              ;;
+          esac
           flutter build windows --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            --dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE"
 
       - name: Copy DLL to release bundle
         shell: bash
@@ -192,6 +216,7 @@ jobs:
         shell: pwsh
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           $bundle = "$env:GITHUB_WORKSPACE\apps\volward\build\windows\x64\runner\Release"
           foreach ($path in @(
@@ -216,6 +241,10 @@ jobs:
             throw "Aptabase key not found in Windows data/app.so — dart-define may be missing"
           }
           Write-Host "Aptabase key present in Windows data/app.so"
+          if ($text -notlike "*$env:VOLWARD_API_BASE*") {
+            throw "Volward API base not found in Windows data/app.so — dart-define may be missing"
+          }
+          Write-Host "Volward API base present in Windows data/app.so"
 
       - name: Get version
         id: version
@@ -321,14 +350,23 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
             exit 1
           fi
+          case "$VOLWARD_API_BASE" in
+            https://*/v1) ;;
+            *)
+              echo "Missing or invalid repository variable: VOLWARD_API_BASE (expected https://.../v1 without a trailing slash)"
+              exit 1
+              ;;
+          esac
           flutter build linux --release \
             --dart-define="APTABASE_APP_KEY=$APTABASE_APP_KEY" \
-            --dart-define="APTABASE_HOST=$APTABASE_HOST"
+            --dart-define="APTABASE_HOST=$APTABASE_HOST" \
+            --dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE"
 
       - name: Copy .so to bundle/lib
         run: |
@@ -338,6 +376,7 @@ jobs:
       - name: Verify Linux bundle
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           BIN=apps/volward/build/linux/x64/release/bundle/volward
           # Dart AOT snapshot lives in lib/libapp.so, not the runner executable.
@@ -353,6 +392,11 @@ jobs:
             exit 1
           fi
           echo "Aptabase key present in Linux libapp.so"
+          if ! strings "$APP_SO" | grep -Fq "$VOLWARD_API_BASE"; then
+            echo "Volward API base not found in Linux libapp.so — dart-define may be missing"
+            exit 1
+          fi
+          echo "Volward API base present in Linux libapp.so"
 
       - name: Get version
         id: version

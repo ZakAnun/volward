@@ -985,6 +985,648 @@ abstract class AppLocalizations {
     int count,
   );
 
+  /// No description provided for @aiAnalysisTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Disk Analysis'**
+  String get aiAnalysisTitle;
+
+  /// No description provided for @aiPreCheckSafeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items pre-identified as safe to remove'**
+  String aiPreCheckSafeTitle(int count);
+
+  /// No description provided for @aiPreCheckSafeSelectable.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items already marked safe by local rules'**
+  String aiPreCheckSafeSelectable(int count);
+
+  /// No description provided for @aiPreCheckUnknownTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items will be sent for AI analysis (~{tokens} tokens)'**
+  String aiPreCheckUnknownTitle(int count, int tokens);
+
+  /// No description provided for @aiStartAnalysis.
+  ///
+  /// In en, this message translates to:
+  /// **'Start AI Analysis'**
+  String get aiStartAnalysis;
+
+  /// No description provided for @aiNoApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'No API Key — configure in Settings'**
+  String get aiNoApiKey;
+
+  /// No description provided for @aiContractUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The installed native library is out of date. Please update Volward to use AI analysis.'**
+  String get aiContractUnavailable;
+
+  /// No description provided for @aiDeleteSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} Selected Items'**
+  String aiDeleteSelected(int count);
+
+  /// No description provided for @aiVerdictSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to Remove ({count})'**
+  String aiVerdictSafe(int count);
+
+  /// No description provided for @aiVerdictReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Needed ({count})'**
+  String aiVerdictReview(int count);
+
+  /// No description provided for @aiVerdictKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep ({count})'**
+  String aiVerdictKeep(int count);
+
+  /// No description provided for @aiSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Analysis'**
+  String get aiSettingsTitle;
+
+  /// No description provided for @aiSettingsModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Mode'**
+  String get aiSettingsModeLabel;
+
+  /// No description provided for @aiSettingsByokLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring Your Own Key (DeepSeek)'**
+  String get aiSettingsByokLabel;
+
+  /// No description provided for @aiSettingsOffLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get aiSettingsOffLabel;
+
+  /// No description provided for @aiSettingsPlatformLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Volward Platform'**
+  String get aiSettingsPlatformLabel;
+
+  /// No description provided for @aiSettingsApiKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'sk-...'**
+  String get aiSettingsApiKeyHint;
+
+  /// No description provided for @aiSettingsApiKeySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'API key saved'**
+  String get aiSettingsApiKeySaved;
+
+  /// No description provided for @aiSettingsApiKeyCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'API key cleared'**
+  String get aiSettingsApiKeyCleared;
+
+  /// No description provided for @aiSettingsSaveKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get aiSettingsSaveKey;
+
+  /// No description provided for @aiSettingsClearKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get aiSettingsClearKey;
+
+  /// No description provided for @aiSettingsLinkEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Link email'**
+  String get aiSettingsLinkEmail;
+
+  /// No description provided for @aiSettingsEnterEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email address'**
+  String get aiSettingsEnterEmail;
+
+  /// No description provided for @aiSettingsEnterOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'6-digit code'**
+  String get aiSettingsEnterOtp;
+
+  /// No description provided for @aiSettingsSendOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'Send code'**
+  String get aiSettingsSendOtp;
+
+  /// No description provided for @aiSettingsVerifyOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify'**
+  String get aiSettingsVerifyOtp;
+
+  /// No description provided for @aiSettingsLinkedAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked as {email}'**
+  String aiSettingsLinkedAs(String email);
+
+  /// No description provided for @aiSettingsCreditsRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} credits remaining'**
+  String aiSettingsCreditsRemaining(int count);
+
+  /// No description provided for @aiSettingsBuyCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Buy credits'**
+  String get aiSettingsBuyCredits;
+
+  /// No description provided for @aiPurchasePayHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay with WeChat on the checkout page. Balance updates after payment.'**
+  String get aiPurchasePayHint;
+
+  /// No description provided for @aiPurchaseWaitingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment may still be processing. Wait a moment, then refresh your credits in Settings.'**
+  String get aiPurchaseWaitingHint;
+
+  /// No description provided for @aiSettingsSessionExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'Login expired — please link your email again.'**
+  String get aiSettingsSessionExpired;
+
+  /// No description provided for @aiPrecheckCreditsCost.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated cost: 1 credit (balance {balance})'**
+  String aiPrecheckCreditsCost(int balance);
+
+  /// No description provided for @aiInsufficientCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'No credits left — buy more in Settings.'**
+  String get aiInsufficientCredits;
+
+  /// No description provided for @aiAnalysisFab.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Analysis'**
+  String get aiAnalysisFab;
+
+  /// No description provided for @aiPrivacyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis privacy'**
+  String get aiPrivacyTitle;
+
+  /// No description provided for @aiPrivacyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Only paths, sizes, and file counts are sent. File contents are never uploaded. BYOK sends data to DeepSeek; Platform mode sends data to Volward servers which forward to DeepSeek.'**
+  String get aiPrivacyBody;
+
+  /// No description provided for @aiPrivacyAccept.
+  ///
+  /// In en, this message translates to:
+  /// **'I understand'**
+  String get aiPrivacyAccept;
+
+  /// No description provided for @aiOverwriteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous analysis available'**
+  String get aiOverwriteTitle;
+
+  /// No description provided for @aiOverwriteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This scan already has an AI result. Load it, or re-analyze to overwrite.'**
+  String get aiOverwriteBody;
+
+  /// No description provided for @aiActionContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-analyze'**
+  String get aiActionContinue;
+
+  /// No description provided for @aiActionLoadPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Load previous'**
+  String get aiActionLoadPrevious;
+
+  /// No description provided for @aiLoadPreviousFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load the previous AI result.'**
+  String get aiLoadPreviousFailed;
+
+  /// No description provided for @aiAnalyzing.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing with AI…'**
+  String get aiAnalyzing;
+
+  /// No description provided for @aiActionRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get aiActionRetry;
+
+  /// No description provided for @aiErrorUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown error'**
+  String get aiErrorUnknown;
+
+  /// No description provided for @aiErrorNativeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load AI candidates (native API unavailable).'**
+  String get aiErrorNativeUnavailable;
+
+  /// No description provided for @aiErrorInvalidPayload.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid candidates payload.'**
+  String get aiErrorInvalidPayload;
+
+  /// No description provided for @aiTruncatedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
+  String aiTruncatedNotice(int shown, int total);
+
+  /// No description provided for @aiCleanupSourceAiToolCache.
+  ///
+  /// In en, this message translates to:
+  /// **'AI tool cache/temp'**
+  String get aiCleanupSourceAiToolCache;
+
+  /// No description provided for @aiCleanupSourceAiGeneratedOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'AI-generated output'**
+  String get aiCleanupSourceAiGeneratedOutput;
+
+  /// No description provided for @aiCleanupSourceSystemTemp.
+  ///
+  /// In en, this message translates to:
+  /// **'Temporary file'**
+  String get aiCleanupSourceSystemTemp;
+
+  /// No description provided for @aiCleanupRetentionDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Review after {days} days'**
+  String aiCleanupRetentionDays(int days);
+
+  /// No description provided for @aiWorkspaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Cleanup Suggestions'**
+  String get aiWorkspaceTitle;
+
+  /// No description provided for @aiWorkspaceBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to Overview'**
+  String get aiWorkspaceBack;
+
+  /// No description provided for @aiWorkspacePhaseLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing candidates'**
+  String get aiWorkspacePhaseLoading;
+
+  /// No description provided for @aiWorkspacePhasePrecheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Pre-check'**
+  String get aiWorkspacePhasePrecheck;
+
+  /// No description provided for @aiWorkspacePhasePrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy'**
+  String get aiWorkspacePhasePrivacy;
+
+  /// No description provided for @aiWorkspacePhaseAnalyzing.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing'**
+  String get aiWorkspacePhaseAnalyzing;
+
+  /// No description provided for @aiWorkspacePhaseReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get aiWorkspacePhaseReview;
+
+  /// No description provided for @aiWorkspacePhaseDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting'**
+  String get aiWorkspacePhaseDeleting;
+
+  /// No description provided for @aiWorkspacePhaseRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery'**
+  String get aiWorkspacePhaseRecovery;
+
+  /// No description provided for @aiWorkspaceLoadPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Load Previous Result'**
+  String get aiWorkspaceLoadPrevious;
+
+  /// No description provided for @aiWorkspaceAnalyzeAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyze Again'**
+  String get aiWorkspaceAnalyzeAgain;
+
+  /// No description provided for @aiResultsAnalyzedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{analyzed} analyzed · {bytes} total · {safe} safe · {review} pending review · {keep} kept'**
+  String aiResultsAnalyzedSummary(
+    int analyzed,
+    String bytes,
+    int safe,
+    int review,
+    int keep,
+  );
+
+  /// No description provided for @aiResultsMetricAnalyzed.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzed'**
+  String get aiResultsMetricAnalyzed;
+
+  /// No description provided for @aiResultsMetricSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to remove'**
+  String get aiResultsMetricSafe;
+
+  /// No description provided for @aiResultsMetricReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs review'**
+  String get aiResultsMetricReview;
+
+  /// No description provided for @aiResultsMetricKept.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept'**
+  String get aiResultsMetricKept;
+
+  /// No description provided for @aiResultsTotalSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} total'**
+  String aiResultsTotalSize(String bytes);
+
+  /// No description provided for @aiResultsNeedsDecision.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs decision'**
+  String get aiResultsNeedsDecision;
+
+  /// No description provided for @aiResultsSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search path, reason, source, or hint'**
+  String get aiResultsSearchHint;
+
+  /// No description provided for @aiResultsClearSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get aiResultsClearSearch;
+
+  /// No description provided for @aiResultsNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching results'**
+  String get aiResultsNoMatches;
+
+  /// No description provided for @aiResultsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No cleanup suggestions were found'**
+  String get aiResultsEmpty;
+
+  /// No description provided for @aiResultsResetFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset search and filters'**
+  String get aiResultsResetFilters;
+
+  /// No description provided for @aiResultsFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get aiResultsFilterAll;
+
+  /// No description provided for @aiResultsFilterReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get aiResultsFilterReview;
+
+  /// No description provided for @aiResultsFilterSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected'**
+  String get aiResultsFilterSelected;
+
+  /// No description provided for @aiResultsSortPriority.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get aiResultsSortPriority;
+
+  /// No description provided for @aiResultsSortSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get aiResultsSortSize;
+
+  /// No description provided for @aiResultsGroupItems.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 item} other{{count} items}} · {bytes}'**
+  String aiResultsGroupItems(int count, String bytes);
+
+  /// No description provided for @aiResultsGroupSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe {count}'**
+  String aiResultsGroupSafe(int count);
+
+  /// No description provided for @aiResultsGroupReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review {count}'**
+  String aiResultsGroupReview(int count);
+
+  /// No description provided for @aiResultsGroupKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep {count}'**
+  String aiResultsGroupKeep(int count);
+
+  /// No description provided for @aiResultsSelectedForCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 item selected} other{{count} items selected}} · {bytes}'**
+  String aiResultsSelectedForCleanup(int count, String bytes);
+
+  /// No description provided for @aiResultsPendingReviewExcluded.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 pending review item is excluded until you decide.} other{{count} pending review items are excluded until you decide.}}'**
+  String aiResultsPendingReviewExcluded(int count);
+
+  /// No description provided for @aiResultsMetricProtected.
+  ///
+  /// In en, this message translates to:
+  /// **'Protected'**
+  String get aiResultsMetricProtected;
+
+  /// No description provided for @aiResultsNeedsYourDecision.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs your decision'**
+  String get aiResultsNeedsYourDecision;
+
+  /// No description provided for @aiResultsAddToCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to cleanup'**
+  String get aiResultsAddToCleanup;
+
+  /// No description provided for @aiResultsKeepItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep this item'**
+  String get aiResultsKeepItem;
+
+  /// No description provided for @aiResultsAddedToCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to cleanup'**
+  String get aiResultsAddedToCleanup;
+
+  /// No description provided for @aiResultsKeptOutOfCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept out of cleanup'**
+  String get aiResultsKeptOutOfCleanup;
+
+  /// No description provided for @aiResultsSelectedInGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected {count}'**
+  String aiResultsSelectedInGroup(int count);
+
+  /// No description provided for @aiResultsClearGroupSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear group selection'**
+  String get aiResultsClearGroupSelection;
+
+  /// No description provided for @aiResultsDetailSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get aiResultsDetailSize;
+
+  /// No description provided for @aiResultsDetailConfidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidence'**
+  String get aiResultsDetailConfidence;
+
+  /// No description provided for @aiResultsDetailReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason'**
+  String get aiResultsDetailReason;
+
+  /// No description provided for @aiResultsDetailCleanupSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleanup source'**
+  String get aiResultsDetailCleanupSource;
+
+  /// No description provided for @aiResultsDetailRetentionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Retention hint'**
+  String get aiResultsDetailRetentionHint;
+
+  /// No description provided for @aiWorkspacePartialDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items could not be removed · {size} freed'**
+  String aiWorkspacePartialDelete(int count, String size);
+
+  /// No description provided for @aiErrorTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI request timed out. Try again.'**
+  String get aiErrorTimeout;
+
+  /// No description provided for @aiErrorRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI service is busy. Try again shortly.'**
+  String get aiErrorRateLimited;
+
+  /// No description provided for @aiErrorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the AI service. Check your connection.'**
+  String get aiErrorNetwork;
+
+  /// No description provided for @aiWorkspaceReturn.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to Overview'**
+  String get aiWorkspaceReturn;
+
+  /// No description provided for @back.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get back;
+
   /// No description provided for @homeBrowseFiles.
   ///
   /// In en, this message translates to:

@@ -128,7 +128,7 @@ pub unsafe extern "C" fn volward_get_last_snapshot_json(engine: *mut VolwardEngi
         return ptr::null_mut();
     };
     e.get_last_snapshot_json()
-        .map(|s| to_c_string(s))
+        .map(to_c_string)
         .unwrap_or(ptr::null_mut())
 }
 
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn volward_get_last_progress_json(engine: *mut VolwardEngi
         return ptr::null_mut();
     };
     e.get_last_progress_json()
-        .map(|s| to_c_string(s))
+        .map(to_c_string)
         .unwrap_or(ptr::null_mut())
 }
 
@@ -325,6 +325,120 @@ pub unsafe extern "C" fn volward_delete_entries_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_candidates_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.build_ai_candidates_json(&snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_start_build_candidates_async(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.start_build_ai_candidates_async(snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_is_candidates_building(engine: *mut VolwardEngine) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    e.is_ai_candidates_building()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_get_candidates_json(
+    engine: *mut VolwardEngine,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.get_ai_candidates_json())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_save_result_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    result_json: *const c_char,
+) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    let result_json = cstr_to_string(result_json).unwrap_or_default();
+    e.save_ai_result_json(&snapshot_id, &result_json)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_load_result_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.load_ai_result_json(&snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_upstream_endpoint() -> *mut c_char {
+    to_c_string(volward_ai::UPSTREAM_ENDPOINT.to_string())
+}
+
+/// Batch size is a contract value — Dart must read it here, never hardcode 40.
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_batch_size() -> u32 {
+    volward_ai::BATCH_SIZE as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_request_json(
+    candidates_json: *const c_char,
+) -> *mut c_char {
+    let Some(raw) = cstr_to_string(candidates_json) else {
+        return to_c_string("error:null candidates".into());
+    };
+    match serde_json::from_str::<Vec<volward_ai::AnalyzeCandidate>>(&raw) {
+        Ok(c) => to_c_string(volward_ai::build_request_body(&c)),
+        Err(e) => to_c_string(format!("error:parse:{e}")),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_parse_response_json(
+    response_json: *const c_char,
+    batch_json: *const c_char,
+) -> *mut c_char {
+    let Some(body) = cstr_to_string(response_json) else {
+        return to_c_string("error:null response".into());
+    };
+    let Some(raw_batch) = cstr_to_string(batch_json) else {
+        return to_c_string("error:null batch".into());
+    };
+    let batch: Vec<volward_ai::AnalyzeCandidate> = match serde_json::from_str(&raw_batch) {
+        Ok(b) => b,
+        Err(e) => return to_c_string(format!("error:parse:{e}")),
+    };
+    let verdicts = volward_ai::parse_response(&body, &batch);
+    match serde_json::to_string(&verdicts) {
+        Ok(s) => to_c_string(s),
+        Err(e) => to_c_string(format!("error:encode:{e}")),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_empty_trash_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
@@ -335,6 +449,82 @@ pub unsafe extern "C" fn volward_empty_trash_json(engine: *mut VolwardEngine) ->
         }
         Err(msg) => to_c_string(serde_json::json!({ "error": msg }).to_string()),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Capability analysis APIs (registry + async job state)
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_analyze_capability_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    capability: *const c_char,
+    options_json: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let Some(snapshot_id) = cstr_to_string(snapshot_id) else {
+        return ptr::null_mut();
+    };
+    let Some(capability) = cstr_to_string(capability) else {
+        return ptr::null_mut();
+    };
+    let Some(options_json) = cstr_to_string(options_json) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.analyze_capability_json(&snapshot_id, &capability, &options_json))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_start_capability_analysis_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    capability: *const c_char,
+    options_json: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let Some(snapshot_id) = cstr_to_string(snapshot_id) else {
+        return ptr::null_mut();
+    };
+    let Some(capability) = cstr_to_string(capability) else {
+        return ptr::null_mut();
+    };
+    let Some(options_json) = cstr_to_string(options_json) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.start_capability_analysis_json(&snapshot_id, &capability, &options_json))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_get_capability_job_status_json(
+    engine: *mut VolwardEngine,
+    job_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let Some(job_id) = cstr_to_string(job_id) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.get_capability_job_status_json(&job_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_cancel_capability_analysis(
+    engine: *mut VolwardEngine,
+    job_id: *const c_char,
+) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    let Some(job_id) = cstr_to_string(job_id) else {
+        return false;
+    };
+    e.cancel_capability_analysis(&job_id)
 }
 
 unsafe fn cstr_to_string(ptr: *const c_char) -> Option<String> {
@@ -522,4 +712,78 @@ pub unsafe extern "C" fn volward_get_index_summary_json(engine: *mut VolwardEngi
 #[no_mangle]
 pub unsafe extern "C" fn volward_index_version(engine: *mut VolwardEngine) -> u64 {
     engine_ref(engine).map(|e| e.index_version()).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod ai_contract_tests {
+    use super::*;
+    use std::ffi::{CStr, CString};
+
+    unsafe fn take(ptr: *mut c_char) -> String {
+        let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+        volward_free_string(ptr);
+        s
+    }
+
+    #[test]
+    fn build_request_json_round_trips() {
+        let input = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
+        let out = unsafe { take(volward_ai_build_request_json(input.as_ptr())) };
+        assert!(!out.starts_with("error:"), "got {out}");
+        let body: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(body["model"], volward_ai::MODEL);
+        assert_eq!(body["thinking"]["type"], "disabled");
+    }
+
+    #[test]
+    fn build_request_json_ignores_member_paths() {
+        let input = CString::new(
+            r#"[{"path":"/a","size_bytes":1,"is_dir":true,"member_paths":["/a/secret"]}]"#,
+        )
+        .unwrap();
+        let out = unsafe { take(volward_ai_build_request_json(input.as_ptr())) };
+        assert!(
+            !out.contains("secret"),
+            "member_paths leaked into request: {out}"
+        );
+    }
+
+    #[test]
+    fn parse_response_json_round_trips() {
+        let upstream = r#"{"choices":[{"finish_reason":"stop","message":{"content":"[{\"path\":\"/a\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"x\"}]"}}]}"#;
+        let body = CString::new(upstream).unwrap();
+        let batch = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
+        let out =
+            unsafe { take(volward_ai_parse_response_json(body.as_ptr(), batch.as_ptr())) };
+        let arr: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(arr[0]["verdict"], "keep");
+    }
+
+    #[test]
+    fn parse_response_json_degrades_truncated_body_using_batch() {
+        let body =
+            CString::new(r#"{"choices":[{"finish_reason":"length","message":{"content":"["}}]}"#)
+                .unwrap();
+        let batch = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
+        let out =
+            unsafe { take(volward_ai_parse_response_json(body.as_ptr(), batch.as_ptr())) };
+        let arr: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(arr[0]["path"], "/a");
+        assert_eq!(arr[0]["verdict"], "review_needed");
+    }
+
+    #[test]
+    fn parse_response_json_reports_null_pointers() {
+        let batch = CString::new("[]").unwrap();
+        let a = unsafe { take(volward_ai_parse_response_json(std::ptr::null(), batch.as_ptr())) };
+        assert_eq!(a, "error:null response");
+        let body = CString::new("{}").unwrap();
+        let b = unsafe { take(volward_ai_parse_response_json(body.as_ptr(), std::ptr::null())) };
+        assert_eq!(b, "error:null batch");
+    }
+
+    #[test]
+    fn batch_size_matches_crate_constant() {
+        assert_eq!(unsafe { volward_ai_batch_size() } as usize, volward_ai::BATCH_SIZE);
+    }
 }

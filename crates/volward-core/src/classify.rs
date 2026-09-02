@@ -259,6 +259,7 @@ fn is_windows_drive_root(path: &str) -> bool {
     bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'/' && bytes[0].is_ascii_alphabetic()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn entry(
     seed: &str,
     path: &str,
@@ -284,6 +285,7 @@ fn entry(
         },
         deletable,
         reason: reason.to_string(),
+        modified_at_ms: None,
     }
 }
 

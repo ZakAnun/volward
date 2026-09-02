@@ -248,4 +248,31 @@ void main() {
     expect(find.text('Check for updates'), findsOneWidget);
     expect(find.text('Complete update'), findsNothing);
   });
+
+  testWidgets('settings page does not repeat the privacy confirm copy', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    addTearDown(themeSettings.dispose);
+    final updater = _updater(local: '0.0.1', remoteTag: 'v0.0.1');
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        home: SettingsPage(
+          themeSettings: themeSettings,
+          session: VolwardSession.test(),
+          deletableOnly: false,
+          onDeletableOnlyChanged: (_) {},
+          updater: updater,
+        ),
+      ),
+    );
+
+    expect(find.text('I understand'), findsNothing);
+  });
 }

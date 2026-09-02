@@ -547,6 +547,400 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get aiAnalysisTitle => 'AI Disk Analysis';
+
+  @override
+  String aiPreCheckSafeTitle(int count) {
+    return '$count items pre-identified as safe to remove';
+  }
+
+  @override
+  String aiPreCheckSafeSelectable(int count) {
+    return '$count items already marked safe by local rules';
+  }
+
+  @override
+  String aiPreCheckUnknownTitle(int count, int tokens) {
+    return '$count items will be sent for AI analysis (~$tokens tokens)';
+  }
+
+  @override
+  String get aiStartAnalysis => 'Start AI Analysis';
+
+  @override
+  String get aiNoApiKey => 'No API Key — configure in Settings';
+
+  @override
+  String get aiContractUnavailable =>
+      'The installed native library is out of date. Please update Volward to use AI analysis.';
+
+  @override
+  String aiDeleteSelected(int count) {
+    return 'Delete $count Selected Items';
+  }
+
+  @override
+  String aiVerdictSafe(int count) {
+    return 'Safe to Remove ($count)';
+  }
+
+  @override
+  String aiVerdictReview(int count) {
+    return 'Review Needed ($count)';
+  }
+
+  @override
+  String aiVerdictKeep(int count) {
+    return 'Keep ($count)';
+  }
+
+  @override
+  String get aiSettingsTitle => 'AI Analysis';
+
+  @override
+  String get aiSettingsModeLabel => 'Mode';
+
+  @override
+  String get aiSettingsByokLabel => 'Bring Your Own Key (DeepSeek)';
+
+  @override
+  String get aiSettingsOffLabel => 'Off';
+
+  @override
+  String get aiSettingsPlatformLabel => 'Volward Platform';
+
+  @override
+  String get aiSettingsApiKeyHint => 'sk-...';
+
+  @override
+  String get aiSettingsApiKeySaved => 'API key saved';
+
+  @override
+  String get aiSettingsApiKeyCleared => 'API key cleared';
+
+  @override
+  String get aiSettingsSaveKey => 'Save';
+
+  @override
+  String get aiSettingsClearKey => 'Clear';
+
+  @override
+  String get aiSettingsLinkEmail => 'Link email';
+
+  @override
+  String get aiSettingsEnterEmail => 'Email address';
+
+  @override
+  String get aiSettingsEnterOtp => '6-digit code';
+
+  @override
+  String get aiSettingsSendOtp => 'Send code';
+
+  @override
+  String get aiSettingsVerifyOtp => 'Verify';
+
+  @override
+  String aiSettingsLinkedAs(String email) {
+    return 'Linked as $email';
+  }
+
+  @override
+  String aiSettingsCreditsRemaining(int count) {
+    return '$count credits remaining';
+  }
+
+  @override
+  String get aiSettingsBuyCredits => 'Buy credits';
+
+  @override
+  String get aiPurchasePayHint =>
+      'Pay with WeChat on the checkout page. Balance updates after payment.';
+
+  @override
+  String get aiPurchaseWaitingHint =>
+      'Payment may still be processing. Wait a moment, then refresh your credits in Settings.';
+
+  @override
+  String get aiSettingsSessionExpired =>
+      'Login expired — please link your email again.';
+
+  @override
+  String aiPrecheckCreditsCost(int balance) {
+    return 'Estimated cost: 1 credit (balance $balance)';
+  }
+
+  @override
+  String get aiInsufficientCredits => 'No credits left — buy more in Settings.';
+
+  @override
+  String get aiAnalysisFab => 'AI Analysis';
+
+  @override
+  String get aiPrivacyTitle => 'AI analysis privacy';
+
+  @override
+  String get aiPrivacyBody =>
+      'Only paths, sizes, and file counts are sent. File contents are never uploaded. BYOK sends data to DeepSeek; Platform mode sends data to Volward servers which forward to DeepSeek.';
+
+  @override
+  String get aiPrivacyAccept => 'I understand';
+
+  @override
+  String get aiOverwriteTitle => 'Previous analysis available';
+
+  @override
+  String get aiOverwriteBody =>
+      'This scan already has an AI result. Load it, or re-analyze to overwrite.';
+
+  @override
+  String get aiActionContinue => 'Re-analyze';
+
+  @override
+  String get aiActionLoadPrevious => 'Load previous';
+
+  @override
+  String get aiLoadPreviousFailed => 'Could not load the previous AI result.';
+
+  @override
+  String get aiAnalyzing => 'Analyzing with AI…';
+
+  @override
+  String get aiActionRetry => 'Retry';
+
+  @override
+  String get aiErrorUnknown => 'Unknown error';
+
+  @override
+  String get aiErrorNativeUnavailable =>
+      'Failed to load AI candidates (native API unavailable).';
+
+  @override
+  String get aiErrorInvalidPayload => 'Invalid candidates payload.';
+
+  @override
+  String aiTruncatedNotice(int shown, int total) {
+    return 'Showing the $shown largest of $total items — the rest were skipped to keep the request small.';
+  }
+
+  @override
+  String get aiCleanupSourceAiToolCache => 'AI tool cache/temp';
+
+  @override
+  String get aiCleanupSourceAiGeneratedOutput => 'AI-generated output';
+
+  @override
+  String get aiCleanupSourceSystemTemp => 'Temporary file';
+
+  @override
+  String aiCleanupRetentionDays(int days) {
+    return 'Review after $days days';
+  }
+
+  @override
+  String get aiWorkspaceTitle => 'AI Cleanup Suggestions';
+
+  @override
+  String get aiWorkspaceBack => 'Back to Overview';
+
+  @override
+  String get aiWorkspacePhaseLoading => 'Preparing candidates';
+
+  @override
+  String get aiWorkspacePhasePrecheck => 'Pre-check';
+
+  @override
+  String get aiWorkspacePhasePrivacy => 'Privacy';
+
+  @override
+  String get aiWorkspacePhaseAnalyzing => 'Analyzing';
+
+  @override
+  String get aiWorkspacePhaseReview => 'Review';
+
+  @override
+  String get aiWorkspacePhaseDeleting => 'Deleting';
+
+  @override
+  String get aiWorkspacePhaseRecovery => 'Recovery';
+
+  @override
+  String get aiWorkspaceLoadPrevious => 'Load Previous Result';
+
+  @override
+  String get aiWorkspaceAnalyzeAgain => 'Analyze Again';
+
+  @override
+  String aiResultsAnalyzedSummary(
+    int analyzed,
+    String bytes,
+    int safe,
+    int review,
+    int keep,
+  ) {
+    return '$analyzed analyzed · $bytes total · $safe safe · $review pending review · $keep kept';
+  }
+
+  @override
+  String get aiResultsMetricAnalyzed => 'Analyzed';
+
+  @override
+  String get aiResultsMetricSafe => 'Safe to remove';
+
+  @override
+  String get aiResultsMetricReview => 'Needs review';
+
+  @override
+  String get aiResultsMetricKept => 'Kept';
+
+  @override
+  String aiResultsTotalSize(String bytes) {
+    return '$bytes total';
+  }
+
+  @override
+  String get aiResultsNeedsDecision => 'Needs decision';
+
+  @override
+  String get aiResultsSearchHint => 'Search path, reason, source, or hint';
+
+  @override
+  String get aiResultsClearSearch => 'Clear search';
+
+  @override
+  String get aiResultsNoMatches => 'No matching results';
+
+  @override
+  String get aiResultsEmpty => 'No cleanup suggestions were found';
+
+  @override
+  String get aiResultsResetFilters => 'Reset search and filters';
+
+  @override
+  String get aiResultsFilterAll => 'All';
+
+  @override
+  String get aiResultsFilterReview => 'Review';
+
+  @override
+  String get aiResultsFilterSelected => 'Selected';
+
+  @override
+  String get aiResultsSortPriority => 'Priority';
+
+  @override
+  String get aiResultsSortSize => 'Size';
+
+  @override
+  String aiResultsGroupItems(int count, String bytes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '1 item',
+    );
+    return '$_temp0 · $bytes';
+  }
+
+  @override
+  String aiResultsGroupSafe(int count) {
+    return 'Safe $count';
+  }
+
+  @override
+  String aiResultsGroupReview(int count) {
+    return 'Review $count';
+  }
+
+  @override
+  String aiResultsGroupKeep(int count) {
+    return 'Keep $count';
+  }
+
+  @override
+  String aiResultsSelectedForCleanup(int count, String bytes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items selected',
+      one: '1 item selected',
+    );
+    return '$_temp0 · $bytes';
+  }
+
+  @override
+  String aiResultsPendingReviewExcluded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pending review items are excluded until you decide.',
+      one: '1 pending review item is excluded until you decide.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get aiResultsMetricProtected => 'Protected';
+
+  @override
+  String get aiResultsNeedsYourDecision => 'Needs your decision';
+
+  @override
+  String get aiResultsAddToCleanup => 'Add to cleanup';
+
+  @override
+  String get aiResultsKeepItem => 'Keep this item';
+
+  @override
+  String get aiResultsAddedToCleanup => 'Added to cleanup';
+
+  @override
+  String get aiResultsKeptOutOfCleanup => 'Kept out of cleanup';
+
+  @override
+  String aiResultsSelectedInGroup(int count) {
+    return 'Selected $count';
+  }
+
+  @override
+  String get aiResultsClearGroupSelection => 'Clear group selection';
+
+  @override
+  String get aiResultsDetailSize => 'Size';
+
+  @override
+  String get aiResultsDetailConfidence => 'Confidence';
+
+  @override
+  String get aiResultsDetailReason => 'Reason';
+
+  @override
+  String get aiResultsDetailCleanupSource => 'Cleanup source';
+
+  @override
+  String get aiResultsDetailRetentionHint => 'Retention hint';
+
+  @override
+  String aiWorkspacePartialDelete(int count, String size) {
+    return '$count items could not be removed · $size freed';
+  }
+
+  @override
+  String get aiErrorTimeout => 'The AI request timed out. Try again.';
+
+  @override
+  String get aiErrorRateLimited => 'The AI service is busy. Try again shortly.';
+
+  @override
+  String get aiErrorNetwork =>
+      'Could not reach the AI service. Check your connection.';
+
+  @override
+  String get aiWorkspaceReturn => 'Return to Overview';
+
+  @override
+  String get back => 'Back';
+
+  @override
   String get homeBrowseFiles => 'Browse Files';
 
   @override

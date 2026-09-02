@@ -78,6 +78,7 @@ pub fn build_synthetic_snapshot(entry_count: usize) -> StorageSnapshot {
             source_type: SourceType::File,
             deletable: true,
             reason: "synthetic benchmark entry".to_string(),
+            modified_at_ms: None,
         });
         tree_children.push(ScanTreeNode {
             name: format!("cache-{i}.bin"),

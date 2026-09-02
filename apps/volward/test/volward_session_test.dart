@@ -254,6 +254,7 @@ void main() {
 
     expect(report['deleted_count'], 1);
     expect(session.deleting, isFalse);
+    expect(session.postDeleteRefreshPending, isTrue);
     expect(
       session
           .directoryOverlayForPath('/root/Downloads')!
@@ -266,6 +267,7 @@ void main() {
 
     finishRefresh.complete();
     await Future<void>.delayed(Duration.zero);
+    expect(session.postDeleteRefreshPending, isFalse);
   });
 
   test('estimated scan progress advances over time and finishes at 100%', () {
@@ -347,6 +349,27 @@ void main() {
       await session.restoreCachedSnapshotIfNeeded();
 
       expect(session.lastSnapshot!.snapshotId, 'live-scan');
+    },
+  );
+
+  test(
+    'restoreCachedSnapshotIfNeeded marks restore in flight before cache lookup',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-restore-state',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      final session = VolwardSession.test()..setScanRoots(['/Users/test/Home']);
+      final restore = session.restoreCachedSnapshotIfNeeded();
+
+      expect(session.restoringSnapshot, isTrue);
+      await restore;
+      expect(session.restoringSnapshot, isFalse);
     },
   );
 

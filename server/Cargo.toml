@@ -1,0 +1,43 @@
+[package]
+name = "volward-platform-api"
+description = "Volward Platform API server (device auth, AI proxy, credits)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "volward-platform-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "volward-admin"
+path = "src/bin/admin.rs"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tower-http = { version = "0.5", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = { workspace = true }
+volward-ai = { path = "../crates/volward-ai" }
+jsonwebtoken = "9"
+sha2 = "0.10"
+rand = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+uuid = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+hmac = "0.12"
+hex = "0.4"
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

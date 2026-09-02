@@ -522,6 +522,375 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get aiAnalysisTitle => 'AI 磁盘分析';
+
+  @override
+  String aiPreCheckSafeTitle(int count) {
+    return '$count 项已预判为可安全移除';
+  }
+
+  @override
+  String aiPreCheckSafeSelectable(int count) {
+    return '$count 项已由本地规则标记为安全';
+  }
+
+  @override
+  String aiPreCheckUnknownTitle(int count, int tokens) {
+    return '$count 项将发送给 AI 分析（约 $tokens tokens）';
+  }
+
+  @override
+  String get aiStartAnalysis => '开始 AI 分析';
+
+  @override
+  String get aiNoApiKey => '未配置 API Key — 请在设置中配置';
+
+  @override
+  String get aiContractUnavailable => '当前原生库版本过旧，请更新 Volward 后再使用 AI 分析。';
+
+  @override
+  String aiDeleteSelected(int count) {
+    return '删除选中的 $count 项';
+  }
+
+  @override
+  String aiVerdictSafe(int count) {
+    return '可安全移除（$count）';
+  }
+
+  @override
+  String aiVerdictReview(int count) {
+    return '建议检查（$count）';
+  }
+
+  @override
+  String aiVerdictKeep(int count) {
+    return '保留（$count）';
+  }
+
+  @override
+  String get aiSettingsTitle => 'AI 分析';
+
+  @override
+  String get aiSettingsModeLabel => '模式';
+
+  @override
+  String get aiSettingsByokLabel => '自带密钥（DeepSeek）';
+
+  @override
+  String get aiSettingsOffLabel => '关闭';
+
+  @override
+  String get aiSettingsPlatformLabel => 'Volward 平台';
+
+  @override
+  String get aiSettingsApiKeyHint => 'sk-...';
+
+  @override
+  String get aiSettingsApiKeySaved => 'API 密钥已保存';
+
+  @override
+  String get aiSettingsApiKeyCleared => 'API 密钥已清除';
+
+  @override
+  String get aiSettingsSaveKey => '保存';
+
+  @override
+  String get aiSettingsClearKey => '清除';
+
+  @override
+  String get aiSettingsLinkEmail => '绑定邮箱';
+
+  @override
+  String get aiSettingsEnterEmail => '邮箱地址';
+
+  @override
+  String get aiSettingsEnterOtp => '6 位验证码';
+
+  @override
+  String get aiSettingsSendOtp => '发送验证码';
+
+  @override
+  String get aiSettingsVerifyOtp => '验证';
+
+  @override
+  String aiSettingsLinkedAs(String email) {
+    return '已绑定 $email';
+  }
+
+  @override
+  String aiSettingsCreditsRemaining(int count) {
+    return '剩余 $count credits';
+  }
+
+  @override
+  String get aiSettingsBuyCredits => '购买额度';
+
+  @override
+  String get aiPurchasePayHint => '请在结账页使用微信支付；支付成功后余额会自动更新。';
+
+  @override
+  String get aiPurchaseWaitingHint => '支付可能仍在处理中，请稍后在设置中刷新额度。';
+
+  @override
+  String get aiSettingsSessionExpired => '登录已过期，请重新绑定邮箱';
+
+  @override
+  String aiPrecheckCreditsCost(int balance) {
+    return '预计消耗 1 credit（余额 $balance）';
+  }
+
+  @override
+  String get aiInsufficientCredits => '额度不足 — 请在设置中购买。';
+
+  @override
+  String get aiAnalysisFab => 'AI 分析';
+
+  @override
+  String get aiPrivacyTitle => 'AI 分析隐私说明';
+
+  @override
+  String get aiPrivacyBody =>
+      '仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 将数据发送至 DeepSeek；平台模式将数据发送至 Volward 服务器再转发至 DeepSeek。';
+
+  @override
+  String get aiPrivacyAccept => '我已了解';
+
+  @override
+  String get aiOverwriteTitle => '已有分析结果';
+
+  @override
+  String get aiOverwriteBody => '此扫描已有 AI 分析结果。可加载上次结果，或重新分析以覆盖。';
+
+  @override
+  String get aiActionContinue => '重新分析';
+
+  @override
+  String get aiActionLoadPrevious => '加载上次结果';
+
+  @override
+  String get aiLoadPreviousFailed => '无法加载上次的 AI 分析结果。';
+
+  @override
+  String get aiAnalyzing => 'AI 分析中…';
+
+  @override
+  String get aiActionRetry => '重试';
+
+  @override
+  String get aiErrorUnknown => '未知错误';
+
+  @override
+  String get aiErrorNativeUnavailable => '无法加载 AI 候选项（原生接口不可用）。';
+
+  @override
+  String get aiErrorInvalidPayload => '候选项数据格式无效。';
+
+  @override
+  String aiTruncatedNotice(int shown, int total) {
+    return '共 $total 项，已显示其中最大的 $shown 项，其余已跳过以控制请求体积。';
+  }
+
+  @override
+  String get aiCleanupSourceAiToolCache => 'AI 工具缓存/临时文件';
+
+  @override
+  String get aiCleanupSourceAiGeneratedOutput => 'AI 生成输出';
+
+  @override
+  String get aiCleanupSourceSystemTemp => '临时文件';
+
+  @override
+  String aiCleanupRetentionDays(int days) {
+    return '超过 $days 天后建议检查';
+  }
+
+  @override
+  String get aiWorkspaceTitle => 'AI 清理建议';
+
+  @override
+  String get aiWorkspaceBack => '返回概览';
+
+  @override
+  String get aiWorkspacePhaseLoading => '正在准备候选项';
+
+  @override
+  String get aiWorkspacePhasePrecheck => '预检查';
+
+  @override
+  String get aiWorkspacePhasePrivacy => '隐私确认';
+
+  @override
+  String get aiWorkspacePhaseAnalyzing => '正在分析';
+
+  @override
+  String get aiWorkspacePhaseReview => '确认建议';
+
+  @override
+  String get aiWorkspacePhaseDeleting => '正在删除';
+
+  @override
+  String get aiWorkspacePhaseRecovery => '恢复';
+
+  @override
+  String get aiWorkspaceLoadPrevious => '加载上次结果';
+
+  @override
+  String get aiWorkspaceAnalyzeAgain => '重新分析';
+
+  @override
+  String aiResultsAnalyzedSummary(
+    int analyzed,
+    String bytes,
+    int safe,
+    int review,
+    int keep,
+  ) {
+    return '共分析 $analyzed 项 · 总计 $bytes · $safe 项安全 · $review 项待确认 · $keep 项保留';
+  }
+
+  @override
+  String get aiResultsMetricAnalyzed => '已分析';
+
+  @override
+  String get aiResultsMetricSafe => '安全可移除';
+
+  @override
+  String get aiResultsMetricReview => '需要确认';
+
+  @override
+  String get aiResultsMetricKept => '已保留';
+
+  @override
+  String aiResultsTotalSize(String bytes) {
+    return '总计 $bytes';
+  }
+
+  @override
+  String get aiResultsNeedsDecision => '待决定';
+
+  @override
+  String get aiResultsSearchHint => '搜索路径、原因、来源或提示';
+
+  @override
+  String get aiResultsClearSearch => '清除搜索';
+
+  @override
+  String get aiResultsNoMatches => '没有匹配的结果';
+
+  @override
+  String get aiResultsEmpty => '未发现可清理建议';
+
+  @override
+  String get aiResultsResetFilters => '重置搜索和筛选';
+
+  @override
+  String get aiResultsFilterAll => '全部';
+
+  @override
+  String get aiResultsFilterReview => '待确认';
+
+  @override
+  String get aiResultsFilterSelected => '已选择';
+
+  @override
+  String get aiResultsSortPriority => '优先级';
+
+  @override
+  String get aiResultsSortSize => '大小';
+
+  @override
+  String aiResultsGroupItems(int count, String bytes) {
+    return '$count 项 · $bytes';
+  }
+
+  @override
+  String aiResultsGroupSafe(int count) {
+    return '安全 $count';
+  }
+
+  @override
+  String aiResultsGroupReview(int count) {
+    return '待确认 $count';
+  }
+
+  @override
+  String aiResultsGroupKeep(int count) {
+    return '保留 $count';
+  }
+
+  @override
+  String aiResultsSelectedForCleanup(int count, String bytes) {
+    return '已选择 $count 项 · $bytes';
+  }
+
+  @override
+  String aiResultsPendingReviewExcluded(int count) {
+    return '$count 项待确认内容在你决定前不会加入清理。';
+  }
+
+  @override
+  String get aiResultsMetricProtected => '受保护';
+
+  @override
+  String get aiResultsNeedsYourDecision => '需要你决定';
+
+  @override
+  String get aiResultsAddToCleanup => '加入清理';
+
+  @override
+  String get aiResultsKeepItem => '保留此项';
+
+  @override
+  String get aiResultsAddedToCleanup => '已加入清理';
+
+  @override
+  String get aiResultsKeptOutOfCleanup => '已保留，不清理';
+
+  @override
+  String aiResultsSelectedInGroup(int count) {
+    return '已选择 $count';
+  }
+
+  @override
+  String get aiResultsClearGroupSelection => '清除此组选择';
+
+  @override
+  String get aiResultsDetailSize => '大小';
+
+  @override
+  String get aiResultsDetailConfidence => '置信度';
+
+  @override
+  String get aiResultsDetailReason => '原因';
+
+  @override
+  String get aiResultsDetailCleanupSource => '清理来源';
+
+  @override
+  String get aiResultsDetailRetentionHint => '保留提示';
+
+  @override
+  String aiWorkspacePartialDelete(int count, String size) {
+    return '$count 项未能删除 · 已释放 $size';
+  }
+
+  @override
+  String get aiErrorTimeout => 'AI 请求超时，请重试。';
+
+  @override
+  String get aiErrorRateLimited => 'AI 服务繁忙，请稍后重试。';
+
+  @override
+  String get aiErrorNetwork => '无法连接 AI 服务，请检查网络。';
+
+  @override
+  String get aiWorkspaceReturn => '返回概览';
+
+  @override
+  String get back => '返回';
+
+  @override
   String get homeBrowseFiles => '浏览文件';
 
   @override

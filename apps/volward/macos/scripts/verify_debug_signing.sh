@@ -3,13 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_TEAM_FILE="$ROOT_DIR/Runner/Configs/TeamSettings.local.xcconfig"
-EXAMPLE_TEAM_FILE="$ROOT_DIR/Runner/Configs/TeamSettings.local.xcconfig.example"
 APP_PATH="${1:-}"
 
 if [[ ! -f "$LOCAL_TEAM_FILE" ]]; then
   echo "error: missing $LOCAL_TEAM_FILE" >&2
   echo "Run from repo root: bash scripts/setup_macos.sh" >&2
-  echo "Or copy $EXAMPLE_TEAM_FILE to TeamSettings.local.xcconfig and set DEVELOPMENT_TEAM." >&2
+  echo "Or run: bash scripts/setup_macos.sh --team YOUR_TEAM_ID" >&2
   exit 1
 fi
 

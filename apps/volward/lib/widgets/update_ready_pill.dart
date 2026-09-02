@@ -73,14 +73,16 @@ class UpdateReadyPill extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(right: AppleSpacing.xxs),
-                  child: IconButton(
-                    key: dismissKey,
-                    iconSize: 16,
-                    visualDensity: VisualDensity.compact,
-                    tooltip: l10n.updateReadyDismissTooltip,
-                    color: v.onPrimary,
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: updater.dismissReadyToInstall,
+                  child: Tooltip(
+                    message: l10n.updateReadyDismissTooltip,
+                    child: IconButton(
+                      key: dismissKey,
+                      iconSize: 16,
+                      visualDensity: VisualDensity.compact,
+                      color: v.onPrimary,
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: updater.dismissReadyToInstall,
+                    ),
                   ),
                 ),
               ],

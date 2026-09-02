@@ -95,6 +95,38 @@ typedef VolwardDeleteEntriesJson =
 typedef VolwardEmptyTrashJsonNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardEmptyTrashJson = Pointer<Utf8> Function(Pointer<Void>);
 
+typedef VolwardAiBuildCandidatesJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiBuildCandidatesJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiStartBuildCandidatesAsyncNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiStartBuildCandidatesAsync =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiIsCandidatesBuildingNative = Bool Function(Pointer<Void>);
+typedef VolwardAiIsCandidatesBuilding = bool Function(Pointer<Void>);
+typedef VolwardAiGetCandidatesJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardAiGetCandidatesJson = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardAiSaveResultJsonNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiSaveResultJson =
+    bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiLoadResultJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiLoadResultJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiUpstreamEndpointNative = Pointer<Utf8> Function();
+typedef VolwardAiUpstreamEndpoint = Pointer<Utf8> Function();
+typedef VolwardAiBatchSizeNative = Uint32 Function();
+typedef VolwardAiBatchSize = int Function();
+typedef VolwardAiBuildRequestJsonNative = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef VolwardAiBuildRequestJson = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef VolwardAiParseResponseJsonNative =
+    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiParseResponseJson =
+    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+
 // ---------------------------------------------------------------------------
 // Catalog index API typedefs (Design §5.3)
 // ---------------------------------------------------------------------------
@@ -156,6 +188,46 @@ typedef VolwardReplaceDirectoryWithSubtreeNative =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardReplaceDirectoryWithSubtree =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef VolwardAnalyzeCapabilityJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
+typedef VolwardAnalyzeCapabilityJson =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
+
+typedef VolwardStartCapabilityAnalysisJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
+typedef VolwardStartCapabilityAnalysisJson =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
+
+typedef VolwardGetCapabilityJobStatusJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardGetCapabilityJobStatusJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+
+typedef VolwardCancelCapabilityAnalysisNative =
+    Bool Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardCancelCapabilityAnalysis =
+    bool Function(Pointer<Void>, Pointer<Utf8>);
 
 abstract interface class VolwardBridge {
   bool get hasSnapshotFileApi;
@@ -238,6 +310,23 @@ final class VolwardNativeBridge implements VolwardBridge {
         )
         .asFunction();
     _emptyTrashJson = _tryLookupEmptyTrashJson();
+    _buildAiCandidatesJson = _tryLookupAiBuildCandidatesJson();
+    _startBuildAiCandidatesAsync = _tryLookupAiStartBuildCandidatesAsync();
+    _isAiCandidatesBuilding = _tryLookupAiIsCandidatesBuilding();
+    _getAiCandidatesJson = _tryLookupAiGetCandidatesJson();
+    _saveAiResultJson = _tryLookupAiSaveResultJson();
+    _loadAiResultJson = _tryLookupAiLoadResultJson();
+    _aiUpstreamEndpoint = _tryLookupAiUpstreamEndpoint();
+    _aiBatchSize = _tryLookupAiBatchSize();
+    _aiBuildRequestJson = _tryLookupAiBuildRequestJson();
+    _aiParseResponseJson = _tryLookupAiParseResponseJson();
+    hasAiSessionApi =
+        _buildAiCandidatesJson != null && _saveAiResultJson != null;
+    hasAiContractApi =
+        _aiUpstreamEndpoint != null &&
+        _aiBatchSize != null &&
+        _aiBuildRequestJson != null &&
+        _aiParseResponseJson != null;
     _queryDirectoryJson = _tryLookupQueryDirectoryJson();
     _refreshDirectory = _tryLookupRefreshDirectory();
     _loadIndexFromPath = _tryLookupLoadIndexFromPath();
@@ -249,6 +338,10 @@ final class VolwardNativeBridge implements VolwardBridge {
     _getIndexSummaryJson = _tryLookupGetIndexSummaryJson();
     _indexVersion = _tryLookupIndexVersion();
     _replaceDirectoryWithSubtree = _tryLookupReplaceDirectoryWithSubtree();
+    _analyzeCapabilityJson = _tryLookupAnalyzeCapabilityJson();
+    _startCapabilityAnalysisJson = _tryLookupStartCapabilityAnalysisJson();
+    _getCapabilityJobStatusJson = _tryLookupGetCapabilityJobStatusJson();
+    _cancelCapabilityAnalysis = _tryLookupCancelCapabilityAnalysis();
   }
 
   VolwardReplaceDirectoryWithSubtree? _tryLookupReplaceDirectoryWithSubtree() {
@@ -256,6 +349,54 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardReplaceDirectoryWithSubtreeNative>>(
             'volward_replace_directory_with_subtree',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAnalyzeCapabilityJson? _tryLookupAnalyzeCapabilityJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAnalyzeCapabilityJsonNative>>(
+            'volward_analyze_capability_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardStartCapabilityAnalysisJson? _tryLookupStartCapabilityAnalysisJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardStartCapabilityAnalysisJsonNative>>(
+            'volward_start_capability_analysis_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardGetCapabilityJobStatusJson? _tryLookupGetCapabilityJobStatusJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardGetCapabilityJobStatusJsonNative>>(
+            'volward_get_capability_job_status_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardCancelCapabilityAnalysis? _tryLookupCancelCapabilityAnalysis() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardCancelCapabilityAnalysisNative>>(
+            'volward_cancel_capability_analysis',
           )
           .asFunction();
     } on Object {
@@ -379,6 +520,18 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardOpenPermissionSettings _openPermissionSettings;
   late final VolwardDeleteEntriesJson _deleteEntriesJson;
   late final VolwardEmptyTrashJson? _emptyTrashJson;
+  late final bool hasAiSessionApi;
+  late final bool hasAiContractApi;
+  late final VolwardAiBuildCandidatesJson? _buildAiCandidatesJson;
+  late final VolwardAiStartBuildCandidatesAsync? _startBuildAiCandidatesAsync;
+  late final VolwardAiIsCandidatesBuilding? _isAiCandidatesBuilding;
+  late final VolwardAiGetCandidatesJson? _getAiCandidatesJson;
+  late final VolwardAiSaveResultJson? _saveAiResultJson;
+  late final VolwardAiLoadResultJson? _loadAiResultJson;
+  late final VolwardAiUpstreamEndpoint? _aiUpstreamEndpoint;
+  late final VolwardAiBatchSize? _aiBatchSize;
+  late final VolwardAiBuildRequestJson? _aiBuildRequestJson;
+  late final VolwardAiParseResponseJson? _aiParseResponseJson;
 
   // Catalog index API fields
   late final VolwardQueryDirectoryJson? _queryDirectoryJson;
@@ -392,6 +545,10 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardGetIndexSummaryJson? _getIndexSummaryJson;
   late final VolwardIndexVersion? _indexVersion;
   late final VolwardReplaceDirectoryWithSubtree? _replaceDirectoryWithSubtree;
+  late final VolwardAnalyzeCapabilityJson? _analyzeCapabilityJson;
+  late final VolwardStartCapabilityAnalysisJson? _startCapabilityAnalysisJson;
+  late final VolwardGetCapabilityJobStatusJson? _getCapabilityJobStatusJson;
+  late final VolwardCancelCapabilityAnalysis? _cancelCapabilityAnalysis;
 
   /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
   @override
@@ -433,11 +590,25 @@ final class VolwardNativeBridge implements VolwardBridge {
   /// (volward_replace_directory_with_subtree — added 2026-08-06).
   bool get hasReplaceSubtreeApi => _replaceDirectoryWithSubtree != null;
 
+  /// True when the bundled dylib exposes the capability analysis FFI
+  /// (synchronous analyze + async start/status/cancel).
+  bool get hasCapabilityApi =>
+      _analyzeCapabilityJson != null &&
+      _startCapabilityAnalysisJson != null &&
+      _getCapabilityJobStatusJson != null &&
+      _cancelCapabilityAnalysis != null;
+
   bool get hasAsyncIndexLoadApi =>
       _startLoadIndexFromPathAsync != null &&
       _isIndexLoading != null &&
       _invalidateIndexLoad != null &&
       _getLastIndexLoadError != null;
+
+  /// True when AI candidate build can run on a Rust worker thread.
+  bool get hasAsyncAiCandidatesApi =>
+      _startBuildAiCandidatesAsync != null &&
+      _isAiCandidatesBuilding != null &&
+      _getAiCandidatesJson != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -645,6 +816,148 @@ final class VolwardNativeBridge implements VolwardBridge {
     return _decodeJsonPtr(out);
   }
 
+  String? buildAiCandidatesJson(Pointer<Void> engine, String snapshotId) {
+    final fn = _buildAiCandidatesJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? startBuildAiCandidatesAsync(Pointer<Void> engine, String snapshotId) {
+    final fn = _startBuildAiCandidatesAsync;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  bool isAiCandidatesBuilding(Pointer<Void> engine) {
+    final fn = _isAiCandidatesBuilding;
+    if (fn == null) return false;
+    return fn(engine);
+  }
+
+  String? getAiCandidatesJson(Pointer<Void> engine) {
+    final fn = _getAiCandidatesJson;
+    if (fn == null) return null;
+    final out = fn(engine);
+    if (out == nullptr) return null;
+    try {
+      return out.toDartString();
+    } finally {
+      _freeString(out);
+    }
+  }
+
+  bool saveAiResultJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    String resultJson,
+  ) {
+    final fn = _saveAiResultJson;
+    if (fn == null) return false;
+    final snapPtr = snapshotId.toNativeUtf8();
+    final jsonPtr = resultJson.toNativeUtf8();
+    try {
+      return fn(engine, snapPtr, jsonPtr);
+    } finally {
+      calloc.free(snapPtr);
+      calloc.free(jsonPtr);
+    }
+  }
+
+  /// Returns saved analysis JSON, an `error:…` string, or null if the symbol
+  /// is missing from the dylib (needs rebuild).
+  String? loadAiResultJson(Pointer<Void> engine, String snapshotId) {
+    final fn = _loadAiResultJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? aiUpstreamEndpoint() {
+    final fn = _aiUpstreamEndpoint;
+    if (fn == null) return null;
+    final out = fn();
+    if (out == nullptr) return null;
+    try {
+      return out.toDartString();
+    } finally {
+      _freeString(out);
+    }
+  }
+
+  int? aiBatchSize() {
+    final fn = _aiBatchSize;
+    if (fn == null) return null;
+    return fn();
+  }
+
+  String? aiBuildRequestJson(String candidatesJson) {
+    final fn = _aiBuildRequestJson;
+    if (fn == null) return null;
+    final ptr = candidatesJson.toNativeUtf8();
+    try {
+      final out = fn(ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? aiParseResponseJson(String upstreamBody, String batchJson) {
+    final fn = _aiParseResponseJson;
+    if (fn == null) return null;
+    final bodyPtr = upstreamBody.toNativeUtf8();
+    final batchPtr = batchJson.toNativeUtf8();
+    try {
+      final out = fn(bodyPtr, batchPtr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(bodyPtr);
+      calloc.free(batchPtr);
+    }
+  }
+
   Map<String, dynamic> _decodeJsonPtr(Pointer<Utf8> ptr) {
     try {
       final raw = ptr.toDartString();
@@ -688,6 +1001,126 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardEmptyTrashJsonNative>>(
             'volward_empty_trash_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildCandidatesJson? _tryLookupAiBuildCandidatesJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildCandidatesJsonNative>>(
+            'volward_ai_build_candidates_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiStartBuildCandidatesAsync? _tryLookupAiStartBuildCandidatesAsync() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiStartBuildCandidatesAsyncNative>>(
+            'volward_ai_start_build_candidates_async',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiIsCandidatesBuilding? _tryLookupAiIsCandidatesBuilding() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiIsCandidatesBuildingNative>>(
+            'volward_ai_is_candidates_building',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiGetCandidatesJson? _tryLookupAiGetCandidatesJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiGetCandidatesJsonNative>>(
+            'volward_ai_get_candidates_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiSaveResultJson? _tryLookupAiSaveResultJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiSaveResultJsonNative>>(
+            'volward_ai_save_result_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiLoadResultJson? _tryLookupAiLoadResultJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiLoadResultJsonNative>>(
+            'volward_ai_load_result_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiUpstreamEndpoint? _tryLookupAiUpstreamEndpoint() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiUpstreamEndpointNative>>(
+            'volward_ai_upstream_endpoint',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBatchSize? _tryLookupAiBatchSize() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBatchSizeNative>>(
+            'volward_ai_batch_size',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildRequestJson? _tryLookupAiBuildRequestJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildRequestJsonNative>>(
+            'volward_ai_build_request_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiParseResponseJson? _tryLookupAiParseResponseJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiParseResponseJsonNative>>(
+            'volward_ai_parse_response_json',
           )
           .asFunction();
     } on Object {
@@ -966,5 +1399,85 @@ final class VolwardNativeBridge implements VolwardBridge {
     final fn = _indexVersion;
     if (fn == null) return 0;
     return fn(engine);
+  }
+
+  // ── Capability analysis APIs ──────────────────────────────────────────
+
+  /// Runs a capability analysis synchronously against the current snapshot.
+  /// Returns `{"result": …}` / `{"error": …}` JSON from Rust.
+  String analyzeCapability(
+    Pointer<Void> engine,
+    String snapshotId,
+    String capability,
+    String optionsJson,
+  ) {
+    final fn = _analyzeCapabilityJson;
+    if (fn == null) {
+      return 'error:native dylib missing volward_analyze_capability_json — rebuild Rust';
+    }
+    final snapshotPtr = snapshotId.toNativeUtf8();
+    final capabilityPtr = capability.toNativeUtf8();
+    final optionsPtr = optionsJson.toNativeUtf8();
+    try {
+      final out = fn(engine, snapshotPtr, capabilityPtr, optionsPtr);
+      return _decodeStringPtr(out) ?? 'error:null capability response';
+    } finally {
+      calloc.free(snapshotPtr);
+      calloc.free(capabilityPtr);
+      calloc.free(optionsPtr);
+    }
+  }
+
+  /// Starts an async capability analysis and returns `{"job_id": …}` /
+  /// `{"error": …}` JSON from Rust.
+  String startCapabilityAnalysis(
+    Pointer<Void> engine,
+    String snapshotId,
+    String capability,
+    String optionsJson,
+  ) {
+    final fn = _startCapabilityAnalysisJson;
+    if (fn == null) {
+      return 'error:native dylib missing volward_start_capability_analysis_json — rebuild Rust';
+    }
+    final snapshotPtr = snapshotId.toNativeUtf8();
+    final capabilityPtr = capability.toNativeUtf8();
+    final optionsPtr = optionsJson.toNativeUtf8();
+    try {
+      final out = fn(engine, snapshotPtr, capabilityPtr, optionsPtr);
+      return _decodeStringPtr(out) ?? 'error:null capability start response';
+    } finally {
+      calloc.free(snapshotPtr);
+      calloc.free(capabilityPtr);
+      calloc.free(optionsPtr);
+    }
+  }
+
+  /// Reads the current status of a capability job as `{"progress": …,
+  /// "result": …}` / `{"error": …}` JSON from Rust.
+  String getCapabilityJobStatus(Pointer<Void> engine, String jobId) {
+    final fn = _getCapabilityJobStatusJson;
+    if (fn == null) {
+      return 'error:native dylib missing volward_get_capability_job_status_json — rebuild Rust';
+    }
+    final jobPtr = jobId.toNativeUtf8();
+    try {
+      final out = fn(engine, jobPtr);
+      return _decodeStringPtr(out) ?? 'error:null capability status';
+    } finally {
+      calloc.free(jobPtr);
+    }
+  }
+
+  /// Requests cancellation of an in-flight capability job.
+  bool cancelCapabilityAnalysis(Pointer<Void> engine, String jobId) {
+    final fn = _cancelCapabilityAnalysis;
+    if (fn == null) return false;
+    final jobPtr = jobId.toNativeUtf8();
+    try {
+      return fn(engine, jobPtr);
+    } finally {
+      calloc.free(jobPtr);
+    }
   }
 }

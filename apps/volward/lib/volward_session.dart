@@ -6,10 +6,13 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
+import 'ai/ai_provider.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
+import 'capabilities/capability_models.dart';
+import 'capabilities/capability_result_cache.dart';
 import 'proto/snapshot_pb_decoder.dart';
 import 'scan_entry_record.dart';
 import 'scan_preview.dart';
@@ -165,7 +168,9 @@ class VolwardSession extends ChangeNotifier {
   final Set<String> _invalidatedPrefixes = {};
   final Map<String, ScanTreeNode> _directoryOverlays = {};
   final Set<String> _refreshingDirectoryPaths = {};
+  final Set<String> _postDeleteRefreshPaths = {};
   final Map<String, String> _refreshErrors = {};
+  final CapabilityAnalysisCache _capabilityCache = CapabilityAnalysisCache();
   // Monotonic token for root switches. If the user picks folders quickly, only
   // the latest preview/scan handoff may update the visible snapshot.
   int _rootSwitchGeneration = 0;
@@ -216,6 +221,16 @@ class VolwardSession extends ChangeNotifier {
   @visibleForTesting
   Future<List<Map<String, dynamic>>> Function(String path)?
   scanRootPreviewReaderForTest;
+  @visibleForTesting
+  String Function(String snapshotId, String capability, String optionsJson)?
+  capabilityAnalyzeRunnerForTest;
+  @visibleForTesting
+  String Function(String snapshotId, String capability, String optionsJson)?
+  capabilityStartRunnerForTest;
+  @visibleForTesting
+  String Function(String jobId)? capabilityStatusReaderForTest;
+  @visibleForTesting
+  bool Function(String jobId)? capabilityCancelRunnerForTest;
 
   Completer<ScanSnapshotState?>? _activeScanCompleter;
   StreamSubscription<dynamic>? _scanProgressSub;
@@ -329,6 +344,8 @@ class VolwardSession extends ChangeNotifier {
   Set<String> get refreshingDirectoryPaths =>
       Set.unmodifiable(_refreshingDirectoryPaths);
 
+  bool get postDeleteRefreshPending => _postDeleteRefreshPaths.isNotEmpty;
+
   bool isDirectoryRefreshing(String path) =>
       _refreshingDirectoryPaths.contains(ScanTreeBuilder.normalizeRoot(path));
 
@@ -373,6 +390,7 @@ class VolwardSession extends ChangeNotifier {
   @visibleForTesting
   void setSnapshotForTest(ScanSnapshotState snapshot) {
     _lastSnapshot = snapshot;
+    _invalidateCapabilityCacheFor(snapshot.snapshotId);
     _directoryOverlays.clear();
     _snapshotVersion++;
     _invalidatedPrefixes.clear();
@@ -425,6 +443,7 @@ class VolwardSession extends ChangeNotifier {
     required String affectedPrefix,
   }) {
     _lastSnapshot = snapshot;
+    _invalidateCapabilityCacheFor(snapshot.snapshotId);
     _directoryOverlays.clear();
     _snapshotVersion++;
     _invalidatedPrefixes
@@ -834,24 +853,24 @@ class VolwardSession extends ChangeNotifier {
 
   Future<bool> _restoreCachedSnapshot() async {
     if (!_ready || _scanning) return false;
-    await loadSessionStateIfNeeded();
-    final generation = ++_cacheRestoreGeneration;
-
-    final preferredRoot = _preferredRestoreRoot();
-    final path = await SnapshotCache.latestSnapshotPath(
-      preferredRoot: preferredRoot,
-    );
-    if (path == null) return false;
-    if (generation != _cacheRestoreGeneration) return false;
-    if (ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot()) !=
-        ScanTreeBuilder.normalizeRoot(preferredRoot)) {
-      return false;
-    }
-
     _restoringSnapshot = true;
     notifyListeners();
     var restoredSnapshot = false;
     try {
+      await loadSessionStateIfNeeded();
+      final generation = ++_cacheRestoreGeneration;
+
+      final preferredRoot = _preferredRestoreRoot();
+      final path = await SnapshotCache.latestSnapshotPath(
+        preferredRoot: preferredRoot,
+      );
+      if (path == null) return false;
+      if (generation != _cacheRestoreGeneration) return false;
+      if (ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot()) !=
+          ScanTreeBuilder.normalizeRoot(preferredRoot)) {
+        return false;
+      }
+
       ScanSnapshotState? restored;
       if (hasIndexApi) {
         // Always try the Rust catalog loader before applying the Dart JSON
@@ -1244,6 +1263,7 @@ class VolwardSession extends ChangeNotifier {
     _lastDeleteReport = null;
     _directoryOverlays.clear();
     _refreshingDirectoryPaths.clear();
+    _postDeleteRefreshPaths.clear();
     _refreshErrors.clear();
     _targetPreviewLoading = true;
     _targetPreviewStartedAt = DateTime.now();
@@ -1495,6 +1515,7 @@ class VolwardSession extends ChangeNotifier {
               'The directory could not be refreshed. The previous results are still shown.';
         }
       }
+      _invalidateCapabilityCacheFor(_lastSnapshot?.snapshotId);
     } catch (e, st) {
       _refreshErrors[target] = e.toString();
       _lastError = '$e';
@@ -1731,6 +1752,7 @@ class VolwardSession extends ChangeNotifier {
           );
           if (scanGeneration == _rootSwitchGeneration) {
             _lastSnapshot = snapshot;
+            _invalidateCapabilityCacheFor(snapshot?.snapshotId);
             _logSnapshotMemoryState('scan-complete');
             _notifyListeners();
           }
@@ -1752,6 +1774,7 @@ class VolwardSession extends ChangeNotifier {
           );
           if (scanGeneration == _rootSwitchGeneration) {
             _lastSnapshot = snapshot;
+            _invalidateCapabilityCacheFor(snapshot?.snapshotId);
             _logSnapshotMemoryState('scan-complete');
             _notifyListeners();
           }
@@ -1873,6 +1896,7 @@ class VolwardSession extends ChangeNotifier {
         final snapshot = await _awaitScanWithStallGuard(completer.future);
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
+          _invalidateCapabilityCacheFor(snapshot?.snapshotId);
           _logSnapshotMemoryState('scan-complete');
           _notifyListeners();
         }
@@ -1906,8 +1930,118 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  bool get hasAiSessionApi =>
+      _ready && _engine != null && VolwardNativeBridge.instance.hasAiSessionApi;
+
+  bool get hasAiContractApi =>
+      _ready && VolwardNativeBridge.instance.hasAiContractApi;
+
+  String? aiUpstreamEndpoint() {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiUpstreamEndpoint();
+  }
+
+  int? aiBatchSize() {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiBatchSize();
+  }
+
+  /// Build DeepSeek request body for analyze candidates (no `member_paths`).
+  String? aiBuildRequestJson(List<Map<String, dynamic>> candidates) {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiBuildRequestJson(
+      jsonEncode(candidates),
+    );
+  }
+
+  /// Parse upstream body against the batch that produced it.
+  List<AiVerdict>? aiParseResponseJson(
+    String upstreamBody,
+    List<Map<String, dynamic>> batch,
+  ) {
+    if (!hasAiContractApi) return null;
+    final raw = VolwardNativeBridge.instance.aiParseResponseJson(
+      upstreamBody,
+      jsonEncode(batch),
+    );
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return decoded
+          .whereType<Map>()
+          .map((e) => AiVerdict.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? buildAiCandidatesJson(String snapshotId) {
+    final engine = _engine;
+    if (!_ready || engine == null) return null;
+    return VolwardNativeBridge.instance.buildAiCandidatesJson(
+      engine,
+      snapshotId,
+    );
+  }
+
+  /// Prefer async native build so huge scans don't freeze the UI isolate.
+  Future<String?> buildAiCandidatesJsonAsync(String snapshotId) async {
+    final engine = _engine;
+    if (!_ready || engine == null) return null;
+    final bridge = VolwardNativeBridge.instance;
+    if (!bridge.hasAsyncAiCandidatesApi) {
+      return bridge.buildAiCandidatesJson(engine, snapshotId);
+    }
+
+    final startedAt = DateTime.now();
+    const timeout = Duration(minutes: 3);
+    while (true) {
+      if (DateTime.now().difference(startedAt) > timeout) {
+        return 'error:ai candidates build timed out';
+      }
+      final started = bridge.startBuildAiCandidatesAsync(engine, snapshotId);
+      if (started == null) {
+        return bridge.buildAiCandidatesJson(engine, snapshotId);
+      }
+      if (started.startsWith('error:')) return started;
+      if (started.startsWith('busy:')) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        continue;
+      }
+      break;
+    }
+
+    while (bridge.isAiCandidatesBuilding(engine)) {
+      if (DateTime.now().difference(startedAt) > timeout) {
+        return 'error:ai candidates build timed out';
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    return bridge.getAiCandidatesJson(engine);
+  }
+
+  bool saveAiResultJson(String snapshotId, String resultJson) {
+    final engine = _engine;
+    if (!_ready || engine == null) return false;
+    return VolwardNativeBridge.instance.saveAiResultJson(
+      engine,
+      snapshotId,
+      resultJson,
+    );
+  }
+
+  /// Saved AI analysis JSON for [snapshotId], or null / `error:…` on failure.
+  String? loadAiResultJson(String snapshotId) {
+    final engine = _engine;
+    if (!_ready || engine == null) return null;
+    return VolwardNativeBridge.instance.loadAiResultJson(engine, snapshotId);
+  }
+
   Future<Map<String, dynamic>> deleteEntries(
     List<String> targets, {
+    String? expectedSnapshotId,
     bool dryRun = false,
     bool rescanAfterDelete = false,
     String? refreshPath,
@@ -1920,6 +2054,9 @@ class VolwardSession extends ChangeNotifier {
     final snapshotId = _lastSnapshot?.snapshotId;
     if (snapshotId == null || snapshotId.isEmpty) {
       throw StateError('No scan snapshot — run a scan first');
+    }
+    if (expectedSnapshotId != null && expectedSnapshotId != snapshotId) {
+      throw StateError('Snapshot changed — refresh the analysis and try again');
     }
 
     _deleting = true;
@@ -1991,6 +2128,9 @@ class VolwardSession extends ChangeNotifier {
   }
 
   void _scheduleDirectoryRefreshAfterDelete(String path) {
+    final normalizedPath = ScanTreeBuilder.normalizeRoot(path);
+    _postDeleteRefreshPaths.add(normalizedPath);
+    _notifyListeners();
     unawaited(
       Future<void>.delayed(Duration.zero, () async {
         try {
@@ -2005,6 +2145,9 @@ class VolwardSession extends ChangeNotifier {
           debugPrint(
             'VolwardSession: post-delete directory refresh failed: $e\n$st',
           );
+          _notifyListeners();
+        } finally {
+          _postDeleteRefreshPaths.remove(normalizedPath);
           _notifyListeners();
         }
       }),
@@ -2186,7 +2329,14 @@ class VolwardSession extends ChangeNotifier {
     if (!VolwardNativeBridge.instance.setLastSnapshot(_engine!, snap)) {
       throw StateError('Failed to load scan snapshot into engine');
     }
+    _invalidateCapabilityCacheFor(snap['snapshot_id']?.toString());
     return ScanSnapshotState.fromWire(snap);
+  }
+
+  void _invalidateCapabilityCacheFor(String? snapshotId) {
+    if (snapshotId != null && snapshotId.isNotEmpty) {
+      _capabilityCache.invalidateForSnapshot(snapshotId);
+    }
   }
 
   void _logSnapshotMemoryState(String source) {
@@ -2498,6 +2648,205 @@ class VolwardSession extends ChangeNotifier {
       VolwardNativeBridge.instance.freeEngine(engine);
     }
     super.dispose();
+  }
+
+  // ── Capability analysis (Lemon-style storage capabilities) ─────────────
+
+  bool get hasCapabilityApi =>
+      _ready &&
+      _engine != null &&
+      VolwardNativeBridge.instance.hasCapabilityApi;
+
+  /// Synchronous capability analysis against the current snapshot. Returns
+  /// the typed result, or throws [StateError] / [FormatException] on failure.
+  Future<CapabilityAnalysisResult> analyzeCapability({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  }) async {
+    final resolved = options ?? const AnalysisOptions(rootPath: '');
+    // Paginated requests carry a cursor and must always hit the analyzer;
+    // only terminal (cursor-less) results are cached.
+    if (resolved.cursor == null) {
+      final cached = _capabilityCache.get(snapshotId, capability, resolved);
+      if (cached != null) {
+        return cached;
+      }
+    }
+    final raw = _capabilityCall(
+      mode: 'analyze',
+      snapshotId: snapshotId,
+      capability: capability,
+      options: resolved,
+    );
+    final result = _decodeCapabilityResult(raw, capability);
+    if (resolved.cursor == null) {
+      _capabilityCache.put(snapshotId, capability, resolved, result);
+    }
+    return result;
+  }
+
+  /// Starts an async capability job and returns its job id.
+  String startCapabilityAnalysis({
+    required String snapshotId,
+    required Capability capability,
+    AnalysisOptions? options,
+  }) {
+    final resolved = options ?? const AnalysisOptions(rootPath: '');
+    final raw = _capabilityCall(
+      mode: 'start',
+      snapshotId: snapshotId,
+      capability: capability,
+      options: resolved,
+    );
+    final decoded = _decodeCapabilityJson(raw, capability, 'start');
+    final error = decoded['error'];
+    if (error != null) {
+      throw StateError(
+        'capability ${capability.wireValue} start failed: '
+        '${error is Map<String, dynamic> ? '${error['code']}: ${error['message']}' : error}',
+      );
+    }
+    final jobId = decoded['job_id'];
+    if (jobId is! String || jobId.isEmpty) {
+      throw FormatException(
+        'capability ${capability.wireValue} start response missing job_id',
+      );
+    }
+    return jobId;
+  }
+
+  /// Reads the current typed status of a capability job.
+  CapabilityJobStatus getCapabilityJobStatus(String jobId) {
+    final runner = capabilityStatusReaderForTest;
+    final raw = runner != null
+        ? runner(jobId)
+        : _capabilityCall(mode: 'status', jobId: jobId);
+    final decoded = _decodeCapabilityJson(
+      raw,
+      Capability.spaceAnalysis,
+      'status',
+    );
+    final error = decoded['error'];
+    if (error != null) {
+      throw StateError(
+        'capability job failed: ${error is Map<String, dynamic> ? '${error['code']}: ${error['message']}' : error}',
+      );
+    }
+    return CapabilityJobStatus.fromJson(decoded);
+  }
+
+  /// Requests cancellation of an in-flight capability job.
+  bool cancelCapabilityAnalysis(String jobId) {
+    final runner = capabilityCancelRunnerForTest;
+    if (runner != null) return runner(jobId);
+    final engine = _requireCapabilityEngine();
+    return VolwardNativeBridge.instance.cancelCapabilityAnalysis(engine, jobId);
+  }
+
+  /// Polls a capability job until it reaches a terminal state, yielding each
+  /// progress snapshot. Use [getCapabilityJobStatus] for the final typed
+  /// result after the stream completes.
+  Stream<CapabilityAnalysisProgress> watchCapabilityJob(
+    String jobId, {
+    Duration pollInterval = const Duration(milliseconds: 300),
+  }) async* {
+    while (true) {
+      final status = getCapabilityJobStatus(jobId);
+      yield status.progress;
+      if (status.isTerminal) {
+        return;
+      }
+      await Future<void>.delayed(pollInterval);
+    }
+  }
+
+  String _capabilityCall({
+    required String mode,
+    String? snapshotId,
+    Capability? capability,
+    AnalysisOptions? options,
+    String? jobId,
+  }) {
+    final runner = switch (mode) {
+      'analyze' => capabilityAnalyzeRunnerForTest,
+      'start' => capabilityStartRunnerForTest,
+      _ => null,
+    };
+    if (runner != null) {
+      return runner(
+        snapshotId!,
+        capability!.wireValue,
+        jsonEncode(options!.toJson()),
+      );
+    }
+    final engine = _requireCapabilityEngine();
+    final bridge = VolwardNativeBridge.instance;
+    return switch (mode) {
+      'analyze' => bridge.analyzeCapability(
+        engine,
+        snapshotId!,
+        capability!.wireValue,
+        jsonEncode(options!.toJson()),
+      ),
+      'start' => bridge.startCapabilityAnalysis(
+        engine,
+        snapshotId!,
+        capability!.wireValue,
+        jsonEncode(options!.toJson()),
+      ),
+      'status' => bridge.getCapabilityJobStatus(engine, jobId!),
+      _ => throw ArgumentError('unknown capability mode $mode'),
+    };
+  }
+
+  Pointer<Void> _requireCapabilityEngine() {
+    if (!_ready || _engine == null) {
+      throw StateError(_initError ?? 'Native engine not ready');
+    }
+    return _engine!;
+  }
+
+  Map<String, dynamic> _decodeCapabilityJson(
+    String raw,
+    Capability capability,
+    String context,
+  ) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw FormatException(
+        'invalid capability $context response for ${capability.wireValue}: $raw',
+      );
+    }
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    throw FormatException(
+      'invalid capability $context response for ${capability.wireValue}: $raw',
+    );
+  }
+
+  CapabilityAnalysisResult _decodeCapabilityResult(
+    String raw,
+    Capability capability,
+  ) {
+    final decoded = _decodeCapabilityJson(raw, capability, 'analyze');
+    final error = decoded['error'];
+    if (error != null) {
+      throw StateError(
+        'capability ${capability.wireValue} failed: '
+        '${error is Map<String, dynamic> ? '${error['code']}: ${error['message']}' : error}',
+      );
+    }
+    final result = decoded['result'];
+    if (result is! Map<String, dynamic>) {
+      throw FormatException(
+        'capability ${capability.wireValue} analyze response missing result',
+      );
+    }
+    return CapabilityAnalysisResult.fromJson(result);
   }
 }
 

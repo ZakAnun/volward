@@ -30,6 +30,7 @@ enum EntryCategory {
   ENTRY_CATEGORY_DUPLICATE = 6;
   ENTRY_CATEGORY_SYSTEM = 7;
   ENTRY_CATEGORY_UNKNOWN = 8;
+  ENTRY_CATEGORY_BUILD_ARTIFACT = 9;
 }
 
 enum RiskLevel {
@@ -57,6 +58,9 @@ message StorageEntry {
   SourceType source_type = 7;
   bool deletable = 8;
   string reason = 9;
+  // File modification time in epoch milliseconds; absent for directories,
+  // unavailable metadata, or old snapshots (never guessed).
+  optional int64 modified_at_ms = 10;
 }
 
 message ScanTreeNode {

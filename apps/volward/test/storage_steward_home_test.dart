@@ -554,6 +554,10 @@ Future<void> pumpOverview(
   VoidCallback? onOpenSettings,
   ValueChanged<String>? onSelectCategory,
   ValueChanged<StorageHomeItem>? onOpenItem,
+  VoidCallback? onOpenAi,
+  Widget? mainPaneOverride,
+  bool interactionsLocked = false,
+  FocusNode? aiActionFocusNode,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -576,6 +580,10 @@ Future<void> pumpOverview(
           onOpenSettings: onOpenSettings,
           onSelectCategory: onSelectCategory,
           onOpenItem: onOpenItem,
+          onOpenAi: onOpenAi,
+          mainPaneOverride: mainPaneOverride,
+          interactionsLocked: interactionsLocked,
+          aiActionFocusNode: aiActionFocusNode,
         ),
       ),
     ),
@@ -583,6 +591,134 @@ Future<void> pumpOverview(
 }
 
 void main() {
+  testWidgets('default overview keeps all original regions unchanged', (
+    tester,
+  ) async {
+    await pumpOverview(tester, summary: completedSummary);
+
+    expect(find.byKey(StorageStewardHome.capacityKey), findsOneWidget);
+    expect(find.byKey(LargestItemsPanel.panelKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.browseCardKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.aiActionKey), findsNothing);
+  });
+
+  testWidgets('wide overview exposes the AI action without overflow', (
+    tester,
+  ) async {
+    await pumpOverview(tester, onOpenAi: () {});
+
+    expect(find.byKey(StorageStewardHome.aiActionKey), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(StorageStewardHome.aiActionKey)).width,
+      lessThanOrEqualTo(140),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact overview exposes the AI action without overflow', (
+    tester,
+  ) async {
+    await pumpOverview(tester, size: const Size(600, 1400), onOpenAi: () {});
+
+    expect(find.byKey(StorageStewardHome.aiActionKey), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(StorageStewardHome.aiActionKey)).width,
+      lessThanOrEqualTo(140),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('main pane override replaces the default overview pane', (
+    tester,
+  ) async {
+    const replacement = Key('test-main-pane-replacement');
+    await pumpOverview(
+      tester,
+      mainPaneOverride: const SizedBox(key: replacement),
+    );
+
+    expect(find.byKey(replacement), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.targetsKey), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.capacityKey), findsNothing);
+  });
+
+  testWidgets('locked interactions absorb target folder and AI taps', (
+    tester,
+  ) async {
+    var targetSelections = 0;
+    var folderSelections = 0;
+    var aiOpens = 0;
+    var browseOpens = 0;
+    var scanStarts = 0;
+    await pumpOverview(
+      tester,
+      onSelectTarget: (_) => targetSelections++,
+      onChooseFolder: () => folderSelections++,
+      onOpenAi: () => aiOpens++,
+      onBrowse: () => browseOpens++,
+      onScan: () => scanStarts++,
+      interactionsLocked: true,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('storage-target-home')));
+    await tester.tap(find.byKey(StorageStewardHome.chooseFolderKey));
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.tap(find.byKey(StorageStewardHome.browseKey));
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+
+    expect(targetSelections, 0);
+    expect(folderSelections, 0);
+    expect(aiOpens, 0);
+    expect(browseOpens, 0);
+    expect(scanStarts, 0);
+  });
+
+  testWidgets('locked semantics hide mutable controls but keep Settings', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await pumpOverview(
+        tester,
+        interactionsLocked: true,
+        onOpenAi: () {},
+        onOpenSettings: () {},
+      );
+
+      expectButtonSemantics(
+        tester.getSemantics(
+          find.byKey(const ValueKey('storage-target-semantics-downloads')),
+        ),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('Choose Folder')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('AI Analysis')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('Browse Files')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.bySemanticsLabel('Start Scan')),
+        enabled: false,
+      );
+      expectButtonSemantics(
+        tester.getSemantics(find.byKey(StorageStewardHome.settingsKey)),
+        enabled: true,
+      );
+      // Hover tooltip is disabled app-wide, but the icon-only settings
+      // button must keep its accessible name (semantics-only Tooltip).
+      expect(find.byTooltip('Settings'), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('wide dashboard board is full width and top aligned', (
     tester,
   ) async {
@@ -875,6 +1011,10 @@ void main() {
     expect(find.byKey(StorageStewardHome.targetsKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.browseCardKey), findsOneWidget);
     expect(find.byKey(StorageStewardHome.actionsKey), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(StorageStewardHome.targetsKey)).width,
+      216,
+    );
     expect(find.text('Desktop storage steward'), findsNothing);
     expect(find.text('See what is taking space.'), findsNothing);
     expect(find.text('Preview first'), findsNothing);
@@ -897,6 +1037,20 @@ void main() {
     expect(actions.top, greaterThanOrEqualTo(scanSummary.top));
     expect(actions.left, greaterThan(scanSummary.left));
     expect(panel.width, greaterThan(1000));
+  });
+
+  testWidgets('wide workspace fills the main pane bounds', (tester) async {
+    const workspace = Key('test-workspace-bounds');
+    await pumpOverview(
+      tester,
+      size: const Size(1280, 800),
+      mainPaneOverride: const SizedBox(key: workspace),
+    );
+
+    expect(
+      tester.getRect(find.byKey(workspace)),
+      tester.getRect(find.byKey(StorageStewardHome.mainPaneKey)),
+    );
   });
 
   testWidgets('wide dashboard renders topbar and sidebar logos', (
@@ -1378,6 +1532,24 @@ void main() {
     expect(selectedCategory, isNull);
   });
 
+  testWidgets('locked overview disables scan and cancel actions', (
+    tester,
+  ) async {
+    var scanCalls = 0;
+    var cancelCalls = 0;
+    await pumpOverview(
+      tester,
+      summary: scanningSummary,
+      interactionsLocked: true,
+      onScan: () => scanCalls++,
+      onCancelScan: () => cancelCalls++,
+    );
+
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(scanCalls, 0);
+    expect(cancelCalls, 0);
+  });
+
   testWidgets('built-in targets render and selection stays independent', (
     tester,
   ) async {
@@ -1603,7 +1775,7 @@ void main() {
       );
       expect(find.text('Deep Archive'), findsWidgets);
       expect(find.text(customPath), findsNothing);
-      expect(find.byTooltip(customPath), findsOneWidget);
+      expect(find.byTooltip(customPath), findsNothing);
 
       final customData = tester
           .getSemantics(
@@ -1637,7 +1809,7 @@ void main() {
         find.byKey(const ValueKey('storage-target-selected-drive-d')),
         findsOneWidget,
       );
-      expect(find.byTooltip('d:/'), findsOneWidget);
+      expect(find.byTooltip('d:/'), findsNothing);
 
       final customData = tester
           .getSemantics(
@@ -1842,15 +2014,25 @@ void main() {
     expect(cancels, 1);
   });
 
-  testWidgets('restoring a snapshot still offers to scan, not to cancel', (
-    tester,
-  ) async {
+  testWidgets('compact scanning exposes cancel action', (tester) async {
+    var cancels = 0;
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: scanningSummary,
+      onCancelScan: () => cancels++,
+    );
+
+    expect(find.text('Cancel Scan'), findsOneWidget);
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(cancels, 1);
+  });
+
+  testWidgets('restoring a snapshot hides scan action', (tester) async {
     // A cold launch with a cached snapshot sets `scanning` so the dashboard
     // reads as busy, but there is no scan behind it. Keying the CTA off
     // `scanning` alone put a permanently disabled "Cancel Scan" on screen for
     // the whole restore.
-    var scans = 0;
-    var cancels = 0;
     await pumpOverview(
       tester,
       summary: StorageHomeSummary(
@@ -1861,16 +2043,30 @@ void main() {
         restoringSnapshot: true,
         hasCompletedScan: false,
       ),
-      onScan: () => scans++,
-      onCancelScan: () => cancels++,
     );
 
     expect(find.text('Cancel Scan'), findsNothing);
-    expect(find.text('Start Scan'), findsOneWidget);
+    expect(find.text('Start Scan'), findsNothing);
+    expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
+  });
 
-    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
-    expect(scans, 1);
-    expect(cancels, 0);
+  testWidgets('restoring a snapshot hides scan action in compact layout', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: StorageHomeSummary(
+        overview: readySummary.overview,
+        selectedLocation: readySummary.selectedLocation,
+        selectedVolume: readySummary.selectedVolume,
+        scanning: true,
+        restoringSnapshot: true,
+        hasCompletedScan: false,
+      ),
+    );
+
+    expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
   });
 
   testWidgets('disabled scan targets and folder action absorb real taps', (
@@ -1909,6 +2105,20 @@ void main() {
     expect(find.text('Rescan'), findsOneWidget);
     expect(find.text('256 B reclaimable'), findsOneWidget);
     expect(find.textContaining('Last scan'), findsOneWidget);
+    await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
+    expect(scans, 1);
+  });
+
+  testWidgets('compact completed scan exposes rescan action', (tester) async {
+    var scans = 0;
+    await pumpOverview(
+      tester,
+      size: const Size(600, 1400),
+      summary: completedSummary,
+      onScan: () => scans++,
+    );
+
+    expect(find.text('Rescan'), findsOneWidget);
     await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
     expect(scans, 1);
   });
@@ -2068,7 +2278,7 @@ void main() {
       );
       expect(capacity.getSemanticsData().flagsCollection.isButton, isFalse);
       expect(capacity.getSemanticsData().value, '/');
-      expect(find.byTooltip('/'), findsOneWidget);
+      expect(find.byTooltip('/'), findsNothing);
       expect(panel.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
       expect({target.id, choose.id, browse.id, scan.id, capacity.id}.length, 5);
     } finally {
@@ -2165,7 +2375,7 @@ void main() {
           await tester.pump();
 
           expect(tester.takeException(), isNull);
-          expect(find.byTooltip(longPath), findsOneWidget);
+          expect(find.byTooltip(longPath), findsNothing);
 
           final scanAction = find.byKey(StorageStewardHome.scanActionKey);
           final scrollableFinder = find.byType(Scrollable);

@@ -208,9 +208,9 @@ class _SortMenuButton extends StatelessWidget {
 
     return PopupMenuButton<ScanSortMode>(
       enabled: enabled,
+      tooltip: null,
       initialValue: sortMode,
       onSelected: onChanged,
-      tooltip: '',
       offset: const Offset(0, 30),
       color: v.canvas,
       shape: RoundedRectangleBorder(

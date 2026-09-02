@@ -407,6 +407,15 @@ impl PlatformStorage for DesktopPlatform {
                     is_dir,
                     size_bytes,
                     dir_fingerprint,
+                    modified_at_ms: if is_dir {
+                        None
+                    } else {
+                        metadata
+                            .modified()
+                            .ok()
+                            .map(system_time_secs)
+                            .map(|secs| secs.saturating_mul(1000))
+                    },
                 }) {
                     WalkAction::Stop => return Ok(paths_skipped),
                     WalkAction::SkipSubtree => continue,
@@ -452,10 +461,9 @@ impl PlatformStorage for DesktopPlatform {
                 return Ok(TrashEmptyReport { cleared_count: 0 });
             }
             let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            return Err(PlatformError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("osascript empty trash failed: {stderr}"),
-            )));
+            Err(PlatformError::Io(std::io::Error::other(format!(
+                "osascript empty trash failed: {stderr}"
+            ))))
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -496,7 +504,7 @@ impl PlatformStorage for DesktopPlatform {
                 }
             }
             Err(PlatformError::Io(last_err.unwrap_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "open settings failed")
+                std::io::Error::other("open settings failed")
             })))
         }
         #[cfg(not(target_os = "macos"))]
@@ -528,6 +536,15 @@ impl PlatformStorage for DesktopPlatform {
                 is_dir,
                 size_bytes: if is_dir { 0 } else { metadata.len() },
                 dir_fingerprint: None,
+                modified_at_ms: if is_dir {
+                    None
+                } else {
+                    metadata
+                        .modified()
+                        .ok()
+                        .map(system_time_secs)
+                        .map(|secs| secs.saturating_mul(1000))
+                },
             });
         }
         Ok(out)
@@ -558,8 +575,8 @@ impl PlatformStorage for DesktopPlatform {
             if rc == 0 {
                 let stat = unsafe { stat.assume_init() };
                 let bsize = stat.f_bsize as u64;
-                total = stat.f_blocks as u64 * bsize;
-                available = stat.f_bavail as u64 * bsize;
+                total = stat.f_blocks * bsize;
+                available = stat.f_bavail * bsize;
             }
         }
         #[cfg(windows)]

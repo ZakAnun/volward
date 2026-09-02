@@ -4,20 +4,31 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use platform_desktop::DesktopPlatform;
+use platform_desktop::{
+    ApplicationAnalyzer, ApplicationInventory, BrowserPrivacyAnalyzer, BrowserPrivacyInventory,
+    DesktopPlatform,
+};
 use volward_core::classify::Classifier;
 use volward_core::delete::DeleteOrchestrator;
 use volward_core::model::{
-    DeleteReport, PlatformCapabilities, ScanProgress, ScanTreeNode, StorageSnapshot,
-    TrashEmptyReport,
+    DeleteReport, EntryCategory, PlatformCapabilities, ScanProgress, ScanTreeNode, SourceType,
+    StorageSnapshot, TrashEmptyReport,
 };
 use volward_core::rules::DesktopRules;
 use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
+use volward_core::{
+    ai_aggregate_path_from_delete_target, AiCandidateBuilder, AnalysisOptions, Capability,
+    CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
+    CleanupCandidateAnalyzer, DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink,
+    OsKnowledgeBase, SimilarPhotoAnalyzer, DEFAULT_CANDIDATE_CAP,
+};
 
 use crate::proto;
+
+const MAX_CONCURRENT_CAPABILITY_JOBS: usize = 4;
 
 fn load_classifier(platform: &DesktopPlatform) -> Classifier {
     let path = std::env::var("VOLWARD_RULES_PATH")
@@ -58,6 +69,12 @@ pub struct VolwardEngine {
     last_progress: Arc<Mutex<Option<ScanProgress>>>,
     last_checkpoint: Arc<Mutex<Option<StorageSnapshot>>>,
     _scan_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    is_ai_candidates_building: Arc<AtomicBool>,
+    ai_candidates_json: Arc<Mutex<Option<String>>>,
+    ai_candidates_generation: Arc<std::sync::atomic::AtomicU64>,
+    capability_registry: Arc<Mutex<CapabilityRegistry>>,
+    /// Async capability jobs keyed by job id; clone-safe interior mutability.
+    capability_jobs: CapabilityJobStore,
 }
 
 impl Default for VolwardEngine {
@@ -68,8 +85,26 @@ impl Default for VolwardEngine {
 
 impl VolwardEngine {
     pub fn new() -> Self {
+        let platform = Arc::new(DesktopPlatform::new());
+        let mut capability_registry = CapabilityRegistry::new();
+        capability_registry.register(Arc::new(LargeFileAnalyzer));
+        capability_registry.register(Arc::new(CleanupCandidateAnalyzer::new(load_classifier(
+            platform.as_ref(),
+        ))));
+        capability_registry.register(Arc::new(DuplicateFileAnalyzer::new(
+            platform.protected_prefixes().to_vec(),
+        )));
+        capability_registry.register(Arc::new(SimilarPhotoAnalyzer::new(
+            platform.protected_prefixes().to_vec(),
+        )));
+        capability_registry.register(Arc::new(ApplicationAnalyzer::new(
+            ApplicationInventory::new(),
+        )));
+        capability_registry.register(Arc::new(BrowserPrivacyAnalyzer::new(
+            BrowserPrivacyInventory::new(),
+        )));
         Self {
-            platform: Arc::new(DesktopPlatform::new()),
+            platform,
             cancel: Arc::new(AtomicBool::new(false)),
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: Arc::new(Mutex::new(None)),
@@ -81,7 +116,21 @@ impl VolwardEngine {
             last_progress: Arc::new(Mutex::new(None)),
             last_checkpoint: Arc::new(Mutex::new(None)),
             _scan_handle: Arc::new(Mutex::new(None)),
+            is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
+            ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            capability_registry: Arc::new(Mutex::new(capability_registry)),
+            capability_jobs: CapabilityJobStore::new(),
         }
+    }
+
+    /// Engine with a pre-registered capability analyzer set (tests / injection).
+    pub fn with_capability_registry(registry: CapabilityRegistry) -> Self {
+        let engine = Self::new();
+        if let Ok(mut current) = engine.capability_registry.lock() {
+            *current = registry;
+        }
+        engine
     }
 
     pub fn probe_capabilities(&self) -> PlatformCapabilities {
@@ -115,6 +164,217 @@ impl VolwardEngine {
     /// so cache invalidation is aligned with the Rust index.
     pub fn index_version(&self) -> u64 {
         self.index_version.load(Ordering::Relaxed)
+    }
+
+    // ------------------------------------------------------------------
+    // Capability analysis (registry + async job state)
+
+    /// Synchronous capability analysis against the current index. Returns
+    /// `{"result": <CapabilityAnalysisResult>}` or `{"error": {...}}`.
+    pub fn analyze_capability_json(
+        &self,
+        snapshot_id: &str,
+        capability: &str,
+        options_json: &str,
+    ) -> String {
+        let Some(capability) = parse_capability(capability) else {
+            return capability_error_json(&CapabilityAnalysisError::new(
+                "invalid_capability",
+                format!("unknown capability {capability:?}"),
+            ));
+        };
+        let options = match parse_capability_options(options_json, capability, snapshot_id) {
+            Ok(options) => options,
+            Err(error) => return capability_error_json(&error),
+        };
+        let registry = match self.capability_registry.lock() {
+            Ok(registry) => registry.clone(),
+            Err(_) => {
+                return capability_error_json(&CapabilityAnalysisError::new(
+                    "internal_error",
+                    "capability registry lock poisoned",
+                ));
+            }
+        };
+        let Some(index) = self.current_index() else {
+            return capability_error_json(&CapabilityAnalysisError::for_request(
+                "no_snapshot",
+                "no snapshot or index loaded",
+                capability,
+                snapshot_id,
+            ));
+        };
+        match registry.analyze(&index, snapshot_id, capability, &options, &NoopProgressSink) {
+            Ok(result) => serde_json::json!({ "result": result }).to_string(),
+            Err(error) => capability_error_json(&error),
+        }
+    }
+
+    /// Starts an async capability job on a worker thread and returns
+    /// `{"job_id": "..."}` or `{"error": {...}}`.
+    pub fn start_capability_analysis_json(
+        &self,
+        snapshot_id: &str,
+        capability: &str,
+        options_json: &str,
+    ) -> String {
+        let Some(capability) = parse_capability(capability) else {
+            return capability_error_json(&CapabilityAnalysisError::new(
+                "invalid_capability",
+                format!("unknown capability {capability:?}"),
+            ));
+        };
+        let options = match parse_capability_options(options_json, capability, snapshot_id) {
+            Ok(options) => options,
+            Err(error) => return capability_error_json(&error),
+        };
+        let snapshot_matches = self
+            .current_index()
+            .as_ref()
+            .map(|index| index.snapshot_id == snapshot_id)
+            .unwrap_or(false);
+        if !snapshot_matches {
+            return capability_error_json(&CapabilityAnalysisError::for_request(
+                "snapshot_mismatch",
+                format!("requested snapshot {snapshot_id} does not match the current index"),
+                capability,
+                snapshot_id,
+            ));
+        }
+        let registry = match self.capability_registry.lock() {
+            Ok(registry) => registry.clone(),
+            Err(_) => {
+                return capability_error_json(&CapabilityAnalysisError::new(
+                    "internal_error",
+                    "capability registry lock poisoned",
+                ));
+            }
+        };
+        if !registry.supports(capability) {
+            return capability_error_json(&CapabilityAnalysisError::unsupported(
+                capability,
+                snapshot_id,
+            ));
+        }
+        if self.capability_jobs.active_count() >= MAX_CONCURRENT_CAPABILITY_JOBS {
+            return capability_error_json(&CapabilityAnalysisError::for_request(
+                "busy",
+                "too many capability jobs in flight; retry after one completes",
+                capability,
+                snapshot_id,
+            ));
+        }
+
+        let job_handle = self.capability_jobs.create(snapshot_id, capability);
+        let job_id = job_handle.job_id().to_string();
+        let job_id_inner = job_id.clone();
+        let index = self.last_index.clone();
+        let job_snapshot = snapshot_id.to_string();
+        let job_capability = capability;
+        let job_options = options;
+
+        std::thread::spawn(move || {
+            job_handle.update_progress(CapabilityAnalysisPhase::Inspecting, 0, 0, None);
+            let result = (|| {
+                // Clone the index out of the lock so long-running analyzers
+                // never stall concurrent FFI (snapshot refresh, status polls).
+                let current = index
+                    .lock()
+                    .map_err(|_| {
+                        CapabilityAnalysisError::new("internal_error", "index lock poisoned")
+                    })?
+                    .clone()
+                    .ok_or_else(|| {
+                        CapabilityAnalysisError::for_request(
+                            "no_snapshot",
+                            "no snapshot or index loaded",
+                            job_capability,
+                            &job_snapshot,
+                        )
+                    })?;
+                if current.snapshot_id != job_snapshot {
+                    return Err(CapabilityAnalysisError::for_request(
+                        "snapshot_mismatch",
+                        format!(
+                            "requested snapshot {job_snapshot} does not match the current index {}",
+                            current.snapshot_id
+                        ),
+                        job_capability,
+                        &job_snapshot,
+                    ));
+                }
+                registry.analyze(
+                    &current,
+                    &job_snapshot,
+                    job_capability,
+                    &job_options,
+                    &job_handle,
+                )
+            })();
+
+            if job_handle.is_cancelled() {
+                return;
+            }
+            match result {
+                Ok(analysis) => {
+                    // Revalidate the snapshot after analysis: a refresh during
+                    // the run must invalidate the job instead of producing a
+                    // deletion plan against a stale snapshot.
+                    let current_snapshot = index
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.as_ref().map(|i| i.snapshot_id.clone()));
+                    if current_snapshot.as_deref() != Some(job_snapshot.as_str()) {
+                        job_handle.fail(
+                            serde_json::json!({
+                                "code": "snapshot_mismatch",
+                                "message": format!(
+                                    "snapshot changed while capability job {job_id_inner} was running"
+                                ),
+                                "capability": job_capability,
+                                "snapshot_id": job_snapshot,
+                            })
+                            .to_string(),
+                        );
+                        return;
+                    }
+                    job_handle.complete(Some(analysis));
+                }
+                Err(error) => {
+                    let error_json = serde_json::to_string(&error).unwrap_or_else(|_| {
+                        "{\"code\":\"internal_error\",\"message\":\"error serialization failed\"}"
+                            .to_string()
+                    });
+                    job_handle.fail(error_json);
+                }
+            }
+        });
+
+        serde_json::json!({ "job_id": job_id }).to_string()
+    }
+
+    /// Current job status as `{"progress": ..., "result": ...}` or an error envelope.
+    pub fn get_capability_job_status_json(&self, job_id: &str) -> String {
+        match self.capability_jobs.status(job_id) {
+            Some(status) => serde_json::to_string(&status).unwrap_or_else(|_| {
+                capability_error_json(&CapabilityAnalysisError::new(
+                    "internal_error",
+                    "job status serialization failed",
+                ))
+            }),
+            None => capability_error_json(&CapabilityAnalysisError::new(
+                "job_not_found",
+                format!("no capability job with id {job_id}"),
+            )),
+        }
+    }
+
+    pub fn cancel_capability_analysis(&self, job_id: &str) -> bool {
+        self.capability_jobs.cancel(job_id)
+    }
+
+    fn current_index(&self) -> Option<SnapshotIndex> {
+        self.last_index.lock().ok().and_then(|guard| guard.clone())
     }
 
     // ------------------------------------------------------------------
@@ -485,6 +745,10 @@ impl VolwardEngine {
                 }
                 let mut paths = Vec::new();
                 for target in &entry_ids {
+                    if ai_aggregate_path_from_delete_target(target).is_some() {
+                        paths.extend(resolve_index_ai_aggregate_paths(index, target)?);
+                        continue;
+                    }
                     let resolved_entries = index.entries_for_ids(std::slice::from_ref(target));
                     if let Some(entry) = resolved_entries.first() {
                         paths.push((entry.path.clone(), entry.size_bytes));
@@ -499,8 +763,13 @@ impl VolwardEngine {
                         paths.push((path, size_bytes));
                     }
                 }
-                return DeleteOrchestrator::delete_explicit_paths(paths, dry_run, &*self.platform)
-                    .map_err(|e| e.to_string());
+                return DeleteOrchestrator::delete_explicit_paths(
+                    paths,
+                    Some(&index.root_path),
+                    dry_run,
+                    &*self.platform,
+                )
+                .map_err(|e| e.to_string());
             }
         }
 
@@ -512,14 +781,23 @@ impl VolwardEngine {
         }
         let mut paths = Vec::new();
         for target in &entry_ids {
+            if ai_aggregate_path_from_delete_target(target).is_some() {
+                paths.extend(resolve_snapshot_ai_aggregate_paths(&snapshot, target)?);
+                continue;
+            }
             if let Some((path, size_bytes)) =
                 snapshot_target_path_size(&snapshot.tree, &snapshot.entries, target)
             {
                 paths.push((path, size_bytes));
             }
         }
-        DeleteOrchestrator::delete_explicit_paths(paths, dry_run, &*self.platform)
-            .map_err(|e| e.to_string())
+        DeleteOrchestrator::delete_explicit_paths(
+            paths,
+            Some(&snapshot.tree.path),
+            dry_run,
+            &*self.platform,
+        )
+        .map_err(|e| e.to_string())
     }
 
     pub fn empty_trash(&self) -> Result<TrashEmptyReport, String> {
@@ -680,6 +958,291 @@ impl VolwardEngine {
             Err(e) => serde_json::json!({ "error": e }).to_string(),
         }
     }
+
+    /// Build AI candidate JSON for the given snapshot.
+    ///
+    /// Prefers `last_index` (production path — `run_index_scan` clears
+    /// `last_snapshot`), then falls back to in-memory `last_snapshot`
+    /// (tests / legacy). Heavy work: call via
+    /// [`Self::start_build_ai_candidates_async`] from the UI path.
+    pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
+        use std::collections::HashSet;
+        use volward_core::{
+            compute_result_cache_key, AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase,
+            PreClassifiedEntry, DEFAULT_CANDIDATE_CAP, DEFAULT_PRECLASSIFIED_CAP,
+        };
+
+        let kb = OsKnowledgeBase::for_current_platform();
+
+        // 1) Prefer index (production path). Copy inputs under the lock, then
+        // release before aggregation/serialize so other FFI isn't stalled.
+        let index_inputs = if let Ok(guard) = self.last_index.lock() {
+            guard.as_ref().map(|index| {
+                (
+                    index.snapshot_id.clone(),
+                    index.root_path.clone(),
+                    index.stats.clone(),
+                    index.summary().root_size_bytes,
+                    index.reclaimable_estimate_bytes,
+                    index.classified_paths(),
+                    index.unclassified_files(),
+                    index
+                        .entries_with_category("BuildArtifact")
+                        .into_iter()
+                        .map(|entry| {
+                            (
+                                entry.path.clone(),
+                                entry.size_bytes,
+                                index.is_directory(&entry.path),
+                                entry.deletable,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+        } else {
+            None
+        };
+
+        if let Some((
+            index_snap_id,
+            root_path,
+            stats,
+            root_size_bytes,
+            reclaimable,
+            classified,
+            files,
+            build_artifacts,
+        )) = index_inputs
+        {
+            if index_snap_id != snapshot_id {
+                return format!("error:snapshot_id mismatch: got {index_snap_id}");
+            }
+            let mut builder = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
+            for (path, size_bytes, is_dir, deletable) in build_artifacts {
+                builder.push_pre_classified(PreClassifiedEntry {
+                    is_dir,
+                    path,
+                    size_bytes,
+                    category: EntryCategory::BuildArtifact,
+                    confidence: "high".to_string(),
+                    reason: "Classified as build artifact by local rules".to_string(),
+                    deletable,
+                });
+            }
+            let set = builder
+                .annotate_ai_cleanup_patterns()
+                .aggregate_by_dir(20)
+                .cap_top_n(DEFAULT_CANDIDATE_CAP)
+                .build()
+                .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
+            let cache_key =
+                compute_result_cache_key(&root_path, &stats, root_size_bytes, reclaimable, &set);
+            let has_existing_result =
+                AiAnalysisResult::exists(&cache_key) || AiAnalysisResult::exists(snapshot_id);
+            return Self::serialize_ai_candidate_set(
+                snapshot_id,
+                &set,
+                has_existing_result,
+                &cache_key,
+                &root_path,
+            );
+        }
+
+        // 2) Fallback: in-memory StorageSnapshot (tests / legacy)
+        let snapshot_owned = match self.last_snapshot.lock() {
+            Ok(g) => g.clone(),
+            Err(e) => return format!("error:lock:{e}"),
+        };
+        let snapshot = match snapshot_owned.as_ref() {
+            Some(s) => s,
+            None => return "error:no snapshot or index loaded".to_string(),
+        };
+        if snapshot.snapshot_id != snapshot_id {
+            return format!("error:snapshot_id mismatch: got {}", snapshot.snapshot_id);
+        }
+
+        let classified: HashSet<String> = snapshot
+            .entries
+            .iter()
+            .map(|e| e.path_or_uri.clone())
+            .collect();
+        let mut builder = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb);
+        for entry in &snapshot.entries {
+            if entry.category != EntryCategory::BuildArtifact {
+                continue;
+            }
+            builder.push_pre_classified(PreClassifiedEntry {
+                is_dir: entry.source_type == SourceType::Directory,
+                path: entry.path_or_uri.clone(),
+                size_bytes: entry.size_bytes,
+                category: EntryCategory::BuildArtifact,
+                confidence: "high".to_string(),
+                reason: if entry.reason.is_empty() {
+                    "Classified as build artifact by local rules".to_string()
+                } else {
+                    entry.reason.clone()
+                },
+                deletable: entry.deletable,
+            });
+        }
+        let set = builder
+            .annotate_ai_cleanup_patterns()
+            .aggregate_by_dir(20)
+            .cap_top_n(DEFAULT_CANDIDATE_CAP)
+            .build()
+            .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
+        let root_path = snapshot.tree.path.clone();
+        let cache_key = compute_result_cache_key(
+            &root_path,
+            &snapshot.stats,
+            snapshot.tree.size_bytes,
+            snapshot.reclaimable_estimate_bytes,
+            &set,
+        );
+        let has_existing_result =
+            AiAnalysisResult::exists(&cache_key) || AiAnalysisResult::exists(snapshot_id);
+
+        Self::serialize_ai_candidate_set(
+            snapshot_id,
+            &set,
+            has_existing_result,
+            &cache_key,
+            &root_path,
+        )
+    }
+
+    fn serialize_ai_candidate_set(
+        snapshot_id: &str,
+        set: &volward_core::AiCandidateSet,
+        has_existing_result: bool,
+        cache_key: &str,
+        root_path: &str,
+    ) -> String {
+        match serde_json::to_string(&serde_json::json!({
+            "snapshot_id": snapshot_id,
+            "root_path": root_path,
+            "result_cache_key": cache_key,
+            "pre_classified": set.pre_classified,
+            "unknown_candidates": set.candidates,
+            "estimated_input_tokens": set.estimated_input_tokens,
+            "total_raw_count": set.total_raw_count,
+            "candidates_total_before_cap": set.candidates_total_before_cap,
+            "truncated": set.truncated,
+            "pre_classified_truncated": set.pre_classified_truncated,
+            "has_existing_result": has_existing_result,
+        })) {
+            Ok(s) => s,
+            Err(e) => format!("error:serialize:{e}"),
+        }
+    }
+
+    /// Build candidates on a worker thread so Flutter's main isolate stays
+    /// responsive on multi-hundred-GB scans.
+    pub fn start_build_ai_candidates_async(&self, snapshot_id: String) -> String {
+        if self
+            .is_ai_candidates_building
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return "busy:ai candidates build already in progress".to_string();
+        }
+
+        let generation = self.ai_candidates_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut g) = self.ai_candidates_json.lock() {
+            *g = None;
+        }
+
+        // Snapshot Arc handles for the worker; the build method locks briefly.
+        let engine_index = self.last_index.clone();
+        let engine_snapshot = self.last_snapshot.clone();
+        let result_slot = self.ai_candidates_json.clone();
+        let building = self.is_ai_candidates_building.clone();
+        let generation_slot = self.ai_candidates_generation.clone();
+
+        // We need a thin stand-in that can call the same build logic. Reconstruct
+        // a minimal engine view via a free helper using the cloned Arcs.
+        std::thread::spawn(move || {
+            let json =
+                Self::build_ai_candidates_json_with(&engine_index, &engine_snapshot, &snapshot_id);
+            if generation_slot.load(Ordering::SeqCst) == generation {
+                if let Ok(mut g) = result_slot.lock() {
+                    *g = Some(json);
+                }
+            }
+            building.store(false, Ordering::Release);
+        });
+
+        "ok".to_string()
+    }
+
+    fn build_ai_candidates_json_with(
+        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        last_snapshot: &Arc<Mutex<Option<StorageSnapshot>>>,
+        snapshot_id: &str,
+    ) -> String {
+        // Temporary engine shell so we reuse the same method body without
+        // duplicating aggregation logic. Only index/snapshot fields are read.
+        let shell = VolwardEngine {
+            platform: Arc::new(DesktopPlatform::new()),
+            cancel: Arc::new(AtomicBool::new(false)),
+            is_scanning: Arc::new(AtomicBool::new(false)),
+            last_snapshot: last_snapshot.clone(),
+            last_index: last_index.clone(),
+            is_index_loading: Arc::new(AtomicBool::new(false)),
+            last_index_load_error: Arc::new(Mutex::new(None)),
+            index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            last_progress: Arc::new(Mutex::new(None)),
+            last_checkpoint: Arc::new(Mutex::new(None)),
+            _scan_handle: Arc::new(Mutex::new(None)),
+            is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
+            ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
+            capability_jobs: CapabilityJobStore::new(),
+        };
+        shell.build_ai_candidates_json(snapshot_id)
+    }
+
+    pub fn is_ai_candidates_building(&self) -> bool {
+        self.is_ai_candidates_building.load(Ordering::Relaxed)
+    }
+
+    /// Latest async build payload (or error string). Empty when none yet.
+    pub fn get_ai_candidates_json(&self) -> String {
+        self.ai_candidates_json
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .unwrap_or_else(|| "error:not_ready".to_string())
+    }
+
+    pub fn save_ai_result_json(&self, snapshot_id: &str, result_json: &str) -> bool {
+        use volward_core::AiAnalysisResult;
+        let mut result: AiAnalysisResult = match serde_json::from_str(result_json) {
+            Ok(r) => r,
+            Err(_) => return false,
+        };
+        if result.snapshot_id.is_empty() {
+            result.snapshot_id = snapshot_id.to_string();
+        }
+        result.save_for_reuse().is_ok()
+    }
+
+    /// Load a previously saved AI analysis JSON.
+    ///
+    /// Prefer the content-addressed `cache_key` (stable across re-scans of the
+    /// same directory). Falls back to `snapshot_id` for legacy files.
+    pub fn load_ai_result_json(&self, key: &str) -> String {
+        use volward_core::AiAnalysisResult;
+        match AiAnalysisResult::load(key) {
+            Some(result) => {
+                serde_json::to_string(&result).unwrap_or_else(|e| format!("error:serialize:{e}"))
+            }
+            None => "error:not_found".to_string(),
+        }
+    }
 }
 
 /// Encodes `snapshot` as protobuf and writes it atomically to `path`.
@@ -720,6 +1283,75 @@ fn index_target_path_size(index: &SnapshotIndex, target: &str) -> Option<(String
         .into_iter()
         .find(|node| facade_paths_equal(&node.path, &target))
         .map(|node| (node.path, node.size_bytes))
+}
+
+fn resolve_index_ai_aggregate_paths(
+    index: &SnapshotIndex,
+    target: &str,
+) -> Result<Vec<(String, u64)>, String> {
+    let parent = ai_aggregate_path_from_delete_target(target)
+        .ok_or_else(|| "Invalid AI aggregate delete target".to_string())?;
+    let kb = OsKnowledgeBase::for_current_platform();
+    let classified = index.classified_paths();
+    let files = index.unclassified_files();
+    let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb)
+        .annotate_ai_cleanup_patterns()
+        .aggregate_by_dir(20)
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build();
+    let valid = set.candidates.iter().any(|candidate| {
+        candidate.path == parent && candidate.delete_target.as_deref() == Some(target)
+    });
+    if !valid {
+        return Err("AI aggregate candidate is no longer valid".to_string());
+    }
+    Ok(files
+        .into_iter()
+        .filter(|(path, _)| {
+            parent_path_of(path)
+                .as_deref()
+                .is_some_and(|candidate_parent| facade_paths_equal(candidate_parent, parent))
+                && !classified.contains(path)
+                && kb.classify_path(path).is_none()
+        })
+        .collect())
+}
+
+fn resolve_snapshot_ai_aggregate_paths(
+    snapshot: &StorageSnapshot,
+    target: &str,
+) -> Result<Vec<(String, u64)>, String> {
+    let parent = ai_aggregate_path_from_delete_target(target)
+        .ok_or_else(|| "Invalid AI aggregate delete target".to_string())?;
+    let kb = OsKnowledgeBase::for_current_platform();
+    let classified: std::collections::HashSet<String> = snapshot
+        .entries
+        .iter()
+        .map(|entry| entry.path_or_uri.clone())
+        .collect();
+    let set = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, &kb)
+        .annotate_ai_cleanup_patterns()
+        .aggregate_by_dir(20)
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build();
+    let valid = set.candidates.iter().any(|candidate| {
+        candidate.path == parent && candidate.delete_target.as_deref() == Some(target)
+    });
+    if !valid {
+        return Err("AI aggregate candidate is no longer valid".to_string());
+    }
+    let node = find_tree_node(&snapshot.tree, parent)
+        .ok_or_else(|| "AI aggregate directory is no longer present".to_string())?;
+    Ok(node
+        .children
+        .iter()
+        .filter(|child| {
+            !child.is_dir
+                && !classified.contains(&child.path)
+                && kb.classify_path(&child.path).is_none()
+        })
+        .map(|child| (child.path.clone(), child.size_bytes))
+        .collect())
 }
 
 fn snapshot_target_path_size(
@@ -822,13 +1454,68 @@ fn is_windows_drive_root(path: &str) -> bool {
     has_windows_drive_prefix(path) && path.len() == 3
 }
 
+fn parse_capability(value: &str) -> Option<Capability> {
+    serde_json::from_str::<Capability>(&format!("\"{value}\"")).ok()
+}
+
+fn parse_capability_options(
+    options_json: &str,
+    capability: Capability,
+    snapshot_id: &str,
+) -> Result<AnalysisOptions, CapabilityAnalysisError> {
+    serde_json::from_str::<AnalysisOptions>(options_json).map_err(|error| {
+        CapabilityAnalysisError::for_request(
+            "invalid_options",
+            format!("options JSON: {error}"),
+            capability,
+            snapshot_id,
+        )
+    })
+}
+
+fn capability_error_json(error: &CapabilityAnalysisError) -> String {
+    serde_json::json!({ "error": error }).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc::{self, Receiver, Sender};
     use volward_core::model::{
         CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
         StorageEntry, StorageSnapshot,
     };
+    use volward_core::{
+        AnalysisOptions, AnalysisSummary, Capability, CapabilityAnalysisError,
+        CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityRegistry, DeletionPlan,
+        CAPABILITY_SCHEMA_VERSION,
+    };
+
+    struct BlockingAnalyzer {
+        capability: Capability,
+        started: Mutex<Option<Sender<()>>>,
+        release: Mutex<Receiver<()>>,
+    }
+
+    impl CapabilityAnalyzer for BlockingAnalyzer {
+        fn capability(&self) -> Capability {
+            self.capability
+        }
+
+        fn analyze(
+            &self,
+            index: &SnapshotIndex,
+            normalized_root: &str,
+            _options: &AnalysisOptions,
+            _progress: &dyn volward_core::CapabilityProgressSink,
+        ) -> Result<CapabilityAnalysisResult, CapabilityAnalysisError> {
+            if let Some(started) = self.started.lock().unwrap().take() {
+                started.send(()).unwrap();
+            }
+            self.release.lock().unwrap().recv().unwrap();
+            Ok(capability_result_for(index, normalized_root, self.capability))
+        }
+    }
 
     fn minimal_snapshot() -> StorageSnapshot {
         StorageSnapshot {
@@ -848,6 +1535,7 @@ mod tests {
                 source_type: SourceType::File,
                 deletable: true,
                 reason: "test".to_string(),
+                modified_at_ms: None,
             }],
             tree: ScanTreeNode {
                 name: "root".to_string(),
@@ -860,6 +1548,277 @@ mod tests {
             stats: ScanStats::default(),
             warnings: vec![],
         }
+    }
+
+    fn capability_result_for(
+        index: &SnapshotIndex,
+        root_path: &str,
+        capability: Capability,
+    ) -> CapabilityAnalysisResult {
+        CapabilityAnalysisResult {
+            schema_version: CAPABILITY_SCHEMA_VERSION,
+            capability,
+            snapshot_id: index.snapshot_id.clone(),
+            root_path: root_path.to_string(),
+            analyzer_version: "fake-v1".to_string(),
+            generated_at_ms: 1,
+            capability_level: CapabilityLevel::FullPath,
+            summary: AnalysisSummary::default(),
+            groups: vec![],
+            next_cursor: None,
+            deletion_plan: DeletionPlan {
+                snapshot_id: index.snapshot_id.clone(),
+                target_count: 0,
+                target_bytes: 0,
+                targets: vec![],
+                blocked_targets: vec![],
+                requires_confirmation: true,
+            },
+            warnings: vec![],
+        }
+    }
+
+    fn options_json() -> String {
+        serde_json::to_string(&AnalysisOptions {
+            root_path: "/".to_string(),
+            ..AnalysisOptions::default()
+        })
+        .unwrap()
+    }
+
+    fn blocking_engine() -> (VolwardEngine, Receiver<()>, Sender<()>) {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let mut registry = CapabilityRegistry::new();
+        registry.register(Arc::new(BlockingAnalyzer {
+            capability: Capability::LargeFiles,
+            started: Mutex::new(Some(started_tx)),
+            release: Mutex::new(release_rx),
+        }));
+        let engine = VolwardEngine::with_capability_registry(registry);
+        engine.set_last_snapshot(minimal_snapshot());
+        (engine, started_rx, release_tx)
+    }
+
+    fn capability_name(capability: Capability) -> &'static str {
+        match capability {
+            Capability::LargeFiles => "large_files",
+            Capability::CleanupCandidates => "cleanup_candidates",
+            Capability::DuplicateFiles => "duplicate_files",
+            Capability::SimilarPhotos => "similar_photos",
+            Capability::Applications => "applications",
+            Capability::BrowserPrivacy => "browser_privacy",
+            Capability::SpaceAnalysis => "space_analysis",
+        }
+    }
+
+    fn start_capability_job(engine: &VolwardEngine) -> String {
+        let raw = engine.start_capability_analysis_json(
+            "test-snap",
+            "large_files",
+            &options_json(),
+        );
+        let value: serde_json::Value = serde_json::from_str(&raw).expect("start response JSON");
+        value["job_id"].as_str().expect("job_id").to_string()
+    }
+
+    fn wait_for_completed_status(engine: &VolwardEngine, job_id: &str) -> serde_json::Value {
+        for _ in 0..100 {
+            let raw = engine.get_capability_job_status_json(job_id);
+            let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            if status["progress"]["phase"] == "completed"
+                || status["progress"]["cancelled"] == true
+            {
+                return status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("capability job did not finish");
+    }
+
+    #[test]
+    fn capability_analysis_rejects_snapshot_mismatch_and_unsupported_capability() {
+        let engine = VolwardEngine::new();
+        engine.set_last_snapshot(minimal_snapshot());
+
+        let mismatch: serde_json::Value = serde_json::from_str(
+            &engine.analyze_capability_json("stale", "large_files", &options_json()),
+        )
+        .unwrap();
+        assert_eq!(mismatch["error"]["code"], "snapshot_mismatch");
+
+        // All analyzer-backed capabilities are registered by `new()`; an
+        // unregistered capability must still return a structured error.
+        let unsupported: serde_json::Value = serde_json::from_str(
+            &engine.analyze_capability_json("test-snap", "space_analysis", &options_json()),
+        )
+        .unwrap();
+        assert_eq!(unsupported["error"]["code"], "unsupported_capability");
+    }
+
+    #[test]
+    fn async_capability_job_reports_progress_and_cancels_without_result() {
+        let (engine, started, release) = blocking_engine();
+        let job_id = start_capability_job(&engine);
+        started.recv().unwrap();
+
+        let active: serde_json::Value = serde_json::from_str(
+            &engine.get_capability_job_status_json(&job_id),
+        )
+        .unwrap();
+        assert_eq!(active["progress"]["phase"], "inspecting");
+        assert!(engine.cancel_capability_analysis(&job_id));
+        release.send(()).unwrap();
+
+        let cancelled = wait_for_completed_status(&engine, &job_id);
+        assert_eq!(cancelled["progress"]["cancelled"], true);
+        assert!(cancelled["result"].is_null());
+    }
+
+    #[test]
+    fn async_capability_job_rejects_result_when_snapshot_changes() {
+        let (engine, started, release) = blocking_engine();
+        let job_id = start_capability_job(&engine);
+        started.recv().unwrap();
+
+        let mut replacement = minimal_snapshot();
+        replacement.snapshot_id = "replacement-snap".to_string();
+        engine.set_last_snapshot(replacement);
+        release.send(()).unwrap();
+
+        let completed = wait_for_completed_status(&engine, &job_id);
+        assert!(completed["result"].is_null());
+        let error = completed["progress"]["error"].as_str().unwrap();
+        let error: serde_json::Value = serde_json::from_str(error).unwrap();
+        assert_eq!(error["code"], "snapshot_mismatch");
+    }
+
+    #[test]
+    fn capability_jobs_are_capped_when_many_are_in_flight() {
+        let capabilities = [
+            Capability::LargeFiles,
+            Capability::CleanupCandidates,
+            Capability::DuplicateFiles,
+            Capability::SimilarPhotos,
+        ];
+        let mut registry = CapabilityRegistry::new();
+        let mut starteds = Vec::new();
+        let mut releases = Vec::new();
+        for capability in capabilities {
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            registry.register(Arc::new(BlockingAnalyzer {
+                capability,
+                started: Mutex::new(Some(started_tx)),
+                release: Mutex::new(release_rx),
+            }));
+            starteds.push(started_rx);
+            releases.push(release_tx);
+        }
+        let engine = VolwardEngine::with_capability_registry(registry);
+        engine.set_last_snapshot(minimal_snapshot());
+
+        for (capability, started) in capabilities.iter().zip(starteds.iter()) {
+            let raw = engine.start_capability_analysis_json(
+                "test-snap",
+                capability_name(*capability),
+                &options_json(),
+            );
+            let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            assert!(value["job_id"].is_string(), "{raw}");
+            started.recv().unwrap();
+        }
+
+        let busy = engine.start_capability_analysis_json(
+            "test-snap",
+            capability_name(Capability::LargeFiles),
+            &options_json(),
+        );
+        let value: serde_json::Value = serde_json::from_str(&busy).unwrap();
+        assert_eq!(value["error"]["code"], "busy", "{busy}");
+
+        for release in releases {
+            release.send(()).unwrap();
+        }
+    }
+
+    #[test]
+    fn build_ai_candidates_json_caps_aggregates_and_lists_build_artifacts() {
+        let engine = VolwardEngine::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let scratch_root = temp.path().join("scratch");
+        std::fs::create_dir_all(&scratch_root).unwrap();
+        let mut snapshot = minimal_snapshot();
+        snapshot.entries.push(StorageEntry {
+            id: "e-node".to_string(),
+            display_name: "node_modules".to_string(),
+            path_or_uri: "/Users/x/app/node_modules".to_string(),
+            size_bytes: 4096,
+            category: EntryCategory::BuildArtifact,
+            risk_level: RiskLevel::Low,
+            source_type: SourceType::Directory,
+            deletable: true,
+            reason: "build artifact".to_string(),
+            modified_at_ms: None,
+        });
+        // 250 unclassified siblings fold into one aggregate candidate.
+        let children: Vec<ScanTreeNode> = (0..250)
+            .map(|i| {
+                let path = scratch_root.join(format!("blob_{i}.dat"));
+                std::fs::write(&path, [0u8]).unwrap();
+                ScanTreeNode {
+                    name: format!("blob_{i}.dat"),
+                    path: path.to_string_lossy().to_string(),
+                    is_dir: false,
+                    size_bytes: 1,
+                    entry_id: None,
+                    children: vec![],
+                }
+            })
+            .collect();
+        snapshot.tree.children.push(ScanTreeNode {
+            name: "scratch".to_string(),
+            path: scratch_root.to_string_lossy().to_string(),
+            is_dir: true,
+            size_bytes: 250,
+            entry_id: None,
+            children,
+        });
+        engine.set_last_snapshot(snapshot);
+
+        let json = engine.build_ai_candidates_json("test-snap");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json: {json}");
+        let candidates = parsed["unknown_candidates"].as_array().expect("candidates");
+        assert_eq!(candidates.len(), 1, "{json}");
+        assert_eq!(
+            candidates[0]["path"],
+            scratch_root.to_string_lossy().to_string()
+        );
+        assert_eq!(
+            candidates[0]["member_paths"].as_array().map(Vec::len),
+            Some(200),
+            "{json}"
+        );
+        assert_eq!(
+            candidates[0]["delete_target"],
+            format!("volward-ai-aggregate:v1:{}", scratch_root.to_string_lossy())
+        );
+        assert!(candidates[0].get("delete_member_paths").is_none(), "{json}");
+        assert_eq!(parsed["truncated"], false);
+        assert_eq!(parsed["total_raw_count"], 250);
+        assert_eq!(parsed["candidates_total_before_cap"], 1);
+
+        let pre = parsed["pre_classified"].as_array().expect("pre_classified");
+        assert!(
+            pre.iter()
+                .any(|e| e["path"] == "/Users/x/app/node_modules" && e["confidence"] == "high"),
+            "{json}"
+        );
+
+        let token = candidates[0]["delete_target"].as_str().unwrap().to_string();
+        let report = engine.delete_entries_json("test-snap", vec![token], true);
+        assert!(report.contains(r#""deleted_count":250"#), "{report}");
+        assert!(report.contains(r#""freed_bytes":250"#), "{report}");
     }
 
     #[test]
@@ -917,17 +1876,22 @@ mod tests {
     #[test]
     fn delete_entries_json_allows_explicit_non_deletable_media_in_index_mode() {
         let engine = VolwardEngine::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let movie = temp.path().join("movie.mov");
+        std::fs::write(&movie, vec![0u8; 120]).unwrap();
+        let movie_path = movie.to_string_lossy().to_string();
         let mut snapshot = minimal_snapshot();
         snapshot.entries.push(StorageEntry {
             id: "e3".to_string(),
             display_name: "movie.mov".to_string(),
-            path_or_uri: "/Users/x/Movies/movie.mov".to_string(),
+            path_or_uri: movie_path.clone(),
             size_bytes: 120,
             category: EntryCategory::Media,
             risk_level: RiskLevel::High,
             source_type: SourceType::File,
             deletable: false,
             reason: "media".to_string(),
+            modified_at_ms: None,
         });
         engine.set_last_snapshot(snapshot);
 
@@ -935,21 +1899,28 @@ mod tests {
         assert!(report.contains(r#""deleted_count":1"#), "{report}");
         assert!(report.contains(r#""freed_bytes":120"#), "{report}");
         assert!(!report.contains(r#""error""#), "{report}");
+        let _ = movie_path;
     }
 
     #[test]
     fn delete_entries_json_allows_directory_paths_in_index_mode() {
         let engine = VolwardEngine::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let users_dir = temp.path().join("Users");
+        std::fs::create_dir_all(&users_dir).unwrap();
+        let notes = users_dir.join("notes.txt");
+        std::fs::write(&notes, vec![0u8; 40]).unwrap();
+        let users_path = users_dir.to_string_lossy().to_string();
         let mut snapshot = minimal_snapshot();
         snapshot.tree.children.push(ScanTreeNode {
             name: "Users".to_string(),
-            path: "/Users".to_string(),
+            path: users_path.clone(),
             is_dir: true,
             size_bytes: 40,
             entry_id: None,
             children: vec![ScanTreeNode {
                 name: "notes.txt".to_string(),
-                path: "/Users/notes.txt".to_string(),
+                path: notes.to_string_lossy().to_string(),
                 is_dir: false,
                 size_bytes: 40,
                 entry_id: Some("dir-child".to_string()),
@@ -958,10 +1929,11 @@ mod tests {
         });
         engine.set_last_snapshot(snapshot);
 
-        let report = engine.delete_entries_json("test-snap", vec!["/Users".to_string()], true);
+        let report = engine.delete_entries_json("test-snap", vec![users_path.clone()], true);
         assert!(report.contains(r#""deleted_count":1"#), "{report}");
         assert!(report.contains(r#""freed_bytes":40"#), "{report}");
         assert!(!report.contains(r#""error""#), "{report}");
+        let _ = users_path;
     }
 
     #[test]

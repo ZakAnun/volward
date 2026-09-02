@@ -1,0 +1,35 @@
+# Standalone platform API compose file.
+
+services:
+  platform-api:
+    image: ${VOLWARD_PLATFORM_IMAGE:?set VOLWARD_PLATFORM_IMAGE in /opt/volward/.env}
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=sqlite:/data/platform.db
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in /opt/volward/.env}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY in /opt/volward/.env}
+      - RESEND_API_KEY=${RESEND_API_KEY:?set RESEND_API_KEY in /opt/volward/.env}
+      - RESEND_FROM=${RESEND_FROM:?set RESEND_FROM in /opt/volward/.env}
+      # Do not set ALLOW_LOG_MAILER in production — OTP would be logged in plaintext.
+      - PADDLE_API_KEY=${PADDLE_API_KEY:?set PADDLE_API_KEY in /opt/volward/.env}
+      - PADDLE_WEBHOOK_SECRET=${PADDLE_WEBHOOK_SECRET:?set PADDLE_WEBHOOK_SECRET in /opt/volward/.env}
+      - PADDLE_ENV=${PADDLE_ENV:?set PADDLE_ENV=live in /opt/volward/.env}
+      - RUST_LOG=info
+    ports:
+      - 127.0.0.1:8080:8080
+    volumes:
+      - platform-data:/data
+    networks:
+      - volward-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      retries: 3
+
+volumes:
+  platform-data:
+
+networks:
+  volward-net:
+    name: volward-net
+    external: true

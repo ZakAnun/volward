@@ -10,13 +10,31 @@ use crate::manifest::{
     DirFingerprint, FileManifestStore, FileSnapshotStore, ManifestStore, ScanManifest,
 };
 use crate::model::{PlatformCapabilities, ScanPhase, ScanProgress, ScanStats, StorageSnapshot};
+use crate::os_knowledge::OsKnowledgeBase;
 use crate::platform::{PlatformError, PlatformStorage, WalkAction, WalkOptions};
 use crate::scan_tree::{find_subtree, ScanTreeBuilder};
 use crate::SnapshotIndexBuilder;
 
+fn classify_with_tiers(
+    classifier: &Classifier,
+    os_kb: &OsKnowledgeBase,
+    path: &str,
+    size_bytes: u64,
+    is_dir: bool,
+    job_id: &str,
+) -> Option<crate::model::StorageEntry> {
+    if let Some(e) = classifier.classify_path(path, size_bytes, is_dir, job_id) {
+        return Some(e);
+    }
+    os_kb
+        .classify_path(path)
+        .map(|k| k.into_storage_entry(path, size_bytes, is_dir, job_id))
+}
+
 pub struct ScanOrchestrator<'a> {
     platform: &'a dyn PlatformStorage,
     classifier: Classifier,
+    os_kb: OsKnowledgeBase,
     manifest_store: FileManifestStore,
     snapshot_store: FileSnapshotStore,
 }
@@ -35,6 +53,7 @@ impl<'a> ScanOrchestrator<'a> {
         Self {
             platform,
             classifier,
+            os_kb: OsKnowledgeBase::for_current_platform(),
             manifest_store: FileManifestStore::new(cache_dir.join("manifests")),
             snapshot_store: FileSnapshotStore::new(cache_dir.join("snapshots")),
         }
@@ -53,6 +72,7 @@ impl<'a> ScanOrchestrator<'a> {
         Self {
             platform,
             classifier,
+            os_kb: OsKnowledgeBase::for_current_platform(),
             manifest_store: FileManifestStore::new(manifest_dir),
             snapshot_store: FileSnapshotStore::new(snapshot_dir),
         }
@@ -170,7 +190,7 @@ impl<'a> ScanOrchestrator<'a> {
             bytes_seen = bytes_seen.saturating_add(e.size_bytes);
             last_path = Some(e.path.clone());
             progress_counter += 1;
-            if progress_counter % 1000 == 0 {
+            if progress_counter.is_multiple_of(1000) {
                 on_progress(ScanProgress {
                     job_id: job_id.clone(),
                     phase: ScanPhase::Walking,
@@ -194,10 +214,16 @@ impl<'a> ScanOrchestrator<'a> {
                 tree_builder.ensure_dir(&e.path);
             } else {
                 stats.files_seen += 1;
-                if let Some(classified) =
-                    self.classifier
-                        .classify_path(&e.path, e.size_bytes, false, &job_id)
-                {
+                if let Some(classified) = classify_with_tiers(
+                    &self.classifier,
+                    &self.os_kb,
+                    &e.path,
+                    e.size_bytes,
+                    false,
+                    &job_id,
+                ) {
+                    let mut classified = classified;
+                    classified.modified_at_ms = e.modified_at_ms;
                     let id = classified.id.clone();
                     stats.files_in_snapshot += 1;
                     entries.push(classified);
@@ -207,7 +233,9 @@ impl<'a> ScanOrchestrator<'a> {
                 }
             }
 
-            if progress_counter % 200 == 0 && last_checkpoint_at.elapsed() >= checkpoint_interval {
+            if progress_counter.is_multiple_of(200)
+                && last_checkpoint_at.elapsed() >= checkpoint_interval
+            {
                 let checkpoint_started_at = std::time::Instant::now();
                 on_checkpoint(StorageSnapshot {
                     snapshot_id: format!("{job_id}-checkpoint"),
@@ -463,7 +491,7 @@ impl<'a> ScanOrchestrator<'a> {
             bytes_seen = bytes_seen.saturating_add(e.size_bytes);
             last_path = Some(e.path.clone());
             progress_counter += 1;
-            if progress_counter % 1000 == 0 {
+            if progress_counter.is_multiple_of(1000) {
                 on_progress(ScanProgress {
                     job_id: job_id.clone(),
                     phase: ScanPhase::Walking,
@@ -489,10 +517,16 @@ impl<'a> ScanOrchestrator<'a> {
             } else {
                 stats.files_seen += 1;
                 index_builder.record_file_size(&e.path, e.size_bytes);
-                if let Some(classified) =
-                    self.classifier
-                        .classify_path(&e.path, e.size_bytes, false, &job_id)
-                {
+                if let Some(classified) = classify_with_tiers(
+                    &self.classifier,
+                    &self.os_kb,
+                    &e.path,
+                    e.size_bytes,
+                    false,
+                    &job_id,
+                ) {
+                    let mut classified = classified;
+                    classified.modified_at_ms = e.modified_at_ms;
                     stats.files_in_snapshot += 1;
                     index_builder.insert_entry(classified);
                 }
@@ -732,6 +766,11 @@ fn default_cache_dir_from_env(
     temp_dir.join("volward")
 }
 
+/// Public accessor for the Volward data directory (respects `VOLWARD_CACHE_DIR`).
+pub fn default_data_dir() -> std::path::PathBuf {
+    default_cache_dir()
+}
+
 fn default_cache_dir() -> PathBuf {
     default_cache_dir_from_env(
         cache_platform(),
@@ -750,10 +789,22 @@ fn unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CapabilityLevel, ScanRoot, VolumeStats};
+    use crate::model::{CapabilityLevel, EntryCategory, ScanRoot, VolumeStats};
     use std::fs;
     use std::sync::atomic::AtomicBool;
     use tempfile::TempDir;
+
+    #[test]
+    fn tier2_classifies_node_modules_when_tier1_misses() {
+        let classifier = Classifier::default();
+        let yaml = include_str!("../../../rules/os_knowledge.yaml");
+        let kb = OsKnowledgeBase::from_yaml(yaml, "macos").unwrap();
+        let path = "/Users/x/Projects/app/node_modules/lodash/index.js";
+        assert!(classifier.classify_path(path, 10, false, "j").is_none());
+        let e = classify_with_tiers(&classifier, &kb, path, 10, false, "j").unwrap();
+        assert_eq!(e.category, EntryCategory::BuildArtifact);
+        assert!(e.deletable);
+    }
 
     struct TempDirPlatform {
         root: ScanRoot,
@@ -851,6 +902,7 @@ mod tests {
                 children_count: file_count.min(u32::MAX as usize) as u32,
                 max_child_mtime_secs: 0,
             }),
+            modified_at_ms: None,
         });
 
         for i in 0..file_count {
@@ -861,6 +913,7 @@ mod tests {
                 is_dir: false,
                 size_bytes: 1,
                 dir_fingerprint: None,
+                modified_at_ms: None,
             });
         }
 
@@ -982,24 +1035,28 @@ mod tests {
                 children_count: 1,
                 max_child_mtime_secs: 1_700_000_101,
             }),
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: cache_file.to_string_lossy().to_string(),
             is_dir: false,
             size_bytes: 6,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: temp.path().join("Documents").to_string_lossy().to_string(),
             is_dir: true,
             size_bytes: 0,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: unknown_file.to_string_lossy().to_string(),
             is_dir: false,
             size_bytes: 17,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
 
         let cancel = AtomicBool::new(false);
@@ -1051,12 +1108,14 @@ mod tests {
             is_dir: true,
             size_bytes: 0,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: cache_file.to_string_lossy().to_string(),
             is_dir: false,
             size_bytes: 6,
             dir_fingerprint: None,
+            modified_at_ms: None,
         });
 
         let manifest_dir = temp.path().join("manifests");

@@ -28,7 +28,7 @@ migrate_working_dir/
 # Local Xcode signing overrides
 macos/Runner/Configs/TeamSettings.local.xcconfig
 
-# Local Aptabase defines (copy from aptabase.json.example)
+# Local Aptabase defines
 aptabase.json
 
 # Flutter/Dart/Pub related

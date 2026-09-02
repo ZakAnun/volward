@@ -322,6 +322,253 @@
       "count": {"type": "int"}
     }
   },
+  "aiAnalysisTitle": "AI Disk Analysis",
+  "aiPreCheckSafeTitle": "{count} items pre-identified as safe to remove",
+  "@aiPreCheckSafeTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPreCheckSafeSelectable": "{count} items already marked safe by local rules",
+  "@aiPreCheckSafeSelectable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPreCheckUnknownTitle": "{count} items will be sent for AI analysis (~{tokens} tokens)",
+  "@aiPreCheckUnknownTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "int"
+      }
+    }
+  },
+  "aiStartAnalysis": "Start AI Analysis",
+  "aiNoApiKey": "No API Key — configure in Settings",
+  "aiContractUnavailable": "The installed native library is out of date. Please update Volward to use AI analysis.",
+  "aiDeleteSelected": "Delete {count} Selected Items",
+  "@aiDeleteSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictSafe": "Safe to Remove ({count})",
+  "@aiVerdictSafe": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictReview": "Review Needed ({count})",
+  "@aiVerdictReview": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictKeep": "Keep ({count})",
+  "@aiVerdictKeep": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSettingsTitle": "AI Analysis",
+  "aiSettingsModeLabel": "Mode",
+  "aiSettingsByokLabel": "Bring Your Own Key (DeepSeek)",
+  "aiSettingsOffLabel": "Off",
+  "aiSettingsPlatformLabel": "Volward Platform",
+  "aiSettingsApiKeyHint": "sk-...",
+  "aiSettingsApiKeySaved": "API key saved",
+  "aiSettingsApiKeyCleared": "API key cleared",
+  "aiSettingsSaveKey": "Save",
+  "aiSettingsClearKey": "Clear",
+  "aiSettingsLinkEmail": "Link email",
+  "aiSettingsEnterEmail": "Email address",
+  "aiSettingsEnterOtp": "6-digit code",
+  "aiSettingsSendOtp": "Send code",
+  "aiSettingsVerifyOtp": "Verify",
+  "aiSettingsLinkedAs": "Linked as {email}",
+  "@aiSettingsLinkedAs": {
+    "placeholders": {
+      "email": { "type": "String" }
+    }
+  },
+  "aiSettingsCreditsRemaining": "{count} credits remaining",
+  "@aiSettingsCreditsRemaining": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "aiSettingsBuyCredits": "Buy credits",
+  "aiPurchasePayHint": "Pay with WeChat on the checkout page. Balance updates after payment.",
+  "aiPurchaseWaitingHint": "Payment may still be processing. Wait a moment, then refresh your credits in Settings.",
+  "aiSettingsSessionExpired": "Login expired — please link your email again.",
+  "aiPrecheckCreditsCost": "Estimated cost: 1 credit (balance {balance})",
+  "@aiPrecheckCreditsCost": {
+    "placeholders": {
+      "balance": { "type": "int" }
+    }
+  },
+  "aiInsufficientCredits": "No credits left — buy more in Settings.",
+  "aiAnalysisFab": "AI Analysis",
+  "aiPrivacyTitle": "AI analysis privacy",
+  "aiPrivacyBody": "Only paths, sizes, and file counts are sent. File contents are never uploaded. BYOK sends data to DeepSeek; Platform mode sends data to Volward servers which forward to DeepSeek.",
+  "aiPrivacyAccept": "I understand",
+  "aiOverwriteTitle": "Previous analysis available",
+  "aiOverwriteBody": "This scan already has an AI result. Load it, or re-analyze to overwrite.",
+  "aiActionContinue": "Re-analyze",
+  "aiActionLoadPrevious": "Load previous",
+  "aiLoadPreviousFailed": "Could not load the previous AI result.",
+  "aiAnalyzing": "Analyzing with AI…",
+  "aiActionRetry": "Retry",
+  "aiErrorUnknown": "Unknown error",
+  "aiErrorNativeUnavailable": "Failed to load AI candidates (native API unavailable).",
+  "aiErrorInvalidPayload": "Invalid candidates payload.",
+  "aiTruncatedNotice": "Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.",
+  "@aiTruncatedNotice": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCleanupSourceAiToolCache": "AI tool cache/temp",
+  "aiCleanupSourceAiGeneratedOutput": "AI-generated output",
+  "aiCleanupSourceSystemTemp": "Temporary file",
+  "aiCleanupRetentionDays": "Review after {days} days",
+  "@aiCleanupRetentionDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "aiWorkspaceTitle": "AI Cleanup Suggestions",
+  "aiWorkspaceBack": "Back to Overview",
+  "aiWorkspacePhaseLoading": "Preparing candidates",
+  "aiWorkspacePhasePrecheck": "Pre-check",
+  "aiWorkspacePhasePrivacy": "Privacy",
+  "aiWorkspacePhaseAnalyzing": "Analyzing",
+  "aiWorkspacePhaseReview": "Review",
+  "aiWorkspacePhaseDeleting": "Deleting",
+  "aiWorkspacePhaseRecovery": "Recovery",
+  "aiWorkspaceLoadPrevious": "Load Previous Result",
+  "aiWorkspaceAnalyzeAgain": "Analyze Again",
+  "aiResultsAnalyzedSummary": "{analyzed} analyzed · {bytes} total · {safe} safe · {review} pending review · {keep} kept",
+  "@aiResultsAnalyzedSummary": {
+    "placeholders": {
+      "analyzed": {"type": "int"},
+      "bytes": {"type": "String"},
+      "safe": {"type": "int"},
+      "review": {"type": "int"},
+      "keep": {"type": "int"}
+    }
+  },
+  "aiResultsMetricAnalyzed": "Analyzed",
+  "aiResultsMetricSafe": "Safe to remove",
+  "aiResultsMetricReview": "Needs review",
+  "aiResultsMetricKept": "Kept",
+  "aiResultsTotalSize": "{bytes} total",
+  "@aiResultsTotalSize": {
+    "placeholders": {
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsNeedsDecision": "Needs decision",
+  "aiResultsSearchHint": "Search path, reason, source, or hint",
+  "aiResultsClearSearch": "Clear search",
+  "aiResultsNoMatches": "No matching results",
+  "aiResultsEmpty": "No cleanup suggestions were found",
+  "aiResultsResetFilters": "Reset search and filters",
+  "aiResultsFilterAll": "All",
+  "aiResultsFilterReview": "Review",
+  "aiResultsFilterSelected": "Selected",
+  "aiResultsSortPriority": "Priority",
+  "aiResultsSortSize": "Size",
+  "aiResultsGroupItems": "{count, plural, =1{1 item} other{{count} items}} · {bytes}",
+  "@aiResultsGroupItems": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsGroupSafe": "Safe {count}",
+  "@aiResultsGroupSafe": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsGroupReview": "Review {count}",
+  "@aiResultsGroupReview": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsGroupKeep": "Keep {count}",
+  "@aiResultsGroupKeep": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsSelectedForCleanup": "{count, plural, =1{1 item selected} other{{count} items selected}} · {bytes}",
+  "@aiResultsSelectedForCleanup": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsPendingReviewExcluded": "{count, plural, =1{1 pending review item is excluded until you decide.} other{{count} pending review items are excluded until you decide.}}",
+  "@aiResultsPendingReviewExcluded": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsMetricProtected": "Protected",
+  "aiResultsNeedsYourDecision": "Needs your decision",
+  "aiResultsAddToCleanup": "Add to cleanup",
+  "aiResultsKeepItem": "Keep this item",
+  "aiResultsAddedToCleanup": "Added to cleanup",
+  "aiResultsKeptOutOfCleanup": "Kept out of cleanup",
+  "aiResultsSelectedInGroup": "Selected {count}",
+  "@aiResultsSelectedInGroup": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsClearGroupSelection": "Clear group selection",
+  "aiResultsDetailSize": "Size",
+  "aiResultsDetailConfidence": "Confidence",
+  "aiResultsDetailReason": "Reason",
+  "aiResultsDetailCleanupSource": "Cleanup source",
+  "aiResultsDetailRetentionHint": "Retention hint",
+  "aiWorkspacePartialDelete": "{count} items could not be removed · {size} freed",
+  "@aiWorkspacePartialDelete": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
+  "aiErrorTimeout": "The AI request timed out. Try again.",
+  "aiErrorRateLimited": "The AI service is busy. Try again shortly.",
+  "aiErrorNetwork": "Could not reach the AI service. Check your connection.",
+  "aiWorkspaceReturn": "Return to Overview",
+  "back": "Back",
   "homeBrowseFiles": "Browse Files",
   "homeStartScan": "Start Scan",
   "homeRescan": "Rescan",

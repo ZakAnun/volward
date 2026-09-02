@@ -32,6 +32,7 @@ fn category_pb(c: model::EntryCategory) -> i32 {
         model::EntryCategory::Duplicate => 6,
         model::EntryCategory::System => 7,
         model::EntryCategory::Unknown => 8,
+        model::EntryCategory::BuildArtifact => 9,
     }
 }
 
@@ -66,6 +67,7 @@ impl From<&model::StorageEntry> for proto::StorageEntry {
             source_type: source_pb(e.source_type),
             deletable: e.deletable,
             reason: e.reason.clone(),
+            modified_at_ms: e.modified_at_ms,
         }
     }
 }
@@ -144,6 +146,7 @@ mod tests {
                 source_type: SourceType::File,
                 deletable: true,
                 reason: "test".into(),
+                modified_at_ms: None,
             }],
             tree: ScanTreeNode {
                 name: "root".into(),

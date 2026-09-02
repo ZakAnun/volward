@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../ai/ai_analysis_gateway.dart';
 import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
@@ -12,6 +13,7 @@ import 'home/category_breakdown.dart';
 import 'home/dashboard_theme.dart';
 import 'home/largest_items_panel.dart';
 import 'home/skeleton_loader.dart';
+import 'ai_analysis_workspace.dart';
 import 'volward_logo.dart';
 
 const _dashboardInk = kDashboardInk;
@@ -24,6 +26,7 @@ const _volumeFocusOrder = 0.0;
 const _targetFocusOrderStart = 100.0;
 const _chooseFolderFocusOrder = 10000.0;
 const _browseFocusOrder = 10001.0;
+const _aiFocusOrder = 10001.5;
 const _scanFocusOrder = 10002.0;
 const _settingsFocusOrder = 10003.0;
 const _dashboardControlHeight = 32.0; // Reduced from 36 to save vertical space
@@ -80,7 +83,7 @@ TextStyle _dashboardControlTextStyle(BuildContext context, Color color) {
   return context.vwCaptionStrong.copyWith(color: color);
 }
 
-class StorageStewardHome extends StatelessWidget {
+class StorageStewardHome extends StatefulWidget {
   const StorageStewardHome({
     super.key,
     required this.summary,
@@ -92,6 +95,13 @@ class StorageStewardHome extends StatelessWidget {
     this.onOpenSettings,
     this.onSelectCategory,
     this.onOpenItem,
+    this.onOpenAi,
+    this.mainPaneOverride,
+    this.interactionsLocked = false,
+    this.aiActionFocusNode,
+    this.aiSnapshotId,
+    this.aiAnalysisGateway = const ProductionAiAnalysisGateway(),
+    this.onAiDeleteCompleted,
   });
 
   static const backgroundColor = Color(0xFF111113);
@@ -109,6 +119,8 @@ class StorageStewardHome extends StatelessWidget {
   static const contentViewportKey = Key('storage-overview-content-viewport');
   static const boardKey = Key('storage-overview-board');
   static const browseCardKey = Key('storage-overview-browse-card');
+  static const aiActionKey = Key('storage-overview-ai-action');
+  static const mainPaneKey = Key('storage-overview-main-pane');
   static const categoryPieKey = CategoryBreakdown.pieKey;
   static const statusChipKey = Key('storage-overview-status-chip');
   static const actionsKey = Key('storage-overview-actions');
@@ -124,23 +136,150 @@ class StorageStewardHome extends StatelessWidget {
   final VoidCallback? onOpenSettings;
   final ValueChanged<String>? onSelectCategory;
   final ValueChanged<StorageHomeItem>? onOpenItem;
+  final VoidCallback? onOpenAi;
+  final Widget? mainPaneOverride;
+  final bool interactionsLocked;
+  final FocusNode? aiActionFocusNode;
+  final String? aiSnapshotId;
+  final AiAnalysisGateway aiAnalysisGateway;
+  final VoidCallback? onAiDeleteCompleted;
+
+  @override
+  State<StorageStewardHome> createState() => _StorageStewardHomeState();
+}
+
+class _StorageStewardHomeState extends State<StorageStewardHome> {
+  String? _activeAiSnapshotId;
+  bool _aiDeleteInProgress = false;
+  final FocusNode _ownedAiActionFocusNode = FocusNode(
+    debugLabel: 'home-ai-action',
+  );
+
+  FocusNode get _aiActionFocusNode =>
+      widget.aiActionFocusNode ?? _ownedAiActionFocusNode;
+
+  bool get _aiAvailable =>
+      widget.aiSnapshotId != null &&
+      widget.aiSnapshotId!.isNotEmpty &&
+      !widget.aiSnapshotId!.startsWith('preview-') &&
+      !widget.summary.scanning &&
+      !widget.interactionsLocked &&
+      !_aiDeleteInProgress;
+
+  @override
+  void didUpdateWidget(covariant StorageStewardHome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_activeAiSnapshotId != null &&
+        (widget.aiSnapshotId != oldWidget.aiSnapshotId ||
+            widget.summary.selectedLocation?.path !=
+                oldWidget.summary.selectedLocation?.path)) {
+      _closeAi(restoreFocus: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ownedAiActionFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _openAi() {
+    final snapshotId = widget.aiSnapshotId;
+    if (!_aiAvailable || snapshotId == null) return;
+    setState(() => _activeAiSnapshotId = snapshotId);
+  }
+
+  void _closeAi({bool restoreFocus = true}) {
+    if (_activeAiSnapshotId == null || _aiDeleteInProgress) return;
+    setState(() => _activeAiSnapshotId = null);
+    if (!restoreFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _aiActionFocusNode.requestFocus();
+    });
+  }
+
+  void _setAiDeleting(bool value) {
+    if (!mounted || _aiDeleteInProgress == value) return;
+    setState(() => _aiDeleteInProgress = value);
+  }
+
+  void _handleAiDeleteCompleted() {
+    if (!mounted) return;
+    setState(() {
+      _activeAiSnapshotId = null;
+      _aiDeleteInProgress = false;
+    });
+    widget.onAiDeleteCompleted?.call();
+  }
+
+  VoidCallback? get _openAiAction {
+    if (_activeAiSnapshotId != null) return null;
+    if (widget.aiSnapshotId == null) return widget.onOpenAi;
+    return _aiAvailable ? _openAi : null;
+  }
+
+  VoidCallback? get _chooseFolderAction {
+    if (widget.interactionsLocked ||
+        widget.summary.scanning ||
+        _aiDeleteInProgress) {
+      return null;
+    }
+    return () {
+      _closeAi(restoreFocus: false);
+      widget.onChooseFolder();
+    };
+  }
+
+  ValueChanged<StorageLocationInfo>? get _selectTargetAction {
+    if (widget.interactionsLocked || _aiDeleteInProgress) return null;
+    return (location) {
+      _closeAi(restoreFocus: false);
+      widget.onSelectTarget(location);
+    };
+  }
+
+  Widget? get _mainPaneOverride {
+    if (_activeAiSnapshotId == null) return widget.mainPaneOverride;
+    return AiAnalysisWorkspace(
+      key: ValueKey(_activeAiSnapshotId),
+      snapshotId: _activeAiSnapshotId!,
+      targetLabel: rootDisplayNameFor(
+        widget.summary.selectedLocation?.path ?? '',
+      ),
+      gateway: widget.aiAnalysisGateway,
+      onExit: _closeAi,
+      onOpenSettings: widget.onOpenSettings ?? () {},
+      onDeletingChanged: _setAiDeleting,
+      onDeleteCompleted: _handleAiDeleteCompleted,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final interactionsLocked = widget.interactionsLocked || _aiDeleteInProgress;
+    final aiAction = _openAiAction;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 720;
         return _HeroVisual(
-          summary: summary,
+          summary: widget.summary,
           compact: compact,
-          onBrowse: onBrowse,
-          onChooseFolder: summary.scanning ? null : onChooseFolder,
-          onSelectTarget: onSelectTarget,
-          onScan: onScan,
-          onCancelScan: onCancelScan,
-          onOpenSettings: onOpenSettings,
-          onSelectCategory: onSelectCategory,
-          onOpenItem: onOpenItem,
+          onBrowse: widget.onBrowse,
+          onChooseFolder: _chooseFolderAction,
+          onSelectTarget: _selectTargetAction,
+          onScan: interactionsLocked || _activeAiSnapshotId != null
+              ? null
+              : widget.onScan,
+          onCancelScan: interactionsLocked || _activeAiSnapshotId != null
+              ? null
+              : widget.onCancelScan,
+          onOpenSettings: widget.onOpenSettings,
+          onSelectCategory: interactionsLocked ? null : widget.onSelectCategory,
+          onOpenItem: interactionsLocked ? null : widget.onOpenItem,
+          onOpenAi: aiAction,
+          mainPaneOverride: _mainPaneOverride,
+          interactionsLocked: interactionsLocked,
+          aiActionFocusNode: _aiActionFocusNode,
         );
       },
     );
@@ -159,49 +298,29 @@ class _HeroVisual extends StatelessWidget {
     required this.onOpenSettings,
     required this.onSelectCategory,
     required this.onOpenItem,
+    required this.onOpenAi,
+    required this.mainPaneOverride,
+    required this.interactionsLocked,
+    required this.aiActionFocusNode,
   });
 
   final StorageHomeSummary summary;
   final bool compact;
   final VoidCallback onBrowse;
   final VoidCallback? onChooseFolder;
-  final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final ValueChanged<StorageLocationInfo>? onSelectTarget;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final VoidCallback? onOpenSettings;
   final ValueChanged<String>? onSelectCategory;
   final ValueChanged<StorageHomeItem>? onOpenItem;
+  final VoidCallback? onOpenAi;
+  final Widget? mainPaneOverride;
+  final bool interactionsLocked;
+  final FocusNode? aiActionFocusNode;
 
   @override
   Widget build(BuildContext context) {
-    final board = Padding(
-      padding: EdgeInsets.fromLTRB(
-        compact ? 16 : AppleSpacing.lg,
-        0,
-        compact ? 16 : AppleSpacing.lg,
-        compact ? 16 : AppleSpacing.lg,
-      ),
-      child: compact
-          ? _CompactBoard(
-              summary: summary,
-              onSelectTarget: onSelectTarget,
-              onBrowse: onBrowse,
-              onScan: onScan,
-              onCancelScan: onCancelScan,
-              onSelectCategory: onSelectCategory,
-              onOpenItem: onOpenItem,
-            )
-          : _WideBoard(
-              summary: summary,
-              onSelectTarget: onSelectTarget,
-              onBrowse: onBrowse,
-              onScan: onScan,
-              onCancelScan: onCancelScan,
-              onSelectCategory: onSelectCategory,
-              onOpenItem: onOpenItem,
-            ),
-    );
-
     return FocusTraversalGroup(
       policy: OrderedTraversalPolicy(),
       child: Semantics(
@@ -230,6 +349,42 @@ class _HeroVisual extends StatelessWidget {
                   child: LayoutBuilder(
                     key: StorageStewardHome.contentViewportKey,
                     builder: (context, viewport) {
+                      final board = Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          compact ? 16 : AppleSpacing.lg,
+                          0,
+                          compact ? 16 : AppleSpacing.lg,
+                          compact ? 16 : AppleSpacing.lg,
+                        ),
+                        child: compact
+                            ? _CompactBoard(
+                                summary: summary,
+                                availableHeight: viewport.maxHeight,
+                                onSelectTarget: onSelectTarget,
+                                onBrowse: onBrowse,
+                                onScan: onScan,
+                                onCancelScan: onCancelScan,
+                                onSelectCategory: onSelectCategory,
+                                onOpenItem: onOpenItem,
+                                onOpenAi: onOpenAi,
+                                mainPaneOverride: mainPaneOverride,
+                                interactionsLocked: interactionsLocked,
+                                aiActionFocusNode: aiActionFocusNode,
+                              )
+                            : _WideBoard(
+                                summary: summary,
+                                onSelectTarget: onSelectTarget,
+                                onBrowse: onBrowse,
+                                onScan: onScan,
+                                onCancelScan: onCancelScan,
+                                onSelectCategory: onSelectCategory,
+                                onOpenItem: onOpenItem,
+                                onOpenAi: onOpenAi,
+                                mainPaneOverride: mainPaneOverride,
+                                interactionsLocked: interactionsLocked,
+                                aiActionFocusNode: aiActionFocusNode,
+                              ),
+                      );
                       return SingleChildScrollView(
                         child: ConstrainedBox(
                           key: StorageStewardHome.boardKey,
@@ -266,7 +421,7 @@ class _HeroTopbar extends StatelessWidget {
   final StorageHomeSummary summary;
   final bool compact;
   final VoidCallback? onChooseFolder;
-  final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final ValueChanged<StorageLocationInfo>? onSelectTarget;
   final VoidCallback? onOpenSettings;
 
   @override
@@ -281,8 +436,8 @@ class _HeroTopbar extends StatelessWidget {
               locations: volumeChoices,
               selectedPath: summary.selectedLocation?.path ?? '',
               selectedVolumeId: summary.selectedVolume?.id,
-              enabled: !summary.scanning,
-              onSelected: onSelectTarget,
+              enabled: !summary.scanning && onSelectTarget != null,
+              onSelected: onSelectTarget ?? (_) {},
             ),
           );
     final chooseFolder = SizedBox(
@@ -302,17 +457,19 @@ class _HeroTopbar extends StatelessWidget {
         ? null
         : FocusTraversalOrder(
             order: const NumericFocusOrder(_settingsFocusOrder),
-            child: IconButton(
-              key: StorageStewardHome.settingsKey,
-              tooltip: l10n.settingsTooltip,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: const Icon(
-                Icons.settings_outlined,
-                size: 18,
-                color: _onDashboard,
+            child: Tooltip(
+              message: l10n.settingsTooltip,
+              child: IconButton(
+                key: StorageStewardHome.settingsKey,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  size: 18,
+                  color: _onDashboard,
+                ),
+                onPressed: onOpenSettings,
               ),
-              onPressed: onOpenSettings,
             ),
           );
     final brand = Row(
@@ -383,15 +540,23 @@ class _WideBoard extends StatelessWidget {
     required this.onCancelScan,
     required this.onSelectCategory,
     required this.onOpenItem,
+    required this.onOpenAi,
+    required this.mainPaneOverride,
+    required this.interactionsLocked,
+    required this.aiActionFocusNode,
   });
 
   final StorageHomeSummary summary;
-  final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final ValueChanged<StorageLocationInfo>? onSelectTarget;
   final VoidCallback onBrowse;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
   final ValueChanged<StorageHomeItem>? onOpenItem;
+  final VoidCallback? onOpenAi;
+  final Widget? mainPaneOverride;
+  final bool interactionsLocked;
+  final FocusNode? aiActionFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -409,15 +574,23 @@ class _WideBoard extends StatelessWidget {
           ),
           const SizedBox(width: 18),
           Expanded(
-            child: _MainPane(
-              summary: summary,
-              compact: false,
-              balancePanels: true,
-              onBrowse: onBrowse,
-              onScan: onScan,
-              onCancelScan: onCancelScan,
-              onSelectCategory: onSelectCategory,
-              onOpenItem: onOpenItem,
+            child: KeyedSubtree(
+              key: StorageStewardHome.mainPaneKey,
+              child:
+                  mainPaneOverride ??
+                  _MainPane(
+                    summary: summary,
+                    compact: false,
+                    balancePanels: true,
+                    onBrowse: onBrowse,
+                    onScan: onScan,
+                    onCancelScan: onCancelScan,
+                    onSelectCategory: onSelectCategory,
+                    onOpenItem: onOpenItem,
+                    onOpenAi: onOpenAi,
+                    interactionsLocked: interactionsLocked,
+                    aiActionFocusNode: aiActionFocusNode,
+                  ),
             ),
           ),
         ],
@@ -429,21 +602,31 @@ class _WideBoard extends StatelessWidget {
 class _CompactBoard extends StatelessWidget {
   const _CompactBoard({
     required this.summary,
+    required this.availableHeight,
     required this.onSelectTarget,
     required this.onBrowse,
     required this.onScan,
     required this.onCancelScan,
     required this.onSelectCategory,
     required this.onOpenItem,
+    required this.onOpenAi,
+    required this.mainPaneOverride,
+    required this.interactionsLocked,
+    required this.aiActionFocusNode,
   });
 
   final StorageHomeSummary summary;
-  final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final double availableHeight;
+  final ValueChanged<StorageLocationInfo>? onSelectTarget;
   final VoidCallback onBrowse;
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
   final ValueChanged<StorageHomeItem>? onOpenItem;
+  final VoidCallback? onOpenAi;
+  final Widget? mainPaneOverride;
+  final bool interactionsLocked;
+  final FocusNode? aiActionFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -455,15 +638,26 @@ class _CompactBoard extends StatelessWidget {
           child: _Sidebar(summary: summary, onSelectTarget: onSelectTarget),
         ),
         const SizedBox(height: 14),
-        _MainPane(
-          summary: summary,
-          compact: true,
-          balancePanels: false,
-          onBrowse: onBrowse,
-          onScan: onScan,
-          onCancelScan: onCancelScan,
-          onSelectCategory: onSelectCategory,
-          onOpenItem: onOpenItem,
+        KeyedSubtree(
+          key: StorageStewardHome.mainPaneKey,
+          child: mainPaneOverride == null
+              ? _MainPane(
+                  summary: summary,
+                  compact: true,
+                  balancePanels: false,
+                  onBrowse: onBrowse,
+                  onScan: onScan,
+                  onCancelScan: onCancelScan,
+                  onSelectCategory: onSelectCategory,
+                  onOpenItem: onOpenItem,
+                  onOpenAi: onOpenAi,
+                  interactionsLocked: interactionsLocked,
+                  aiActionFocusNode: aiActionFocusNode,
+                )
+              : SizedBox(
+                  height: math.max(560.0, availableHeight),
+                  child: mainPaneOverride,
+                ),
         ),
       ],
     );
@@ -474,7 +668,7 @@ class _Sidebar extends StatelessWidget {
   const _Sidebar({required this.summary, required this.onSelectTarget});
 
   final StorageHomeSummary summary;
-  final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final ValueChanged<StorageLocationInfo>? onSelectTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -509,7 +703,7 @@ class _Sidebar extends StatelessWidget {
           location: location,
           choices: choices,
           selected: selected,
-          enabled: !summary.scanning,
+          enabled: !summary.scanning && onSelectTarget != null,
           onSelectTarget: onSelectTarget,
         ),
       );
@@ -538,7 +732,7 @@ class _Sidebar extends StatelessWidget {
                     choices: recentMenuChoices,
                     selected: _samePath(recentMenuLocation.path, selectedPath),
                     recentFallback: true,
-                    enabled: !summary.scanning,
+                    enabled: !summary.scanning && onSelectTarget != null,
                     onSelectTarget: onSelectTarget,
                   ),
                 )
@@ -592,6 +786,9 @@ class _MainPane extends StatelessWidget {
     required this.onCancelScan,
     required this.onSelectCategory,
     required this.onOpenItem,
+    required this.onOpenAi,
+    required this.interactionsLocked,
+    required this.aiActionFocusNode,
   });
 
   final StorageHomeSummary summary;
@@ -602,6 +799,9 @@ class _MainPane extends StatelessWidget {
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
   final ValueChanged<StorageHomeItem>? onOpenItem;
+  final VoidCallback? onOpenAi;
+  final bool interactionsLocked;
+  final FocusNode? aiActionFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -623,6 +823,9 @@ class _MainPane extends StatelessWidget {
       onScan: onScan,
       onCancelScan: onCancelScan,
       onSelectCategory: onSelectCategory,
+      onOpenAi: onOpenAi,
+      interactionsLocked: interactionsLocked,
+      aiActionFocusNode: aiActionFocusNode,
     );
     if (balancePanels) {
       return Column(
@@ -692,16 +895,13 @@ class _StatPanel extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Tooltip(
-                        message: capacityPath,
-                        child: Text(
-                          capacityPath,
-                          key: StorageStewardHome.capacityPathKey,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.vwFinePrint.copyWith(
-                            color: Colors.white.withValues(alpha: 0.58),
-                          ),
+                      Text(
+                        capacityPath,
+                        key: StorageStewardHome.capacityPathKey,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwFinePrint.copyWith(
+                          color: Colors.white.withValues(alpha: 0.58),
                         ),
                       ),
                       const SizedBox(height: 8), // Reduced from 10
@@ -829,6 +1029,9 @@ class _BrowseCard extends StatelessWidget {
     required this.onScan,
     required this.onCancelScan,
     required this.onSelectCategory,
+    required this.onOpenAi,
+    required this.interactionsLocked,
+    required this.aiActionFocusNode,
   });
 
   final StorageHomeSummary summary;
@@ -837,6 +1040,9 @@ class _BrowseCard extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback? onCancelScan;
   final ValueChanged<String>? onSelectCategory;
+  final VoidCallback? onOpenAi;
+  final bool interactionsLocked;
+  final FocusNode? aiActionFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -944,33 +1150,58 @@ class _BrowseCard extends StatelessWidget {
                           label: l10n.homeBrowseFiles,
                           icon: Icons.folder_outlined,
                           primary: false,
-                          onPressed: onBrowse,
+                          onPressed: interactionsLocked ? null : onBrowse,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: SizedBox(
-                      width: 168,
-                      child: FocusTraversalOrder(
-                        order: const NumericFocusOrder(_scanFocusOrder),
-                        child: _DashboardActionButton(
-                          key: StorageStewardHome.scanActionKey,
-                          label: scanLabel,
-                          icon: summary.canCancelScan
-                              ? Icons.stop_circle_outlined
-                              : Icons.radar_outlined,
-                          primary: true,
-                          semanticColor: summary.canCancelScan
-                              ? context.volward.danger
-                              : null,
-                          onPressed: scanCallback,
+                  if (onOpenAi != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: SizedBox(
+                        width: 140,
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(_aiFocusOrder),
+                          child: Focus(
+                            focusNode: aiActionFocusNode,
+                            child: _DashboardActionButton(
+                              key: StorageStewardHome.aiActionKey,
+                              label: l10n.aiAnalysisFab,
+                              icon: Icons.auto_awesome_outlined,
+                              primary: false,
+                              accentOutline: true,
+                              onPressed: interactionsLocked ? null : onOpenAi,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
+                  if (!summary.restoringSnapshot) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: SizedBox(
+                        width: 168,
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(_scanFocusOrder),
+                          child: _DashboardActionButton(
+                            key: StorageStewardHome.scanActionKey,
+                            label: scanLabel,
+                            icon: summary.canCancelScan
+                                ? Icons.stop_circle_outlined
+                                : Icons.radar_outlined,
+                            primary: true,
+                            semanticColor: summary.canCancelScan
+                                ? context.volward.danger
+                                : null,
+                            onPressed: interactionsLocked ? null : scanCallback,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1113,29 +1344,57 @@ class _BrowseCard extends StatelessWidget {
                               label: l10n.homeBrowseFiles,
                               icon: Icons.folder_outlined,
                               primary: false,
-                              onPressed: onBrowse,
+                              onPressed: interactionsLocked ? null : onBrowse,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          width: 140,
-                          child: FocusTraversalOrder(
-                            order: const NumericFocusOrder(_scanFocusOrder),
-                            child: _DashboardActionButton(
-                              key: StorageStewardHome.scanActionKey,
-                              label: scanLabel,
-                              icon: summary.canCancelScan
-                                  ? Icons.stop_circle_outlined
-                                  : Icons.radar_outlined,
-                              primary: true,
-                              semanticColor: summary.canCancelScan
-                                  ? context.volward.danger
-                                  : null,
-                              onPressed: scanCallback,
+                        if (onOpenAi != null) ...[
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 140),
+                              child: FocusTraversalOrder(
+                                order: const NumericFocusOrder(_aiFocusOrder),
+                                child: Focus(
+                                  focusNode: aiActionFocusNode,
+                                  child: _DashboardActionButton(
+                                    key: StorageStewardHome.aiActionKey,
+                                    label: l10n.aiAnalysisFab,
+                                    icon: Icons.auto_awesome_outlined,
+                                    primary: false,
+                                    accentOutline: true,
+                                    onPressed: interactionsLocked
+                                        ? null
+                                        : onOpenAi,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
+                        if (!summary.restoringSnapshot) ...[
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 140,
+                            child: FocusTraversalOrder(
+                              order: const NumericFocusOrder(_scanFocusOrder),
+                              child: _DashboardActionButton(
+                                key: StorageStewardHome.scanActionKey,
+                                label: scanLabel,
+                                icon: summary.canCancelScan
+                                    ? Icons.stop_circle_outlined
+                                    : Icons.radar_outlined,
+                                primary: true,
+                                semanticColor: summary.canCancelScan
+                                    ? context.volward.danger
+                                    : null,
+                                onPressed: interactionsLocked
+                                    ? null
+                                    : scanCallback,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1324,8 +1583,8 @@ class _VolumeSelector extends StatelessWidget {
         value: selectedLabel,
         child: PopupMenuButton<StorageLocationInfo>(
           enabled: enabled,
+          tooltip: null,
           initialValue: selected,
-          tooltip: l10n.homeScanTargets,
           onSelected: onSelected,
           itemBuilder: (context) => [
             for (final location in locations)
@@ -1379,6 +1638,7 @@ class _DashboardActionButton extends StatelessWidget {
     required this.primary,
     required this.onPressed,
     this.semanticColor,
+    this.accentOutline = false,
   });
 
   final String label;
@@ -1389,6 +1649,7 @@ class _DashboardActionButton extends StatelessWidget {
   /// Overrides the accent for an action whose meaning is not "proceed" —
   /// Cancel Scan uses [VolwardColors.danger]. Null keeps the primary accent.
   final Color? semanticColor;
+  final bool accentOutline;
 
   @override
   Widget build(BuildContext context) {
@@ -1401,6 +1662,8 @@ class _DashboardActionButton extends StatelessWidget {
         : Colors.white.withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
+        : enabled && accentOutline
+        ? actionColor
         : _onDashboard.withValues(alpha: enabled ? 1 : 0.42);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1418,7 +1681,7 @@ class _DashboardActionButton extends StatelessWidget {
             color: background,
             shape: StadiumBorder(
               side: BorderSide(
-                color: primary
+                color: primary || accentOutline
                     ? actionColor
                     : Colors.white.withValues(alpha: 0.14),
               ),
@@ -1472,7 +1735,7 @@ class _TargetMenuTile extends StatelessWidget {
   final List<StorageLocationInfo> choices;
   final bool selected;
   final bool enabled;
-  final ValueChanged<StorageLocationInfo> onSelectTarget;
+  final ValueChanged<StorageLocationInfo>? onSelectTarget;
   final bool recentFallback;
 
   @override
@@ -1503,37 +1766,36 @@ class _TargetMenuTile extends StatelessWidget {
           color: selected ? selectedLine : Colors.white.withValues(alpha: 0.08),
         ),
       ),
-      child: Tooltip(
-        message: recentFallback
-            ? context.l10n.homeRecentFolders
-            : location.path,
-        child: hasMenu
-            ? KeyedSubtree(
-                key: tileKey,
-                child: ExcludeSemantics(child: tileContent),
-              )
-            : InkWell(
-                key: tileKey,
-                onTap: enabled ? () => onSelectTarget(location) : null,
-                borderRadius: BorderRadius.circular(16),
-                child: Semantics(
-                  key: ValueKey(
-                    recentFallback
-                        ? 'storage-recent-folders-semantics'
-                        : 'storage-target-semantics-${location.id}',
-                  ),
-                  selected: selected,
-                  button: true,
-                  enabled: enabled,
-                  label: label,
-                  value: recentFallback
-                      ? choices.length.toString()
-                      : location.path,
-                  onTap: enabled ? () => onSelectTarget(location) : null,
-                  child: ExcludeSemantics(child: tileContent),
+      child: hasMenu
+          ? KeyedSubtree(
+              key: tileKey,
+              child: ExcludeSemantics(child: tileContent),
+            )
+          : InkWell(
+              key: tileKey,
+              onTap: enabled && onSelectTarget != null
+                  ? () => onSelectTarget!(location)
+                  : null,
+              borderRadius: BorderRadius.circular(16),
+              child: Semantics(
+                key: ValueKey(
+                  recentFallback
+                      ? 'storage-recent-folders-semantics'
+                      : 'storage-target-semantics-${location.id}',
                 ),
+                selected: selected,
+                button: true,
+                enabled: enabled,
+                label: label,
+                value: recentFallback
+                    ? choices.length.toString()
+                    : location.path,
+                onTap: enabled && onSelectTarget != null
+                    ? () => onSelectTarget!(location)
+                    : null,
+                child: ExcludeSemantics(child: tileContent),
               ),
-      ),
+            ),
     );
     if (!hasMenu) {
       return GestureDetector(
@@ -1568,7 +1830,7 @@ class _TargetMenuTile extends StatelessWidget {
               ? StorageStewardHome.recentFoldersKey
               : ValueKey('storage-target-menu-${location.id}'),
           enabled: enabled,
-          tooltip: label,
+          tooltip: null,
           color: menuSurface,
           elevation: 0,
           shadowColor: Colors.transparent,

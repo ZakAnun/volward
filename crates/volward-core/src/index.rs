@@ -44,6 +44,21 @@ pub struct SnapshotEntryRecord {
     pub size_bytes: u64,
     pub category: String,
     pub deletable: bool,
+    pub modified_at_ms: Option<i64>,
+}
+
+/// Lightweight flat file record used by capability analyzers. Produced by
+/// [`SnapshotIndex::capability_files_page`] in bounded, cursor-paginated
+/// pages; never clones the recursive tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityFileRecord {
+    pub path: String,
+    pub size_bytes: u64,
+    /// Classified category when the file has a StorageEntry row
+    /// (e.g. "Cache", "BuildArtifact"); `None` for unclassified files.
+    pub category: Option<String>,
+    pub deletable: bool,
+    pub modified_at_ms: Option<i64>,
 }
 
 /// Result of a single `query_directory` / `refresh_directory` call.
@@ -106,6 +121,8 @@ struct EntryRecord {
     size_bytes: u64,
     category: u32,
     deletable: bool,
+    #[serde(default)]
+    modified_at_ms: Option<i64>,
 }
 
 /// Public-facing directory record (exposed via `directory_record()`).
@@ -163,6 +180,7 @@ pub struct SnapshotIndex {
 
 // Custom serde: compact wire format (string table + u32 ids).
 // format_version=4 adds file_size_by_path for unclassified file sizes.
+// format_version=5 adds optional modified_at_ms on entry records.
 // Readers also accept 2/3 (pre-size-map caches) via #[serde(default)].
 impl Serialize for SnapshotIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -170,7 +188,7 @@ impl Serialize for SnapshotIndex {
         S: serde::Serializer,
     {
         let mut st = serializer.serialize_struct("SnapshotIndexSerde", 17)?;
-        st.serialize_field("format_version", &4u32)?;
+        st.serialize_field("format_version", &5u32)?;
         st.serialize_field("snapshot_id", &self.snapshot_id)?;
         st.serialize_field("root_path", &self.root_path)?;
         st.serialize_field("scanned_at_ms", &self.scanned_at_ms)?;
@@ -204,9 +222,9 @@ impl<'de> Deserialize<'de> for SnapshotIndex {
     {
         use serde::de::Error;
         let s = SnapshotIndexSerde::deserialize(deserializer)?;
-        if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 {
+        if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 && s.format_version != 5 {
             return Err(D::Error::custom(format!(
-                "unsupported SnapshotIndex format_version {} (expected 2, 3, or 4)",
+                "unsupported SnapshotIndex format_version {} (expected 2, 3, 4, or 5)",
                 s.format_version
             )));
         }
@@ -349,6 +367,7 @@ impl SnapshotIndex {
                     size_bytes: entry.size_bytes,
                     category: category_id,
                     deletable: entry.deletable,
+                    modified_at_ms: entry.modified_at_ms,
                 },
             );
         }
@@ -576,6 +595,7 @@ impl SnapshotIndex {
                     size_bytes: entry.size_bytes,
                     category: category_id,
                     deletable: entry.deletable,
+                    modified_at_ms: entry.modified_at_ms,
                 },
             );
         }
@@ -697,6 +717,105 @@ impl SnapshotIndex {
                 scanned: r.scanned,
                 peek_scanned: r.peek_scanned,
             })
+    }
+
+    /// Paths that already have a Tier-1/Tier-2 `StorageEntry`.
+    pub fn classified_paths(&self) -> HashSet<String> {
+        self.entry_id_by_path
+            .keys()
+            .map(|path_id| self.table.resolve(*path_id).to_string())
+            .collect()
+    }
+
+    /// Indexed entries whose category matches `category` (e.g. `"BuildArtifact"`),
+    /// largest first. Used by the AI pre-check to show Tier-2 hits that are
+    /// already safe to remove without asking the model.
+    pub fn entries_with_category(&self, category: &str) -> Vec<SnapshotEntryRecord> {
+        let Some(category_id) = self.table.get_id(category) else {
+            return vec![];
+        };
+        let mut records: Vec<SnapshotEntryRecord> = self
+            .entry_by_id
+            .values()
+            .filter(|entry| entry.category == category_id)
+            .map(|entry| self.materialize_entry(entry))
+            .collect();
+        records.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
+        records
+    }
+
+    /// True when `path` is a directory in this index.
+    pub fn is_directory(&self, path: &str) -> bool {
+        self.resolve_path_id(path)
+            .is_some_and(|path_id| self.directory_by_id.contains_key(&path_id))
+    }
+
+    /// Unclassified files with sizes (index `file_size_by_path`).
+    pub fn unclassified_files(&self) -> Vec<(String, u64)> {
+        self.file_size_by_path
+            .iter()
+            .filter(|(path_id, _)| !self.entry_id_by_path.contains_key(path_id))
+            .map(|(path_id, size)| (self.table.resolve(*path_id).to_string(), *size))
+            .collect()
+    }
+
+    /// Returns a bounded page of all flat file records (classified entries
+    /// plus unclassified size records), ordered by size descending then path
+    /// ascending, continuing after `cursor` (a path string). Used by
+    /// capability analyzers so tens of thousands of candidates never cross
+    /// the FFI boundary in one call.
+    pub fn capability_files_page(
+        &self,
+        cursor: Option<&str>,
+        page_size: usize,
+    ) -> (Vec<CapabilityFileRecord>, Option<String>) {
+        let page_size = page_size.max(1);
+        let mut files: Vec<CapabilityFileRecord> = Vec::new();
+        for entry in self.entry_by_id.values() {
+            if self.directory_by_id.contains_key(&entry.path) {
+                continue;
+            }
+            files.push(CapabilityFileRecord {
+                path: self.table.resolve(entry.path).to_string(),
+                size_bytes: entry.size_bytes,
+                category: Some(self.table.resolve(entry.category).to_string()),
+                deletable: entry.deletable,
+                modified_at_ms: entry.modified_at_ms,
+            });
+        }
+        for (path_id, size_bytes) in &self.file_size_by_path {
+            if self.entry_id_by_path.contains_key(path_id)
+                || self.directory_by_id.contains_key(path_id)
+            {
+                continue;
+            }
+            files.push(CapabilityFileRecord {
+                path: self.table.resolve(*path_id).to_string(),
+                size_bytes: *size_bytes,
+                category: None,
+                deletable: false,
+                modified_at_ms: None,
+            });
+        }
+        files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
+
+        let mut page = Vec::with_capacity(page_size.min(files.len()));
+        let mut next_cursor = None;
+        let mut started = cursor.is_none();
+        for file in files {
+            if !started {
+                if Some(file.path.as_str()) == cursor {
+                    started = true;
+                }
+                continue;
+            }
+            if page.len() >= page_size {
+                next_cursor = Some(file.path);
+                break;
+            }
+            page.push(file);
+        }
+        (page, next_cursor)
     }
 
     // ------------------------------------------------------------------
@@ -871,6 +990,7 @@ impl SnapshotIndex {
             size_bytes: entry.size_bytes,
             category: self.table.resolve(entry.category).to_string(),
             deletable: entry.deletable,
+            modified_at_ms: entry.modified_at_ms,
         }
     }
 }
@@ -998,6 +1118,7 @@ impl SnapshotIndexBuilder {
                 size_bytes: entry.size_bytes,
                 category: category_id,
                 deletable: entry.deletable,
+                modified_at_ms: entry.modified_at_ms,
             },
         );
         self.add_child_once(parent_id, path_id);
@@ -1030,7 +1151,7 @@ impl SnapshotIndexBuilder {
         // Collect all directory IDs from the source that are under dir_path.
         // We must re-intern each path into our table since IDs differ across tables.
         let mut dir_pairs: Vec<(u32, u32)> = Vec::new(); // (source_id, our_id)
-        for (&src_id, _record) in &source.directory_by_id {
+        for &src_id in source.directory_by_id.keys() {
             let src_path = source.table.resolve(src_id);
             if path_is_at_or_below(src_path, &dir_path) {
                 let our_id = self.table.intern(src_path);
@@ -1106,6 +1227,7 @@ impl SnapshotIndexBuilder {
                     size_bytes: entry.size_bytes,
                     category: category_id,
                     deletable: entry.deletable,
+                    modified_at_ms: entry.modified_at_ms,
                 },
             );
         }
@@ -1395,7 +1517,7 @@ fn paths_equal(left: &str, right: &str) -> bool {
     }
 }
 
-fn path_is_at_or_below(path: &str, root: &str) -> bool {
+pub(crate) fn path_is_at_or_below(path: &str, root: &str) -> bool {
     let path = normalize_path(path);
     let root = normalize_path(root);
     if root.is_empty() {
@@ -1416,6 +1538,7 @@ fn path_is_at_or_below(path: &str, root: &str) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_tree(
     node: &crate::model::ScanTreeNode,
     parent: Option<u32>,
@@ -1534,7 +1657,7 @@ fn passes_entry_filter(
     true
 }
 
-fn apply_sort(nodes: &mut Vec<SnapshotNodeRecord>, sort_mode: &str) {
+fn apply_sort(nodes: &mut [SnapshotNodeRecord], sort_mode: &str) {
     // Dirs always before files.
     nodes.sort_by(|a, b| {
         let primary = match (a.is_directory, b.is_directory) {
@@ -1555,7 +1678,7 @@ fn apply_sort(nodes: &mut Vec<SnapshotNodeRecord>, sort_mode: &str) {
     });
 }
 
-fn apply_entry_sort(entries: &mut Vec<SnapshotEntryRecord>, sort_mode: &str) {
+fn apply_entry_sort(entries: &mut [SnapshotEntryRecord], sort_mode: &str) {
     entries.sort_by(|a, b| {
         let primary = match sort_mode {
             "name" | "name_asc" => a
@@ -1588,6 +1711,7 @@ pub fn category_string(cat: &EntryCategory) -> &'static str {
         EntryCategory::Duplicate => "Duplicate",
         EntryCategory::System => "System",
         EntryCategory::Unknown => "Unknown",
+        EntryCategory::BuildArtifact => "BuildArtifact",
     }
 }
 
@@ -1673,6 +1797,7 @@ mod tests {
                 source_type: SourceType::File,
                 deletable: true,
                 reason: "cache".to_string(),
+                modified_at_ms: None,
             }],
         }
     }
@@ -1712,6 +1837,7 @@ mod tests {
             source_type: SourceType::File,
             deletable,
             reason: "replacement".to_string(),
+            modified_at_ms: None,
         }
     }
 
@@ -2013,6 +2139,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         });
         let index = builder.finish(
             "snap-1".to_string(),
@@ -2102,6 +2229,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         });
         let index = builder.finish(
             "snap".to_string(),
@@ -2136,6 +2264,7 @@ mod tests {
             source_type: SourceType::File,
             deletable: true,
             reason: "cache".to_string(),
+            modified_at_ms: None,
         });
         let index = builder.finish(
             "snap".to_string(),

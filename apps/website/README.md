@@ -10,7 +10,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` 会默认使用 `SITE_URL=http://localhost:4321` 和 `APTABASE_HOST=https://analytics.volwardapp.com`，并优先读取环境变量；如果走环境变量，`APTABASE_WEB_KEY` 和 `APTABASE_HOST` 需要成对设置。也可以在 `apps/website/aptabase.json` 里放本地配置，格式见 `aptabase.json.example`。
+`pnpm dev` 会默认使用 `SITE_URL=http://localhost:4321` 和 `APTABASE_HOST=https://analytics.volwardapp.com`，并优先读取环境变量；如果走环境变量，`APTABASE_WEB_KEY` 和 `APTABASE_HOST` 需要成对设置。也可以在 `apps/website/aptabase.json` 里放本地配置，字段为 `APTABASE_WEB_KEY` 和 `APTABASE_HOST`。
 
 ## 构建
 

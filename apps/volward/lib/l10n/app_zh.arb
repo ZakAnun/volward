@@ -322,6 +322,253 @@
       "count": {"type": "int"}
     }
   },
+  "aiAnalysisTitle": "AI 磁盘分析",
+  "aiPreCheckSafeTitle": "{count} 项已预判为可安全移除",
+  "@aiPreCheckSafeTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPreCheckSafeSelectable": "{count} 项已由本地规则标记为安全",
+  "@aiPreCheckSafeSelectable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPreCheckUnknownTitle": "{count} 项将发送给 AI 分析（约 {tokens} tokens）",
+  "@aiPreCheckUnknownTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "tokens": {
+        "type": "int"
+      }
+    }
+  },
+  "aiStartAnalysis": "开始 AI 分析",
+  "aiNoApiKey": "未配置 API Key — 请在设置中配置",
+  "aiContractUnavailable": "当前原生库版本过旧，请更新 Volward 后再使用 AI 分析。",
+  "aiDeleteSelected": "删除选中的 {count} 项",
+  "@aiDeleteSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictSafe": "可安全移除（{count}）",
+  "@aiVerdictSafe": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictReview": "建议检查（{count}）",
+  "@aiVerdictReview": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiVerdictKeep": "保留（{count}）",
+  "@aiVerdictKeep": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSettingsTitle": "AI 分析",
+  "aiSettingsModeLabel": "模式",
+  "aiSettingsByokLabel": "自带密钥（DeepSeek）",
+  "aiSettingsOffLabel": "关闭",
+  "aiSettingsPlatformLabel": "Volward 平台",
+  "aiSettingsApiKeyHint": "sk-...",
+  "aiSettingsApiKeySaved": "API 密钥已保存",
+  "aiSettingsApiKeyCleared": "API 密钥已清除",
+  "aiSettingsSaveKey": "保存",
+  "aiSettingsClearKey": "清除",
+  "aiSettingsLinkEmail": "绑定邮箱",
+  "aiSettingsEnterEmail": "邮箱地址",
+  "aiSettingsEnterOtp": "6 位验证码",
+  "aiSettingsSendOtp": "发送验证码",
+  "aiSettingsVerifyOtp": "验证",
+  "aiSettingsLinkedAs": "已绑定 {email}",
+  "@aiSettingsLinkedAs": {
+    "placeholders": {
+      "email": { "type": "String" }
+    }
+  },
+  "aiSettingsCreditsRemaining": "剩余 {count} credits",
+  "@aiSettingsCreditsRemaining": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "aiSettingsBuyCredits": "购买额度",
+  "aiPurchasePayHint": "请在结账页使用微信支付；支付成功后余额会自动更新。",
+  "aiPurchaseWaitingHint": "支付可能仍在处理中，请稍后在设置中刷新额度。",
+  "aiSettingsSessionExpired": "登录已过期，请重新绑定邮箱",
+  "aiPrecheckCreditsCost": "预计消耗 1 credit（余额 {balance}）",
+  "@aiPrecheckCreditsCost": {
+    "placeholders": {
+      "balance": { "type": "int" }
+    }
+  },
+  "aiInsufficientCredits": "额度不足 — 请在设置中购买。",
+  "aiAnalysisFab": "AI 分析",
+  "aiPrivacyTitle": "AI 分析隐私说明",
+  "aiPrivacyBody": "仅发送路径、大小和文件数量。绝不上传文件内容。BYOK 将数据发送至 DeepSeek；平台模式将数据发送至 Volward 服务器再转发至 DeepSeek。",
+  "aiPrivacyAccept": "我已了解",
+  "aiOverwriteTitle": "已有分析结果",
+  "aiOverwriteBody": "此扫描已有 AI 分析结果。可加载上次结果，或重新分析以覆盖。",
+  "aiActionContinue": "重新分析",
+  "aiActionLoadPrevious": "加载上次结果",
+  "aiLoadPreviousFailed": "无法加载上次的 AI 分析结果。",
+  "aiAnalyzing": "AI 分析中…",
+  "aiActionRetry": "重试",
+  "aiErrorUnknown": "未知错误",
+  "aiErrorNativeUnavailable": "无法加载 AI 候选项（原生接口不可用）。",
+  "aiErrorInvalidPayload": "候选项数据格式无效。",
+  "aiTruncatedNotice": "共 {total} 项，已显示其中最大的 {shown} 项，其余已跳过以控制请求体积。",
+  "@aiTruncatedNotice": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCleanupSourceAiToolCache": "AI 工具缓存/临时文件",
+  "aiCleanupSourceAiGeneratedOutput": "AI 生成输出",
+  "aiCleanupSourceSystemTemp": "临时文件",
+  "aiCleanupRetentionDays": "超过 {days} 天后建议检查",
+  "@aiCleanupRetentionDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "aiWorkspaceTitle": "AI 清理建议",
+  "aiWorkspaceBack": "返回概览",
+  "aiWorkspacePhaseLoading": "正在准备候选项",
+  "aiWorkspacePhasePrecheck": "预检查",
+  "aiWorkspacePhasePrivacy": "隐私确认",
+  "aiWorkspacePhaseAnalyzing": "正在分析",
+  "aiWorkspacePhaseReview": "确认建议",
+  "aiWorkspacePhaseDeleting": "正在删除",
+  "aiWorkspacePhaseRecovery": "恢复",
+  "aiWorkspaceLoadPrevious": "加载上次结果",
+  "aiWorkspaceAnalyzeAgain": "重新分析",
+  "aiResultsAnalyzedSummary": "共分析 {analyzed} 项 · 总计 {bytes} · {safe} 项安全 · {review} 项待确认 · {keep} 项保留",
+  "@aiResultsAnalyzedSummary": {
+    "placeholders": {
+      "analyzed": {"type": "int"},
+      "bytes": {"type": "String"},
+      "safe": {"type": "int"},
+      "review": {"type": "int"},
+      "keep": {"type": "int"}
+    }
+  },
+  "aiResultsMetricAnalyzed": "已分析",
+  "aiResultsMetricSafe": "安全可移除",
+  "aiResultsMetricReview": "需要确认",
+  "aiResultsMetricKept": "已保留",
+  "aiResultsTotalSize": "总计 {bytes}",
+  "@aiResultsTotalSize": {
+    "placeholders": {
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsNeedsDecision": "待决定",
+  "aiResultsSearchHint": "搜索路径、原因、来源或提示",
+  "aiResultsClearSearch": "清除搜索",
+  "aiResultsNoMatches": "没有匹配的结果",
+  "aiResultsEmpty": "未发现可清理建议",
+  "aiResultsResetFilters": "重置搜索和筛选",
+  "aiResultsFilterAll": "全部",
+  "aiResultsFilterReview": "待确认",
+  "aiResultsFilterSelected": "已选择",
+  "aiResultsSortPriority": "优先级",
+  "aiResultsSortSize": "大小",
+  "aiResultsGroupItems": "{count} 项 · {bytes}",
+  "@aiResultsGroupItems": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsGroupSafe": "安全 {count}",
+  "@aiResultsGroupSafe": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsGroupReview": "待确认 {count}",
+  "@aiResultsGroupReview": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsGroupKeep": "保留 {count}",
+  "@aiResultsGroupKeep": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsSelectedForCleanup": "已选择 {count} 项 · {bytes}",
+  "@aiResultsSelectedForCleanup": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiResultsPendingReviewExcluded": "{count} 项待确认内容在你决定前不会加入清理。",
+  "@aiResultsPendingReviewExcluded": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsMetricProtected": "受保护",
+  "aiResultsNeedsYourDecision": "需要你决定",
+  "aiResultsAddToCleanup": "加入清理",
+  "aiResultsKeepItem": "保留此项",
+  "aiResultsAddedToCleanup": "已加入清理",
+  "aiResultsKeptOutOfCleanup": "已保留，不清理",
+  "aiResultsSelectedInGroup": "已选择 {count}",
+  "@aiResultsSelectedInGroup": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsClearGroupSelection": "清除此组选择",
+  "aiResultsDetailSize": "大小",
+  "aiResultsDetailConfidence": "置信度",
+  "aiResultsDetailReason": "原因",
+  "aiResultsDetailCleanupSource": "清理来源",
+  "aiResultsDetailRetentionHint": "保留提示",
+  "aiWorkspacePartialDelete": "{count} 项未能删除 · 已释放 {size}",
+  "@aiWorkspacePartialDelete": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
+  "aiErrorTimeout": "AI 请求超时，请重试。",
+  "aiErrorRateLimited": "AI 服务繁忙，请稍后重试。",
+  "aiErrorNetwork": "无法连接 AI 服务，请检查网络。",
+  "aiWorkspaceReturn": "返回概览",
+  "back": "返回",
   "homeBrowseFiles": "浏览文件",
   "homeStartScan": "开始扫描",
   "homeRescan": "重新扫描",
