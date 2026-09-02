@@ -4,10 +4,17 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image tag to deploy (e.g. v0.0.6). Used for redeploy without rebuilding.'
+        required: true
+        type: string
 
 jobs:
   publish-image:
     name: Publish Platform API image
+    if: github.event_name == 'push'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -49,3 +56,41 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-platform-api:
+    name: Deploy Platform API
+    runs-on: ubuntu-22.04
+    needs: [publish-image]
+    if: |
+      always() && (
+        needs.publish-image.result == 'success' ||
+        (github.event_name == 'workflow_dispatch' && needs.publish-image.result == 'skipped')
+      )
+    permissions:
+      contents: read
+      packages: read
+
+    env:
+      GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+      PLATFORM_IMAGE: ghcr.io/${{ github.repository_owner }}/volward-platform-api:${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      PLATFORM_DEPLOY_USER: ${{ secrets.PLATFORM_DEPLOY_USER }}
+      PLATFORM_DEPLOY_KEY: ${{ secrets.PLATFORM_DEPLOY_KEY }}
+      PLATFORM_JWT_SECRET: ${{ secrets.PLATFORM_JWT_SECRET }}
+      PLATFORM_DEEPSEEK_API_KEY: ${{ secrets.PLATFORM_DEEPSEEK_API_KEY }}
+      PLATFORM_RESEND_API_KEY: ${{ secrets.PLATFORM_RESEND_API_KEY }}
+      PLATFORM_RESEND_FROM: ${{ secrets.PLATFORM_RESEND_FROM }}
+      PLATFORM_PADDLE_API_KEY: ${{ secrets.PLATFORM_PADDLE_API_KEY }}
+      PLATFORM_PADDLE_WEBHOOK_SECRET: ${{ secrets.PLATFORM_PADDLE_WEBHOOK_SECRET }}
+      PLATFORM_PADDLE_ENV: ${{ vars.PLATFORM_PADDLE_ENV }}
+      PLATFORM_GHCR_READ_TOKEN: ${{ secrets.PLATFORM_GHCR_READ_TOKEN }}
+      PLATFORM_GHCR_USER: ${{ vars.PLATFORM_GHCR_USER }}
+      PLATFORM_HEALTHCHECK_URL: ${{ secrets.PLATFORM_HEALTHCHECK_URL }}
+      VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy platform API
+        run: bash scripts/platform_api_release.sh

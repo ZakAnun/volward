@@ -60,7 +60,7 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
-          VOLWARD_API_BASE: ${{ vars.VOLWARD_API_BASE }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
@@ -84,7 +84,7 @@ jobs:
       - name: Verify macOS bundle
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
-          VOLWARD_API_BASE: ${{ vars.VOLWARD_API_BASE }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           APP=apps/volward/build/macos/Build/Products/Release/volward.app
           DYLIB="$APP/Contents/Frameworks/libvolward_facade.dylib"
@@ -188,7 +188,7 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
-          VOLWARD_API_BASE: ${{ vars.VOLWARD_API_BASE }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         shell: bash
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
@@ -216,7 +216,7 @@ jobs:
         shell: pwsh
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
-          VOLWARD_API_BASE: ${{ vars.VOLWARD_API_BASE }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           $bundle = "$env:GITHUB_WORKSPACE\apps\volward\build\windows\x64\runner\Release"
           foreach ($path in @(
@@ -350,7 +350,7 @@ jobs:
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
           APTABASE_HOST: ${{ secrets.APTABASE_HOST }}
-          VOLWARD_API_BASE: ${{ vars.VOLWARD_API_BASE }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           if [ -z "$APTABASE_APP_KEY" ] || [ -z "$APTABASE_HOST" ]; then
             echo "Missing repository secrets: APTABASE_APP_KEY and/or APTABASE_HOST"
@@ -376,7 +376,7 @@ jobs:
       - name: Verify Linux bundle
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
-          VOLWARD_API_BASE: ${{ vars.VOLWARD_API_BASE }}
+          VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
         run: |
           BIN=apps/volward/build/linux/x64/release/bundle/volward
           # Dart AOT snapshot lives in lib/libapp.so, not the runner executable.
