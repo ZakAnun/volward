@@ -363,13 +363,17 @@ Widget _workspaceShell(
   );
 }
 
-Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
-  await tester.runAsync(
-    () => Future<void>.delayed(const Duration(milliseconds: 50)),
-  );
-  for (var attempt = 0; attempt < 20; attempt++) {
-    await tester.pump(const Duration(milliseconds: 50));
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration step = const Duration(milliseconds: 50),
+  int maxAttempts = 120,
+}) async {
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    await tester.pump(step);
     if (finder.evaluate().isNotEmpty) return;
+    // Workspace bootstrap parses candidates in a compute() isolate.
+    await tester.runAsync(() => Future<void>.delayed(step));
   }
   fail('Timed out waiting for the expected workspace phase');
 }
@@ -399,7 +403,11 @@ Future<void> _openResults(
     find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
   );
   await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
-  await tester.pumpAndSettle();
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.resultsListKey),
+  );
+  await tester.pump();
 }
 
 Finder _resultGroup(String path) {
