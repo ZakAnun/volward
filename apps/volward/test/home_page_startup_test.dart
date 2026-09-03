@@ -163,6 +163,32 @@ class _HangingRestoreSession extends _PendingPreviewSession {
   }
 }
 
+class _ProgressTickSession extends VolwardSession {
+  _ProgressTickSession() : super.test() {
+    setScanRoots(['/']);
+    setSnapshotForTest(
+      ScanSnapshotState.fromWire({
+        'snapshot_id': 'live-scan',
+        'tree': {
+          'path': '/',
+          'name': '/',
+          'is_dir': true,
+          'children': const [],
+        },
+        'entries': const [],
+      }),
+    );
+  }
+
+  void notifyProgressTick() => notifyListeners();
+
+  @override
+  Future<void> previewTarget({int? expectedGeneration}) async {}
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {}
+}
+
 Widget _shell(
   VolwardSession session,
   VolwardThemeSettings themeSettings,
@@ -575,4 +601,51 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'progress-only session ticks do not rebuild the browse results ancestor',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final session = _ProgressTickSession()
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-progress-tick.json',
+        )
+        ..defaultRootForTest = (() => '/')
+        ..rootExistsForTest = ((_) => true);
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(session.dispose);
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await tester.pumpWidget(
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(StorageStewardHome.browseKey));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('volward-browse-results')), findsOneWidget);
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+
+      session.notifyProgressTick();
+      await tester.pump();
+
+      expect(find.byKey(const Key('volward-browse-results')), findsOneWidget);
+      expect(tester.widget<Scaffold>(find.byType(Scaffold)), same(scaffold));
+    },
+  );
 }

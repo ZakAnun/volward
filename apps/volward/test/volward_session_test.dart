@@ -460,4 +460,14 @@ void main() {
       expect(previewCalls, 0);
     },
   );
+
+  test(
+    'hasAuthoritativeSnapshotForCurrentRoot is false for preview snapshots',
+    () {
+      final session = VolwardSession.test();
+      addTearDown(session.dispose);
+      session.setScanRoots(['/Users/test']);
+      expect(session.hasAuthoritativeSnapshotForCurrentRoot, isFalse);
+    },
+  );
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'ai/ai_analysis_gateway.dart';
@@ -71,6 +72,48 @@ String refreshPathForDeleteTargets({
   return ScanTreeBuilder.normalizeRoot(fallbackPath);
 }
 
+@visibleForTesting
+enum SessionUiFlush { none, homeSummary, browseResults, page }
+
+@visibleForTesting
+SessionUiFlush sessionUiFlushFor({
+  required bool snapshotIdChanged,
+  required bool catalogChanged,
+  required bool targetPreviewChanged,
+  required bool deletingChanged,
+  required bool refreshingChanged,
+  required bool postDeleteRefreshChanged,
+  required bool scanStarted,
+  required bool scanStopped,
+}) {
+  if (scanStarted ||
+      scanStopped ||
+      targetPreviewChanged ||
+      deletingChanged ||
+      refreshingChanged ||
+      postDeleteRefreshChanged) {
+    return SessionUiFlush.page;
+  }
+  if (snapshotIdChanged || catalogChanged) {
+    return SessionUiFlush.browseResults;
+  }
+  return SessionUiFlush.none;
+}
+
+class _BrowseResultsPane extends StatelessWidget {
+  const _BrowseResultsPane({required this.revision, required this.builder});
+  final ValueListenable<int> revision;
+  final Widget Function(BuildContext) builder;
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      key: const Key('volward-browse-results'),
+      valueListenable: revision,
+      builder: (context, _, _) => builder(context),
+    );
+  }
+}
+
 enum _HomeContentMode { home, browse }
 
 class DirectoryDetailsPage extends StatefulWidget {
@@ -113,6 +156,8 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   String? _selectionAnchorPath;
   int? _selectionAnchorColumnIndex;
   final ValueNotifier<int> _columnNavTick = ValueNotifier(0);
+  final ValueNotifier<int> _browseRevision = ValueNotifier(0);
+  final ValueNotifier<int> _homeSummaryRevision = ValueNotifier(0);
   bool _prevScanning = false;
   bool _lastDeleting = false;
   int _lastRefreshingDirectoryCount = 0;
@@ -122,7 +167,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   // background scan.
   String? _lastRefreshedSnapshotId;
   // Tracks the last catalog version so refreshCurrentDirectory() (which does
-  // not change snapshotId) still triggers a rebuild via setState.
+  // not change snapshotId) still flushes browse/home listenables.
   int _lastRefreshedCatalogVersion = -1;
   bool _lastTargetPreviewLoading = false;
   bool _lastPostDeleteRefreshPending = false;
@@ -368,6 +413,8 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     }
     _subscribedSession.removeListener(_onSessionChanged);
     _columnNavTick.dispose();
+    _browseRevision.dispose();
+    _homeSummaryRevision.dispose();
     _pendingVisibleChildrenQueries.clear();
     super.dispose();
   }
@@ -512,43 +559,58 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       // snapshot_id changed — including when the user is still on the root
       // column (_columnChain empty), so preview spinners clear as soon as
       // the background walk rediscovers each directory.
-      // Also rebuild when catalog version advances without a snapshotId change
-      // (e.g. after refreshCurrentDirectory() — pure catalog re-query).
+      // Also rebuild browse/home listenables when catalog version advances
+      // without a snapshotId change (e.g. after refreshCurrentDirectory()).
       final snapId = _s.lastSnapshot?.snapshotId;
       final catalogVer = _s.catalogVersion;
       final snapChanged = snapId != null && snapId != _lastRefreshedSnapshotId;
       final catalogChanged = catalogVer != _lastRefreshedCatalogVersion;
       final dataChanged = snapChanged || catalogChanged || targetPreviewChanged;
-      if (dataChanged ||
-          deletingChanged ||
-          refreshingChanged ||
-          postDeleteRefreshChanged) {
-        if (dataChanged) {
-          if (snapChanged) _lastRefreshedSnapshotId = snapId;
-          _lastRefreshedCatalogVersion = catalogVer;
-          _invalidateSnapshotCachesForSessionUpdate();
-          final tree = _resolveResultTree();
-          if (_columnChain.isNotEmpty && tree != null) {
-            // When the catalog index API is active, Dart tree.children is empty
-            // (children come from Rust), so refreshColumnChain would always
-            // truncate the chain to []. Skip the re-validation; the
-            // visible-children cache invalidation above is sufficient.
-            if (!_s.hasIndexApi) {
-              final refreshed = refreshColumnChain(tree, _columnChain);
-              final chainChanged =
-                  refreshed.length != _columnChain.length ||
-                  !Iterable.generate(
-                    refreshed.length,
-                  ).every((i) => refreshed[i].path == _columnChain[i].path);
-              if (chainChanged) _setColumnChain(refreshed);
-            }
+      if (dataChanged) {
+        if (snapChanged) _lastRefreshedSnapshotId = snapId;
+        _lastRefreshedCatalogVersion = catalogVer;
+        _invalidateSnapshotCachesForSessionUpdate();
+        final tree = _resolveResultTree();
+        if (_columnChain.isNotEmpty && tree != null) {
+          // When the catalog index API is active, Dart tree.children is empty
+          // (children come from Rust), so refreshColumnChain would always
+          // truncate the chain to []. Skip the re-validation; the
+          // visible-children cache invalidation above is sufficient.
+          if (!_s.hasIndexApi) {
+            final refreshed = refreshColumnChain(tree, _columnChain);
+            final chainChanged =
+                refreshed.length != _columnChain.length ||
+                !Iterable.generate(
+                  refreshed.length,
+                ).every((i) => refreshed[i].path == _columnChain[i].path);
+            if (chainChanged) _setColumnChain(refreshed);
           }
         }
-        setState(() {});
       }
-      // Else: no snapshot or catalog change — skip setState entirely.
-      // This covers the common case of VolwardSession.notifyListeners() fired
-      // for progress ticks (elapsed timer, etc.) without any snapshot change.
+      final flush = sessionUiFlushFor(
+        snapshotIdChanged: snapChanged,
+        catalogChanged: catalogChanged,
+        targetPreviewChanged: targetPreviewChanged && !_s.targetPreviewLoading,
+        deletingChanged: deletingChanged,
+        refreshingChanged: refreshingChanged,
+        postDeleteRefreshChanged: postDeleteRefreshChanged,
+        scanStarted: !_prevScanning && _s.scanning,
+        scanStopped: _prevScanning && !_s.scanning,
+      );
+      switch (flush) {
+        case SessionUiFlush.none:
+          break;
+        case SessionUiFlush.browseResults:
+          _homeSummaryRevision.value++;
+          _browseRevision.value++;
+          break;
+        case SessionUiFlush.homeSummary:
+          _homeSummaryRevision.value++;
+          break;
+        case SessionUiFlush.page:
+          setState(() {});
+          break;
+      }
     }
     _prevScanning = _s.scanning;
   }
@@ -1947,8 +2009,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
     final hasResults =
         !loadingTarget && _s.lastSnapshot != null && snapshotMatchesCurrentRoot;
-    final displayTree = browsing && hasResults ? _resolveResultTree() : null;
-    final matchingCount = browsing && hasResults ? _matchingEntryCount() : 0;
 
     return Scaffold(
       backgroundColor: browsing
@@ -1964,23 +2024,33 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                     ? ValueListenableBuilder<ScanProgressViewState>(
                         valueListenable: _s.scanProgressNotifier,
                         builder: (context, progress, _) {
-                          final summary = _homeSummary(progress);
-                          final availableAiSnapshot = _homeAiSnapshot();
-                          return StorageStewardHome(
-                            summary: summary,
-                            aiSnapshotId: availableAiSnapshot?.snapshotId,
-                            aiAnalysisGateway: widget.aiAnalysisGateway,
-                            onAiDeleteCompleted: _handleAiDeleteCompleted,
-                            onBrowse: () => unawaited(_onHomeBrowse()),
-                            onChooseFolder: () => unawaited(_pickHomeFolder()),
-                            onSelectTarget: (location) =>
-                                unawaited(_prepareHomeTarget(location.path)),
-                            onScan: _scanStartAction,
-                            onCancelScan: _s.scanning ? _s.cancelScan : null,
-                            onOpenSettings: _openSettings,
-                            onSelectCategory: _openHomeCategory,
-                            onOpenItem: (item) =>
-                                unawaited(_onHomeBrowse(focusPath: item.path)),
+                          return ValueListenableBuilder<int>(
+                            valueListenable: _homeSummaryRevision,
+                            builder: (context, _, _) {
+                              final summary = _homeSummary(progress);
+                              final availableAiSnapshot = _homeAiSnapshot();
+                              return StorageStewardHome(
+                                summary: summary,
+                                aiSnapshotId: availableAiSnapshot?.snapshotId,
+                                aiAnalysisGateway: widget.aiAnalysisGateway,
+                                onAiDeleteCompleted: _handleAiDeleteCompleted,
+                                onBrowse: () => unawaited(_onHomeBrowse()),
+                                onChooseFolder: () =>
+                                    unawaited(_pickHomeFolder()),
+                                onSelectTarget: (location) => unawaited(
+                                  _prepareHomeTarget(location.path),
+                                ),
+                                onScan: _scanStartAction,
+                                onCancelScan: _s.scanning
+                                    ? _s.cancelScan
+                                    : null,
+                                onOpenSettings: _openSettings,
+                                onSelectCategory: _openHomeCategory,
+                                onOpenItem: (item) => unawaited(
+                                  _onHomeBrowse(focusPath: item.path),
+                                ),
+                              );
+                            },
                           );
                         },
                       )
@@ -2004,49 +2074,59 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                         ],
                       )
                     : hasResults
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildCompactResultsChrome(
-                            context,
-                            matchingCount: matchingCount,
-                            displayTree: displayTree,
-                          ),
-                          Expanded(
-                            child: ListenableBuilder(
-                              listenable: _columnNavTick,
-                              builder: (context, _) {
-                                final focus = scanColumnFocusNode(_columnChain);
-                                return Stack(
-                                  children: [
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
+                    ? _BrowseResultsPane(
+                        revision: _browseRevision,
+                        builder: (context) {
+                          final displayTree = _resolveResultTree();
+                          final matchingCount = _matchingEntryCount();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildCompactResultsChrome(
+                                context,
+                                matchingCount: matchingCount,
+                                displayTree: displayTree,
+                              ),
+                              Expanded(
+                                child: ListenableBuilder(
+                                  listenable: _columnNavTick,
+                                  builder: (context, _) {
+                                    final focus = scanColumnFocusNode(
+                                      _columnChain,
+                                    );
+                                    return Stack(
                                       children: [
-                                        Expanded(
-                                          child: _padExpanded(
-                                            _buildResultsBrowser(
-                                              context,
-                                              displayTree,
-                                              matchingCount,
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            Expanded(
+                                              child: _padExpanded(
+                                                _buildResultsBrowser(
+                                                  context,
+                                                  displayTree,
+                                                  matchingCount,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      _detailPageHorizontalInset,
+                                                      0,
+                                                      _detailPageHorizontalInset,
+                                                      AppleSpacing.xxs,
+                                                    ),
+                                              ),
                                             ),
-                                            padding: const EdgeInsets.fromLTRB(
-                                              _detailPageHorizontalInset,
-                                              0,
-                                              _detailPageHorizontalInset,
-                                              AppleSpacing.xxs,
-                                            ),
-                                          ),
+                                            _buildItemPreview(context, focus),
+                                          ],
                                         ),
-                                        _buildItemPreview(context, focus),
                                       ],
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ],
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       )
                     : CustomScrollView(
                         slivers: [
