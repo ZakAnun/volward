@@ -65,18 +65,20 @@ ThemeData buildVolwardTheme({
       labelSmall: mutedStyle(AppleTypography.finePrint),
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: tokens.surfaceBlack,
-      foregroundColor: tokens.bodyOnDark,
+      backgroundColor: tokens.canvasParchment,
+      foregroundColor: tokens.ink,
       elevation: 0,
       scrolledUnderElevation: 0,
       toolbarHeight: 44,
       titleTextStyle: AppleTypography.navLink.copyWith(
-        color: tokens.bodyOnDark,
+        color: tokens.ink,
         fontFamilyFallback: _volwardFontFamilyFallback(),
       ),
-      iconTheme: IconThemeData(color: tokens.bodyMuted),
-      actionsIconTheme: IconThemeData(color: tokens.bodyMuted),
-      systemOverlayStyle: SystemUiOverlayStyle.light,
+      iconTheme: IconThemeData(color: tokens.inkMuted80),
+      actionsIconTheme: IconThemeData(color: tokens.inkMuted80),
+      systemOverlayStyle: brightness == Brightness.dark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
     ),
     cardTheme: CardThemeData(
       color: tokens.canvas,
