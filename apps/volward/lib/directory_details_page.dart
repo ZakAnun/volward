@@ -85,6 +85,7 @@ SessionUiFlush sessionUiFlushFor({
   required bool postDeleteRefreshChanged,
   required bool scanStarted,
   required bool scanStopped,
+  bool browseResultsLayoutChanged = false,
 }) {
   if (scanStarted ||
       scanStopped ||
@@ -95,6 +96,9 @@ SessionUiFlush sessionUiFlushFor({
     return SessionUiFlush.page;
   }
   if (snapshotIdChanged || catalogChanged) {
+    if (browseResultsLayoutChanged) {
+      return SessionUiFlush.page;
+    }
     return SessionUiFlush.browseResults;
   }
   return SessionUiFlush.none;
@@ -171,6 +175,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   int _lastRefreshedCatalogVersion = -1;
   bool _lastTargetPreviewLoading = false;
   bool _lastPostDeleteRefreshPending = false;
+  bool _lastHasResults = false;
   bool _hasValidRoot = false;
   _HomeContentMode _contentMode = _HomeContentMode.home;
   Completer<bool> _startupRootGate = Completer<bool>();
@@ -340,6 +345,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       _lastRefreshedSnapshotId = session.lastSnapshot?.snapshotId;
       _lastRefreshedCatalogVersion = session.catalogVersion;
       _syncRecentCustomLocations();
+      _lastHasResults = _hasResults;
     });
   }
 
@@ -377,6 +383,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       _lastTargetPreviewLoading = _s.targetPreviewLoading;
       _lastPostDeleteRefreshPending = _s.postDeleteRefreshPending;
       _prevScanning = _s.scanning;
+      _lastHasResults = _hasResults;
       _homeTargetPath = null;
       _recentCustomLocations = const [];
       _hasValidRoot = false;
@@ -497,6 +504,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     final postDeleteRefreshChanged =
         _lastPostDeleteRefreshPending != _s.postDeleteRefreshPending;
     _lastPostDeleteRefreshPending = _s.postDeleteRefreshPending;
+    final hasResults = _hasResults;
 
     if (targetPreviewChanged && _s.targetPreviewLoading) {
       setState(() {
@@ -596,6 +604,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         postDeleteRefreshChanged: postDeleteRefreshChanged,
         scanStarted: !_prevScanning && _s.scanning,
         scanStopped: _prevScanning && !_s.scanning,
+        browseResultsLayoutChanged:
+            _contentMode == _HomeContentMode.browse &&
+            hasResults != _lastHasResults,
       );
       switch (flush) {
         case SessionUiFlush.none:
@@ -612,6 +623,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
           break;
       }
     }
+    _lastHasResults = hasResults;
     _prevScanning = _s.scanning;
   }
 
@@ -657,6 +669,15 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
 
   bool _snapshotMatchesCurrentRoot() {
     return _snapshotMatchesTarget(_scanRootPath());
+  }
+
+  bool get _hasResults {
+    final snapshotMatchesCurrentRoot = _snapshotMatchesCurrentRoot();
+    final loadingTarget =
+        _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
+    return !loadingTarget &&
+        _s.lastSnapshot != null &&
+        snapshotMatchesCurrentRoot;
   }
 
   bool _snapshotMatchesTarget(String targetPath) {
@@ -2007,8 +2028,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     final snapshotMatchesCurrentRoot = _snapshotMatchesCurrentRoot();
     final loadingTarget =
         _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
-    final hasResults =
-        !loadingTarget && _s.lastSnapshot != null && snapshotMatchesCurrentRoot;
+    final hasResults = _hasResults;
 
     return Scaffold(
       backgroundColor: browsing

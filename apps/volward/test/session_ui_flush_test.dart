@@ -29,8 +29,43 @@ void main() {
         postDeleteRefreshChanged: false,
         scanStarted: false,
         scanStopped: false,
+        browseResultsLayoutChanged: false,
       ),
       SessionUiFlush.browseResults,
+    );
+  });
+
+  test('snapshot change that flips browse results layout flushes the page', () {
+    expect(
+      sessionUiFlushFor(
+        snapshotIdChanged: true,
+        catalogChanged: false,
+        targetPreviewChanged: false,
+        deletingChanged: false,
+        refreshingChanged: false,
+        postDeleteRefreshChanged: false,
+        scanStarted: false,
+        scanStopped: false,
+        browseResultsLayoutChanged: true,
+      ),
+      SessionUiFlush.page,
+    );
+  });
+
+  test('catalog change that flips browse results layout flushes the page', () {
+    expect(
+      sessionUiFlushFor(
+        snapshotIdChanged: false,
+        catalogChanged: true,
+        targetPreviewChanged: false,
+        deletingChanged: false,
+        refreshingChanged: false,
+        postDeleteRefreshChanged: false,
+        scanStarted: false,
+        scanStopped: false,
+        browseResultsLayoutChanged: true,
+      ),
+      SessionUiFlush.page,
     );
   });
 
