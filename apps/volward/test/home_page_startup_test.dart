@@ -163,6 +163,31 @@ class _HangingRestoreSession extends _PendingPreviewSession {
   }
 }
 
+class _CachedRestoreSession extends _PendingPreviewSession {
+  _CachedRestoreSession({required super.root, required super.previewGate}) {
+    setSnapshotForTest(_authoritative);
+  }
+
+  ScanSnapshotState get _authoritative => ScanSnapshotState.fromWire({
+    'snapshot_id': 'cached-1',
+    'tree': {
+      'path': root,
+      'name': 'root',
+      'is_dir': true,
+      'children': const [],
+    },
+    'entries': const [],
+  });
+
+  @override
+  ScanSnapshotState? get lastSnapshot => _authoritative;
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {
+    restoreCalls++;
+  }
+}
+
 class _ProgressTickSession extends VolwardSession {
   _ProgressTickSession() : super.test() {
     setScanRoots(['/']);
@@ -271,15 +296,30 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final scanAction = tester
-        .widget<StorageStewardHome>(find.byType(StorageStewardHome))
-        .onScan;
     expect(session.restoreCalls, 1);
-    expect(scanAction, isNotNull);
-    scanAction!();
-    await tester.pump();
     expect(session.runScanCalls, 1);
   });
+
+  testWidgets(
+    'startup does not auto-scan when restore yields an authoritative snapshot',
+    (tester) async {
+      final previewGate = Completer<void>()..complete();
+      final session = _CachedRestoreSession(root: '/', previewGate: previewGate)
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-cached.json',
+        );
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await tester.pumpWidget(_shell(session, themeSettings, updater));
+      await tester.pump();
+      await tester.pump();
+      expect(session.restoreCalls, 1);
+      expect(session.runScanCalls, 0);
+    },
+  );
 
   testWidgets('stale scan callback is rejected during replacement startup', (
     tester,
@@ -319,7 +359,7 @@ void main() {
 
     staleAction();
     await tester.pump();
-    expect(oldSession.runScanCalls, 0);
+    expect(oldSession.runScanCalls, 1);
     expect(newSession.runScanCalls, 0);
 
     newPreview.complete();
@@ -329,6 +369,7 @@ void main() {
       tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
       isNotNull,
     );
+    expect(newSession.runScanCalls, 1);
   });
 
   testWidgets('startup preview error clears scan pending state', (
@@ -409,6 +450,7 @@ void main() {
       tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
       isNotNull,
     );
+    expect(newSession.runScanCalls, 1);
   });
 
   testWidgets(
@@ -473,6 +515,7 @@ void main() {
 
     expect(session.previewCalls, 1);
     expect(session.restoreCalls, 1);
+    expect(session.runScanCalls, 0);
     expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
   });
 

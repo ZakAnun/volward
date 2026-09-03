@@ -317,6 +317,10 @@ class _Session extends VolwardSession {
   ScanSnapshotState? get lastSnapshot =>
       snapshotForTest ?? (exposePreview ? _previewSnapshot : null);
 
+  /// Content-mode tests exercise cached-home UX, not cold-start auto-scan.
+  @override
+  bool get hasAuthoritativeSnapshotForCurrentRoot => true;
+
   @override
   bool get restoringSnapshot => exposePreview;
 

@@ -340,6 +340,16 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       return;
     }
     if (!_isCurrentSession(session, generation)) return;
+    final shouldAutoScan =
+        session.ready &&
+        !session.scanning &&
+        session.hasSnapshotFileApi &&
+        (_homeTargetPath ?? '').isNotEmpty &&
+        !session.hasAuthoritativeSnapshotForCurrentRoot;
+    if (shouldAutoScan) {
+      unawaited(_autoStartScan(session, generation));
+    }
+    if (!mounted) return;
     setState(() {
       _invalidateSnapshotCachesForSessionUpdate();
       _lastRefreshedSnapshotId = session.lastSnapshot?.snapshotId;
@@ -347,6 +357,25 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       _syncRecentCustomLocations();
       _lastHasResults = _hasResults;
     });
+  }
+
+  Future<void> _autoStartScan(VolwardSession session, int generation) async {
+    if (!_isCurrentSession(session, generation)) return;
+    if (_scanStartPending || session.scanning || !session.hasSnapshotFileApi) {
+      return;
+    }
+    setState(() => _scanStartPending = true);
+    try {
+      await session.runScan();
+    } on ScanCancelledException {
+      // ignored
+    } catch (error, stackTrace) {
+      debugPrint('HomePage auto-scan failed: $error\n$stackTrace');
+    } finally {
+      if (_isCurrentSession(session, generation)) {
+        setState(() => _scanStartPending = false);
+      }
+    }
   }
 
   @override
