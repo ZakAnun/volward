@@ -177,7 +177,7 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
                         title: Text(pack.label),
                         subtitle: Text('${pack.credits} credits'),
                         trailing: Text(
-                          '¥${(pack.priceCny / 100).toStringAsFixed(2)}',
+                          '\$${(pack.priceCny / 100).toStringAsFixed(2)}',
                         ),
                         onTap: () => _checkout(pack),
                       ),
