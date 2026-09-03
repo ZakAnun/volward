@@ -610,6 +610,15 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
   Widget build(BuildContext context) {
     final contentHeight =
         widget.items.length * _rowHeight + _verticalPadding * 2;
+    final offset = _scrollController.hasClients
+        ? _scrollController.offset.clamp(0.0, double.infinity)
+        : 0.0;
+    final range = paintedRowRange(
+      offset: offset,
+      viewportHeight: widget.height,
+      itemCount: widget.items.length,
+    );
+    _lastRange = range;
     return Scrollbar(
       controller: _scrollController,
       thumbVisibility: true,
@@ -627,8 +636,9 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
                 : contentHeight,
             child: CustomPaint(
               painter: _FinderColumnPainter(
-                scrollController: _scrollController,
                 viewportHeight: widget.height,
+                visibleFirst: range.first,
+                visibleLast: range.last,
                 items: widget.items,
                 selectedPath: widget.selected?.path,
                 formatBytes: widget.formatBytes,
@@ -646,8 +656,9 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
 
 class _FinderColumnPainter extends CustomPainter {
   _FinderColumnPainter({
-    required this.scrollController,
     required this.viewportHeight,
+    required this.visibleFirst,
+    required this.visibleLast,
     required this.items,
     required this.selectedPath,
     required this.formatBytes,
@@ -669,8 +680,9 @@ class _FinderColumnPainter extends CustomPainter {
   static const double _gap = AppleSpacing.xxs;
   static const double _trailingWidth = 54;
 
-  final ScrollController scrollController;
   final double viewportHeight;
+  final int visibleFirst;
+  final int visibleLast;
   final List<SnapshotNodeRecord> items;
   final String? selectedPath;
   final String Function(num? bytes) formatBytes;
@@ -686,18 +698,7 @@ class _FinderColumnPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final offset = scrollController.hasClients
-        ? scrollController.offset.clamp(0.0, double.infinity)
-        : 0.0;
-    final range = paintedRowRange(
-      offset: offset,
-      viewportHeight: viewportHeight,
-      itemCount: items.length,
-      rowHeight: _rowHeight,
-      verticalPadding: _verticalPadding,
-    );
-
-    for (var index = range.first; index < range.last; index++) {
+    for (var index = visibleFirst; index < visibleLast; index++) {
       _paintRow(canvas, size, index);
     }
   }
@@ -842,7 +843,9 @@ class _FinderColumnPainter extends CustomPainter {
         oldDelegate.selectedEntryIds != selectedEntryIds ||
         oldDelegate.peekInFlight != peekInFlight ||
         oldDelegate.style != style ||
-        oldDelegate.viewportHeight != viewportHeight;
+        oldDelegate.viewportHeight != viewportHeight ||
+        oldDelegate.visibleFirst != visibleFirst ||
+        oldDelegate.visibleLast != visibleLast;
   }
 }
 
