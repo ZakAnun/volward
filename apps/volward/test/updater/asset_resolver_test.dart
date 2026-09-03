@@ -66,4 +66,115 @@ void main() {
     );
     expect(asset, isNull);
   });
+
+  test('resolveAsset prefers the versioned name used by v0.0.4', () {
+    const mixed = [
+      ReleaseAsset(
+        name: 'volward-latest-macos-arm64.zip',
+        downloadUrl: 'https://example.com/latest.zip',
+        sizeBytes: 10,
+      ),
+      ReleaseAsset(
+        name: 'volward-v0.0.5-macos-arm64.zip',
+        downloadUrl: 'https://example.com/v005.zip',
+        sizeBytes: 11,
+      ),
+    ];
+    expect(
+      resolveAsset(
+        assets: mixed,
+        os: 'macos',
+        abi: Abi.macosArm64,
+        version: '0.0.5',
+      )?.name,
+      'volward-v0.0.5-macos-arm64.zip',
+    );
+  });
+
+  test(
+    'resolveAsset falls back to the latest alias when the tag name is absent',
+    () {
+      const mixed = [
+        ReleaseAsset(
+          name: 'volward-latest-macos-arm64.zip',
+          downloadUrl: 'https://example.com/latest.zip',
+          sizeBytes: 10,
+        ),
+        ReleaseAsset(
+          name: 'volward-v0.0.4-macos-arm64.zip',
+          downloadUrl: 'https://example.com/v004.zip',
+          sizeBytes: 11,
+          checksumUrl: 'https://example.com/v004.zip.sha256',
+        ),
+      ];
+      expect(
+        resolveAsset(
+          assets: mixed,
+          os: 'macos',
+          abi: Abi.macosArm64,
+          version: '0.0.5',
+        )?.name,
+        'volward-latest-macos-arm64.zip',
+      );
+    },
+  );
+
+  test('resolveAsset does not pick a leftover older versioned archive', () {
+    const mixed = [
+      ReleaseAsset(
+        name: 'volward-v0.0.4-macos-arm64.zip',
+        downloadUrl: 'https://example.com/v004.zip',
+        sizeBytes: 11,
+      ),
+    ];
+    expect(
+      resolveAsset(
+        assets: mixed,
+        os: 'macos',
+        abi: Abi.macosArm64,
+        version: '0.0.5',
+      ),
+      isNull,
+    );
+  });
+
+  test('withInheritedChecksum copies the same-version sidecar', () {
+    const latest = ReleaseAsset(
+      name: 'volward-latest-macos-arm64.zip',
+      downloadUrl: 'https://example.com/latest.zip',
+      sizeBytes: 10,
+    );
+    const leftover = ReleaseAsset(
+      name: 'volward-v0.0.4-macos-arm64.zip',
+      downloadUrl: 'https://example.com/v004.zip',
+      sizeBytes: 11,
+      checksumUrl: 'https://example.com/v004.zip.sha256',
+    );
+    const versioned = ReleaseAsset(
+      name: 'volward-v0.0.5-macos-arm64.zip',
+      downloadUrl: 'https://example.com/v005.zip',
+      sizeBytes: 11,
+      checksumUrl: 'https://example.com/v005.zip.sha256',
+    );
+    expect(
+      withInheritedChecksum(
+        latest,
+        [latest, leftover, versioned],
+        os: 'macos',
+        abi: Abi.macosArm64,
+        version: '0.0.5',
+      ).checksumUrl,
+      versioned.checksumUrl,
+    );
+    expect(
+      withInheritedChecksum(
+        latest,
+        [latest, leftover],
+        os: 'macos',
+        abi: Abi.macosArm64,
+        version: '0.0.5',
+      ).checksumUrl,
+      isNull,
+    );
+  });
 }

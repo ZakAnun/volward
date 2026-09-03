@@ -107,13 +107,13 @@ class AppUpdater extends ChangeNotifier {
         return;
       }
 
-      final asset = resolveAsset(
+      final candidates = resolveAssetCandidates(
         assets: release.assets,
         os: os,
         abi: abi,
         version: release.version,
       );
-      if (asset == null) {
+      if (candidates.isEmpty) {
         _setStatus(
           UpdateStatus(
             phase: UpdatePhase.error,
@@ -124,6 +124,16 @@ class AppUpdater extends ChangeNotifier {
         );
         return;
       }
+      ReleaseAsset inheritChecksum(ReleaseAsset asset) {
+        return withInheritedChecksum(
+          asset,
+          release.assets,
+          os: os,
+          abi: abi,
+          version: release.version,
+        );
+      }
+
       // Prefer runtime capability over integrity so non-AppImage / non-bundle
       // installs get unsupportedRuntime instead of a misleading checksum error.
       if (!_installer.canAutoInstall) {
@@ -131,44 +141,49 @@ class AppUpdater extends ChangeNotifier {
           UpdateStatus(
             phase: UpdatePhase.error,
             release: release,
-            matchedAsset: asset,
+            matchedAsset: inheritChecksum(candidates.first),
             failureKind: UpdateFailureKind.unsupportedRuntime,
             errorMessage: 'Auto-update unsupported for this install',
           ),
         );
         return;
       }
-      // Convention asset URLs always include a `.sha256` sidecar path, but older
-      // releases may not have uploaded that file. Probe reachability before
-      // advertising an installable update.
-      final expectedSha256 = await _downloader.resolveExpectedSha256(asset);
-      if (expectedSha256 == null) {
+      ReleaseAsset? verifiedAsset;
+      UpdateFailureKind? candidateFailure;
+      String? candidateError;
+      for (final raw in candidates) {
+        final asset = inheritChecksum(raw);
+        // Convention asset URLs always include a `.sha256` sidecar path, but
+        // older releases may not have uploaded that file. Probe before
+        // advertising an installable update.
+        final expectedSha256 = await _downloader.resolveExpectedSha256(asset);
+        if (expectedSha256 == null) {
+          candidateFailure = UpdateFailureKind.integrity;
+          candidateError = 'Missing SHA-256 checksum for ${asset.name}';
+          continue;
+        }
+        // Page/Atom paths synthesize download URLs; confirm the binary exists.
+        final reachable = await _downloader.isDownloadReachable(asset);
+        if (!reachable) {
+          candidateFailure = UpdateFailureKind.noMatchingAsset;
+          candidateError = 'Asset not reachable: ${asset.name}';
+          continue;
+        }
+        verifiedAsset = asset.copyWith(sha256: expectedSha256);
+        break;
+      }
+      if (verifiedAsset == null) {
         _setStatus(
           UpdateStatus(
             phase: UpdatePhase.error,
             release: release,
-            matchedAsset: asset,
-            failureKind: UpdateFailureKind.integrity,
-            errorMessage: 'Missing SHA-256 checksum for ${asset.name}',
+            matchedAsset: inheritChecksum(candidates.first),
+            failureKind: candidateFailure ?? UpdateFailureKind.noMatchingAsset,
+            errorMessage: candidateError ?? 'No matching asset for $os/$abi',
           ),
         );
         return;
       }
-      // Page/Atom paths synthesize download URLs; confirm the binary exists too.
-      final reachable = await _downloader.isDownloadReachable(asset);
-      if (!reachable) {
-        _setStatus(
-          UpdateStatus(
-            phase: UpdatePhase.error,
-            release: release,
-            matchedAsset: asset,
-            failureKind: UpdateFailureKind.noMatchingAsset,
-            errorMessage: 'Asset not reachable: ${asset.name}',
-          ),
-        );
-        return;
-      }
-      final verifiedAsset = asset.copyWith(sha256: expectedSha256);
 
       _setStatus(
         UpdateStatus(

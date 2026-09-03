@@ -68,28 +68,45 @@ String? tagFromReleasePageUrl(Uri url) {
 }
 
 /// Builds download URLs from CI asset naming when the Releases API is unavailable.
+///
+/// Includes the v0.0.4 versioned names and the `*-latest-*` aliases CI also
+/// uploads, so a tag/filename mismatch (tag v0.0.5, files still v0.0.4) can
+/// still resolve.
 List<ReleaseAsset> conventionReleaseAssets({
   required String owner,
   required String repo,
   required String tagName,
   required String version,
 }) {
-  final names = <String>[
+  const latestNames = [
+    'volward-latest-macos-arm64.zip',
+    'volward-latest-macos-x64.zip',
+    'VolwardSetup-latest-windows-x64.exe',
+    'Volward-latest-linux-x86_64.AppImage',
+  ];
+  final versionedNames = <String>[
     'volward-v$version-macos-arm64.zip',
     'volward-v$version-macos-x64.zip',
     'VolwardSetup-v$version-windows-x64.exe',
     'Volward-v$version-linux-x86_64.AppImage',
   ];
+  ReleaseAsset asset(String name, {String? checksumName}) {
+    final checksum = checksumName ?? '$name.sha256';
+    return ReleaseAsset(
+      name: name,
+      downloadUrl:
+          'https://github.com/$owner/$repo/releases/download/$tagName/$name',
+      sizeBytes: 0,
+      checksumUrl:
+          'https://github.com/$owner/$repo/releases/download/$tagName/$checksum',
+    );
+  }
+
   return [
-    for (final name in names)
-      ReleaseAsset(
-        name: name,
-        downloadUrl:
-            'https://github.com/$owner/$repo/releases/download/$tagName/$name',
-        sizeBytes: 0,
-        checksumUrl:
-            'https://github.com/$owner/$repo/releases/download/$tagName/$name.sha256',
-      ),
+    for (var i = 0; i < versionedNames.length; i++) ...[
+      asset(versionedNames[i]),
+      asset(latestNames[i], checksumName: '${versionedNames[i]}.sha256'),
+    ],
   ];
 }
 
@@ -128,6 +145,7 @@ class GitHubVersionSource implements VersionSource {
     }
   }
 
+  /// v0.0.4 path: resolve the tag from HTML/Atom, then synthesize asset URLs.
   Future<ReleaseInfo> _releaseFromTag(String tag, {String body = ''}) async {
     final version = normalizeReleaseTag(tag);
     if (version == null) {

@@ -116,9 +116,12 @@ class _FakeUrls implements UrlOpener {
 }
 
 ReleaseInfo _release({String tag = 'v0.0.2', List<ReleaseAsset>? assets}) {
+  final version = tag.startsWith('v') || tag.startsWith('V')
+      ? tag.substring(1)
+      : tag;
   return ReleaseInfo(
     tagName: tag,
-    version: '0.0.2',
+    version: version,
     htmlUrl: 'https://github.com/ZakAnun/volward/releases/tag/$tag',
     body: 'Release notes line 1\nline 2',
     assets:
@@ -290,6 +293,48 @@ void main() {
     expect(updater.status.phase, UpdatePhase.error);
     expect(updater.status.failureKind, UpdateFailureKind.noMatchingAsset);
   });
+
+  test(
+    'check falls back to latest alias when versioned asset is unreachable',
+    () async {
+      const sha =
+          '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81';
+      final downloader = _FakeDownloader()
+        ..downloadReachable = (asset) async {
+          return asset.name.contains('latest');
+        }
+        ..resolveSha256 = (asset) async {
+          return asset.name.contains('latest') ? sha : null;
+        };
+      final updater = buildUpdater(
+        downloader: downloader,
+        source: _FakeSource(
+          _release(
+            tag: 'v0.0.5',
+            assets: const [
+              ReleaseAsset(
+                name: 'volward-v0.0.5-macos-arm64.zip',
+                downloadUrl: 'https://example.com/v005.zip',
+                sizeBytes: 3,
+              ),
+              ReleaseAsset(
+                name: 'volward-latest-macos-arm64.zip',
+                downloadUrl: 'https://example.com/latest.zip',
+                sizeBytes: 3,
+                checksumUrl: 'https://example.com/v004.zip.sha256',
+              ),
+            ],
+          ),
+        ),
+      );
+      await updater.check(userInitiated: true);
+      expect(updater.status.phase, UpdatePhase.available);
+      expect(
+        updater.status.matchedAsset?.name,
+        'volward-latest-macos-arm64.zip',
+      );
+    },
+  );
 
   test('check attaches resolved sha256 onto matchedAsset', () async {
     final updater = buildUpdater();

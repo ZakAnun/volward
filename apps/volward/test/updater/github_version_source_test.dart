@@ -104,11 +104,12 @@ void main() {
       tagName: 'v0.0.2',
       version: '0.0.2',
     );
-    expect(assets, hasLength(4));
+    expect(assets, hasLength(8));
     expect(
       assets.map((a) => a.name),
       containsAll([
         'volward-v0.0.2-macos-arm64.zip',
+        'volward-latest-macos-arm64.zip',
         'VolwardSetup-v0.0.2-windows-x64.exe',
         'Volward-v0.0.2-linux-x86_64.AppImage',
       ]),
@@ -119,6 +120,12 @@ void main() {
     );
     expect(
       assets.first.checksumUrl,
+      'https://github.com/ZakAnun/volward/releases/download/v0.0.2/volward-v0.0.2-macos-arm64.zip.sha256',
+    );
+    expect(
+      assets
+          .firstWhere((a) => a.name == 'volward-latest-macos-arm64.zip')
+          .checksumUrl,
       'https://github.com/ZakAnun/volward/releases/download/v0.0.2/volward-v0.0.2-macos-arm64.zip.sha256',
     );
   });
