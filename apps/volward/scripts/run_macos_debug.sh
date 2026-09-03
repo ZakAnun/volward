@@ -52,4 +52,10 @@ cd "$APP_DIR"
 source "$SCRIPT_DIR/resolve_aptabase_defines.sh"
 resolve_aptabase_defines
 
-fvm flutter run -d macos "${APTABASE_DEFINE_ARGS[@]}" "$@"
+VOLWARD_API_BASE="${VOLWARD_API_BASE:-https://api.volwardapp.com/v1}"
+PLATFORM_API_DEFINE=(--dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE")
+
+fvm flutter run -d macos \
+  "${APTABASE_DEFINE_ARGS[@]}" \
+  "${PLATFORM_API_DEFINE[@]}" \
+  "$@"

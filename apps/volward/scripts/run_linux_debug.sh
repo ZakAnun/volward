@@ -20,9 +20,18 @@ echo "🦀 Building Rust shared library..."
 source "$SCRIPT_DIR/resolve_aptabase_defines.sh"
 resolve_aptabase_defines
 
+VOLWARD_API_BASE="${VOLWARD_API_BASE:-https://api.volwardapp.com/v1}"
+PLATFORM_API_DEFINE=(--dart-define="VOLWARD_API_BASE=$VOLWARD_API_BASE")
+
 cd "$APP_DIR"
 if command -v fvm >/dev/null 2>&1; then
-  fvm flutter run -d linux "${APTABASE_DEFINE_ARGS[@]}" "$@"
+  fvm flutter run -d linux \
+    "${APTABASE_DEFINE_ARGS[@]}" \
+    "${PLATFORM_API_DEFINE[@]}" \
+    "$@"
 else
-  flutter run -d linux "${APTABASE_DEFINE_ARGS[@]}" "$@"
+  flutter run -d linux \
+    "${APTABASE_DEFINE_ARGS[@]}" \
+    "${PLATFORM_API_DEFINE[@]}" \
+    "$@"
 fi
