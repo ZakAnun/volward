@@ -2111,143 +2111,158 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         _s.targetPreviewLoading || (_s.scanning && !snapshotMatchesCurrentRoot);
     final hasResults = _hasResults;
 
-    return Scaffold(
-      backgroundColor: browsing
-          ? context.volward.canvasParchment
-          : dashboardPageBackground(context),
-      body: Stack(
-        children: [
-          Column(
+    return ListenableBuilder(
+      listenable: widget.themeSettings,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: browsing
+              ? context.volward.canvasParchment
+              : dashboardPageBackground(context),
+          body: Stack(
             children: [
-              if (browsing) _buildTopNav(context),
-              Expanded(
-                child: !browsing
-                    ? ValueListenableBuilder<ScanProgressViewState>(
-                        valueListenable: _s.scanProgressNotifier,
-                        builder: (context, progress, _) {
-                          return ValueListenableBuilder<int>(
-                            valueListenable: _homeSummaryRevision,
-                            builder: (context, _, _) {
-                              final summary = _homeSummary(progress);
-                              final availableAiSnapshot = _homeAiSnapshot();
-                              return StorageStewardHome(
-                                summary: summary,
-                                aiSnapshotId: availableAiSnapshot?.snapshotId,
-                                aiAnalysisGateway: widget.aiAnalysisGateway,
-                                onAiDeleteCompleted: _handleAiDeleteCompleted,
-                                onBrowse: () => unawaited(_onHomeBrowse()),
-                                onChooseFolder: () =>
-                                    unawaited(_pickHomeFolder()),
-                                onSelectTarget: (location) => unawaited(
-                                  _prepareHomeTarget(location.path),
-                                ),
-                                onScan: _scanStartAction,
-                                onCancelScan: _s.scanning
-                                    ? _s.cancelScan
-                                    : null,
-                                onOpenSettings: _openSettings,
-                                onSelectCategory: _openHomeCategory,
-                                onOpenItem: (item) => unawaited(
-                                  _onHomeBrowse(focusPath: item.path),
-                                ),
+              Column(
+                children: [
+                  if (browsing) _buildTopNav(context),
+                  Expanded(
+                    child: !browsing
+                        ? ValueListenableBuilder<ScanProgressViewState>(
+                            valueListenable: _s.scanProgressNotifier,
+                            builder: (context, progress, _) {
+                              return ValueListenableBuilder<int>(
+                                valueListenable: _homeSummaryRevision,
+                                builder: (context, _, _) {
+                                  final summary = _homeSummary(progress);
+                                  final availableAiSnapshot = _homeAiSnapshot();
+                                  return StorageStewardHome(
+                                    summary: summary,
+                                    aiSnapshotId:
+                                        availableAiSnapshot?.snapshotId,
+                                    aiAnalysisGateway: widget.aiAnalysisGateway,
+                                    onAiDeleteCompleted:
+                                        _handleAiDeleteCompleted,
+                                    onBrowse: () => unawaited(_onHomeBrowse()),
+                                    onChooseFolder: () =>
+                                        unawaited(_pickHomeFolder()),
+                                    onSelectTarget: (location) => unawaited(
+                                      _prepareHomeTarget(location.path),
+                                    ),
+                                    onScan: _scanStartAction,
+                                    onCancelScan: _s.scanning
+                                        ? _s.cancelScan
+                                        : null,
+                                    onOpenSettings: _openSettings,
+                                    onSelectCategory: _openHomeCategory,
+                                    onOpenItem: (item) => unawaited(
+                                      _onHomeBrowse(focusPath: item.path),
+                                    ),
+                                  );
+                                },
                               );
                             },
-                          );
-                        },
-                      )
-                    : (restoring || loadingTarget) && !hasResults
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Keep the startup shell (target picker, scan actions)
-                          // visible instead of swapping the whole page for a
-                          // full-screen skeleton — the folder picker stays usable
-                          // while the browser pane is still loading.
-                          _buildScanSection(context),
-                          Expanded(
-                            child: _buildRestoreLoading(
-                              context,
-                              label: restoring
-                                  ? context.l10n.resultsRestoringPreviousScan
-                                  : context.l10n.scanColumnPreparingFolder,
-                            ),
-                          ),
-                        ],
-                      )
-                    : hasResults
-                    ? _BrowseResultsPane(
-                        revision: _browseRevision,
-                        builder: (context) {
-                          final displayTree = _resolveResultTree();
-                          final matchingCount = _matchingEntryCount();
-                          return Column(
+                          )
+                        : (restoring || loadingTarget) && !hasResults
+                        ? Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              _buildCompactResultsChrome(
-                                context,
-                                matchingCount: matchingCount,
-                                displayTree: displayTree,
-                              ),
+                              // Keep the startup shell (target picker, scan actions)
+                              // visible instead of swapping the whole page for a
+                              // full-screen skeleton — the folder picker stays usable
+                              // while the browser pane is still loading.
+                              _buildScanSection(context),
                               Expanded(
-                                child: ListenableBuilder(
-                                  listenable: _columnNavTick,
-                                  builder: (context, _) {
-                                    final focus = scanColumnFocusNode(
-                                      _columnChain,
-                                    );
-                                    return Stack(
-                                      children: [
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
+                                child: _buildRestoreLoading(
+                                  context,
+                                  label: restoring
+                                      ? context
+                                            .l10n
+                                            .resultsRestoringPreviousScan
+                                      : context.l10n.scanColumnPreparingFolder,
+                                ),
+                              ),
+                            ],
+                          )
+                        : hasResults
+                        ? _BrowseResultsPane(
+                            revision: _browseRevision,
+                            builder: (context) {
+                              final displayTree = _resolveResultTree();
+                              final matchingCount = _matchingEntryCount();
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _buildCompactResultsChrome(
+                                    context,
+                                    matchingCount: matchingCount,
+                                    displayTree: displayTree,
+                                  ),
+                                  Expanded(
+                                    child: ListenableBuilder(
+                                      listenable: _columnNavTick,
+                                      builder: (context, _) {
+                                        final focus = scanColumnFocusNode(
+                                          _columnChain,
+                                        );
+                                        return Stack(
                                           children: [
-                                            Expanded(
-                                              child: _padExpanded(
-                                                _buildResultsBrowser(
-                                                  context,
-                                                  displayTree,
-                                                  matchingCount,
-                                                ),
-                                                padding:
-                                                    const EdgeInsets.fromLTRB(
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                Expanded(
+                                                  child: _padExpanded(
+                                                    _buildResultsBrowser(
+                                                      context,
+                                                      displayTree,
+                                                      matchingCount,
+                                                    ),
+                                                    padding: const EdgeInsets.fromLTRB(
                                                       _detailPageHorizontalInset,
                                                       0,
                                                       _detailPageHorizontalInset,
                                                       AppleSpacing.xxs,
                                                     ),
-                                              ),
+                                                  ),
+                                                ),
+                                                _buildItemPreview(
+                                                  context,
+                                                  focus,
+                                                ),
+                                              ],
                                             ),
-                                            _buildItemPreview(context, focus),
                                           ],
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          )
+                        : CustomScrollView(
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: _buildScanSection(context),
+                              ),
+                              const SliverToBoxAdapter(
+                                child: SizedBox(height: 72),
                               ),
                             ],
-                          );
-                        },
-                      )
-                    : CustomScrollView(
-                        slivers: [
-                          SliverToBoxAdapter(child: _buildScanSection(context)),
-                          const SliverToBoxAdapter(child: SizedBox(height: 72)),
-                        ],
-                      ),
+                          ),
+                  ),
+                  if (_contentMode == _HomeContentMode.browse)
+                    _buildStickyBar(context),
+                ],
               ),
-              if (_contentMode == _HomeContentMode.browse)
-                _buildStickyBar(context),
+              Positioned(
+                right: 16,
+                // Browse mode parks a ~56px sticky bar on the bottom edge.
+                bottom: _contentMode == _HomeContentMode.browse ? 72 : 16,
+                child: UpdateReadyPill(updater: widget.updater),
+              ),
             ],
           ),
-          Positioned(
-            right: 16,
-            // Browse mode parks a ~56px sticky bar on the bottom edge.
-            bottom: _contentMode == _HomeContentMode.browse ? 72 : 16,
-            child: UpdateReadyPill(updater: widget.updater),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
