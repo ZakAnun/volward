@@ -107,13 +107,13 @@ class _Overview implements StorageOverviewProvider {
 
 /// A session that never touches the native library and never resolves its
 /// snapshot restore, so `pumpAndSettle` has no pending timers to trip over.
-/// Mirrors `_BlockingSession` in `home_page_startup_test.dart`.
+/// Mirrors `_HangingRestoreSession` in `home_page_startup_test.dart`.
 class _QuietSession extends VolwardSession {
   _QuietSession() : super.test() {
     setScanRoots(['/']);
   }
 
-  final Completer<void> _restoreGate = Completer<void>();
+  final Completer<void> restoreGate = Completer<void>();
 
   @override
   bool get restoringSnapshot => false;
@@ -122,7 +122,53 @@ class _QuietSession extends VolwardSession {
   Future<void> previewTarget({int? expectedGeneration}) async {}
 
   @override
-  Future<void> restoreCachedSnapshotIfNeeded() => _restoreGate.future;
+  Future<void> restoreCachedSnapshotIfNeeded() => restoreGate.future;
+}
+
+class _ThrowingRestoreSession extends _QuietSession {
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {
+    throw StateError('restore failed');
+  }
+}
+
+class _ThrowingPreviewSession extends _QuietSession {
+  @override
+  Future<void> previewTarget({int? expectedGeneration}) async {
+    throw StateError('preview failed');
+  }
+}
+
+/// Same constructor args as [AppUpdater.test] — that factory cannot be
+/// forwarded via `super.test()`.
+class _CountingPrefetchUpdater extends AppUpdater {
+  _CountingPrefetchUpdater({required this.onPrefetch})
+    : super(
+        localVersionReader: _Local('0.0.0'),
+        versionSource: _Source(
+          const ReleaseInfo(
+            tagName: 'v0.0.0',
+            version: '0.0.0',
+            htmlUrl: 'https://example.invalid/releases/latest',
+            body: '',
+            assets: const [],
+          ),
+        ),
+        downloader: _Downloader(),
+        installer: _Installer(),
+        urlOpener: _Urls(),
+        os: 'test',
+        abi: Abi.current(),
+        tempDirectoryBuilder: () => Directory.systemTemp,
+      );
+
+  final VoidCallback onPrefetch;
+
+  @override
+  Future<void> checkAndPrefetch() async {
+    onPrefetch();
+    return super.checkAndPrefetch();
+  }
 }
 
 ReleaseInfo _release({String? sha256}) {
@@ -159,7 +205,7 @@ AppUpdater _updater({
   );
 }
 
-VolwardSession _session(String stateFileName) {
+_QuietSession _session(String stateFileName) {
   return _QuietSession()
     ..sessionStateFileForTest = File(
       '${Directory.systemTemp.path}/$stateFileName',
@@ -206,13 +252,15 @@ void main() {
     addTearDown(updater.dispose);
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
-    // The postFrameCallback fires on the first pump. Run it inside runAsync so
-    // the home page's implicit checkAndPrefetch() — which does real I/O
-    // (directory.create, writeAsBytesSync) — can complete without getting stuck
-    // in the fake-async zone.
+    // Prefetch must wait for cached-snapshot restore, plus one extra frame.
+    // Run the I/O-bearing checkAndPrefetch() inside runAsync so directory
+    // writes are not trapped in the fake-async zone.
     await tester.runAsync(() async {
       await tester.pump();
-      // Yield so the unawaited checkAndPrefetch() future drains fully.
+      expect(updater.status.phase, UpdatePhase.idle);
+      session.restoreGate.complete();
+      await tester.pump();
+      await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     expect(tester.takeException(), isNull);
@@ -243,6 +291,7 @@ void main() {
     addTearDown(updater.dispose);
 
     await tester.pumpWidget(_shell(session, themeSettings, updater));
+    session.restoreGate.complete();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
@@ -250,5 +299,66 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.textContaining('Missing SHA-256 checksum'), findsNothing);
     expect(find.text('Complete update'), findsNothing);
+  });
+
+  testWidgets('prefetch waits until cached snapshot restore finishes', (
+    tester,
+  ) async {
+    final session = _session('volward-home-pill-prefetch-wait.json');
+    final themeSettings = VolwardThemeSettings();
+    var prefetchCalls = 0;
+    final updater = _CountingPrefetchUpdater(onPrefetch: () => prefetchCalls++);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
+    await tester.pump();
+    expect(prefetchCalls, 0);
+    session.restoreGate.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(prefetchCalls, 1);
+  });
+
+  testWidgets('restore throw still schedules prefetch once', (tester) async {
+    final session = _ThrowingRestoreSession()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pill-restore-throw.json',
+      )
+      ..defaultRootForTest = (() => '/')
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    var prefetchCalls = 0;
+    final updater = _CountingPrefetchUpdater(onPrefetch: () => prefetchCalls++);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
+    await tester.pump();
+    await tester.pump();
+    expect(prefetchCalls, 1);
+    await tester.pump();
+    expect(prefetchCalls, 1);
+  });
+
+  testWidgets('preview throw still schedules prefetch once', (tester) async {
+    final session = _ThrowingPreviewSession()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pill-preview-throw.json',
+      )
+      ..defaultRootForTest = (() => '/')
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    var prefetchCalls = 0;
+    final updater = _CountingPrefetchUpdater(onPrefetch: () => prefetchCalls++);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
+    await tester.pump();
+    await tester.pump();
+    expect(prefetchCalls, 1);
+    await tester.pump();
+    expect(prefetchCalls, 1);
   });
 }

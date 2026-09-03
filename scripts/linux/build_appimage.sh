@@ -10,7 +10,8 @@ VERSION=""
 APPIMAGETOOL_BIN="${APPIMAGETOOL_BIN:-appimagetool}"
 APP_NAME="Volward"
 APP_ID="volward"
-ICON_SOURCE="$REPO_ROOT/apps/volward/branding/volward-logo.png"
+ICON_SOURCE="$REPO_ROOT/apps/volward/linux/icons/volward.png"
+HICOLOR_SOURCE="$REPO_ROOT/apps/volward/linux/icons/hicolor"
 
 usage() {
   cat <<'EOF'
@@ -100,6 +101,8 @@ cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 set -eu
 APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
+cd "$APPDIR"
+export LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$APPDIR/volward" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
@@ -109,21 +112,30 @@ cat > "$APPDIR/${APP_ID}.desktop" <<'EOF'
 Type=Application
 Name=Volward
 Exec=volward
-Icon=volward-logo
+Icon=volward
+StartupWMClass=com.volward.volward
 Categories=Utility;
 Terminal=false
 EOF
 
-# AppImage desktop Icon=volward-logo expects a raster icon in AppDir root.
+# AppImage desktop Icon=volward expects a raster icon in AppDir root (+ .DirIcon).
 case "$ICON_SOURCE" in
   *.png|*.PNG)
-    cp "$ICON_SOURCE" "$APPDIR/volward-logo.png"
+    cp "$ICON_SOURCE" "$APPDIR/volward.png"
+    cp "$ICON_SOURCE" "$APPDIR/.DirIcon"
     ;;
   *)
     echo "❌ AppImage build failed: icon must be PNG (got: $ICON_SOURCE)" >&2
     exit 1
     ;;
 esac
+
+if [[ ! -d "$HICOLOR_SOURCE" ]]; then
+  echo "❌ AppImage build failed: hicolor icons not found: $HICOLOR_SOURCE" >&2
+  exit 1
+fi
+mkdir -p "$APPDIR/usr/share/icons"
+cp -a "$HICOLOR_SOURCE" "$APPDIR/usr/share/icons/hicolor"
 
 echo "🧱 Building AppImage: $APPIMAGE_NAME"
 # Prefer extract-and-run so CI hosts without usable FUSE still work.

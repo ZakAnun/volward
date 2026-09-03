@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Format staged Dart under apps/volward so CI's dart format check cannot fail.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+staged=()
+while IFS= read -r f; do
+  [[ -n "$f" ]] && staged+=("$f")
+done <<EOF
+$(git diff --cached --name-only --diff-filter=ACMR | grep '\.dart$' || true)
+EOF
+if [[ ${#staged[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+rel_files=()
+for f in "${staged[@]}"; do
+  case "$f" in
+    apps/volward/*) rel_files+=("${f#apps/volward/}") ;;
+  esac
+done
+if [[ ${#rel_files[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+cd "$repo_root/apps/volward"
+if command -v fvm >/dev/null 2>&1; then
+  fvm dart format "${rel_files[@]}"
+else
+  dart format "${rel_files[@]}"
+fi
+
+cd "$repo_root"
+for f in "${staged[@]}"; do
+  case "$f" in
+    apps/volward/*) git add -- "$f" ;;
+  esac
+done

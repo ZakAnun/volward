@@ -1467,13 +1467,19 @@ void main() {
         final tokens = Theme.of(
           tester.element(find.byKey(StorageStewardHome.dashboardSurfaceKey)),
         ).extension<VolwardTokens>()!;
+        final ink = brightness == Brightness.dark
+            ? const Color(0xFF111113)
+            : tokens.canvasParchment;
+        final softInk = brightness == Brightness.dark
+            ? const Color(0xFF1A1A1E)
+            : tokens.surfacePearl;
         final base = Color.alphaBlend(
           tokens.primary.withValues(alpha: 0.10),
-          const Color(0xFF111113),
+          ink,
         );
         final soft = Color.alphaBlend(
           tokens.primary.withValues(alpha: 0.08),
-          const Color(0xFF1A1A1E),
+          softInk,
         );
 
         expect(decoration.color, base);
@@ -1679,15 +1685,16 @@ void main() {
     final menuButton = tester.widget<PopupMenuButton<StorageLocationInfo>>(
       find.byKey(StorageStewardHome.recentFoldersKey),
     );
-    final tokens = Theme.of(
+    final theme = Theme.of(
       tester.element(find.byKey(StorageStewardHome.recentFoldersKey)),
-    ).extension<VolwardTokens>()!;
+    );
+    final tokens = theme.extension<VolwardTokens>()!;
+    final softInk = theme.brightness == Brightness.dark
+        ? const Color(0xFF1A1A1E)
+        : tokens.surfacePearl;
     expect(
       menuButton.color,
-      Color.alphaBlend(
-        tokens.primary.withValues(alpha: 0.18),
-        const Color(0xFF1A1A1E),
-      ),
+      Color.alphaBlend(tokens.primary.withValues(alpha: 0.18), softInk),
     );
     expect(menuButton.elevation, 0);
     expect(menuButton.shadowColor, Colors.transparent);

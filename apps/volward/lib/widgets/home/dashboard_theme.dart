@@ -1,24 +1,44 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
+import '../../theme/volward_tokens.dart';
 
-const kDashboardInk = Color(0xFF111113);
-const kOnDashboard = Color(0xFFF4F4F5);
+const kDashboardInkDark = Color(0xFF111113);
+const kDashboardSoftDark = Color(0xFF1A1A1E);
+const kOnDashboardDark = Color(0xFFF4F4F5);
 
-/// Frosted fill used by every dashboard panel.
-Color dashboardGlass(double whiteAlpha) {
+Color dashboardPageBackground(BuildContext context) {
+  final brightness = Theme.of(context).brightness;
+  if (brightness == Brightness.dark) return kDashboardInkDark;
+  return context.volward.canvasParchment;
+}
+
+Color dashboardInk(BuildContext context) => dashboardPageBackground(context);
+
+Color dashboardOn(BuildContext context) {
+  if (Theme.of(context).brightness == Brightness.dark) return kOnDashboardDark;
+  return context.volward.ink;
+}
+
+Color dashboardGlass(BuildContext context, double overlayAlpha) {
+  final overlay = Theme.of(context).brightness == Brightness.dark
+      ? Colors.white
+      : context.volward.ink;
   return Color.alphaBlend(
-    Colors.white.withValues(alpha: whiteAlpha),
-    kDashboardInk,
+    overlay.withValues(alpha: overlayAlpha),
+    dashboardInk(context),
   );
 }
 
-/// The shared rounded-glass panel chrome.
-BoxDecoration dashboardPanelDecoration() {
+BoxDecoration dashboardPanelDecoration(BuildContext context) {
+  final v = context.volward;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
   return BoxDecoration(
-    color: dashboardGlass(0.08),
+    color: dashboardGlass(context, isDark ? 0.08 : 0.04),
     borderRadius: BorderRadius.circular(24),
-    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+    border: Border.all(
+      color: isDark ? Colors.white.withValues(alpha: 0.08) : v.hairline,
+    ),
   );
 }
 

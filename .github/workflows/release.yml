@@ -112,8 +112,19 @@ jobs:
       - name: Get version
         id: version
         run: |
+          # Asset names must match the release tag (updater uses tag without leading v).
+          TAG_NAME="${GITHUB_REF_NAME:-}"
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected tag like vX.Y.Z, got: $TAG_NAME"
+            exit 1
+          fi
+          VERSION="${TAG_NAME#v}"
           VERSION_RAW=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          VERSION="${VERSION_RAW%%+*}"
+          PUBSPEC_VERSION="${VERSION_RAW%%+*}"
+          if [[ "$PUBSPEC_VERSION" != "$VERSION" ]]; then
+            echo "pubspec.yaml version ($PUBSPEC_VERSION) must match release tag version ($VERSION)"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_raw=$VERSION_RAW" >> $GITHUB_OUTPUT
 
@@ -250,9 +261,21 @@ jobs:
         id: version
         shell: bash
         run: |
+          # Asset names must match the release tag (updater uses tag without leading v).
+          TAG_NAME="${GITHUB_REF_NAME:-}"
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected tag like vX.Y.Z, got: $TAG_NAME"
+            exit 1
+          fi
+          VERSION="${TAG_NAME#v}"
           VERSION_RAW=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' \r')
-          VERSION="${VERSION_RAW%%+*}"
+          PUBSPEC_VERSION="${VERSION_RAW%%+*}"
+          if [[ "$PUBSPEC_VERSION" != "$VERSION" ]]; then
+            echo "pubspec.yaml version ($PUBSPEC_VERSION) must match release tag version ($VERSION)"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_raw=$VERSION_RAW" >> $GITHUB_OUTPUT
 
       - name: Build Windows installer
         shell: pwsh
@@ -401,9 +424,21 @@ jobs:
       - name: Get version
         id: version
         run: |
+          # Asset names must match the release tag (updater uses tag without leading v).
+          TAG_NAME="${GITHUB_REF_NAME:-}"
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected tag like vX.Y.Z, got: $TAG_NAME"
+            exit 1
+          fi
+          VERSION="${TAG_NAME#v}"
           VERSION_RAW=$(grep '^version:' apps/volward/pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          VERSION="${VERSION_RAW%%+*}"
+          PUBSPEC_VERSION="${VERSION_RAW%%+*}"
+          if [[ "$PUBSPEC_VERSION" != "$VERSION" ]]; then
+            echo "pubspec.yaml version ($PUBSPEC_VERSION) must match release tag version ($VERSION)"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_raw=$VERSION_RAW" >> $GITHUB_OUTPUT
 
       - name: Create Linux archive
         run: |
@@ -433,7 +468,7 @@ jobs:
             --bundle-dir apps/volward/build/linux/x64/release/bundle \
             --output-dir "$GITHUB_WORKSPACE" \
             --version "${{ steps.version.outputs.version }}" \
-            --icon-source apps/volward/branding/volward-logo.png
+            --icon-source apps/volward/linux/icons/volward.png
 
       - name: Verify Linux AppImage
         env:
@@ -446,7 +481,10 @@ jobs:
           test -x squashfs-root/AppRun
           test -f squashfs-root/volward
           test -f squashfs-root/lib/libvolward_facade.so
-          test -f squashfs-root/volward-logo.png
+          test -f squashfs-root/volward.png
+          test -f squashfs-root/.DirIcon
+          test -f squashfs-root/usr/share/icons/hicolor/256x256/apps/volward.png
+          grep -q 'Icon=volward' squashfs-root/volward.desktop
           rm -rf squashfs-root
 
       - name: Create Linux AppImage checksum

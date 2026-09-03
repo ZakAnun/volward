@@ -163,6 +163,84 @@ class _HangingRestoreSession extends _PendingPreviewSession {
   }
 }
 
+class _CachedRestoreSession extends _PendingPreviewSession {
+  _CachedRestoreSession({required super.root, required super.previewGate}) {
+    setSnapshotForTest(_authoritative);
+  }
+
+  ScanSnapshotState get _authoritative => ScanSnapshotState.fromWire({
+    'snapshot_id': 'cached-1',
+    'tree': {
+      'path': root,
+      'name': 'root',
+      'is_dir': true,
+      'children': const [],
+    },
+    'entries': const [],
+  });
+
+  @override
+  ScanSnapshotState? get lastSnapshot => _authoritative;
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {
+    restoreCalls++;
+  }
+}
+
+class _ProgressTickSession extends VolwardSession {
+  _ProgressTickSession() : super.test() {
+    setScanRoots(['/']);
+    setSnapshotForTest(
+      ScanSnapshotState.fromWire({
+        'snapshot_id': 'live-scan',
+        'tree': {
+          'path': '/',
+          'name': '/',
+          'is_dir': true,
+          'children': const [],
+        },
+        'entries': const [],
+      }),
+    );
+  }
+
+  void notifyProgressTick() => notifyListeners();
+
+  @override
+  Future<void> previewTarget({int? expectedGeneration}) async {}
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {}
+}
+
+class _LateSnapshotSession extends VolwardSession {
+  _LateSnapshotSession() : super.test() {
+    setScanRoots(['/']);
+  }
+
+  void revealSnapshot() {
+    setSnapshotForTest(
+      ScanSnapshotState.fromWire({
+        'snapshot_id': 'late-scan',
+        'tree': {
+          'path': '/',
+          'name': '/',
+          'is_dir': true,
+          'children': const [],
+        },
+        'entries': const [],
+      }),
+    );
+  }
+
+  @override
+  Future<void> previewTarget({int? expectedGeneration}) async {}
+
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {}
+}
+
 Widget _shell(
   VolwardSession session,
   VolwardThemeSettings themeSettings,
@@ -218,15 +296,30 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final scanAction = tester
-        .widget<StorageStewardHome>(find.byType(StorageStewardHome))
-        .onScan;
     expect(session.restoreCalls, 1);
-    expect(scanAction, isNotNull);
-    scanAction!();
-    await tester.pump();
     expect(session.runScanCalls, 1);
   });
+
+  testWidgets(
+    'startup does not auto-scan when restore yields an authoritative snapshot',
+    (tester) async {
+      final previewGate = Completer<void>()..complete();
+      final session = _CachedRestoreSession(root: '/', previewGate: previewGate)
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-cached.json',
+        );
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await tester.pumpWidget(_shell(session, themeSettings, updater));
+      await tester.pump();
+      await tester.pump();
+      expect(session.restoreCalls, 1);
+      expect(session.runScanCalls, 0);
+    },
+  );
 
   testWidgets('stale scan callback is rejected during replacement startup', (
     tester,
@@ -266,7 +359,7 @@ void main() {
 
     staleAction();
     await tester.pump();
-    expect(oldSession.runScanCalls, 0);
+    expect(oldSession.runScanCalls, 1);
     expect(newSession.runScanCalls, 0);
 
     newPreview.complete();
@@ -276,6 +369,7 @@ void main() {
       tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
       isNotNull,
     );
+    expect(newSession.runScanCalls, 1);
   });
 
   testWidgets('startup preview error clears scan pending state', (
@@ -356,6 +450,7 @@ void main() {
       tester.widget<StorageStewardHome>(find.byType(StorageStewardHome)).onScan,
       isNotNull,
     );
+    expect(newSession.runScanCalls, 1);
   });
 
   testWidgets(
@@ -420,6 +515,7 @@ void main() {
 
     expect(session.previewCalls, 1);
     expect(session.restoreCalls, 1);
+    expect(session.runScanCalls, 0);
     expect(find.byKey(StorageStewardHome.scanActionKey), findsNothing);
   });
 
@@ -575,4 +671,95 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'progress-only session ticks do not rebuild the browse results ancestor',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final session = _ProgressTickSession()
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-progress-tick.json',
+        )
+        ..defaultRootForTest = (() => '/')
+        ..rootExistsForTest = ((_) => true);
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(session.dispose);
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await tester.pumpWidget(
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(StorageStewardHome.browseKey));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('volward-browse-results')), findsOneWidget);
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+
+      session.notifyProgressTick();
+      await tester.pump();
+
+      expect(find.byKey(const Key('volward-browse-results')), findsOneWidget);
+      expect(tester.widget<Scaffold>(find.byType(Scaffold)), same(scaffold));
+    },
+  );
+
+  testWidgets(
+    'snapshot arrival that reveals browse results rebuilds the page layout',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final session = _LateSnapshotSession()
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-startup-late-snapshot.json',
+        )
+        ..defaultRootForTest = (() => '/')
+        ..rootExistsForTest = ((_) => true);
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(session.dispose);
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await tester.pumpWidget(
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(StorageStewardHome.browseKey));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('volward-browse-results')), findsNothing);
+
+      session.revealSnapshot();
+      await tester.pump();
+
+      expect(find.byKey(const Key('volward-browse-results')), findsOneWidget);
+    },
+  );
 }

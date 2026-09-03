@@ -49,6 +49,25 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+
+  g_autofree gchar* exe_path = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe_path == nullptr) {
+    exe_path = g_strdup(g_get_prgname());
+  }
+  g_autofree gchar* exe_dir = g_path_get_dirname(exe_path);
+  g_autofree gchar* icon_path = g_build_filename(exe_dir, "volward.png", nullptr);
+  if (!g_file_test(icon_path, G_FILE_TEST_IS_REGULAR)) {
+    g_warning("Volward: window icon missing at %s", icon_path);
+  } else {
+    GError* icon_error = nullptr;
+    if (!gtk_window_set_default_icon_from_file(icon_path, &icon_error)) {
+      g_warning("Volward: failed to set window icon: %s",
+                icon_error != nullptr ? icon_error->message : "unknown");
+      g_clear_error(&icon_error);
+    }
+    gtk_window_set_icon_from_file(window, icon_path, nullptr);
+  }
+
   gtk_widget_show(GTK_WIDGET(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();

@@ -20,18 +20,23 @@ Volward is a macOS storage steward: it scans disk usage progressively, classifie
 | `volward-wordmark-preview.png` | White-background preview PNG. |
 | `../lib/widgets/volward_logo.dart` | Theme-aware Flutter logo widget used in the app UI. |
 | `../macos/Runner/Assets.xcassets/AppIcon.appiconset/` | macOS Dock / Finder app icons generated from `volward-logo.svg`. |
+| `../windows/runner/resources/app_icon.ico` | Windows app / installer icon (16/32/48/256) generated from `volward-logo.svg`. |
+| `../linux/icons/hicolor/*/apps/volward.png` | Linux Freedesktop hicolor theme icons named `volward`. |
+| `../linux/icons/volward.png` | 512px Linux icon copy for GTK install next to the binary. |
 
 ## Export
+
+Generate committed OS icons (macOS AppIcon PNGs, Windows ICO, Linux hicolor + 512 copy):
+
+```bash
+bash scripts/branding/export_icons.sh
+```
+
+Preview / wordmark exports:
 
 ```bash
 rsvg-convert -w 1024 -h 1024 apps/volward/branding/volward-logo.svg -o apps/volward/branding/volward-logo.png
 rsvg-convert -w 128 -h 128 apps/volward/branding/volward-logo.svg -o apps/volward/branding/volward-logo-128.png
 rsvg-convert -w 1480 -h 520 apps/volward/branding/volward-wordmark.svg -o apps/volward/branding/volward-wordmark.png
 rsvg-convert -b white -w 1480 -h 520 apps/volward/branding/volward-wordmark.svg -o apps/volward/branding/volward-wordmark-preview.png
-
-# macOS AppIcon sizes
-ICON_DIR=apps/volward/macos/Runner/Assets.xcassets/AppIcon.appiconset
-for s in 16 32 64 128 256 512 1024; do
-  rsvg-convert -w "$s" -h "$s" apps/volward/branding/volward-logo.svg -o "$ICON_DIR/app_icon_$s.png"
-done
 ```

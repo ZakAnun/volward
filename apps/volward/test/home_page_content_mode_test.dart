@@ -18,6 +18,7 @@ import 'package:volward/storage_overview.dart';
 import 'package:volward/storage_overview_provider.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/theme/volward_theme_settings.dart';
+import 'package:volward/theme/volward_tokens.dart';
 import 'package:volward/updater/app_updater.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
@@ -317,6 +318,10 @@ class _Session extends VolwardSession {
   ScanSnapshotState? get lastSnapshot =>
       snapshotForTest ?? (exposePreview ? _previewSnapshot : null);
 
+  /// Content-mode tests exercise cached-home UX, not cold-start auto-scan.
+  @override
+  bool get hasAuthoritativeSnapshotForCurrentRoot => true;
+
   @override
   bool get restoringSnapshot => exposePreview;
 
@@ -454,18 +459,25 @@ Widget _shell(
       const MethodChannelStorageOverviewProvider(),
   AiAnalysisGateway aiAnalysisGateway = const ProductionAiAnalysisGateway(),
 }) {
-  return MaterialApp(
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    theme: buildVolwardTheme(brightness: Brightness.light),
-    home: HomePage(
-      session: session,
-      themeSettings: themeSettings,
-      updater: updater,
-      directoryPicker: directoryPicker,
-      storageOverviewProvider: storageOverviewProvider,
-      aiAnalysisGateway: aiAnalysisGateway,
-    ),
+  return ListenableBuilder(
+    listenable: themeSettings,
+    builder: (context, _) {
+      return MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: buildVolwardTheme(brightness: Brightness.light),
+        darkTheme: buildVolwardTheme(brightness: Brightness.dark),
+        themeMode: themeSettings.themeMode,
+        home: HomePage(
+          session: session,
+          themeSettings: themeSettings,
+          updater: updater,
+          directoryPicker: directoryPicker,
+          storageOverviewProvider: storageOverviewProvider,
+          aiAnalysisGateway: aiAnalysisGateway,
+        ),
+      );
+    },
   );
 }
 
@@ -504,6 +516,63 @@ Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('home dashboard follows ThemeMode after a preference change', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings()
+      ..settingsFileForTest = File(
+        '${Directory.systemTemp.createTempSync('volward-theme-').path}/settings.json',
+      );
+    final updater = AppUpdater.test();
+    final session = _Session();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(tester, _shell(session, themeSettings, updater));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    Color dashboardColor() {
+      final box = tester.widget<DecoratedBox>(
+        find.byKey(StorageStewardHome.dashboardSurfaceKey),
+      );
+      return (box.decoration as BoxDecoration).color!;
+    }
+
+    await tester.runAsync(
+      () => themeSettings.setPreference(VolwardThemePreference.dark),
+    );
+    await tester.pump();
+    await tester.pump(kThemeAnimationDuration);
+    final dark = dashboardColor();
+
+    await tester.runAsync(
+      () => themeSettings.setPreference(VolwardThemePreference.light),
+    );
+    await tester.pump();
+    await tester.pump(kThemeAnimationDuration);
+    final light = dashboardColor();
+
+    expect(dark, isNot(light));
+    final lightTokens = VolwardTokens.light(VolwardTokens.defaultAccent);
+    expect(
+      light,
+      Color.alphaBlend(
+        lightTokens.primary.withValues(alpha: 0.10),
+        lightTokens.canvasParchment,
+      ),
+    );
+    expect(
+      dark,
+      Color.alphaBlend(
+        VolwardTokens.dark(
+          VolwardTokens.defaultAccent,
+        ).primary.withValues(alpha: 0.10),
+        const Color(0xFF111113),
+      ),
+    );
+  });
+
   testWidgets('completed supported scan exposes home AI action', (
     tester,
   ) async {

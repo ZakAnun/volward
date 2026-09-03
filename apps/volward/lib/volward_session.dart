@@ -819,6 +819,8 @@ class VolwardSession extends ChangeNotifier {
         ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot());
   }
 
+  bool get hasAuthoritativeSnapshotForCurrentRoot => _hasAuthoritativeSnapshot;
+
   String _preferredRestoreRoot() {
     return _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot();
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -28,6 +29,21 @@ class _FakeSource implements VersionSource {
   Future<ReleaseInfo> fetchLatest() async {
     if (error != null) throw error!;
     return release!;
+  }
+}
+
+/// Holds the first [fetchLatest] behind [gate]; later calls return immediately.
+/// Used to prove a user-initiated check waits out an in-flight op then re-fetches.
+class _CountingSlowSource implements VersionSource {
+  _CountingSlowSource(this.release, {required this.gate});
+  final ReleaseInfo release;
+  final Completer<void> gate;
+  int calls = 0;
+  @override
+  Future<ReleaseInfo> fetchLatest() async {
+    calls++;
+    if (calls == 1) await gate.future;
+    return release;
   }
 }
 
@@ -146,6 +162,23 @@ void main() {
     expect(updater.status.phase, UpdatePhase.available);
     expect(updater.status.matchedAsset?.name, contains('macos-arm64'));
   });
+
+  test(
+    'manual check waits for an in-flight prefetch then reports status',
+    () async {
+      final gate = Completer<void>();
+      final source = _CountingSlowSource(_release(), gate: gate);
+      final updater = buildUpdater(source: source);
+      final background = updater.check(userInitiated: false);
+      final manual = updater.check(userInitiated: true);
+      expect(updater.status.phase, UpdatePhase.checking);
+      gate.complete();
+      await background;
+      await manual;
+      expect(updater.status.phase, UpdatePhase.available);
+      expect(source.calls, 2);
+    },
+  );
 
   test('check moves to upToDate when same version', () async {
     final updater = buildUpdater(local: '0.0.2');
