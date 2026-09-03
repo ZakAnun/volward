@@ -229,11 +229,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     _subscribedSession.addListener(_onSessionChanged);
     _lastPostDeleteRefreshPending = _s.postDeleteRefreshPending;
     _scheduleSessionStartup(_subscribedSession);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.themeSettings.autoDownloadUpdates) {
-        unawaited(widget.updater.checkAndPrefetch());
-      }
-    });
   }
 
   void _scheduleSessionStartup(VolwardSession session) {
@@ -282,9 +277,8 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         final previewGeneration = session.rootSwitchGeneration;
         await session.previewTarget(expectedGeneration: previewGeneration);
         if (!_isCurrentSession(session, generation)) return;
+        unawaited(_restoreCachedSnapshotInBackground(session, generation));
       }
-
-      _restoreCachedSnapshotInBackground(session, generation);
     } catch (error, stackTrace) {
       if (_isCurrentSession(session, generation)) {
         debugPrint('HomePage startup failed: $error\n$stackTrace');
@@ -323,6 +317,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     _startupPendingSession = null;
     _startupPendingGeneration = null;
     setState(() {});
+    if ((_homeTargetPath ?? '').isEmpty) {
+      _scheduleUpdaterPrefetch(session, generation);
+    }
   }
 
   Future<void> _restoreCachedSnapshotInBackground(
@@ -336,6 +333,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         debugPrint(
           'HomePage cached snapshot restore failed: $error\n$stackTrace',
         );
+        _scheduleUpdaterPrefetch(session, generation);
       }
       return;
     }
@@ -349,6 +347,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     if (shouldAutoScan) {
       unawaited(_autoStartScan(session, generation));
     }
+    _scheduleUpdaterPrefetch(session, generation);
     if (!mounted) return;
     setState(() {
       _invalidateSnapshotCachesForSessionUpdate();
@@ -356,6 +355,16 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       _lastRefreshedCatalogVersion = session.catalogVersion;
       _syncRecentCustomLocations();
       _lastHasResults = _hasResults;
+    });
+  }
+
+  void _scheduleUpdaterPrefetch(VolwardSession session, int generation) {
+    if (!_isCurrentSession(session, generation)) return;
+    if (!widget.themeSettings.autoDownloadUpdates) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isCurrentSession(session, generation)) return;
+      if (!widget.themeSettings.autoDownloadUpdates) return;
+      unawaited(widget.updater.checkAndPrefetch());
     });
   }
 
