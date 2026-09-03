@@ -4,10 +4,25 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Build only this platform (does not rebuild others)'
+        required: true
+        type: choice
+        options:
+          - windows
+        default: windows
+      tag:
+        description: 'Existing release tag to attach Windows assets to'
+        required: true
+        type: string
+        default: v0.0.6
 
 jobs:
   build-macos:
     name: Build macOS (${{ matrix.arch }})
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -260,9 +275,10 @@ jobs:
       - name: Get version
         id: version
         shell: bash
+        env:
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           # Asset names must match the release tag (updater uses tag without leading v).
-          TAG_NAME="${GITHUB_REF_NAME:-}"
           if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Expected tag like vX.Y.Z, got: $TAG_NAME"
             exit 1
@@ -315,6 +331,7 @@ jobs:
 
   build-linux:
     name: Build Linux
+    if: github.event_name == 'push'
     runs-on: ubuntu-22.04
 
     steps:
@@ -516,6 +533,7 @@ jobs:
 
   create-release:
     name: Create Release
+    if: github.event_name == 'push'
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
@@ -546,3 +564,36 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-windows-assets:
+    name: Upload Windows assets
+    if: github.event_name == 'workflow_dispatch'
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: windows-release
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "Missing release tag input"
+            exit 1
+          fi
+          shopt -s nullglob
+          files=(windows-release/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No Windows artifacts to upload"
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
