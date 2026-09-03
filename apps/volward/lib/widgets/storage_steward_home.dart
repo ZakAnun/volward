@@ -70,6 +70,14 @@ Color _dashboardSoftBase(BuildContext context) {
   );
 }
 
+/// Hairline in light; white-alpha stroke in dark (panel/tile chrome).
+Color _dashboardStroke(BuildContext context, double darkAlpha) {
+  if (Theme.of(context).brightness == Brightness.dark) {
+    return Colors.white.withValues(alpha: darkAlpha);
+  }
+  return context.volward.hairline;
+}
+
 LinearGradient _dashboardGradient(BuildContext context) {
   return LinearGradient(
     begin: Alignment.topLeft,
@@ -903,7 +911,7 @@ class _StatPanel extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.vwFinePrint.copyWith(
-                          color: Colors.white.withValues(alpha: 0.58),
+                          color: dashboardOn(context).withValues(alpha: 0.58),
                         ),
                       ),
                       const SizedBox(height: 8), // Reduced from 10
@@ -922,7 +930,7 @@ class _StatPanel extends StatelessWidget {
                       Text(
                         l10n.homeCapacityUsed,
                         style: context.vwFinePrint.copyWith(
-                          color: Colors.white.withValues(alpha: 0.72),
+                          color: dashboardOn(context).withValues(alpha: 0.72),
                         ),
                       ),
                       const SizedBox(height: 16), // Reduced from 18
@@ -984,7 +992,7 @@ class _CapacityMetric extends StatelessWidget {
           label,
           maxLines: 2,
           style: context.vwFinePrint.copyWith(
-            color: Colors.white.withValues(alpha: 0.58),
+            color: dashboardOn(context).withValues(alpha: 0.58),
           ),
         ),
       ],
@@ -1128,7 +1136,7 @@ class _BrowseCard extends StatelessWidget {
                           ),
                     maxLines: 2,
                     style: context.vwFinePrint.copyWith(
-                      color: Colors.white.withValues(alpha: 0.58),
+                      color: dashboardOn(context).withValues(alpha: 0.58),
                     ),
                   ),
                   if (summary.reclaimableBytes != null) ...[
@@ -1255,7 +1263,7 @@ class _BrowseCard extends StatelessWidget {
                                 ),
                           maxLines: 2,
                           style: context.vwFinePrint.copyWith(
-                            color: Colors.white.withValues(alpha: 0.72),
+                            color: dashboardOn(context).withValues(alpha: 0.72),
                           ),
                         ),
                       ),
@@ -1501,14 +1509,14 @@ class _StatusChip extends StatelessWidget {
     final borderColor = switch (tone) {
       _StatusChipTone.live => _liveChipLine,
       _StatusChipTone.cached => context.volward.warning.withValues(alpha: 0.38),
-      _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.10),
+      _StatusChipTone.neutral => _dashboardStroke(context, 0.10),
     };
     final foreground = switch (tone) {
       _StatusChipTone.live => _liveChipText,
       _StatusChipTone.cached => _highestContrastForeground(
         Color.alphaBlend(fill, parentBackground),
       ),
-      _StatusChipTone.neutral => Colors.white.withValues(alpha: 0.84),
+      _StatusChipTone.neutral => dashboardOn(context).withValues(alpha: 0.84),
     };
     return SizedBox(
       height: _dashboardControlHeight,
@@ -1652,8 +1660,8 @@ class _DashboardActionButton extends StatelessWidget {
     final background = enabled
         ? primary
               ? actionColor
-              : Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.04);
+              : dashboardOn(context).withValues(alpha: 0.08)
+        : dashboardOn(context).withValues(alpha: 0.04);
     final foreground = enabled && primary
         ? _highestContrastForeground(background)
         : enabled && accentOutline
@@ -1677,7 +1685,7 @@ class _DashboardActionButton extends StatelessWidget {
               side: BorderSide(
                 color: primary || accentOutline
                     ? actionColor
-                    : Colors.white.withValues(alpha: 0.14),
+                    : _dashboardStroke(context, 0.14),
               ),
             ),
             child: InkWell(
@@ -1753,11 +1761,11 @@ class _TargetMenuTile extends StatelessWidget {
       recentFallback: recentFallback,
     );
     final tile = Material(
-      color: selected ? selectedFill : Colors.white.withValues(alpha: 0.04),
+      color: selected ? selectedFill : dashboardOn(context).withValues(alpha: 0.04),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: selected ? selectedLine : Colors.white.withValues(alpha: 0.08),
+          color: selected ? selectedLine : _dashboardStroke(context, 0.08),
         ),
       ),
       child: hasMenu
@@ -1805,7 +1813,7 @@ class _TargetMenuTile extends StatelessWidget {
     );
     final menuShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+      side: BorderSide(color: _dashboardStroke(context, 0.12)),
     );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
