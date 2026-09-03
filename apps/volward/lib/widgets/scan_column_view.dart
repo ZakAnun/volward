@@ -12,6 +12,21 @@ import 'scan_filter_bar.dart';
 
 typedef ScanColumnSelectCallback = void Function(ScanColumnTap tap);
 
+({int first, int last}) paintedRowRange({
+  required double offset,
+  required double viewportHeight,
+  required int itemCount,
+  double rowHeight = 28,
+  double verticalPadding = AppleSpacing.xxs,
+}) {
+  if (itemCount <= 0) return (first: 0, last: 0);
+  final first = ((offset - verticalPadding) / rowHeight).floor().clamp(0, itemCount);
+  final last = ((offset + viewportHeight - verticalPadding) / rowHeight)
+      .ceil()
+      .clamp(0, itemCount);
+  return (first: first, last: last);
+}
+
 class ScanColumnTap {
   const ScanColumnTap({
     required this.columnIndex,
@@ -432,7 +447,7 @@ class _FinderColumn extends StatelessWidget {
               // before the rasteriser could keep up.
               scrollCacheExtent: const ScrollCacheExtent.pixels(500),
               addAutomaticKeepAlives: false,
-              addRepaintBoundaries: false,
+              addRepaintBoundaries: true,
               addSemanticIndexes: false,
               // Vertical only: the horizontal inset lives inside
               // `_FinderRow`, below its ColoredBox, so a selected row's
@@ -544,9 +559,30 @@ class _PaintedFinderColumnState extends State<_PaintedFinderColumn> {
   static const double _verticalPadding = AppleSpacing.xxs;
 
   final ScrollController _scrollController = ScrollController();
+  ({int first, int last})? _lastRange;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final range = paintedRowRange(
+      offset: _scrollController.offset,
+      viewportHeight: widget.height,
+      itemCount: widget.items.length,
+    );
+    if (_lastRange?.first == range.first && _lastRange?.last == range.last) {
+      return;
+    }
+    _lastRange = range;
+    setState(() {});
+  }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -618,7 +654,7 @@ class _FinderColumnPainter extends CustomPainter {
     required this.selectedEntryIds,
     required this.peekInFlight,
     required this.style,
-  }) : super(repaint: scrollController);
+  });
 
   // This painter duplicates the widget path's layout, so each constant below
   // has a twin that must move with it. `_rowHeight` is `_FinderColumn`'s
@@ -653,15 +689,15 @@ class _FinderColumnPainter extends CustomPainter {
     final offset = scrollController.hasClients
         ? scrollController.offset.clamp(0.0, double.infinity)
         : 0.0;
-    final first = ((offset - _verticalPadding) / _rowHeight).floor().clamp(
-      0,
-      items.length,
+    final range = paintedRowRange(
+      offset: offset,
+      viewportHeight: viewportHeight,
+      itemCount: items.length,
+      rowHeight: _rowHeight,
+      verticalPadding: _verticalPadding,
     );
-    final last = ((offset + viewportHeight - _verticalPadding) / _rowHeight)
-        .ceil()
-        .clamp(0, items.length);
 
-    for (var index = first; index < last; index++) {
+    for (var index = range.first; index < range.last; index++) {
       _paintRow(canvas, size, index);
     }
   }
