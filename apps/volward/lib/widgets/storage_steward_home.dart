@@ -499,7 +499,9 @@ class _HeroTopbar extends StatelessWidget {
             'Volward',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: context.vwCaptionStrong.copyWith(color: dashboardOn(context)),
+            style: context.vwCaptionStrong.copyWith(
+              color: dashboardOn(context),
+            ),
           ),
         ),
       ],
@@ -1145,7 +1147,9 @@ class _BrowseCard extends StatelessWidget {
                       l10n.homeReclaimable(
                         formatStorageBytes(summary.reclaimableBytes),
                       ),
-                      style: context.vwFinePrint.copyWith(color: dashboardOn(context)),
+                      style: context.vwFinePrint.copyWith(
+                        color: dashboardOn(context),
+                      ),
                     ),
                   ],
                   const SizedBox(height: 10),
@@ -1325,7 +1329,9 @@ class _BrowseCard extends StatelessWidget {
                             ),
                             textAlign: TextAlign.center,
                             style: context.vwFinePrint.copyWith(
-                              color: dashboardOn(context).withValues(alpha: 0.72),
+                              color: dashboardOn(
+                                context,
+                              ).withValues(alpha: 0.72),
                             ),
                           )
                         : const SizedBox.shrink(),
@@ -1613,7 +1619,9 @@ class _VolumeSelector extends StatelessWidget {
                       selectedLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.vwFinePrint.copyWith(color: dashboardOn(context)),
+                      style: context.vwFinePrint.copyWith(
+                        color: dashboardOn(context),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 2),
@@ -1761,7 +1769,9 @@ class _TargetMenuTile extends StatelessWidget {
       recentFallback: recentFallback,
     );
     final tile = Material(
-      color: selected ? selectedFill : dashboardOn(context).withValues(alpha: 0.04),
+      color: selected
+          ? selectedFill
+          : dashboardOn(context).withValues(alpha: 0.04),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
@@ -1907,7 +1917,9 @@ class _TargetTileContent extends StatelessWidget {
               Icon(
                 Icons.history_outlined,
                 size: 16,
-                color: dashboardOn(context).withValues(alpha: enabled ? 0.8 : 0.42),
+                color: dashboardOn(
+                  context,
+                ).withValues(alpha: enabled ? 0.8 : 0.42),
               ),
               const SizedBox(width: 8),
             ],
@@ -1917,9 +1929,9 @@ class _TargetTileContent extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: context.vwCaption.copyWith(
-                  color: dashboardOn(context).withValues(
-                    alpha: enabled ? (selected ? 1 : 0.8) : 0.42,
-                  ),
+                  color: dashboardOn(
+                    context,
+                  ).withValues(alpha: enabled ? (selected ? 1 : 0.8) : 0.42),
                 ),
               ),
             ),
@@ -1929,15 +1941,17 @@ class _TargetTileContent extends StatelessWidget {
                 Text(
                   choices.length.toString(),
                   style: context.vwFinePrint.copyWith(
-                    color: dashboardOn(context).withValues(
-                      alpha: enabled ? 0.58 : 0.32,
-                    ),
+                    color: dashboardOn(
+                      context,
+                    ).withValues(alpha: enabled ? 0.58 : 0.32),
                   ),
                 ),
               Icon(
                 Icons.arrow_drop_down,
                 size: 18,
-                color: dashboardOn(context).withValues(alpha: enabled ? 0.8 : 0.42),
+                color: dashboardOn(
+                  context,
+                ).withValues(alpha: enabled ? 0.8 : 0.42),
               ),
             ],
           ],

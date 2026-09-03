@@ -28,12 +28,23 @@ void main() {
     expect(range.last, lessThanOrEqualTo(400));
   });
 
-  test('paintedRowRange is stable for sub-pixel scroll within the same rows', () {
-    final a = paintedRowRange(offset: 280.0, viewportHeight: 280, itemCount: 400);
-    final b = paintedRowRange(offset: 280.4, viewportHeight: 280, itemCount: 400);
-    expect(b.first, a.first);
-    expect(b.last, a.last);
-  });
+  test(
+    'paintedRowRange is stable for sub-pixel scroll within the same rows',
+    () {
+      final a = paintedRowRange(
+        offset: 280.0,
+        viewportHeight: 280,
+        itemCount: 400,
+      );
+      final b = paintedRowRange(
+        offset: 280.4,
+        viewportHeight: 280,
+        itemCount: 400,
+      );
+      expect(b.first, a.first);
+      expect(b.last, a.last);
+    },
+  );
 
   testWidgets(
     'shouldRepaint is true when the painted column first/last range changes',
@@ -83,7 +94,8 @@ void main() {
       expect(
         newPainter.shouldRepaint(oldPainter),
         isTrue,
-        reason: 'visible first/last must participate in shouldRepaint so '
+        reason:
+            'visible first/last must participate in shouldRepaint so '
             'CustomPaint markNeedsPaint after a range-changing scroll',
       );
     },

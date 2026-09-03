@@ -264,7 +264,9 @@ class _LargestItemRow extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: fraction.clamp(0.0, 1.0),
                       minHeight: 3,
-                      backgroundColor: dashboardOn(context).withValues(alpha: 0.07),
+                      backgroundColor: dashboardOn(
+                        context,
+                      ).withValues(alpha: 0.07),
                       color: context.volward.primary,
                     ),
                   ),

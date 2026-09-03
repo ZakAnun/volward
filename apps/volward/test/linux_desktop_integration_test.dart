@@ -35,7 +35,10 @@ void main() {
     );
     final desktop = File('${home.path}/Desktop/volward.desktop');
     expect(desktop.existsSync(), isTrue);
-    expect(desktop.statSync().mode & 0x49, isNonZero); // owner/group/other execute bit
+    expect(
+      desktop.statSync().mode & 0x49,
+      isNonZero,
+    ); // owner/group/other execute bit
     expect(
       File(
         '${home.path}/.local/share/icons/hicolor/256x256/apps/volward.png',
@@ -53,7 +56,9 @@ void main() {
     final exec = '${tmp.path}/Volward.AppImage';
     final paths = LinuxDesktopPaths(home: home, execPath: exec, iconPng: icon);
     await installLinuxDesktopIntegration(paths: paths, settingsFile: settings);
-    final first = File('${home.path}/Desktop/volward.desktop').statSync().modified;
+    final first = File(
+      '${home.path}/Desktop/volward.desktop',
+    ).statSync().modified;
     await Future<void>.delayed(const Duration(milliseconds: 20));
     await installLinuxDesktopIntegration(paths: paths, settingsFile: settings);
     final second = File(

@@ -1694,10 +1694,7 @@ void main() {
         : tokens.surfacePearl;
     expect(
       menuButton.color,
-      Color.alphaBlend(
-        tokens.primary.withValues(alpha: 0.18),
-        softInk,
-      ),
+      Color.alphaBlend(tokens.primary.withValues(alpha: 0.18), softInk),
     );
     expect(menuButton.elevation, 0);
     expect(menuButton.shadowColor, Colors.transparent);

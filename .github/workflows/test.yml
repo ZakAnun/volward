@@ -53,8 +53,7 @@ jobs:
         working-directory: apps/volward
 
       - name: Verify formatting
-        run: dart format --output=none --set-exit-if-changed .
-        working-directory: apps/volward
+        run: bash scripts/check_dart_format.sh
 
       - name: Run tests
         run: bash ../../scripts/test_core.sh flutter

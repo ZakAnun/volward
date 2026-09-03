@@ -23,6 +23,7 @@ run_rust() {
 }
 
 run_flutter() {
+  bash "$root_dir/scripts/check_dart_format.sh"
   cd "$root_dir/apps/volward"
   local flutter_cmd
   if command -v fvm >/dev/null 2>&1; then

@@ -400,6 +400,7 @@ main() {
   fetch_flutter_deps
   fetch_rust_deps
   build_rust_dylib
+  bash "$SCRIPT_DIR/install_git_hooks.sh"
   verify_signing_config
   print_next_steps
 }

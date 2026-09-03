@@ -20,7 +20,10 @@ typedef ScanColumnSelectCallback = void Function(ScanColumnTap tap);
   double verticalPadding = AppleSpacing.xxs,
 }) {
   if (itemCount <= 0) return (first: 0, last: 0);
-  final first = ((offset - verticalPadding) / rowHeight).floor().clamp(0, itemCount);
+  final first = ((offset - verticalPadding) / rowHeight).floor().clamp(
+    0,
+    itemCount,
+  );
   final last = ((offset + viewportHeight - verticalPadding) / rowHeight)
       .ceil()
       .clamp(0, itemCount);
