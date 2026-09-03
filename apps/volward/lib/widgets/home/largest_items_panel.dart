@@ -33,7 +33,7 @@ class LargestItemsPanel extends StatelessWidget {
     return KeyedSubtree(
       key: panelKey,
       child: DecoratedBox(
-        decoration: dashboardPanelDecoration(),
+        decoration: dashboardPanelDecoration(context),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
             AppleSpacing.lg,
@@ -53,7 +53,7 @@ class LargestItemsPanel extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.vwCaptionStrong.copyWith(
-                        color: kOnDashboard.withValues(alpha: 0.72),
+                        color: dashboardOn(context).withValues(alpha: 0.72),
                       ),
                     ),
                   ),
@@ -63,7 +63,7 @@ class LargestItemsPanel extends StatelessWidget {
                         formatStorageBytes(summary.scannedBytes),
                       ),
                       style: context.vwFinePrint.copyWith(
-                        color: kOnDashboard.withValues(alpha: 0.58),
+                        color: dashboardOn(context).withValues(alpha: 0.58),
                       ),
                     ),
                 ],
@@ -100,7 +100,7 @@ class LargestItemsPanel extends StatelessWidget {
           child: Text(
             phase,
             style: context.vwFinePrint.copyWith(
-              color: kOnDashboard.withValues(alpha: 0.68),
+              color: dashboardOn(context).withValues(alpha: 0.68),
             ),
           ),
         ),
@@ -117,7 +117,7 @@ class LargestItemsPanel extends StatelessWidget {
               value: summary.scanProgress,
               minHeight: 6,
               borderRadius: BorderRadius.circular(999),
-              backgroundColor: Colors.white.withValues(alpha: 0.10),
+              backgroundColor: dashboardOn(context).withValues(alpha: 0.10),
               color: context.volward.primary,
             ),
           ),
@@ -142,7 +142,7 @@ class LargestItemsPanel extends StatelessWidget {
                 widthFactor: width,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.07),
+                    color: dashboardOn(context).withValues(alpha: 0.07),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: const SizedBox(height: 9),
@@ -157,7 +157,7 @@ class LargestItemsPanel extends StatelessWidget {
           scannedEmpty ? l10n.homeFolderEmpty : l10n.homeLargestItemsEmpty,
           textAlign: TextAlign.center,
           style: context.vwFinePrint.copyWith(
-            color: kOnDashboard.withValues(alpha: 0.42),
+            color: dashboardOn(context).withValues(alpha: 0.42),
           ),
         ),
       ],
@@ -236,7 +236,7 @@ class _LargestItemRow extends StatelessWidget {
                             ? Icons.folder_outlined
                             : Icons.insert_drive_file_outlined,
                         size: 13,
-                        color: kOnDashboard.withValues(alpha: 0.52),
+                        color: dashboardOn(context).withValues(alpha: 0.52),
                       ),
                       const SizedBox(width: 7),
                       Expanded(
@@ -245,7 +245,7 @@ class _LargestItemRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: context.vwFinePrint.copyWith(
-                            color: kOnDashboard.withValues(alpha: 0.86),
+                            color: dashboardOn(context).withValues(alpha: 0.86),
                           ),
                         ),
                       ),
@@ -253,7 +253,7 @@ class _LargestItemRow extends StatelessWidget {
                       Text(
                         sizeLabel,
                         style: context.vwFinePrint.copyWith(
-                          color: kOnDashboard.withValues(alpha: 0.62),
+                          color: dashboardOn(context).withValues(alpha: 0.62),
                         ),
                       ),
                     ],
@@ -264,7 +264,7 @@ class _LargestItemRow extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: fraction.clamp(0.0, 1.0),
                       minHeight: 3,
-                      backgroundColor: Colors.white.withValues(alpha: 0.07),
+                      backgroundColor: dashboardOn(context).withValues(alpha: 0.07),
                       color: context.volward.primary,
                     ),
                   ),

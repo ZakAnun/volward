@@ -16,9 +16,6 @@ import 'home/skeleton_loader.dart';
 import 'ai_analysis_workspace.dart';
 import 'volward_logo.dart';
 
-const _dashboardInk = kDashboardInk;
-const _dashboardSoft = Color(0xFF1A1A1E);
-const _onDashboard = kOnDashboard;
 const _liveChipFill = Color(0x2934C759);
 const _liveChipLine = Color(0x3834C759);
 const _liveChipText = Color(0xFFD5FFD9);
@@ -45,18 +42,32 @@ const _capacityFlex = 35;
 const _largestFlex = 32;
 const _browseFlex = 34;
 
-Color _glass(double whiteAlpha) => dashboardGlass(whiteAlpha);
+Color _glass(BuildContext context, double overlayAlpha) =>
+    dashboardGlass(context, overlayAlpha);
+
+Color _dashboardSoftInk(BuildContext context) {
+  if (Theme.of(context).brightness == Brightness.dark) {
+    return kDashboardSoftDark;
+  }
+  return context.volward.surfacePearl;
+}
 
 Color _dashboardAccent(BuildContext context, double alpha) {
   return context.volward.primary.withValues(alpha: alpha);
 }
 
 Color _dashboardBase(BuildContext context) {
-  return Color.alphaBlend(_dashboardAccent(context, 0.10), _dashboardInk);
+  return Color.alphaBlend(
+    _dashboardAccent(context, 0.10),
+    dashboardInk(context),
+  );
 }
 
 Color _dashboardSoftBase(BuildContext context) {
-  return Color.alphaBlend(_dashboardAccent(context, 0.08), _dashboardSoft);
+  return Color.alphaBlend(
+    _dashboardAccent(context, 0.08),
+    _dashboardSoftInk(context),
+  );
 }
 
 LinearGradient _dashboardGradient(BuildContext context) {
@@ -104,7 +115,6 @@ class StorageStewardHome extends StatefulWidget {
     this.onAiDeleteCompleted,
   });
 
-  static const backgroundColor = Color(0xFF111113);
   static const panelKey = Key('storage-overview-panel');
   static const panelBackgroundKey = Key('storage-overview-background');
   static const capacityKey = Key('storage-overview-capacity');
@@ -463,10 +473,10 @@ class _HeroTopbar extends StatelessWidget {
                 key: StorageStewardHome.settingsKey,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                icon: const Icon(
+                icon: Icon(
                   Icons.settings_outlined,
                   size: 18,
-                  color: _onDashboard,
+                  color: dashboardOn(context),
                 ),
                 onPressed: onOpenSettings,
               ),
@@ -481,7 +491,7 @@ class _HeroTopbar extends StatelessWidget {
             'Volward',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: context.vwCaptionStrong.copyWith(color: _onDashboard),
+            style: context.vwCaptionStrong.copyWith(color: dashboardOn(context)),
           ),
         ),
       ],
@@ -710,11 +720,7 @@ class _Sidebar extends StatelessWidget {
     }
 
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: _glass(0.08),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
+      decoration: dashboardPanelDecoration(context),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final recentFallback =
@@ -745,7 +751,7 @@ class _Sidebar extends StatelessWidget {
               children: [
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: _glass(0.06),
+                    color: _glass(context, 0.06),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const SizedBox(
@@ -875,11 +881,7 @@ class _StatPanel extends StatelessWidget {
       value: capacityPath,
       child: ExcludeSemantics(
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: _glass(0.08),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
+          decoration: dashboardPanelDecoration(context),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: Column(
@@ -910,7 +912,7 @@ class _StatPanel extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.vwDisplayLg.copyWith(
-                          color: _onDashboard,
+                          color: dashboardOn(context),
                           fontSize: compact ? 40 : 52,
                           fontWeight: FontWeight.w700,
                           height: 0.92,
@@ -975,7 +977,7 @@ class _CapacityMetric extends StatelessWidget {
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: context.vwBodyStrong.copyWith(color: _onDashboard),
+          style: context.vwBodyStrong.copyWith(color: dashboardOn(context)),
         ),
         const SizedBox(height: 4),
         Text(
@@ -1006,7 +1008,7 @@ class _HeroMeter extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ColoredBox(color: _glass(0.12)),
+          ColoredBox(color: _glass(context, 0.12)),
           if (progress != null)
             FractionallySizedBox(
               widthFactor: progress.clamp(0, 1),
@@ -1090,7 +1092,7 @@ class _BrowseCard extends StatelessWidget {
                           ? l10n.homeFolderEmpty
                           : l10n.homeLargestItemsEmpty,
                       style: context.vwFinePrint.copyWith(
-                        color: _onDashboard.withValues(alpha: 0.42),
+                        color: dashboardOn(context).withValues(alpha: 0.42),
                       ),
                     ),
                   )
@@ -1135,7 +1137,7 @@ class _BrowseCard extends StatelessWidget {
                       l10n.homeReclaimable(
                         formatStorageBytes(summary.reclaimableBytes),
                       ),
-                      style: context.vwFinePrint.copyWith(color: _onDashboard),
+                      style: context.vwFinePrint.copyWith(color: dashboardOn(context)),
                     ),
                   ],
                   const SizedBox(height: 10),
@@ -1210,11 +1212,7 @@ class _BrowseCard extends StatelessWidget {
           return KeyedSubtree(
             key: StorageStewardHome.browseCardKey,
             child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: _glass(0.08),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              ),
+              decoration: dashboardPanelDecoration(context),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [details, actions],
@@ -1230,11 +1228,7 @@ class _BrowseCard extends StatelessWidget {
         return KeyedSubtree(
           key: StorageStewardHome.browseCardKey,
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _glass(0.08),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            ),
+            decoration: dashboardPanelDecoration(context),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppleSpacing.lg,
@@ -1299,7 +1293,7 @@ class _BrowseCard extends StatelessWidget {
                               ? l10n.homeFolderEmpty
                               : l10n.homeLargestItemsEmpty,
                           style: context.vwFinePrint.copyWith(
-                            color: _onDashboard.withValues(alpha: 0.42),
+                            color: dashboardOn(context).withValues(alpha: 0.42),
                           ),
                         ),
                       ),
@@ -1323,7 +1317,7 @@ class _BrowseCard extends StatelessWidget {
                             ),
                             textAlign: TextAlign.center,
                             style: context.vwFinePrint.copyWith(
-                              color: _onDashboard.withValues(alpha: 0.72),
+                              color: dashboardOn(context).withValues(alpha: 0.72),
                             ),
                           )
                         : const SizedBox.shrink(),
@@ -1433,7 +1427,7 @@ class _CategorySkeletonContent extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: _dashboardSoft,
+        color: _dashboardSoftInk(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
@@ -1498,7 +1492,7 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final parentBackground = _glass(0.08);
+    final parentBackground = _glass(context, 0.08);
     final fill = switch (tone) {
       _StatusChipTone.live => _liveChipFill,
       _StatusChipTone.cached => context.volward.warning.withValues(alpha: 0.16),
@@ -1600,10 +1594,10 @@ class _VolumeSelector extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.storage_outlined,
                     size: 18,
-                    color: _onDashboard,
+                    color: dashboardOn(context),
                   ),
                   const SizedBox(width: 6),
                   Flexible(
@@ -1611,14 +1605,14 @@ class _VolumeSelector extends StatelessWidget {
                       selectedLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.vwFinePrint.copyWith(color: _onDashboard),
+                      style: context.vwFinePrint.copyWith(color: dashboardOn(context)),
                     ),
                   ),
                   const SizedBox(width: 2),
-                  const Icon(
+                  Icon(
                     Icons.arrow_drop_down,
                     size: 18,
-                    color: _onDashboard,
+                    color: dashboardOn(context),
                   ),
                 ],
               ),
@@ -1664,7 +1658,7 @@ class _DashboardActionButton extends StatelessWidget {
         ? _highestContrastForeground(background)
         : enabled && accentOutline
         ? actionColor
-        : _onDashboard.withValues(alpha: enabled ? 1 : 0.42);
+        : dashboardOn(context).withValues(alpha: enabled ? 1 : 0.42);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       excludeFromSemantics: true,
@@ -1807,7 +1801,7 @@ class _TargetMenuTile extends StatelessWidget {
     }
     final menuSurface = Color.alphaBlend(
       _dashboardAccent(context, 0.18),
-      _dashboardSoft,
+      _dashboardSoftInk(context),
     );
     final menuShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
@@ -1852,7 +1846,7 @@ class _TargetMenuTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.vwCaptionStrong.copyWith(
-                          color: _onDashboard,
+                          color: dashboardOn(context),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -1861,7 +1855,7 @@ class _TargetMenuTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.vwFinePrint.copyWith(
-                          color: _onDashboard.withValues(alpha: 0.62),
+                          color: dashboardOn(context).withValues(alpha: 0.62),
                         ),
                       ),
                     ],
@@ -1905,7 +1899,7 @@ class _TargetTileContent extends StatelessWidget {
               Icon(
                 Icons.history_outlined,
                 size: 16,
-                color: _onDashboard.withValues(alpha: enabled ? 0.8 : 0.42),
+                color: dashboardOn(context).withValues(alpha: enabled ? 0.8 : 0.42),
               ),
               const SizedBox(width: 8),
             ],
@@ -1915,7 +1909,7 @@ class _TargetTileContent extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: context.vwCaption.copyWith(
-                  color: _onDashboard.withValues(
+                  color: dashboardOn(context).withValues(
                     alpha: enabled ? (selected ? 1 : 0.8) : 0.42,
                   ),
                 ),
@@ -1927,7 +1921,7 @@ class _TargetTileContent extends StatelessWidget {
                 Text(
                   choices.length.toString(),
                   style: context.vwFinePrint.copyWith(
-                    color: _onDashboard.withValues(
+                    color: dashboardOn(context).withValues(
                       alpha: enabled ? 0.58 : 0.32,
                     ),
                   ),
@@ -1935,7 +1929,7 @@ class _TargetTileContent extends StatelessWidget {
               Icon(
                 Icons.arrow_drop_down,
                 size: 18,
-                color: _onDashboard.withValues(alpha: enabled ? 0.8 : 0.42),
+                color: dashboardOn(context).withValues(alpha: enabled ? 0.8 : 0.42),
               ),
             ],
           ],

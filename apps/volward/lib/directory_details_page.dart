@@ -28,6 +28,7 @@ import 'scan_tree_navigation.dart';
 import 'snapshot_catalog.dart';
 import 'snapshot_query.dart';
 import 'snapshot_view_cache.dart';
+import 'widgets/home/dashboard_theme.dart';
 import 'widgets/storage_steward_home.dart';
 import 'widgets/top_toast.dart';
 import 'widgets/update_ready_pill.dart';
@@ -2082,7 +2083,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     return Scaffold(
       backgroundColor: browsing
           ? context.volward.canvasParchment
-          : StorageStewardHome.backgroundColor,
+          : dashboardPageBackground(context),
       body: Stack(
         children: [
           Column(

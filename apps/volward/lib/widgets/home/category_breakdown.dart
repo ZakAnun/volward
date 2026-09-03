@@ -262,7 +262,7 @@ class CategoryLegendRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: context.vwFinePrint.copyWith(
-                            color: kOnDashboard.withValues(
+                            color: dashboardOn(context).withValues(
                               alpha: enabled ? 0.84 : 0.42,
                             ),
                           ),
@@ -288,7 +288,7 @@ class CategoryLegendRow extends StatelessWidget {
                                 softWrap: false,
                                 overflow: TextOverflow.ellipsis,
                                 style: context.vwFinePrint.copyWith(
-                                  color: kOnDashboard.withValues(
+                                  color: dashboardOn(context).withValues(
                                     alpha: enabled ? 0.64 : 0.36,
                                   ),
                                 ),
@@ -300,7 +300,7 @@ class CategoryLegendRow extends StatelessWidget {
                               maxLines: 1,
                               softWrap: false,
                               style: context.vwFinePrint.copyWith(
-                                color: kOnDashboard.withValues(
+                                color: dashboardOn(context).withValues(
                                   alpha: enabled ? 0.64 : 0.36,
                                 ),
                               ),
