@@ -7,10 +7,12 @@ import 'package:flutter/material.dart';
 
 import 'ai/ai_analysis_gateway.dart';
 import 'l10n/l10n.dart';
+import 'linux_desktop_integration.dart';
 import 'macos_settings.dart';
 import 'scan_entry_record.dart';
 import 'scan_snapshot_state.dart';
 import 'scan_tree.dart';
+import 'snapshot_cache.dart';
 import 'storage_home_summary.dart';
 import 'storage_overview.dart';
 import 'storage_overview_provider.dart';
@@ -231,6 +233,35 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     _subscribedSession.addListener(_onSessionChanged);
     _lastPostDeleteRefreshPending = _s.postDeleteRefreshPending;
     _scheduleSessionStartup(_subscribedSession);
+    if (Platform.isLinux) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_installLinuxDesktopIfNeeded());
+      });
+    }
+  }
+
+  Future<void> _installLinuxDesktopIfNeeded() async {
+    try {
+      final homeEnv = Platform.environment['HOME'];
+      if (homeEnv == null || homeEnv.isEmpty) return;
+      final appImage = Platform.environment['APPIMAGE'];
+      final execPath = (appImage != null && appImage.isNotEmpty)
+          ? appImage
+          : Platform.resolvedExecutable;
+      final iconPng = File(
+        '${File(Platform.resolvedExecutable).parent.path}/volward.png',
+      );
+      await installLinuxDesktopIntegration(
+        paths: LinuxDesktopPaths(
+          home: Directory(homeEnv),
+          execPath: execPath,
+          iconPng: iconPng,
+        ),
+        settingsFile: File('${SnapshotCache.cacheDir().path}/settings.json'),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Linux desktop integration failed: $error\n$stackTrace');
+    }
   }
 
   void _scheduleSessionStartup(VolwardSession session) {
