@@ -43,12 +43,12 @@ Future<String?> installLinuxDesktopIntegration({
   if (homePath.isEmpty) return null;
   if (!await paths.iconPng.exists()) return null;
 
-  final applicationsDir = Directory('${homePath}/.local/share/applications');
+  final applicationsDir = Directory('$homePath/.local/share/applications');
   final appDesktop = File('${applicationsDir.path}/$_desktopFileName');
   final iconDest = File(
-    '${homePath}/.local/share/icons/hicolor/256x256/apps/$_iconName',
+    '$homePath/.local/share/icons/hicolor/256x256/apps/$_iconName',
   );
-  final desktopDir = Directory('${homePath}/Desktop');
+  final desktopDir = Directory('$homePath/Desktop');
   final desktopShortcut = File('${desktopDir.path}/$_desktopShortcutName');
 
   final previousExec = await _readLinuxDesktopExec(settingsFile);

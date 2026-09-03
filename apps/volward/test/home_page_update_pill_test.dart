@@ -151,7 +151,7 @@ class _CountingPrefetchUpdater extends AppUpdater {
             version: '0.0.0',
             htmlUrl: 'https://example.invalid/releases/latest',
             body: '',
-            assets: const [],
+            assets: [],
           ),
         ),
         downloader: _Downloader(),
