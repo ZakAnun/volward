@@ -125,6 +125,20 @@ class _QuietSession extends VolwardSession {
   Future<void> restoreCachedSnapshotIfNeeded() => restoreGate.future;
 }
 
+class _ThrowingRestoreSession extends _QuietSession {
+  @override
+  Future<void> restoreCachedSnapshotIfNeeded() async {
+    throw StateError('restore failed');
+  }
+}
+
+class _ThrowingPreviewSession extends _QuietSession {
+  @override
+  Future<void> previewTarget({int? expectedGeneration}) async {
+    throw StateError('preview failed');
+  }
+}
+
 /// Same constructor args as [AppUpdater.test] — that factory cannot be
 /// forwarded via `super.test()`.
 class _CountingPrefetchUpdater extends AppUpdater {
@@ -302,6 +316,48 @@ void main() {
     expect(prefetchCalls, 0);
     session.restoreGate.complete();
     await tester.pump();
+    await tester.pump();
+    expect(prefetchCalls, 1);
+  });
+
+  testWidgets('restore throw still schedules prefetch once', (tester) async {
+    final session = _ThrowingRestoreSession()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pill-restore-throw.json',
+      )
+      ..defaultRootForTest = (() => '/')
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    var prefetchCalls = 0;
+    final updater = _CountingPrefetchUpdater(onPrefetch: () => prefetchCalls++);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
+    await tester.pump();
+    await tester.pump();
+    expect(prefetchCalls, 1);
+    await tester.pump();
+    expect(prefetchCalls, 1);
+  });
+
+  testWidgets('preview throw still schedules prefetch once', (tester) async {
+    final session = _ThrowingPreviewSession()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pill-preview-throw.json',
+      )
+      ..defaultRootForTest = (() => '/')
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    var prefetchCalls = 0;
+    final updater = _CountingPrefetchUpdater(onPrefetch: () => prefetchCalls++);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_shell(session, themeSettings, updater));
+    await tester.pump();
+    await tester.pump();
+    expect(prefetchCalls, 1);
     await tester.pump();
     expect(prefetchCalls, 1);
   });

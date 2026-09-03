@@ -190,6 +190,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   bool _scanStartPending = false;
   bool _targetPreparationPending = false;
   int _scanStartGeneration = 0;
+  int? _prefetchScheduledGeneration;
 
   // ---------- canonical snapshot cache ----------
   ScanTreeNode? _cachedResolvedTree;
@@ -246,6 +247,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     int generation,
     Completer<bool> gate,
   ) async {
+    var restoreStarted = false;
     try {
       // Preview-first startup: lightweight session state + a validated launch
       // root render immediately, without waiting for the full snapshot/index
@@ -277,6 +279,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         final previewGeneration = session.rootSwitchGeneration;
         await session.previewTarget(expectedGeneration: previewGeneration);
         if (!_isCurrentSession(session, generation)) return;
+        restoreStarted = true;
         unawaited(_restoreCachedSnapshotInBackground(session, generation));
       }
     } catch (error, stackTrace) {
@@ -284,7 +287,12 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
         debugPrint('HomePage startup failed: $error\n$stackTrace');
       }
     } finally {
-      _finishSessionStartup(session, generation, gate);
+      _finishSessionStartup(
+        session,
+        generation,
+        gate,
+        restoreStarted: restoreStarted,
+      );
     }
   }
 
@@ -304,8 +312,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   void _finishSessionStartup(
     VolwardSession session,
     int generation,
-    Completer<bool> gate,
-  ) {
+    Completer<bool> gate, {
+    required bool restoreStarted,
+  }) {
     if (!_isCurrentSession(session, generation)) return;
     if (identical(gate, _startupRootGate) && !gate.isCompleted) {
       gate.complete(true);
@@ -317,7 +326,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     _startupPendingSession = null;
     _startupPendingGeneration = null;
     setState(() {});
-    if ((_homeTargetPath ?? '').isEmpty) {
+    if (!restoreStarted) {
       _scheduleUpdaterPrefetch(session, generation);
     }
   }
@@ -361,6 +370,8 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   void _scheduleUpdaterPrefetch(VolwardSession session, int generation) {
     if (!_isCurrentSession(session, generation)) return;
     if (!widget.themeSettings.autoDownloadUpdates) return;
+    if (_prefetchScheduledGeneration == generation) return;
+    _prefetchScheduledGeneration = generation;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_isCurrentSession(session, generation)) return;
       if (!widget.themeSettings.autoDownloadUpdates) return;
