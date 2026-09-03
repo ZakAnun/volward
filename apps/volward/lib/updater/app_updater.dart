@@ -1,5 +1,6 @@
 // ignore_for_file: prefer_initializing_formals
 
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -60,8 +61,14 @@ class AppUpdater extends ChangeNotifier {
 
   /// Guards against concurrent operations. Each top-level method sets this on
   /// entry and clears it in a finally block. A second call that arrives while
-  /// an operation is already in flight returns early rather than racing.
+  /// an operation is already in flight returns early rather than racing —
+  /// except a user-initiated [check], which waits for the in-flight op then
+  /// runs a fresh check.
   bool _inFlight = false;
+
+  /// Completes when the current in-flight operation finishes. Used by
+  /// user-initiated [check] to wait out a background prefetch before rechecking.
+  Completer<void>? _inFlightDone;
 
   /// True while a downloaded package is waiting and the user has not dismissed
   /// the home-page pill this session.
@@ -81,10 +88,16 @@ class AppUpdater extends ChangeNotifier {
   }
 
   Future<void> check({required bool userInitiated}) async {
-    // Silently skip if an operation is already in flight — a background prefetch
-    // and a manual check could otherwise race and interleave their status writes.
-    if (_inFlight) return;
+    // Background checks no-op while busy. A Settings "Check for updates" waits
+    // for the in-flight op (e.g. prefetch), then performs a fresh check so the
+    // user always gets a current answer.
+    if (_inFlight) {
+      if (!userInitiated) return;
+      await _inFlightDone?.future;
+    }
     _inFlight = true;
+    final done = Completer<void>();
+    _inFlightDone = done;
     try {
       _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
       final local = await localVersion();
@@ -179,6 +192,8 @@ class AppUpdater extends ChangeNotifier {
       );
     } finally {
       _inFlight = false;
+      if (!done.isCompleted) done.complete();
+      if (identical(_inFlightDone, done)) _inFlightDone = null;
     }
   }
 
@@ -201,6 +216,8 @@ class AppUpdater extends ChangeNotifier {
     }
 
     _inFlight = true;
+    final done = Completer<void>();
+    _inFlightDone = done;
     final tempDirectory = _tempDirectoryBuilder();
     try {
       _setStatus(
@@ -253,6 +270,8 @@ class AppUpdater extends ChangeNotifier {
       );
     } finally {
       _inFlight = false;
+      if (!done.isCompleted) done.complete();
+      if (identical(_inFlightDone, done)) _inFlightDone = null;
     }
   }
 
@@ -277,6 +296,8 @@ class AppUpdater extends ChangeNotifier {
       throw StateError('No downloaded update to install');
     }
     _inFlight = true;
+    final done = Completer<void>();
+    _inFlightDone = done;
     try {
       // Re-verify the downloaded file before handing it to the installer.
       // The downloader already checked the hash, but the window between
@@ -317,6 +338,8 @@ class AppUpdater extends ChangeNotifier {
       );
     } finally {
       _inFlight = false;
+      if (!done.isCompleted) done.complete();
+      if (identical(_inFlightDone, done)) _inFlightDone = null;
     }
   }
 
