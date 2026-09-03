@@ -433,7 +433,7 @@ jobs:
             --bundle-dir apps/volward/build/linux/x64/release/bundle \
             --output-dir "$GITHUB_WORKSPACE" \
             --version "${{ steps.version.outputs.version }}" \
-            --icon-source apps/volward/branding/volward-logo.png
+            --icon-source apps/volward/linux/icons/volward.png
 
       - name: Verify Linux AppImage
         env:
@@ -446,7 +446,10 @@ jobs:
           test -x squashfs-root/AppRun
           test -f squashfs-root/volward
           test -f squashfs-root/lib/libvolward_facade.so
-          test -f squashfs-root/volward-logo.png
+          test -f squashfs-root/volward.png
+          test -f squashfs-root/.DirIcon
+          test -f squashfs-root/usr/share/icons/hicolor/256x256/apps/volward.png
+          grep -q 'Icon=volward' squashfs-root/volward.desktop
           rm -rf squashfs-root
 
       - name: Create Linux AppImage checksum
