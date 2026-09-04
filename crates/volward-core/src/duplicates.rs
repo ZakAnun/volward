@@ -346,7 +346,8 @@ mod tests {
     fn index_for(root: &str, files: &[String]) -> SnapshotIndex {
         let mut builder = SnapshotIndexBuilder::new(root);
         for path in files {
-            let size = std::fs::metadata(path).unwrap().len();
+            let metadata = std::fs::metadata(path).unwrap();
+            let size = crate::model::allocated_file_size(&metadata);
             builder.record_file_size(path, size);
         }
         builder.finish(

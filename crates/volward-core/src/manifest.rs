@@ -31,10 +31,19 @@ pub struct ScanManifest {
     pub root: String,
     pub scanned_at_ms: i64,
     pub snapshot_id: String,
+    /// Bumped whenever recorded sizes change meaning (logical → physical
+    /// allocated bytes). Older manifests must not be reused for incremental
+    /// scans, otherwise a snapshot would mix old and new size semantics.
+    #[serde(default)]
+    pub size_accounting: u32,
     #[serde(default)]
     pub snapshot_path: Option<String>,
     pub dir_fingerprints: HashMap<String, DirFingerprint>,
 }
+
+/// Current size accounting format. Incremental caches written by older builds
+/// (default `0`) are rejected and force a full re-scan.
+pub const SIZE_ACCOUNTING_VERSION: u32 = 1;
 
 pub trait ManifestStore {
     fn load(&self, root: &str) -> Option<ScanManifest>;
@@ -154,6 +163,7 @@ mod tests {
             root: root.to_string(),
             scanned_at_ms: 1_700_000_123_456,
             snapshot_id: "snap-001".to_string(),
+            size_accounting: SIZE_ACCOUNTING_VERSION,
             snapshot_path: Some("/tmp/volward/snapshots/snap-001.json".to_string()),
             dir_fingerprints,
         }

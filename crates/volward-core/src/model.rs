@@ -138,12 +138,35 @@ pub struct ScanRoot {
 pub struct RawFsEntry {
     pub path: String,
     pub is_dir: bool,
+    /// On-disk allocated bytes for regular files (du semantics: physical
+    /// blocks, not `st_size`). Directories contribute `0`. Duplicate
+    /// hard-link aliases seen later in a walk also contribute `0` so subtree
+    /// totals stay comparable with volume usage.
     pub size_bytes: u64,
     pub dir_fingerprint: Option<DirFingerprint>,
     /// File modification time in epoch milliseconds, collected during the
     /// walk without reading file contents; `None` for directories or
     /// unavailable metadata.
     pub modified_at_ms: Option<i64>,
+}
+
+/// Physical on-disk size of a file, i.e. allocated blocks rather than the
+/// apparent logical `len()`. Sparse/compressed files and cloud placeholders
+/// can otherwise make logical sums exceed the volume's physical capacity.
+///
+/// `st_blocks` is always in 512-byte units on Unix. Windows exposes no
+/// allocation size through `std`, so it falls back to the logical length
+/// (NTFS compression is intentionally not modelled).
+#[cfg(unix)]
+pub fn allocated_file_size(metadata: &std::fs::Metadata) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    metadata.blocks().saturating_mul(512)
+}
+
+/// Windows fallback: `std` cannot report allocated bytes.
+#[cfg(not(unix))]
+pub fn allocated_file_size(metadata: &std::fs::Metadata) -> u64 {
+    metadata.len()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

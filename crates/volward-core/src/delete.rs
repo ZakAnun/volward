@@ -1,5 +1,5 @@
 use crate::index::SnapshotEntryRecord;
-use crate::model::{DeleteReport, StorageSnapshot, TrashEmptyReport};
+use crate::model::{allocated_file_size, DeleteReport, StorageSnapshot, TrashEmptyReport};
 use crate::platform::{PlatformError, PlatformStorage};
 
 pub struct DeleteOrchestrator;
@@ -158,12 +158,16 @@ impl DeleteOrchestrator {
 /// path must stay inside the user-selected root (rejecting symlink escapes).
 fn revalidate(path: &str, expected_size: u64, root: Option<&str>) -> Result<(), String> {
     let metadata = std::fs::metadata(path).map_err(|error| format!("missing:{error}"))?;
-    // Directory snapshot sizes are recursive aggregates, not metadata.len().
-    if !metadata.is_dir() && expected_size > 0 && metadata.len() != expected_size {
+    // Sizes recorded in snapshots are physical allocated bytes (du
+    // semantics), not logical lengths — compare like for like.
+    if !metadata.is_dir()
+        && expected_size > 0
+        && allocated_file_size(&metadata) != expected_size
+    {
         return Err(format!(
             "size_changed:expected {} got {}",
             expected_size,
-            metadata.len()
+            allocated_file_size(&metadata)
         ));
     }
     if let Some(root) = root {
@@ -288,6 +292,8 @@ mod tests {
         std::fs::write(&cache, vec![0u8; 40]).unwrap();
         let movie = temp.path().join("movie.mov");
         std::fs::write(&movie, vec![0u8; 120]).unwrap();
+        let cache_bytes = allocated_file_size(&std::fs::metadata(&cache).unwrap());
+        let movie_bytes = allocated_file_size(&std::fs::metadata(&movie).unwrap());
         StorageSnapshot {
             snapshot_id: "snap-1".to_string(),
             scanned_at_ms: 0,
@@ -299,20 +305,20 @@ mod tests {
                 name: "tmp".to_string(),
                 path: root.clone(),
                 is_dir: true,
-                size_bytes: 160,
+                size_bytes: cache_bytes + movie_bytes,
                 entry_id: None,
                 children: vec![ScanTreeNode {
                     name: "cache.bin".to_string(),
                     path: format!("{root}/cache.bin"),
                     is_dir: false,
-                    size_bytes: 40,
+                    size_bytes: cache_bytes,
                     entry_id: Some("e1".to_string()),
                     children: vec![],
                 }, ScanTreeNode {
                     name: "movie.mov".to_string(),
                     path: format!("{root}/movie.mov"),
                     is_dir: false,
-                    size_bytes: 120,
+                    size_bytes: movie_bytes,
                     entry_id: Some("e3".to_string()),
                     children: vec![],
                 }],
@@ -332,7 +338,7 @@ mod tests {
                     id: "e1".to_string(),
                     display_name: "cache.bin".to_string(),
                     path_or_uri: format!("{root}/cache.bin"),
-                    size_bytes: 40,
+                    size_bytes: cache_bytes,
                     category: EntryCategory::Cache,
                     risk_level: RiskLevel::Low,
                     source_type: SourceType::File,
@@ -356,7 +362,7 @@ mod tests {
                     id: "e3".to_string(),
                     display_name: "movie.mov".to_string(),
                     path_or_uri: format!("{root}/movie.mov"),
-                    size_bytes: 120,
+                    size_bytes: movie_bytes,
                     category: EntryCategory::Media,
                     risk_level: RiskLevel::High,
                     source_type: SourceType::File,
@@ -366,6 +372,10 @@ mod tests {
                 },
             ],
         }
+    }
+
+    fn written_allocated(path: &std::path::Path) -> u64 {
+        allocated_file_size(&std::fs::metadata(path).unwrap())
     }
 
     #[test]
@@ -381,7 +391,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.deleted_count, 1);
-        assert_eq!(report.freed_bytes, 40);
+        assert_eq!(
+            report.freed_bytes,
+            written_allocated(&temp.path().join("cache.bin"))
+        );
         assert!(platform.trashed.lock().unwrap().is_empty());
     }
 
@@ -394,7 +407,10 @@ mod tests {
             DeleteOrchestrator::delete_entries(&snap, &["e1".to_string()], false, &platform)
                 .unwrap();
         assert_eq!(report.deleted_count, 1);
-        assert_eq!(report.freed_bytes, 40);
+        assert_eq!(
+            report.freed_bytes,
+            written_allocated(&temp.path().join("cache.bin"))
+        );
         assert_eq!(
             *platform.trashed.lock().unwrap(),
             vec![temp.path().join("cache.bin").to_string_lossy().to_string()]
@@ -410,7 +426,10 @@ mod tests {
             DeleteOrchestrator::delete_entries(&snap, &["e3".to_string()], false, &platform)
                 .unwrap();
         assert_eq!(report.deleted_count, 1);
-        assert_eq!(report.freed_bytes, 120);
+        assert_eq!(
+            report.freed_bytes,
+            written_allocated(&temp.path().join("movie.mov"))
+        );
         assert_eq!(
             *platform.trashed.lock().unwrap(),
             vec![temp.path().join("movie.mov").to_string_lossy().to_string()]
@@ -426,13 +445,17 @@ mod tests {
         std::fs::write(&stable, vec![0u8; 10]).unwrap();
         let changed = temp.path().join("changed.bin");
         std::fs::write(&changed, vec![0u8; 10]).unwrap();
-        std::fs::write(&changed, vec![0u8; 99]).unwrap();
+        let changed_scan_time_bytes = written_allocated(&changed);
+        std::fs::write(&changed, vec![0u8; 9000]).unwrap();
         let missing = temp.path().join("missing.bin");
 
         let report = DeleteOrchestrator::delete_explicit_paths(
             vec![
-                (stable.to_string_lossy().to_string(), 10),
-                (changed.to_string_lossy().to_string(), 10),
+                (stable.to_string_lossy().to_string(), written_allocated(&stable)),
+                (
+                    changed.to_string_lossy().to_string(),
+                    changed_scan_time_bytes,
+                ),
                 (missing.to_string_lossy().to_string(), 10),
             ],
             Some(&root),
@@ -467,9 +490,10 @@ mod tests {
         std::fs::write(&outside, vec![0u8; 8]).unwrap();
         let outside_str = outside.to_string_lossy().to_string();
         let root_str = root.to_string_lossy().to_string();
+        let outside_bytes = written_allocated(&outside);
 
         let report = DeleteOrchestrator::delete_explicit_paths(
-            vec![(outside_str.clone(), 8)],
+            vec![(outside_str.clone(), outside_bytes)],
             Some(&root_str),
             true,
             &platform,
@@ -483,7 +507,7 @@ mod tests {
             let link = root.join("escape.link");
             std::os::unix::fs::symlink(&outside, &link).unwrap();
             let report = DeleteOrchestrator::delete_explicit_paths(
-                vec![(link.to_string_lossy().to_string(), 8)],
+                vec![(link.to_string_lossy().to_string(), outside_bytes)],
                 Some(&root_str),
                 true,
                 &platform,
@@ -507,8 +531,8 @@ mod tests {
 
         let report = DeleteOrchestrator::delete_explicit_paths(
             vec![
-                (ok.to_string_lossy().to_string(), 5),
-                (fail_str.clone(), 7),
+                (ok.to_string_lossy().to_string(), written_allocated(&ok)),
+                (fail_str.clone(), written_allocated(&fail)),
             ],
             Some(&root),
             false,

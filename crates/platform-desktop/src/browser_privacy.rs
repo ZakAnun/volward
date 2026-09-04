@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use volward_core::{
+    allocated_file_size,
     group_items_by_direct_child, AnalysisConfidence, AnalysisItem, AnalysisOptions,
     AnalysisPreview, AnalysisSummary, Capability, CapabilityAnalysisError,
     CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityLevel, DeletionPlan, Recommendation,
@@ -220,7 +221,7 @@ fn detect_running(root: &Path) -> bool {
 
 fn dir_size(path: &Path) -> u64 {
     if path.is_file() {
-        return path.metadata().map(|m| m.len()).unwrap_or(0);
+        return path.metadata().map(|m| allocated_file_size(&m)).unwrap_or(0);
     }
     let mut total = 0u64;
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -229,7 +230,7 @@ fn dir_size(path: &Path) -> u64 {
             if path.is_dir() {
                 total = total.saturating_add(dir_size(&path));
             } else if let Ok(metadata) = path.metadata() {
-                total = total.saturating_add(metadata.len());
+                total = total.saturating_add(allocated_file_size(&metadata));
             }
         }
     }
@@ -404,7 +405,11 @@ mod tests {
     #[test]
     fn chrome_profile_reports_categories_bytes_and_running_lock() {
         let temp = TempDir::new().unwrap();
-        write(&temp, "Google/Chrome/User Data/Default/Cache/data_0", &[1u8; 8]);
+        let cache_file = write(
+            &temp,
+            "Google/Chrome/User Data/Default/Cache/data_0",
+            &[1u8; 8],
+        );
         write(&temp, "Google/Chrome/User Data/Default/History", b"h");
         write(&temp, "Google/Chrome/User Data/Default/Login Data", b"pw");
         write(&temp, "Google/Chrome/User Data/SingletonLock", b"");
@@ -416,7 +421,8 @@ mod tests {
         let data = inventory.scan_categories();
 
         let cache = data.iter().find(|d| d.category == "cache").unwrap();
-        assert_eq!(cache.estimated_bytes, 8);
+        let metadata = std::fs::metadata(&cache_file).unwrap();
+        assert_eq!(cache.estimated_bytes, allocated_file_size(&metadata));
         assert!(cache.running);
         let passwords = data.iter().find(|d| d.category == "passwords").unwrap();
         assert!(passwords.excluded);

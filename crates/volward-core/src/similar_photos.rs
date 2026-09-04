@@ -257,7 +257,9 @@ fn read_photo(path: &str) -> PhotoRead {
 }
 
 fn file_size(path: &str) -> u64 {
-    std::fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    std::fs::metadata(path)
+        .map(|metadata| crate::model::allocated_file_size(&metadata))
+        .unwrap_or(0)
 }
 
 fn average_hash(thumbnail: &image::RgbImage) -> u64 {
@@ -488,7 +490,8 @@ mod tests {
     fn index_for(root: &str, files: &[String]) -> SnapshotIndex {
         let mut builder = SnapshotIndexBuilder::new(root);
         for path in files {
-            builder.record_file_size(path, std::fs::metadata(path).unwrap().len());
+            let metadata = std::fs::metadata(path).unwrap();
+            builder.record_file_size(path, crate::model::allocated_file_size(&metadata));
         }
         builder.finish(
             "snapshot-1".to_string(),

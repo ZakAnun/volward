@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jwalk::{DirEntry, Error, Parallelism, WalkDir};
+use volward_core::model::allocated_file_size;
 use volward_core::manifest::DirFingerprint;
 use volward_core::model::TrashEmptyReport;
 use volward_core::model::{
@@ -117,6 +118,25 @@ fn dir_fingerprint_from_read_dir(
         children_count,
         max_child_mtime_secs,
     }
+}
+
+/// Identity of a file for hard-link deduplication (`device, inode`). Only
+/// files with more than one link are tracked: files with `nlink == 1` cannot
+/// have another directory entry pointing at the same inode, so remembering
+/// them would waste memory on large scans.
+#[cfg(unix)]
+fn hardlink_dedup_key(metadata: &std::fs::Metadata) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    if metadata.nlink() > 1 {
+        Some((metadata.dev(), metadata.ino()))
+    } else {
+        None
+    }
+}
+
+#[cfg(not(unix))]
+fn hardlink_dedup_key(_metadata: &std::fs::Metadata) -> Option<(u64, u64)> {
+    None
 }
 
 fn entry_mtime_secs(path: &Path) -> i64 {
@@ -316,6 +336,7 @@ impl PlatformStorage for DesktopPlatform {
     ) -> Result<u64, PlatformError> {
         let mut paths_skipped = 0u64;
         let baseline_fingerprints = options.baseline_fingerprints.cloned().map(Arc::new);
+        let mut seen_hardlinks = HashSet::<(u64, u64)>::new();
         for root in roots {
             if is_cancelled(cancel) {
                 return Err(PlatformError::Cancelled);
@@ -380,7 +401,19 @@ impl PlatformStorage for DesktopPlatform {
                         continue;
                     }
                 };
-                let size_bytes = if is_dir { 0 } else { metadata.len() };
+                let mut size_bytes = 0u64;
+                if !is_dir {
+                    size_bytes = allocated_file_size(&metadata);
+                    if let Some(key) = hardlink_dedup_key(&metadata) {
+                        if !seen_hardlinks.insert(key) {
+                            // Another directory entry already contributed the
+                            // allocated bytes for this inode. Keep the alias
+                            // visible for browsing/deletion but do not count
+                            // its space again in any aggregate.
+                            size_bytes = 0;
+                        }
+                    }
+                }
                 let dir_fingerprint = if is_dir {
                     if let Ok(cache) = dir_fingerprints_cache.lock() {
                         if let Some(cached) = cache.get(&path) {
@@ -534,7 +567,7 @@ impl PlatformStorage for DesktopPlatform {
             out.push(RawFsEntry {
                 path: normalize_path_string(&entry_path.to_string_lossy()),
                 is_dir,
-                size_bytes: if is_dir { 0 } else { metadata.len() },
+                size_bytes: if is_dir { 0 } else { allocated_file_size(&metadata) },
                 dir_fingerprint: None,
                 modified_at_ms: if is_dir {
                     None
@@ -855,7 +888,7 @@ mod tests {
             .any(|warning| warning.contains("Incremental scan reused")));
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        fs::write(root_path.join("Caches/two.bin"), b"modified cache file")
+        fs::write(root_path.join("Caches/two.bin"), vec![0u8; 12_000])
             .expect("modify file inside reused subtree");
         let third = orchestrator
             .run_scan(
@@ -905,7 +938,9 @@ mod tests {
             .find(|e| e.path.ends_with("top.txt"))
             .expect("top.txt listed");
         assert!(!file_entry.is_dir);
-        assert_eq!(file_entry.size_bytes, 5);
+        assert!(file_entry.size_bytes >= 5, "physical size underflows logical");
+        #[cfg(unix)]
+        assert_eq!(file_entry.size_bytes % 512, 0, "sizes are block-aligned");
         let dir_entry = entries
             .iter()
             .find(|e| e.path.ends_with("sub"))
@@ -921,5 +956,50 @@ mod tests {
         let platform = DesktopPlatform::new();
         let result = platform.quick_list_dir("/definitely/does/not/exist/volward-test");
         assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn full_scan_counts_hardlinked_inode_once() {
+        use volward_core::classify::Classifier;
+        use volward_core::model::allocated_file_size;
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let base_path =
+            std::env::temp_dir().join(format!("volward-hardlink-{}-{unique}", std::process::id()));
+        let original = base_path.join("original.bin");
+        let alias_dir = base_path.join("alias");
+        fs::create_dir_all(&alias_dir).expect("mkdir alias dir");
+        fs::write(&original, b"shared content").expect("write original");
+        let alias = alias_dir.join("copy.bin");
+        fs::hard_link(&original, &alias).expect("create hard link");
+
+        let expected_once = allocated_file_size(&fs::metadata(&original).unwrap());
+        let platform = DesktopPlatform::new();
+        let orchestrator = ScanOrchestrator::with_cache_dir(
+            &platform,
+            Classifier::default(),
+            base_path.join("cache"),
+        );
+        let selected = vec![base_path.to_string_lossy().to_string()];
+        let cancel = AtomicBool::new(false);
+        let snapshot = orchestrator
+            .run_scan(
+                "hardlink-scan".to_string(),
+                selected,
+                false,
+                &cancel,
+                |_| {},
+                |_snapshot| {},
+            )
+            .expect("scan should succeed");
+
+        assert_eq!(snapshot.stats.files_seen, 2);
+        assert_eq!(snapshot.tree.size_bytes, expected_once);
+
+        fs::remove_dir_all(&base_path).expect("cleanup");
     }
 }

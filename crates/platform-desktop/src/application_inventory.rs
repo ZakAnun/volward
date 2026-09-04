@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use volward_core::capability_registry::CapabilityProgressSink;
 use volward_core::{
+    allocated_file_size,
     group_items_by_direct_child, AnalysisConfidence, AnalysisItem, AnalysisOptions,
     AnalysisPreview, AnalysisSummary, Capability, CapabilityAnalysisError,
     CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityLevel, DeletionPlan, Recommendation,
@@ -311,7 +312,7 @@ impl CapabilityAnalyzer for ApplicationAnalyzer {
 
 fn dir_size(path: &Path) -> u64 {
     if path.is_file() {
-        return path.metadata().map(|m| m.len()).unwrap_or(0);
+        return path.metadata().map(|m| allocated_file_size(&m)).unwrap_or(0);
     }
     let mut total = 0u64;
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -320,7 +321,7 @@ fn dir_size(path: &Path) -> u64 {
             if path.is_dir() {
                 total = total.saturating_add(dir_size(&path));
             } else if let Ok(metadata) = path.metadata() {
-                total = total.saturating_add(metadata.len());
+                total = total.saturating_add(allocated_file_size(&metadata));
             }
         }
     }

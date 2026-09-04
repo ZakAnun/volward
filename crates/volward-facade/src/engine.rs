@@ -1762,25 +1762,28 @@ mod tests {
             modified_at_ms: None,
         });
         // 250 unclassified siblings fold into one aggregate candidate.
-        let children: Vec<ScanTreeNode> = (0..250)
-            .map(|i| {
-                let path = scratch_root.join(format!("blob_{i}.dat"));
-                std::fs::write(&path, [0u8]).unwrap();
-                ScanTreeNode {
-                    name: format!("blob_{i}.dat"),
-                    path: path.to_string_lossy().to_string(),
-                    is_dir: false,
-                    size_bytes: 1,
-                    entry_id: None,
-                    children: vec![],
-                }
-            })
-            .collect();
+        // Sizes are physical allocated bytes so dry-run deletion can revalidate.
+        let mut children = Vec::with_capacity(250);
+        let mut child_allocated = 0u64;
+        for i in 0..250u32 {
+            let path = scratch_root.join(format!("blob_{i}.dat"));
+            std::fs::write(&path, [0u8]).unwrap();
+            child_allocated =
+                volward_core::model::allocated_file_size(&std::fs::metadata(&path).unwrap());
+            children.push(ScanTreeNode {
+                name: format!("blob_{i}.dat"),
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                size_bytes: child_allocated,
+                entry_id: None,
+                children: vec![],
+            });
+        }
         snapshot.tree.children.push(ScanTreeNode {
             name: "scratch".to_string(),
             path: scratch_root.to_string_lossy().to_string(),
             is_dir: true,
-            size_bytes: 250,
+            size_bytes: child_allocated.saturating_mul(250),
             entry_id: None,
             children,
         });
@@ -1818,7 +1821,11 @@ mod tests {
         let token = candidates[0]["delete_target"].as_str().unwrap().to_string();
         let report = engine.delete_entries_json("test-snap", vec![token], true);
         assert!(report.contains(r#""deleted_count":250"#), "{report}");
-        assert!(report.contains(r#""freed_bytes":250"#), "{report}");
+        let expected_freed = child_allocated.saturating_mul(250);
+        assert!(
+            report.contains(&format!(r#""freed_bytes":{expected_freed}"#)),
+            "{report}"
+        );
     }
 
     #[test]
@@ -1880,12 +1887,14 @@ mod tests {
         let movie = temp.path().join("movie.mov");
         std::fs::write(&movie, vec![0u8; 120]).unwrap();
         let movie_path = movie.to_string_lossy().to_string();
+        let movie_bytes =
+            volward_core::model::allocated_file_size(&std::fs::metadata(&movie).unwrap());
         let mut snapshot = minimal_snapshot();
         snapshot.entries.push(StorageEntry {
             id: "e3".to_string(),
             display_name: "movie.mov".to_string(),
             path_or_uri: movie_path.clone(),
-            size_bytes: 120,
+            size_bytes: movie_bytes,
             category: EntryCategory::Media,
             risk_level: RiskLevel::High,
             source_type: SourceType::File,
@@ -1897,7 +1906,10 @@ mod tests {
 
         let report = engine.delete_entries_json("test-snap", vec!["e3".to_string()], true);
         assert!(report.contains(r#""deleted_count":1"#), "{report}");
-        assert!(report.contains(r#""freed_bytes":120"#), "{report}");
+        assert!(
+            report.contains(&format!(r#""freed_bytes":{movie_bytes}"#)),
+            "{report}"
+        );
         assert!(!report.contains(r#""error""#), "{report}");
         let _ = movie_path;
     }

@@ -120,7 +120,10 @@ impl<'a> ScanOrchestrator<'a> {
         let loaded_manifest = incremental
             .then(|| self.manifest_store.load(root_path))
             .flatten()
-            .filter(|manifest| manifest.root == root_path);
+            .filter(|manifest| {
+                manifest.root == root_path
+                    && manifest.size_accounting == crate::manifest::SIZE_ACCOUNTING_VERSION
+            });
 
         if incremental {
             match &loaded_manifest {
@@ -376,6 +379,7 @@ impl<'a> ScanOrchestrator<'a> {
                     root: root_path.to_string(),
                     scanned_at_ms,
                     snapshot_id: snapshot.snapshot_id.clone(),
+                    size_accounting: crate::manifest::SIZE_ACCOUNTING_VERSION,
                     snapshot_path: None,
                     dir_fingerprints,
                 };
@@ -436,7 +440,10 @@ impl<'a> ScanOrchestrator<'a> {
         let loaded_manifest = incremental
             .then(|| self.manifest_store.load(root_path))
             .flatten()
-            .filter(|manifest| manifest.root == root_path);
+            .filter(|manifest| {
+                manifest.root == root_path
+                    && manifest.size_accounting == crate::manifest::SIZE_ACCOUNTING_VERSION
+            });
 
         if incremental && loaded_manifest.is_none() {
             warnings.push(
@@ -612,6 +619,7 @@ impl<'a> ScanOrchestrator<'a> {
                     root: root_path.to_string(),
                     scanned_at_ms,
                     snapshot_id,
+                    size_accounting: crate::manifest::SIZE_ACCOUNTING_VERSION,
                     snapshot_path: None,
                     dir_fingerprints,
                 };
