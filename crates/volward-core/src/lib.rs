@@ -1,5 +1,6 @@
 pub mod ai_analysis;
 pub mod ai_candidates;
+pub mod ai_coverage;
 pub mod os_knowledge;
 pub mod classify;
 pub mod capability;
@@ -35,6 +36,7 @@ pub use ai_candidates::{
     AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,
     DEFAULT_CANDIDATE_CAP, DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
 };
+pub use ai_coverage::{AiCoveragePlan, AiCoverageRow, AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION};
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;
 pub use delete::DeleteOrchestrator;

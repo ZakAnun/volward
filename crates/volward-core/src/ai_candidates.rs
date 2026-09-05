@@ -12,6 +12,62 @@ pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
 pub const DEFAULT_PRECLASSIFIED_CAP: usize = 200;
 pub const AI_AGGREGATE_DELETE_TARGET_PREFIX: &str = "volward-ai-aggregate:v1:";
 
+/// App-specific AI tool roots used by `ai_cleanup_hint_for_path` and by the
+/// full-coverage group rule.
+pub(crate) const AI_TOOL_APP_ROOT_PATTERNS: &[&str] = &[
+    "/library/application support/cursor/",
+    "/library/application support/windsurf/",
+    "/library/application support/claude/",
+    "/library/application support/codex/",
+    "/library/caches/cursor/",
+    "/library/caches/windsurf/",
+    "/library/caches/claude/",
+    "/library/caches/codex/",
+    "/appdata/roaming/cursor/",
+    "/appdata/roaming/windsurf/",
+    "/appdata/roaming/claude/",
+    "/appdata/roaming/codex/",
+    "/appdata/local/cursor/",
+    "/appdata/local/windsurf/",
+    "/appdata/local/claude/",
+    "/appdata/local/codex/",
+    "/.config/cursor/",
+    "/.config/windsurf/",
+    "/.config/claude/",
+    "/.config/codex/",
+    "/.cache/cursor/",
+    "/.cache/windsurf/",
+    "/.cache/claude/",
+    "/.cache/codex/",
+];
+
+/// Hidden AI tool working directories; only meaningful together with a
+/// cache/temp segment (checked by `ai_cleanup_hint_for_path`).
+pub(crate) const AI_TOOL_HIDDEN_MARKERS: &[&str] =
+    &["/.cursor/", "/.claude/", "/.codex/", "/.windsurf/"];
+
+/// Returns the concrete tool root directory for `path` (for example
+/// `/Users/x/Library/Caches/Cursor`), so a whole tool cache tree folds into
+/// one group candidate. Case-insensitive; only ASCII case folding is used so
+/// byte indexes stay aligned with the original path.
+pub(crate) fn ai_tool_group_root(path: &str) -> Option<String> {
+    let normalized = path.replace('\\', "/");
+    let lower = normalized.to_ascii_lowercase();
+    let mut best_end = None;
+    for marker in AI_TOOL_APP_ROOT_PATTERNS
+        .iter()
+        .chain(AI_TOOL_HIDDEN_MARKERS.iter())
+    {
+        if let Some(idx) = lower.find(marker) {
+            let end = idx + marker.trim_end_matches('/').len();
+            if end < normalized.len() && best_end.map_or(true, |current: usize| end > current) {
+                best_end = Some(end);
+            }
+        }
+    }
+    best_end.map(|end| normalized[..end].to_string())
+}
+
 pub fn ai_aggregate_delete_target(path: &str) -> String {
     format!("{AI_AGGREGATE_DELETE_TARGET_PREFIX}{path}")
 }
@@ -332,34 +388,9 @@ pub(crate) fn ai_cleanup_hint_for_path(path: &str) -> Option<AiCleanupHint> {
         || lower.contains("/.windsurf/")
         || lower.contains("/.claude/")
         || lower.contains("/.codex/");
-    let known_ai_tool_app_root = [
-        "/library/application support/cursor/",
-        "/library/application support/windsurf/",
-        "/library/application support/claude/",
-        "/library/application support/codex/",
-        "/library/caches/cursor/",
-        "/library/caches/windsurf/",
-        "/library/caches/claude/",
-        "/library/caches/codex/",
-        "/appdata/roaming/cursor/",
-        "/appdata/roaming/windsurf/",
-        "/appdata/roaming/claude/",
-        "/appdata/roaming/codex/",
-        "/appdata/local/cursor/",
-        "/appdata/local/windsurf/",
-        "/appdata/local/claude/",
-        "/appdata/local/codex/",
-        "/.config/cursor/",
-        "/.config/windsurf/",
-        "/.config/claude/",
-        "/.config/codex/",
-        "/.cache/cursor/",
-        "/.cache/windsurf/",
-        "/.cache/claude/",
-        "/.cache/codex/",
-    ]
-    .iter()
-    .any(|root| lower.contains(root));
+    let known_ai_tool_app_root = AI_TOOL_APP_ROOT_PATTERNS
+        .iter()
+        .any(|root| lower.contains(root));
     if (hidden_ai_tool || known_ai_tool_app_root)
         && (lower.contains("/cache/")
             || lower.contains("/caches/")
