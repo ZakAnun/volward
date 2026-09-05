@@ -36,7 +36,10 @@ pub use ai_candidates::{
     AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,
     DEFAULT_CANDIDATE_CAP, DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
 };
-pub use ai_coverage::{AiCoveragePlan, AiCoverageRow, AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION};
+pub use ai_coverage::{
+    build_ai_coverage_plan, coverage_group_member_paths, AiCoveragePlan, AiCoverageRow,
+    AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION,
+};
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;
 pub use delete::DeleteOrchestrator;
