@@ -5,7 +5,7 @@ import 'package:volward/ai/coverage_models.dart';
 void main() {
   test('FakeCoverageEngine pages rows by cursor', () async {
     final engine = FakeCoverageEngine(
-      summary: CoveragePlanSummary(
+      summary: const CoveragePlanSummary(
         snapshotId: 's1',
         planVersion: 1,
         rootPath: '/',
@@ -16,11 +16,11 @@ void main() {
         estimatedPages: 1,
       ),
       pages: [
-        CoveragePage(
+        const CoveragePage(
           snapshotId: 's1',
           planVersion: 1,
           nextCursor: null,
-          rows: const [
+          rows: [
             CoverageRow(
               rowIndex: 0,
               kind: CoverageRowKind.file,

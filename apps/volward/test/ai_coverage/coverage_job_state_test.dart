@@ -7,7 +7,7 @@ void main() {
   test('state round trips through store with temp rename', () async {
     final dir = await Directory.systemTemp.createTemp('coverage-job-');
     final store = CoverageJobStateStore(dir);
-    final state = CoverageJobState(
+    const state = CoverageJobState(
       snapshotId: 's1',
       rootPath: '/Users/x',
       planVersion: 1,

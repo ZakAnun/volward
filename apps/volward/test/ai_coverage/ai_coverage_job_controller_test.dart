@@ -33,7 +33,7 @@ void main() {
       ),
     );
     final engine = FakeCoverageEngine(
-      summary: CoveragePlanSummary(
+      summary: const CoveragePlanSummary(
         snapshotId: 's1',
         planVersion: 1,
         rootPath: '/',
@@ -107,7 +107,7 @@ void main() {
       ),
     );
     final engine = FakeCoverageEngine(
-      summary: CoveragePlanSummary(
+      summary: const CoveragePlanSummary(
         snapshotId: 's2',
         planVersion: 1,
         rootPath: '/',
