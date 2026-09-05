@@ -60,7 +60,7 @@ pub(crate) fn ai_tool_group_root(path: &str) -> Option<String> {
     {
         if let Some(idx) = lower.find(marker) {
             let end = idx + marker.trim_end_matches('/').len();
-            if end < normalized.len() && best_end.map_or(true, |current: usize| end > current) {
+            if end < normalized.len() && best_end.is_none_or(|current: usize| end > current) {
                 best_end = Some(end);
             }
         }
