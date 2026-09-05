@@ -123,26 +123,33 @@ class CoverageJobController {
       var guard = _state;
       if (guard == null) return;
       final snapshotId = guard.snapshotId;
-      if (guard.totalUnclassified == 0) {
-        final plan = await engine.buildPlan(snapshotId);
-        guard = _state = CoverageJobState(
-          snapshotId: plan.snapshotId,
-          rootPath: plan.rootPath,
-          planVersion: plan.planVersion,
-          cursor: guard.cursor,
-          totalUnclassified: plan.totalUnclassified,
-          analyzedFiles: guard.analyzedFiles,
-          preClassifiedCount: plan.preClassifiedCount,
-          status: CoverageJobStatus.running,
-          usedTokens: guard.usedTokens,
-          usedCredits: guard.usedCredits,
-          budgetTokens: guard.budgetTokens,
-          budgetCredits: guard.budgetCredits,
-          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-        );
-        await stateStore.save(_state!);
-        _emit();
+
+      final plan = await engine.buildPlan(snapshotId);
+      if (plan.snapshotId != snapshotId) {
+        await _pause(CoveragePauseReason.failed);
+        return;
       }
+      if (guard.cursor > 0 && guard.planVersion != plan.planVersion) {
+        await _pause(CoveragePauseReason.failed);
+        return;
+      }
+      guard = _state = CoverageJobState(
+        snapshotId: plan.snapshotId,
+        rootPath: plan.rootPath,
+        planVersion: plan.planVersion,
+        cursor: guard.cursor,
+        totalUnclassified: plan.totalUnclassified,
+        analyzedFiles: guard.analyzedFiles,
+        preClassifiedCount: plan.preClassifiedCount,
+        status: CoverageJobStatus.running,
+        usedTokens: guard.usedTokens,
+        usedCredits: guard.usedCredits,
+        budgetTokens: guard.budgetTokens,
+        budgetCredits: guard.budgetCredits,
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      await stateStore.save(_state!);
+      _emit();
 
       while (!_pauseRequested && _state != null) {
         final state = _state!;
@@ -190,6 +197,8 @@ class CoverageJobController {
           return;
         }
       }
+    } catch (_) {
+      await _pause(CoveragePauseReason.failed);
     } finally {
       _running = false;
     }

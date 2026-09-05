@@ -161,4 +161,75 @@ void main() {
     expect(paused.status, CoverageJobStatus.paused);
     expect(paused.pauseReason, CoveragePauseReason.budget);
   });
+
+  test('resume rebuilds plan when continuing a paused job', () async {
+    var buildPlanCalls = 0;
+    final rows = List.generate(
+      80,
+      (i) => CoverageRow(
+        rowIndex: i,
+        kind: CoverageRowKind.file,
+        path: '/f$i',
+        sizeBytes: 1,
+      ),
+    );
+    final engine = FakeCoverageEngine(
+      onBuildPlan: () => buildPlanCalls++,
+      summary: const CoveragePlanSummary(
+        snapshotId: 's3',
+        planVersion: 1,
+        rootPath: '/',
+        totalUnclassified: 80,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 80,
+        estimatedPages: 2,
+      ),
+      pages: [
+        CoveragePage(
+          snapshotId: 's3',
+          planVersion: 1,
+          nextCursor: 40,
+          rows: rows.sublist(0, 40),
+        ),
+        CoveragePage(
+          snapshotId: 's3',
+          planVersion: 1,
+          nextCursor: null,
+          rows: rows.sublist(40),
+        ),
+      ],
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      analyzeBatch: (batch) async => BatchOutcome(
+        usage: BatchUsage(tokens: batch.length * 100, credits: 0),
+        verdicts: batch
+            .map(
+              (r) => CoverageVerdict(
+                path: r.path,
+                verdict: 'keep',
+                confidence: 'high',
+                reason: 'test',
+                coverageSource: 'file',
+                sizeBytes: r.sizeBytes,
+              ),
+            )
+            .toList(),
+      ),
+    );
+
+    final paused = await controller.start(
+      's3',
+      budgetTokens: 3000,
+      budgetCredits: 0,
+    );
+    expect(paused.status, CoverageJobStatus.paused);
+    expect(buildPlanCalls, 1);
+
+    await controller.resume();
+    expect(buildPlanCalls, greaterThanOrEqualTo(2));
+  });
 }

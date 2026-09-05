@@ -33,8 +33,11 @@ void main() {
         VolwardLoadIndexFromPath,
         VolwardWriteLastIndexToPath,
         VolwardIndexVersion,
+        VolwardAiBuildCoveragePlanJson,
+        VolwardAiNextCoveragePageJson,
+        VolwardAiResolveCoverageGroupJson,
       ].map((t) => t.toString()).toList();
-      expect(checkTypes.length, 5);
+      expect(checkTypes.length, 8);
     });
   });
 }

@@ -16,14 +16,19 @@ class FakeCoverageEngine implements CoverageEngine {
     required this.summary,
     required this.pages,
     this.groupMembers = const [],
+    this.onBuildPlan,
   });
 
   final CoveragePlanSummary summary;
   final List<CoveragePage> pages;
   final List<Map<String, dynamic>> groupMembers;
+  final void Function()? onBuildPlan;
 
   @override
-  Future<CoveragePlanSummary> buildPlan(String snapshotId) async => summary;
+  Future<CoveragePlanSummary> buildPlan(String snapshotId) async {
+    onBuildPlan?.call();
+    return summary;
+  }
 
   @override
   Future<CoveragePage> nextPage(
