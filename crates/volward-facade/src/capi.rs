@@ -367,6 +367,52 @@ pub unsafe extern "C" fn volward_ai_get_candidates_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_coverage_plan_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.build_ai_coverage_plan_json(&snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_next_coverage_page_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    plan_version: u64,
+    cursor: u64,
+    page_size: u32,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.next_ai_coverage_page_json(
+        &snapshot_id,
+        plan_version,
+        cursor,
+        page_size,
+    ))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_resolve_coverage_group_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    group_path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    let group_path = cstr_to_string(group_path).unwrap_or_default();
+    to_c_string(e.resolve_ai_coverage_group_json(&snapshot_id, &group_path))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_ai_save_result_json(
     engine: *mut VolwardEngine,
     snapshot_id: *const c_char,
@@ -785,5 +831,60 @@ mod ai_contract_tests {
     #[test]
     fn batch_size_matches_crate_constant() {
         assert_eq!(unsafe { volward_ai_batch_size() } as usize, volward_ai::BATCH_SIZE);
+    }
+
+    #[test]
+    fn coverage_ffi_round_trips_summary_page_and_group() {
+        use crate::engine::VolwardEngine;
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let mut engine = VolwardEngine::new();
+        let mut builder = SnapshotIndexBuilder::new("/Users/x");
+        for i in 0..90 {
+            builder.record_file_size(
+                &format!("/Users/x/Library/Caches/cursor/f{i}.bin"),
+                (i + 1) as u64,
+            );
+        }
+        let index = builder.finish(
+            "ffi-coverage".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let summary = unsafe {
+            take(volward_ai_build_coverage_plan_json(
+                &mut engine as *mut VolwardEngine,
+                c"ffi-coverage".as_ptr(),
+            ))
+        };
+        assert!(summary.contains(r#""total_unclassified":90"#), "{summary}");
+
+        let page = unsafe {
+            take(volward_ai_next_coverage_page_json(
+                &mut engine as *mut VolwardEngine,
+                c"ffi-coverage".as_ptr(),
+                1,
+                0,
+                40,
+            ))
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&page).unwrap();
+        assert_eq!(parsed["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["next_cursor"], serde_json::Value::Null);
+
+        let group = unsafe {
+            take(volward_ai_resolve_coverage_group_json(
+                &mut engine as *mut VolwardEngine,
+                c"ffi-coverage".as_ptr(),
+                c"/Users/x/Library/Caches/cursor".as_ptr(),
+            ))
+        };
+        let parsed_group: serde_json::Value = serde_json::from_str(&group).unwrap();
+        assert_eq!(parsed_group["members"].as_array().unwrap().len(), 90);
     }
 }
