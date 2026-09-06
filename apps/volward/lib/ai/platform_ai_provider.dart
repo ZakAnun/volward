@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'ai_provider.dart';
+import 'cancel_token.dart';
 import 'platform_auth_store.dart';
 
 const _kPlatformTimeout = Duration(seconds: 300);
@@ -13,27 +14,47 @@ class PlatformAiProvider implements AiProvider {
     http.Client? client,
     String? baseUrl,
     this.requestTimeout = _kPlatformTimeout,
-  }) : _client = client ?? http.Client(),
-       _ownsClient = client == null,
+  }) : _ownsClient = client == null,
+       _client = client ?? http.Client(),
        baseUrl = baseUrl ?? PlatformAuthStore.defaultBaseUrl;
 
   final String token;
   final String baseUrl;
   final Duration requestTimeout;
-  final http.Client _client;
   final bool _ownsClient;
+  http.Client _client;
+  bool _clientClosed = false;
 
   int lastCreditsUsed = 0;
   int? lastCreditsRemaining;
 
   void dispose() {
-    if (_ownsClient) _client.close();
+    if (_ownsClient) {
+      try {
+        _client.close();
+      } catch (_) {}
+    }
+  }
+
+  http.Client _ensureClient() {
+    if (_clientClosed) {
+      _client = http.Client();
+      _clientClosed = false;
+    }
+    return _client;
+  }
+
+  void _abortClient() {
+    _clientClosed = true;
+    try {
+      _client.close();
+    } catch (_) {}
   }
 
   @override
   Future<AiQuotaInfo?> queryQuota() async {
     _ensureConfigured();
-    final res = await _client
+    final res = await _ensureClient()
         .get(
           Uri.parse('$baseUrl/ai/quota'),
           headers: {'Authorization': 'Bearer $token'},
@@ -51,8 +72,15 @@ class PlatformAiProvider implements AiProvider {
   }
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     _ensureConfigured();
+    cancelToken?.whenCancelled.then((_) => _abortClient());
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CoverageCancelledException();
+    }
     final payload = {
       'candidates': candidates
           .map(
@@ -73,16 +101,24 @@ class PlatformAiProvider implements AiProvider {
           .toList(),
     };
 
-    final res = await _client
-        .post(
-          Uri.parse('$baseUrl/ai/analyze'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode(payload),
-        )
-        .timeout(requestTimeout);
+    final http.Response res;
+    try {
+      res = await _ensureClient()
+          .post(
+            Uri.parse('$baseUrl/ai/analyze'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(requestTimeout);
+    } on http.ClientException {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CoverageCancelledException();
+      }
+      rethrow;
+    }
 
     await _mapErrorStatus(res.statusCode);
     if (res.statusCode != 200) {
@@ -96,10 +132,11 @@ class PlatformAiProvider implements AiProvider {
     if (entries is! List) {
       throw Exception('api_error:bad_entries');
     }
-    return entries
+    final verdicts = entries
         .whereType<Map>()
         .map((e) => AiVerdict.fromJson(Map<String, dynamic>.from(e)))
         .toList();
+    return AnalyzeResult(verdicts: verdicts, credits: lastCreditsUsed);
   }
 
   void _ensureConfigured() {

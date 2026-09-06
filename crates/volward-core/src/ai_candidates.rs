@@ -353,6 +353,7 @@ impl AiCandidateBuilder {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct AiCleanupHint {
     pub(crate) source: &'static str,
     pub(crate) hint: &'static str,

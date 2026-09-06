@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'coverage_models.dart';
+
 enum CoverageJobStatus { idle, running, paused, completed, cancelled }
 
 enum CoveragePauseReason { manual, budget, failed, appQuit }
@@ -21,6 +23,7 @@ class CoverageJobState {
     required this.budgetTokens,
     required this.budgetCredits,
     required this.updatedAtMs,
+    this.fingerprint,
   });
 
   factory CoverageJobState.fromJson(Map<String, dynamic> json) =>
@@ -44,6 +47,11 @@ class CoverageJobState {
         budgetTokens: (json['budget_tokens'] as num?)?.toInt() ?? 0,
         budgetCredits: (json['budget_credits'] as num?)?.toInt() ?? 0,
         updatedAtMs: (json['updated_at_ms'] as num?)?.toInt() ?? 0,
+        fingerprint: json['fingerprint'] is Map
+            ? CoverageSnapshotFingerprint.fromJson(
+                Map<String, dynamic>.from(json['fingerprint'] as Map),
+              )
+            : null,
       );
 
   final String snapshotId;
@@ -60,6 +68,7 @@ class CoverageJobState {
   final int budgetTokens;
   final int budgetCredits;
   final int updatedAtMs;
+  final CoverageSnapshotFingerprint? fingerprint;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -71,6 +80,7 @@ class CoverageJobState {
     int? budgetTokens,
     int? budgetCredits,
     int? updatedAtMs,
+    CoverageSnapshotFingerprint? fingerprint,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -86,6 +96,7 @@ class CoverageJobState {
     budgetTokens: budgetTokens ?? this.budgetTokens,
     budgetCredits: budgetCredits ?? this.budgetCredits,
     updatedAtMs: updatedAtMs ?? DateTime.now().millisecondsSinceEpoch,
+    fingerprint: fingerprint ?? this.fingerprint,
   );
 
   Map<String, dynamic> toJson() => {
@@ -103,6 +114,7 @@ class CoverageJobState {
     'budget_tokens': budgetTokens,
     'budget_credits': budgetCredits,
     'updated_at_ms': updatedAtMs,
+    if (fingerprint != null) 'fingerprint': fingerprint!.toJson(),
   };
 }
 

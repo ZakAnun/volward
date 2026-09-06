@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::index::SnapshotIndex;
+use crate::model::ScanStats;
 use crate::os_knowledge::OsKnowledgeBase;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -20,6 +21,12 @@ pub struct AiCoverageRow {
     pub size_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cleanup_source: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cleanup_hint: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
 }
 
 pub const AI_COVERAGE_PLAN_VERSION: u64 = 1;
@@ -29,6 +36,9 @@ pub struct AiCoveragePlan {
     pub plan_version: u64,
     pub snapshot_id: String,
     pub root_path: String,
+    pub root_size_bytes: u64,
+    pub scanned_at_ms: i64,
+    pub stats: ScanStats,
     pub total_unclassified: u64,
     pub pre_classified_count: u64,
     pub group_rows: u64,
@@ -53,13 +63,21 @@ impl AiCoveragePlan {
 }
 
 fn group_key_for_path(path: &str) -> Option<String> {
+    group_key_and_hint(path).0
+}
+
+fn group_key_and_hint(path: &str) -> (Option<String>, Option<crate::ai_candidates::AiCleanupHint>) {
     let normalized = path.replace('\\', "/");
-    let hint = crate::ai_candidates::ai_cleanup_hint_for_path(&normalized)?;
-    match hint.source {
-        "system_temp" => parent_dir(&normalized),
-        "ai_tool_cache" => crate::ai_candidates::ai_tool_group_root(&normalized),
-        _ => None,
-    }
+    let hint = crate::ai_candidates::ai_cleanup_hint_for_path(&normalized);
+    let group = match &hint {
+        Some(h) => match h.source {
+            "system_temp" => parent_dir(&normalized),
+            "ai_tool_cache" => crate::ai_candidates::ai_tool_group_root(&normalized),
+            _ => None,
+        },
+        None => None,
+    };
+    (group, hint)
 }
 
 fn parent_dir(path: &str) -> Option<String> {
@@ -78,7 +96,9 @@ pub fn build_ai_coverage_plan(index: &SnapshotIndex, kb: &OsKnowledgeBase) -> Ai
     let classified = index.classified_paths();
     let mut group_sizes: HashMap<String, u64> = HashMap::new();
     let mut group_counts: HashMap<String, u64> = HashMap::new();
-    let mut file_rows = Vec::<(String, u64)>::new();
+    let mut group_hints: HashMap<String, crate::ai_candidates::AiCleanupHint> = HashMap::new();
+    let mut file_rows: Vec<(String, u64, Option<crate::ai_candidates::AiCleanupHint>)> =
+        Vec::new();
     let mut pre_classified_count = 0u64;
 
     for (path, size_bytes) in index.unclassified_files() {
@@ -89,32 +109,43 @@ pub fn build_ai_coverage_plan(index: &SnapshotIndex, kb: &OsKnowledgeBase) -> Ai
             pre_classified_count += 1;
             continue;
         }
-        if let Some(group) = group_key_for_path(&path) {
+        let (group, hint) = group_key_and_hint(&path);
+        if let Some(group) = group {
             *group_sizes.entry(group.clone()).or_insert(0) += size_bytes;
-            *group_counts.entry(group).or_insert(0) += 1;
+            *group_counts.entry(group.clone()).or_insert(0) += 1;
+            if let Some(hint) = hint {
+                group_hints.entry(group).or_insert(hint);
+            }
         } else {
-            file_rows.push((path, size_bytes));
+            file_rows.push((path, size_bytes, hint));
         }
     }
 
     let mut rows = Vec::with_capacity(group_sizes.len() + file_rows.len());
     for (path, size_bytes) in group_sizes {
         let member_count = group_counts.remove(&path).unwrap_or(0);
+        let hint = group_hints.get(&path).copied();
         rows.push(AiCoverageRow {
             row_index: 0,
             kind: AiCoverageRowKind::Group,
             path,
             size_bytes,
             member_count: Some(member_count),
+            cleanup_source: hint.map(|h| h.source),
+            cleanup_hint: hint.map(|h| h.hint),
+            retention_days: hint.map(|h| h.retention_days),
         });
     }
-    for (path, size_bytes) in file_rows {
+    for (path, size_bytes, hint) in file_rows {
         rows.push(AiCoverageRow {
             row_index: 0,
             kind: AiCoverageRowKind::File,
             path,
             size_bytes,
             member_count: None,
+            cleanup_source: hint.map(|h| h.source),
+            cleanup_hint: hint.map(|h| h.hint),
+            retention_days: hint.map(|h| h.retention_days),
         });
     }
     rows.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
@@ -136,6 +167,9 @@ pub fn build_ai_coverage_plan(index: &SnapshotIndex, kb: &OsKnowledgeBase) -> Ai
         plan_version: AI_COVERAGE_PLAN_VERSION,
         snapshot_id: index.snapshot_id.clone(),
         root_path: index.root_path.clone(),
+        root_size_bytes: index.summary().root_size_bytes,
+        scanned_at_ms: index.scanned_at_ms,
+        stats: index.stats.clone(),
         total_unclassified,
         pre_classified_count,
         group_rows,
@@ -214,6 +248,47 @@ mod tests {
     }
 
     #[test]
+    fn plan_attaches_cleanup_hints_to_group_and_ai_output_rows() {
+        let root = "/Users/x";
+        let files = [
+            (
+                "/Users/x/Library/Application Support/Cursor/CachedData/blob",
+                100u64,
+            ),
+            ("/Users/x/projects/llm-output/out.md", 50u64),
+            ("/Users/x/Documents/report.txt", 10u64),
+        ];
+        let index = build_index(root, &files);
+        let plan = build_ai_coverage_plan(&index, &kb_empty());
+
+        let group = plan
+            .rows
+            .iter()
+            .find(|r| r.kind == AiCoverageRowKind::Group)
+            .expect("cursor group");
+        assert_eq!(group.cleanup_source, Some("ai_tool_cache"));
+        assert_eq!(group.retention_days, Some(30));
+        assert!(group.cleanup_hint.is_some());
+
+        let ai_output = plan
+            .rows
+            .iter()
+            .find(|r| r.path.ends_with("out.md"))
+            .expect("ai output file");
+        assert_eq!(ai_output.kind, AiCoverageRowKind::File);
+        assert_eq!(ai_output.cleanup_source, Some("ai_generated_output"));
+        assert_eq!(ai_output.retention_days, Some(90));
+
+        let plain = plan
+            .rows
+            .iter()
+            .find(|r| r.path.ends_with("report.txt"))
+            .expect("plain file");
+        assert_eq!(plain.cleanup_source, None);
+        assert_eq!(plain.retention_days, None);
+    }
+
+    #[test]
     fn plan_skips_kb_preclassified_files_and_counts_them() {
         let root = "/Users/x";
         let yaml = include_str!("../../../rules/os_knowledge.yaml");
@@ -283,12 +358,18 @@ mod tests {
                 path: format!("/f{i}"),
                 size_bytes: 10,
                 member_count: None,
+                cleanup_source: None,
+                cleanup_hint: None,
+                retention_days: None,
             })
             .collect();
         let plan = AiCoveragePlan {
             plan_version: AI_COVERAGE_PLAN_VERSION,
             snapshot_id: "s".to_string(),
             root_path: "/".to_string(),
+            root_size_bytes: 0,
+            scanned_at_ms: 0,
+            stats: ScanStats::default(),
             total_unclassified: 5,
             pre_classified_count: 0,
             group_rows: 0,
@@ -313,6 +394,9 @@ mod tests {
             plan_version: AI_COVERAGE_PLAN_VERSION,
             snapshot_id: "s".to_string(),
             root_path: "/".to_string(),
+            root_size_bytes: 0,
+            scanned_at_ms: 0,
+            stats: ScanStats::default(),
             total_unclassified: 0,
             pre_classified_count: 0,
             group_rows: 0,

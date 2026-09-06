@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/capabilities/capability_models.dart';
@@ -199,7 +200,10 @@ class _HomeResultProvider implements AiProvider {
   final Future<List<AiVerdict>> analysis;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) => analysis;
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async => AnalyzeResult(verdicts: await analysis);
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
@@ -212,14 +216,17 @@ class _HomePendingByokProvider extends ByokAiProvider {
   final Future<List<AiVerdict>> analysis;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     final verdicts = await analysis;
     lastTokenUsage = const ByokTokenUsage(
       promptTokens: 12,
       completionTokens: 3,
       totalTokens: 15,
     );
-    return verdicts;
+    return AnalyzeResult(verdicts: verdicts);
   }
 }
 

@@ -1279,6 +1279,186 @@ abstract class AppLocalizations {
   /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
   String aiTruncatedNotice(int shown, int total);
 
+  /// No description provided for @aiCoverageProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage: {analyzed} / {total} files analyzed'**
+  String aiCoverageProgress(int analyzed, int total);
+
+  /// No description provided for @aiCoverageFullRunHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-coverage analysis runs in the background until every unclassified file has a verdict.'**
+  String get aiCoverageFullRunHint;
+
+  /// No description provided for @aiCoveragePause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause coverage'**
+  String get aiCoveragePause;
+
+  /// No description provided for @aiCoverageResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume coverage'**
+  String get aiCoverageResume;
+
+  /// No description provided for @aiCoverageCompletedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This scan is fully covered by AI analysis.'**
+  String get aiCoverageCompletedNotice;
+
+  /// No description provided for @aiCoverageUnanalyzedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files not yet analyzed'**
+  String aiCoverageUnanalyzedCount(int count);
+
+  /// No description provided for @aiCoverageSourceStats.
+  ///
+  /// In en, this message translates to:
+  /// **'{file} per-file · {group} directory-level · {local} local pre-classified'**
+  String aiCoverageSourceStats(int file, int group, int local);
+
+  /// No description provided for @aiCoverageBudgetPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused at budget ({used}/{budget}). Resume below or raise the limit in Settings.'**
+  String aiCoverageBudgetPaused(int used, int budget);
+
+  /// No description provided for @aiCoverageLegacyResultNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing a previous Top-150 result. Start full coverage for complete analysis.'**
+  String get aiCoverageLegacyResultNotice;
+
+  /// No description provided for @aiCoverageUnanalyzedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for AI coverage analysis'**
+  String get aiCoverageUnanalyzedReason;
+
+  /// No description provided for @aiCoverageUnanalyzedAggregate.
+  ///
+  /// In en, this message translates to:
+  /// **'Plus {count} more files awaiting analysis'**
+  String aiCoverageUnanalyzedAggregate(int count);
+
+  /// No description provided for @aiCoverageCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop coverage'**
+  String get aiCoverageCancel;
+
+  /// No description provided for @aiCoverageRaiseBudget.
+  ///
+  /// In en, this message translates to:
+  /// **'Raise limit & resume'**
+  String get aiCoverageRaiseBudget;
+
+  /// No description provided for @aiCoverageRaiseBudgetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Raise coverage budget'**
+  String get aiCoverageRaiseBudgetTitle;
+
+  /// No description provided for @aiCoverageNotifyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Volward AI'**
+  String get aiCoverageNotifyTitle;
+
+  /// No description provided for @aiCoverageNotifyComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage complete: {analyzed}/{total} files analyzed.'**
+  String aiCoverageNotifyComplete(int analyzed, int total);
+
+  /// No description provided for @aiCoverageNotifyBudgetPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage paused at budget: {analyzed}/{total} analyzed.'**
+  String aiCoverageNotifyBudgetPaused(int analyzed, int total);
+
+  /// No description provided for @aiCoverageNotifyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage paused due to an error. Open AI results to retry.'**
+  String get aiCoverageNotifyFailed;
+
+  /// No description provided for @aiCoverageBudgetInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a budget higher than the current limit.'**
+  String get aiCoverageBudgetInvalid;
+
+  /// No description provided for @aiCoverageHydrating.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading coverage job status…'**
+  String get aiCoverageHydrating;
+
+  /// No description provided for @aiCoverageUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-coverage analysis is unavailable right now. Try again after the scan finishes loading.'**
+  String get aiCoverageUnavailable;
+
+  /// No description provided for @aiCoverageBusyOtherSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Another scan is running full-coverage analysis. Wait for it to finish or pause it first.'**
+  String get aiCoverageBusyOtherSnapshot;
+
+  /// No description provided for @aiCoveragePlatformBudgetWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Platform balance ({available}) is below the full-run budget ({budget}). Analysis may pause early.'**
+  String aiCoveragePlatformBudgetWarning(int available, int budget);
+
+  /// No description provided for @aiSettingsCoverageBudgetInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a positive number.'**
+  String get aiSettingsCoverageBudgetInvalid;
+
+  /// No description provided for @aiSettingsCoverageBudgetTokensLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-coverage token budget (BYOK)'**
+  String get aiSettingsCoverageBudgetTokensLabel;
+
+  /// No description provided for @aiSettingsCoverageBudgetTokensHint.
+  ///
+  /// In en, this message translates to:
+  /// **'500000'**
+  String get aiSettingsCoverageBudgetTokensHint;
+
+  /// No description provided for @aiSettingsCoverageBudgetCreditsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-coverage credit budget (Platform)'**
+  String get aiSettingsCoverageBudgetCreditsLabel;
+
+  /// No description provided for @aiSettingsCoverageBudgetCreditsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'20'**
+  String get aiSettingsCoverageBudgetCreditsHint;
+
+  /// No description provided for @aiSettingsCoverageBudgetSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save budget'**
+  String get aiSettingsCoverageBudgetSave;
+
+  /// No description provided for @aiSettingsCoverageBudgetSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage budget saved'**
+  String get aiSettingsCoverageBudgetSaved;
+
   /// No description provided for @aiCleanupSourceAiToolCache.
   ///
   /// In en, this message translates to:

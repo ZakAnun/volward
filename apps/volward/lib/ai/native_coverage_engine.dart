@@ -10,7 +10,7 @@ class NativeCoverageEngine implements CoverageEngine {
   NativeCoverageEngine({
     required this.bridge,
     required this.engine,
-    this.pageSize = 40,
+    this.pageSize = 200,
   });
 
   final VolwardNativeBridge bridge;

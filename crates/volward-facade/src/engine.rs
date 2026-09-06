@@ -1268,6 +1268,9 @@ impl VolwardEngine {
         let plan = build_ai_coverage_plan(&index, &kb);
         let snapshot_id = plan.snapshot_id.clone();
         let root_path = plan.root_path.clone();
+        let root_size_bytes = plan.root_size_bytes;
+        let scanned_at_ms = plan.scanned_at_ms;
+        let stats = plan.stats.clone();
         let total_unclassified = plan.total_unclassified;
         let pre_classified_count = plan.pre_classified_count;
         let group_rows = plan.group_rows;
@@ -1280,6 +1283,9 @@ impl VolwardEngine {
             "snapshot_id": snapshot_id,
             "plan_version": AI_COVERAGE_PLAN_VERSION,
             "root_path": root_path,
+            "root_size_bytes": root_size_bytes,
+            "scanned_at_ms": scanned_at_ms,
+            "stats": stats,
             "total_unclassified": total_unclassified,
             "pre_classified_count": pre_classified_count,
             "group_rows": group_rows,

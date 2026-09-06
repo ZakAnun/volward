@@ -28,6 +28,7 @@ class _GroupBuilder {
   int safeCount = 0;
   int reviewCount = 0;
   int keepCount = 0;
+  int unanalyzedCount = 0;
 
   void add(AiVerdict item, int bytes) {
     items.add(item);
@@ -38,6 +39,9 @@ class _GroupBuilder {
         break;
       case 'review_needed':
         reviewCount++;
+        break;
+      case 'unanalyzed':
+        unanalyzedCount++;
         break;
       default:
         keepCount++;

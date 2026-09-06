@@ -80,7 +80,7 @@ void main() {
     final out = await p.analyze([
       const AiCandidate(path: '/a', sizeBytes: 1, isDir: false),
     ]);
-    expect(out.single.verdict, 'keep');
+    expect(out.verdicts.single.verdict, 'keep');
     expect(p.lastCreditsUsed, 1);
     expect(p.lastCreditsRemaining, 9);
   });

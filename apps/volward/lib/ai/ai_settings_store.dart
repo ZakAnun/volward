@@ -53,6 +53,10 @@ class AiSettingsStore {
   static const _kPrivacyVersion = 'ai_privacy_accepted_version';
   static const _kProvider = 'ai_byok_provider';
   static const _kByokKeyName = 'volward_byok_api_key';
+  static const _kCoverageBudgetTokens = 'ai_full_run_budget_tokens';
+  static const _kCoverageBudgetCredits = 'ai_full_run_budget_credits';
+  static const defaultCoverageBudgetTokens = 500000;
+  static const defaultCoverageBudgetCredits = 20;
 
   /// Bumped to 2 when Platform mode shipped: paths now transit Volward servers.
   static const kCurrentPrivacyVersion = 2;
@@ -131,6 +135,36 @@ class AiSettingsStore {
   Future<void> setByokKey(String key) =>
       _secure.write(key: _kByokKeyName, value: key);
   Future<void> clearByokKey() => _secure.delete(key: _kByokKeyName);
+
+  Future<({int tokens, int credits})> coverageBudgetForMode(AiMode mode) async {
+    final map = await _readMap();
+    if (mode == AiMode.platform) {
+      return (
+        tokens: 0,
+        credits:
+            (map[_kCoverageBudgetCredits] as num?)?.toInt() ??
+            defaultCoverageBudgetCredits,
+      );
+    }
+    return (
+      tokens:
+          (map[_kCoverageBudgetTokens] as num?)?.toInt() ??
+          defaultCoverageBudgetTokens,
+      credits: 0,
+    );
+  }
+
+  Future<void> setCoverageBudgetTokens(int tokens) async {
+    final map = await _readMap();
+    map[_kCoverageBudgetTokens] = tokens;
+    await _writeMap(map);
+  }
+
+  Future<void> setCoverageBudgetCredits(int credits) async {
+    final map = await _readMap();
+    map[_kCoverageBudgetCredits] = credits;
+    await _writeMap(map);
+  }
 
   Future<ByokTokenUsageTotals> getByokTokenUsageTotals() async {
     await _byokUsageWriteTail;

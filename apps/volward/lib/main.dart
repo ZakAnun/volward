@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
+import 'ai/ai_coverage_coordinator.dart';
 import 'directory_details_page.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'theme/volward_theme.dart';
@@ -47,10 +48,12 @@ class _VolwardAppState extends State<VolwardApp> {
     _themeSettings = VolwardThemeSettings();
     _updater = createDefaultAppUpdater();
     _themeReady = _themeSettings.load();
+    AiCoverageCoordinator.instance.attach(_session);
   }
 
   @override
   void dispose() {
+    AiCoverageCoordinator.instance.detach();
     _session.dispose();
     _themeSettings.dispose();
     _updater.dispose();

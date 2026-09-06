@@ -448,6 +448,113 @@
       }
     }
   },
+  "aiCoverageProgress": "覆盖率：已分析 {analyzed} / {total} 个文件",
+  "@aiCoverageProgress": {
+    "placeholders": {
+      "analyzed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFullRunHint": "全量覆盖分析会在后台持续运行，直到每个未分类文件都有 AI 结论。",
+  "aiCoveragePause": "暂停覆盖分析",
+  "aiCoverageResume": "继续覆盖分析",
+  "aiCoverageCompletedNotice": "本次扫描已全部完成 AI 覆盖分析。",
+  "aiCoverageUnanalyzedCount": "尚有 {count} 个文件未分析",
+  "@aiCoverageUnanalyzedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageSourceStats": "逐文件 {file} · 目录级 {group} · 本地预分类 {local}",
+  "@aiCoverageSourceStats": {
+    "placeholders": {
+      "file": {
+        "type": "int"
+      },
+      "group": {
+        "type": "int"
+      },
+      "local": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBudgetPaused": "已达预算上限（{used}/{budget}）。可继续分析，或在设置中提高上限。",
+  "@aiCoverageBudgetPaused": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageLegacyResultNotice": "当前显示的是旧版 Top-150 结果。启动全量覆盖可分析全部未分类文件。",
+  "aiCoverageUnanalyzedReason": "等待 AI 覆盖分析",
+  "aiCoverageUnanalyzedAggregate": "另有 {count} 个文件等待分析",
+  "@aiCoverageUnanalyzedAggregate": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageCancel": "停止覆盖分析",
+  "aiCoverageRaiseBudget": "提高上限并继续",
+  "aiCoverageRaiseBudgetTitle": "提高覆盖分析预算",
+  "aiCoverageNotifyTitle": "Volward AI",
+  "aiCoverageNotifyComplete": "覆盖分析完成：已分析 {analyzed}/{total} 个文件。",
+  "@aiCoverageNotifyComplete": {
+    "placeholders": {
+      "analyzed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageNotifyBudgetPaused": "已达预算上限，覆盖分析已暂停：{analyzed}/{total} 已分析。",
+  "@aiCoverageNotifyBudgetPaused": {
+    "placeholders": {
+      "analyzed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageNotifyFailed": "覆盖分析因错误暂停，请打开 AI 结果页重试。",
+  "aiCoverageBudgetInvalid": "请输入高于当前上限的预算值。",
+  "aiCoverageHydrating": "正在加载覆盖分析任务状态…",
+  "aiCoverageUnavailable": "当前无法启动全量覆盖分析，请等待扫描加载完成后再试。",
+  "aiCoverageBusyOtherSnapshot": "另一个扫描正在运行全量覆盖分析，请等待其完成或先暂停后再试。",
+  "aiCoveragePlatformBudgetWarning": "平台余额（{available}）低于全量运行预算（{budget}），分析可能提前暂停。",
+  "@aiCoveragePlatformBudgetWarning": {
+    "placeholders": {
+      "available": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSettingsCoverageBudgetInvalid": "请输入大于 0 的数值。",
+  "aiSettingsCoverageBudgetTokensLabel": "全量覆盖 token 预算（自带密钥）",
+  "aiSettingsCoverageBudgetTokensHint": "500000",
+  "aiSettingsCoverageBudgetCreditsLabel": "全量覆盖积分预算（平台模式）",
+  "aiSettingsCoverageBudgetCreditsHint": "20",
+  "aiSettingsCoverageBudgetSave": "保存预算",
+  "aiSettingsCoverageBudgetSaved": "覆盖分析预算已保存",
   "aiCleanupSourceAiToolCache": "AI 工具缓存/临时文件",
   "aiCleanupSourceAiGeneratedOutput": "AI 生成输出",
   "aiCleanupSourceSystemTemp": "临时文件",

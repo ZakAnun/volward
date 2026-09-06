@@ -723,6 +723,121 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiCoverageProgress(int analyzed, int total) {
+    return 'Coverage: $analyzed / $total files analyzed';
+  }
+
+  @override
+  String get aiCoverageFullRunHint =>
+      'Full-coverage analysis runs in the background until every unclassified file has a verdict.';
+
+  @override
+  String get aiCoveragePause => 'Pause coverage';
+
+  @override
+  String get aiCoverageResume => 'Resume coverage';
+
+  @override
+  String get aiCoverageCompletedNotice =>
+      'This scan is fully covered by AI analysis.';
+
+  @override
+  String aiCoverageUnanalyzedCount(int count) {
+    return '$count files not yet analyzed';
+  }
+
+  @override
+  String aiCoverageSourceStats(int file, int group, int local) {
+    return '$file per-file · $group directory-level · $local local pre-classified';
+  }
+
+  @override
+  String aiCoverageBudgetPaused(int used, int budget) {
+    return 'Paused at budget ($used/$budget). Resume below or raise the limit in Settings.';
+  }
+
+  @override
+  String get aiCoverageLegacyResultNotice =>
+      'Showing a previous Top-150 result. Start full coverage for complete analysis.';
+
+  @override
+  String get aiCoverageUnanalyzedReason => 'Waiting for AI coverage analysis';
+
+  @override
+  String aiCoverageUnanalyzedAggregate(int count) {
+    return 'Plus $count more files awaiting analysis';
+  }
+
+  @override
+  String get aiCoverageCancel => 'Stop coverage';
+
+  @override
+  String get aiCoverageRaiseBudget => 'Raise limit & resume';
+
+  @override
+  String get aiCoverageRaiseBudgetTitle => 'Raise coverage budget';
+
+  @override
+  String get aiCoverageNotifyTitle => 'Volward AI';
+
+  @override
+  String aiCoverageNotifyComplete(int analyzed, int total) {
+    return 'Coverage complete: $analyzed/$total files analyzed.';
+  }
+
+  @override
+  String aiCoverageNotifyBudgetPaused(int analyzed, int total) {
+    return 'Coverage paused at budget: $analyzed/$total analyzed.';
+  }
+
+  @override
+  String get aiCoverageNotifyFailed =>
+      'Coverage paused due to an error. Open AI results to retry.';
+
+  @override
+  String get aiCoverageBudgetInvalid =>
+      'Enter a budget higher than the current limit.';
+
+  @override
+  String get aiCoverageHydrating => 'Loading coverage job status…';
+
+  @override
+  String get aiCoverageUnavailable =>
+      'Full-coverage analysis is unavailable right now. Try again after the scan finishes loading.';
+
+  @override
+  String get aiCoverageBusyOtherSnapshot =>
+      'Another scan is running full-coverage analysis. Wait for it to finish or pause it first.';
+
+  @override
+  String aiCoveragePlatformBudgetWarning(int available, int budget) {
+    return 'Platform balance ($available) is below the full-run budget ($budget). Analysis may pause early.';
+  }
+
+  @override
+  String get aiSettingsCoverageBudgetInvalid => 'Enter a positive number.';
+
+  @override
+  String get aiSettingsCoverageBudgetTokensLabel =>
+      'Full-coverage token budget (BYOK)';
+
+  @override
+  String get aiSettingsCoverageBudgetTokensHint => '500000';
+
+  @override
+  String get aiSettingsCoverageBudgetCreditsLabel =>
+      'Full-coverage credit budget (Platform)';
+
+  @override
+  String get aiSettingsCoverageBudgetCreditsHint => '20';
+
+  @override
+  String get aiSettingsCoverageBudgetSave => 'Save budget';
+
+  @override
+  String get aiSettingsCoverageBudgetSaved => 'Coverage budget saved';
+
+  @override
   String get aiCleanupSourceAiToolCache => 'AI tool cache/temp';
 
   @override
