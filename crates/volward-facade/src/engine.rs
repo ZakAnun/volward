@@ -57,6 +57,7 @@ fn load_classifier_from_arc(platform: &Arc<DesktopPlatform>) -> Classifier {
 pub struct VolwardEngine {
     platform: Arc<DesktopPlatform>,
     cancel: Arc<AtomicBool>,
+    persist_pause: Arc<AtomicBool>,
     is_scanning: Arc<AtomicBool>,
     last_snapshot: Arc<Mutex<Option<StorageSnapshot>>>,
     /// Authoritative path-keyed index rebuilt whenever a new snapshot is set.
@@ -108,6 +109,7 @@ impl VolwardEngine {
         Self {
             platform,
             cancel: Arc::new(AtomicBool::new(false)),
+            persist_pause: Arc::new(AtomicBool::new(false)),
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: Arc::new(Mutex::new(None)),
             last_index: Arc::new(Mutex::new(None)),
@@ -617,6 +619,7 @@ impl VolwardEngine {
 
         self.invalidate_index_load();
         self.cancel.store(false, Ordering::Relaxed);
+        self.persist_pause.store(false, Ordering::Relaxed);
         let classifier = load_classifier(self.platform.as_ref());
         let orchestrator = ScanOrchestrator::new(self.platform.as_ref(), classifier);
         let cancel = self.cancel.clone();
@@ -669,9 +672,11 @@ impl VolwardEngine {
         // immediately when the shared main engine is reused after cancel.
         self.invalidate_index_load();
         self.cancel.store(false, Ordering::Relaxed);
+        self.persist_pause.store(false, Ordering::Relaxed);
 
         let platform = self.platform.clone();
         let cancel = self.cancel.clone();
+        let persist_pause = self.persist_pause.clone();
         let last_snapshot = self.last_snapshot.clone();
         let last_index = self.last_index.clone();
         let last_progress = self.last_progress.clone();
@@ -684,12 +689,14 @@ impl VolwardEngine {
 
         let handle = std::thread::spawn(move || {
             let classifier = load_classifier_from_arc(&platform);
-            let orchestrator = ScanOrchestrator::new(platform.as_ref(), classifier);
+            let orchestrator = ScanOrchestrator::new(platform.as_ref(), classifier)
+                .with_pause_signal(persist_pause);
             match orchestrator.run_index_scan(
                 job_id_clone,
                 roots,
                 incremental,
                 &cancel,
+                false,
                 |progress| {
                     if let Ok(mut g) = last_progress.lock() {
                         *g = Some(progress);
@@ -731,6 +738,12 @@ impl VolwardEngine {
     }
 
     pub fn cancel_scan(&self) {
+        self.persist_pause.store(false, Ordering::Relaxed);
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    pub fn pause_current_scan(&self) {
+        self.persist_pause.store(true, Ordering::Relaxed);
         self.cancel.store(true, Ordering::Relaxed);
     }
 
@@ -1226,6 +1239,7 @@ impl VolwardEngine {
         let shell = VolwardEngine {
             platform: Arc::new(DesktopPlatform::new()),
             cancel: Arc::new(AtomicBool::new(false)),
+            persist_pause: Arc::new(AtomicBool::new(false)),
             is_scanning: Arc::new(AtomicBool::new(false)),
             last_snapshot: last_snapshot.clone(),
             last_index: last_index.clone(),
@@ -1617,6 +1631,16 @@ mod tests {
         CapabilityAnalysisResult, CapabilityAnalyzer, CapabilityRegistry, DeletionPlan,
         CAPABILITY_SCHEMA_VERSION,
     };
+
+    #[test]
+    fn pause_scan_requests_persistence_and_cancellation() {
+        let engine = VolwardEngine::new();
+
+        engine.pause_current_scan();
+
+        assert!(engine.persist_pause.load(Ordering::Relaxed));
+        assert!(engine.cancel.load(Ordering::Relaxed));
+    }
 
     struct BlockingAnalyzer {
         capability: Capability,

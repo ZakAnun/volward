@@ -66,7 +66,7 @@ impl FileManifestStore {
     }
 }
 
-fn hash_root(root: &str) -> String {
+pub(crate) fn hash_root(root: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     root.hash(&mut hasher);
     format!("{:016x}", hasher.finish())

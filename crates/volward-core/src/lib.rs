@@ -13,6 +13,7 @@ pub mod index;
 pub mod large_files;
 pub mod manifest;
 pub mod model;
+pub mod pause_store;
 pub mod platform;
 pub mod rules;
 pub mod scan;
