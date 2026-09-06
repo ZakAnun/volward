@@ -1,3 +1,5 @@
+import 'cancel_token.dart';
+
 String? _optionalString(Object? value) {
   if (value == null) return null;
   final string = value.toString();
@@ -113,6 +115,40 @@ class AiQuotaInfo {
 }
 
 abstract interface class AiProvider {
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates);
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  });
   Future<AiQuotaInfo?> queryQuota();
+}
+
+/// Per-call result of [AiProvider.analyze]: verdicts plus the usage consumed by
+/// this specific call. Returning usage atomically with the verdicts keeps
+/// concurrent calls from sharing mutable accounting state.
+class AnalyzeResult {
+  const AnalyzeResult({
+    required this.verdicts,
+    this.tokens = 0,
+    this.credits = 0,
+    this.inputTokens = 0,
+    this.outputTokens = 0,
+    this.estimated = false,
+  });
+
+  final List<AiVerdict> verdicts;
+
+  /// BYOK: total tokens (input + output).
+  final int tokens;
+
+  /// Platform: credits used.
+  final int credits;
+
+  /// BYOK: prompt tokens.
+  final int inputTokens;
+
+  /// BYOK: completion tokens.
+  final int outputTokens;
+
+  /// BYOK: true when usage was estimated rather than reported by the model.
+  final bool estimated;
 }

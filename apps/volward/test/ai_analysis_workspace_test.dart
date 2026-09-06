@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/capabilities/capability_models.dart';
@@ -62,9 +63,12 @@ class _ResultProvider implements AiProvider {
   int analyzeCalls = 0;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     analyzeCalls++;
-    return verdicts;
+    return AnalyzeResult(verdicts: verdicts);
   }
 
   @override
@@ -77,8 +81,10 @@ class _ThrowingProvider implements AiProvider {
   final Object error;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async =>
-      throw error;
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async => throw error;
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
@@ -91,13 +97,16 @@ class _UsageByokProvider extends ByokAiProvider {
   final List<AiVerdict> verdicts;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     lastTokenUsage = const ByokTokenUsage(
       promptTokens: 321,
       completionTokens: 45,
       totalTokens: 366,
     );
-    return verdicts;
+    return AnalyzeResult(verdicts: verdicts);
   }
 }
 
@@ -111,13 +120,16 @@ class _IncompleteUsageByokProvider extends ByokAiProvider {
   bool get hasReliableTokenUsage => false;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     lastTokenUsage = const ByokTokenUsage(
       promptTokens: 640,
       completionTokens: 120,
       totalTokens: 760,
     );
-    return verdicts;
+    return AnalyzeResult(verdicts: verdicts);
   }
 }
 
@@ -126,7 +138,10 @@ class _PartialUsageFailureByokProvider extends ByokAiProvider {
     : super(apiKey: 'sk-test', contract: _FakeUsageContract());
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     lastTokenUsage = const ByokTokenUsage(
       promptTokens: 120,
       completionTokens: 20,
@@ -144,7 +159,10 @@ class _EstimatedPartialUsageFailureByokProvider extends ByokAiProvider {
   bool get hasReliableTokenUsage => false;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     lastTokenUsage = const ByokTokenUsage(
       promptTokens: 500,
       completionTokens: 100,

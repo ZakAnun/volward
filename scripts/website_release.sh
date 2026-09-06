@@ -12,6 +12,10 @@ cd "$WEB_DIR"
 pnpm install --frozen-lockfile
 pnpm build
 
+if [[ -n "${EXPECTED_RELEASE_TAG:-}" ]]; then
+  node "$WEB_DIR/scripts/verify_release_build.mjs" "$DIST" "${EXPECTED_RELEASE_TAG}"
+fi
+
 if [[ -n "${DEPLOY_HOST:-}" || -n "${DEPLOY_USER:-}" || -n "${DEPLOY_PATH:-}" || -n "${DEPLOY_KEY:-}" ]]; then
   if [[ -z "${DEPLOY_HOST:-}" || -z "${DEPLOY_USER:-}" || -z "${DEPLOY_PATH:-}" ]]; then
     echo "❌ Deploy requires DEPLOY_HOST, DEPLOY_USER, and DEPLOY_PATH" >&2

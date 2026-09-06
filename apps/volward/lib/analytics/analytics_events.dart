@@ -8,6 +8,10 @@ abstract final class AnalyticsEvents {
   static const moveToTrash = 'move_to_trash';
   static const emptyTrash = 'empty_trash';
 
+  static const aiCoverageStarted = 'ai_coverage_started';
+  static const aiCoverageCompleted = 'ai_coverage_completed';
+  static const aiCoverageFailed = 'ai_coverage_failed';
+
   static const aiAnalysisStarted = 'ai_analysis_started';
   static const aiAnalysisCompleted = 'ai_analysis_completed';
   static const aiAnalysisFailed = 'ai_analysis_failed';

@@ -448,6 +448,113 @@
       }
     }
   },
+  "aiCoverageProgress": "Coverage: {analyzed} / {total} files analyzed",
+  "@aiCoverageProgress": {
+    "placeholders": {
+      "analyzed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFullRunHint": "Full-coverage analysis runs in the background until every unclassified file has a verdict.",
+  "aiCoveragePause": "Pause coverage",
+  "aiCoverageResume": "Resume coverage",
+  "aiCoverageCompletedNotice": "This scan is fully covered by AI analysis.",
+  "aiCoverageUnanalyzedCount": "{count} files not yet analyzed",
+  "@aiCoverageUnanalyzedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageSourceStats": "{file} per-file · {group} directory-level · {local} local pre-classified",
+  "@aiCoverageSourceStats": {
+    "placeholders": {
+      "file": {
+        "type": "int"
+      },
+      "group": {
+        "type": "int"
+      },
+      "local": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBudgetPaused": "Paused at budget ({used}/{budget}). Resume below or raise the limit in Settings.",
+  "@aiCoverageBudgetPaused": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageLegacyResultNotice": "Showing a previous Top-150 result. Start full coverage for complete analysis.",
+  "aiCoverageUnanalyzedReason": "Waiting for AI coverage analysis",
+  "aiCoverageUnanalyzedAggregate": "Plus {count} more files awaiting analysis",
+  "@aiCoverageUnanalyzedAggregate": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageCancel": "Stop coverage",
+  "aiCoverageRaiseBudget": "Raise limit & resume",
+  "aiCoverageRaiseBudgetTitle": "Raise coverage budget",
+  "aiCoverageNotifyTitle": "Volward AI",
+  "aiCoverageNotifyComplete": "Coverage complete: {analyzed}/{total} files analyzed.",
+  "@aiCoverageNotifyComplete": {
+    "placeholders": {
+      "analyzed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageNotifyBudgetPaused": "Coverage paused at budget: {analyzed}/{total} analyzed.",
+  "@aiCoverageNotifyBudgetPaused": {
+    "placeholders": {
+      "analyzed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageNotifyFailed": "Coverage paused due to an error. Open AI results to retry.",
+  "aiCoverageBudgetInvalid": "Enter a budget higher than the current limit.",
+  "aiCoverageHydrating": "Loading coverage job status…",
+  "aiCoverageUnavailable": "Full-coverage analysis is unavailable right now. Try again after the scan finishes loading.",
+  "aiCoverageBusyOtherSnapshot": "Another scan is running full-coverage analysis. Wait for it to finish or pause it first.",
+  "aiCoveragePlatformBudgetWarning": "Platform balance ({available}) is below the full-run budget ({budget}). Analysis may pause early.",
+  "@aiCoveragePlatformBudgetWarning": {
+    "placeholders": {
+      "available": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiSettingsCoverageBudgetInvalid": "Enter a positive number.",
+  "aiSettingsCoverageBudgetTokensLabel": "Full-coverage token budget (BYOK)",
+  "aiSettingsCoverageBudgetTokensHint": "500000",
+  "aiSettingsCoverageBudgetCreditsLabel": "Full-coverage credit budget (Platform)",
+  "aiSettingsCoverageBudgetCreditsHint": "20",
+  "aiSettingsCoverageBudgetSave": "Save budget",
+  "aiSettingsCoverageBudgetSaved": "Coverage budget saved",
   "aiCleanupSourceAiToolCache": "AI tool cache/temp",
   "aiCleanupSourceAiGeneratedOutput": "AI-generated output",
   "aiCleanupSourceSystemTemp": "Temporary file",

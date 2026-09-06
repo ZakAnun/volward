@@ -126,6 +126,24 @@ typedef VolwardAiParseResponseJsonNative =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiParseResponseJson =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiBuildCoveragePlanJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiBuildCoveragePlanJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiNextCoveragePageJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Uint64,
+      Uint64,
+      Uint32,
+    );
+typedef VolwardAiNextCoveragePageJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
+typedef VolwardAiResolveCoverageGroupJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiResolveCoverageGroupJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
 // ---------------------------------------------------------------------------
 // Catalog index API typedefs (Design §5.3)
@@ -320,6 +338,13 @@ final class VolwardNativeBridge implements VolwardBridge {
     _aiBatchSize = _tryLookupAiBatchSize();
     _aiBuildRequestJson = _tryLookupAiBuildRequestJson();
     _aiParseResponseJson = _tryLookupAiParseResponseJson();
+    _buildAiCoveragePlanJson = _tryLookupAiBuildCoveragePlanJson();
+    _nextAiCoveragePageJson = _tryLookupAiNextCoveragePageJson();
+    _resolveAiCoverageGroupJson = _tryLookupAiResolveCoverageGroupJson();
+    hasAiCoverageApi =
+        _buildAiCoveragePlanJson != null &&
+        _nextAiCoveragePageJson != null &&
+        _resolveAiCoverageGroupJson != null;
     hasAiSessionApi =
         _buildAiCandidatesJson != null && _saveAiResultJson != null;
     hasAiContractApi =
@@ -522,6 +547,7 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardEmptyTrashJson? _emptyTrashJson;
   late final bool hasAiSessionApi;
   late final bool hasAiContractApi;
+  late final bool hasAiCoverageApi;
   late final VolwardAiBuildCandidatesJson? _buildAiCandidatesJson;
   late final VolwardAiStartBuildCandidatesAsync? _startBuildAiCandidatesAsync;
   late final VolwardAiIsCandidatesBuilding? _isAiCandidatesBuilding;
@@ -532,6 +558,9 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardAiBatchSize? _aiBatchSize;
   late final VolwardAiBuildRequestJson? _aiBuildRequestJson;
   late final VolwardAiParseResponseJson? _aiParseResponseJson;
+  late final VolwardAiBuildCoveragePlanJson? _buildAiCoveragePlanJson;
+  late final VolwardAiNextCoveragePageJson? _nextAiCoveragePageJson;
+  late final VolwardAiResolveCoverageGroupJson? _resolveAiCoverageGroupJson;
 
   // Catalog index API fields
   late final VolwardQueryDirectoryJson? _queryDirectoryJson;
@@ -868,6 +897,69 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  String? buildAiCoveragePlanJson(Pointer<Void> engine, String snapshotId) {
+    final fn = _buildAiCoveragePlanJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? nextAiCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 40,
+  }) {
+    final fn = _nextAiCoveragePageJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr, planVersion, cursor, pageSize);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? resolveAiCoverageGroupJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    String groupPath,
+  ) {
+    final fn = _resolveAiCoverageGroupJson;
+    if (fn == null) return null;
+    final snapPtr = snapshotId.toNativeUtf8();
+    final groupPtr = groupPath.toNativeUtf8();
+    try {
+      final out = fn(engine, snapPtr, groupPtr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(snapPtr);
+      calloc.free(groupPtr);
+    }
+  }
+
   bool saveAiResultJson(
     Pointer<Void> engine,
     String snapshotId,
@@ -1121,6 +1213,42 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardAiParseResponseJsonNative>>(
             'volward_ai_parse_response_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildCoveragePlanJson? _tryLookupAiBuildCoveragePlanJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildCoveragePlanJsonNative>>(
+            'volward_ai_build_coverage_plan_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiNextCoveragePageJson? _tryLookupAiNextCoveragePageJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiNextCoveragePageJsonNative>>(
+            'volward_ai_next_coverage_page_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiResolveCoverageGroupJson? _tryLookupAiResolveCoverageGroupJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiResolveCoverageGroupJsonNative>>(
+            'volward_ai_resolve_coverage_group_json',
           )
           .asFunction();
     } on Object {

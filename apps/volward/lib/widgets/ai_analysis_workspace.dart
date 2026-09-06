@@ -6,17 +6,25 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../ai/ai_analysis_gateway.dart';
+import '../ai/ai_coverage_coordinator.dart';
 import '../ai/ai_provider.dart';
 import '../ai/ai_settings_store.dart';
 import '../ai/byok_ai_provider.dart';
+import '../ai/coverage_job_state.dart';
+import '../ai/coverage_ui_helpers.dart';
+import '../ai/coverage_verdict_adapter.dart';
+import '../ai/coverage_verdict_store.dart';
 import '../ai/platform_ai_provider.dart';
 import '../analytics/analytics.dart';
 import '../analytics/analytics_events.dart';
 import '../ai/ai_result_groups.dart';
 import '../l10n/l10n.dart';
+import '../snapshot_cache.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
+import 'coverage_job_banner.dart';
 import 'apple_widgets.dart';
+import 'top_toast.dart';
 
 class _AiCandidatesBootstrap {
   const _AiCandidatesBootstrap({
@@ -194,6 +202,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   _ResultSortMode _resultSortMode = _ResultSortMode.priority;
   List<AiResultGroup>? _normalizedGroupsCache;
   List<_VisibleResultGroup>? _visibleGroupsCache;
+  CoverageJobState? _coverageJobState;
+  bool _useFullCoverage = false;
+  bool _coverageHydrating = false;
+  bool _coverageHydrated = false;
+  int? _coverageBudgetCredits;
+  int _coverageVerdictPageCount = 2;
+  static const _coverageVerdictPageSize = 500;
+  int _coverageVerdictByteOffset = 0;
+  bool _showLegacyResultNotice = false;
+  List<CoverageVerdict> _coverageVerdictRows = const [];
 
   int _beginOperation() => ++_operationGeneration;
   bool _isCurrent(int generation) =>
@@ -223,11 +241,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void initState() {
     super.initState();
     _resultsScrollController.addListener(_updateHeaderCollapseProgress);
+    _resultsScrollController.addListener(_maybeLoadMoreCoverageVerdicts);
+    AiCoverageCoordinator.instance.addJobStateListener(_onCoverageJobState);
     _bootstrap();
   }
 
   @override
   void dispose() {
+    AiCoverageCoordinator.instance.removeJobStateListener(_onCoverageJobState);
     _operationGeneration++;
     _resultsScrollController
       ..removeListener(_updateHeaderCollapseProgress)
@@ -306,6 +327,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _partialDeleteFailedCount = null;
       _partialDeleteFreedBytes = null;
       _retryTargets = [];
+      _coverageJobState = null;
+      _coverageVerdictByteOffset = 0;
+      _coverageVerdictPageCount = 2;
+      _coverageHydrating = false;
+      _coverageHydrated = false;
+      _coverageBudgetCredits = null;
+      _showLegacyResultNotice = false;
+      _coverageVerdictRows = const [];
     });
     try {
       final mode = await widget.gateway.getMode();
@@ -377,7 +406,27 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ..clear()
           ..addAll(parsed.selected);
         _phase = _Phase.precheck;
+        _useFullCoverage = AiCoverageCoordinator.instance.isAvailable;
+        _coverageHydrating = _useFullCoverage;
+        _coverageHydrated = !_useFullCoverage;
       });
+      if (_useFullCoverage) {
+        final budget = await AiSettingsStore.instance.coverageBudgetForMode(
+          mode,
+        );
+        if (!_isCurrent(generation)) return;
+        if (mounted) {
+          setState(() => _coverageBudgetCredits = budget.credits);
+        }
+        await _hydrateCoverageJob();
+        if (!_isCurrent(generation)) return;
+        if (mounted) {
+          setState(() {
+            _coverageHydrating = false;
+            _coverageHydrated = true;
+          });
+        }
+      }
     } catch (error) {
       if (!_isCurrent(generation)) return;
       setState(() {
@@ -497,6 +546,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _expandedGroupPaths.addAll(_defaultExpandedGroupPaths());
         _hasExistingResult = true;
         _error = null;
+        _showLegacyResultNotice = _useFullCoverage && _coverageJobState == null;
         _phase = _Phase.results;
       });
       return true;
@@ -512,6 +562,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _startAnalysis() async {
     if (!_hasProvider || _analyzing) return;
+    if (_useFullCoverage && (_coverageHydrating || !_coverageHydrated)) return;
+    if (_useFullCoverage) {
+      return _startFullCoverageAnalysis();
+    }
     final generation = _beginOperation();
     if (!await _ensurePrivacyAccepted(generation)) return;
     if (!_isCurrent(generation)) return;
@@ -544,7 +598,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       }),
     );
     try {
-      final verdicts = await provider.analyze(_unknown);
+      final result = await provider.analyze(_unknown);
+      final verdicts = result.verdicts;
       final model = provider is ByokAiProvider
           ? provider.model
           : 'deepseek-v4-flash';
@@ -704,6 +759,386 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _error = _localizedAiError(error);
       });
     }
+  }
+
+  Future<void> _hydrateCoverageJob() async {
+    if (!_useFullCoverage) return;
+    await AiCoverageCoordinator.instance.ensureJobRunning(widget.snapshotId);
+    final state = await AiCoverageCoordinator.instance.loadJobState(
+      widget.snapshotId,
+    );
+    if (state == null || !mounted) return;
+    await _applyCoverageJobState(state);
+  }
+
+  void _maybeLoadMoreCoverageVerdicts() {
+    if (!_useFullCoverage || !_resultsScrollController.hasClients) return;
+    final position = _resultsScrollController.position;
+    if (position.maxScrollExtent <= 0) return;
+    if (position.pixels < position.maxScrollExtent - 240) return;
+    if (_coverageVerdictRows.length <
+        _coverageVerdictPageCount * _coverageVerdictPageSize) {
+      return;
+    }
+    unawaited(_loadNextCoverageVerdictPage());
+  }
+
+  Future<void> _loadNextCoverageVerdictPage() async {
+    final nextPageCount = _coverageVerdictPageCount + 1;
+    final store = CoverageVerdictStore(SnapshotCache.cacheDir());
+    final rows = await store.readPages(
+      widget.snapshotId,
+      pageCount: nextPageCount,
+      pageSize: _coverageVerdictPageSize,
+    );
+    if (!mounted || rows.length <= _coverageVerdictRows.length) return;
+    setState(() => _coverageVerdictPageCount = nextPageCount);
+    _applyCoverageVerdictRows(rows, preserveUiState: true);
+  }
+
+  void _onCoverageJobState(CoverageJobState state) {
+    if (state.snapshotId != widget.snapshotId || !mounted) return;
+    unawaited(_applyCoverageJobState(state));
+  }
+
+  Future<void> _applyCoverageJobState(CoverageJobState state) async {
+    if (state.snapshotId != widget.snapshotId) return;
+    final incremental = _coverageVerdictByteOffset > 0 && _verdicts.isNotEmpty;
+    if (state.analyzedFiles > 0 ||
+        state.status == CoverageJobStatus.completed) {
+      await _refreshVerdictsFromCoverageStore(incremental: incremental);
+    }
+    if (!mounted) return;
+    final showResults =
+        _verdicts.isNotEmpty ||
+        state.status == CoverageJobStatus.paused ||
+        state.status == CoverageJobStatus.completed ||
+        state.analyzedFiles < state.totalUnclassified;
+    setState(() {
+      _coverageJobState = state;
+      _analyzing = state.status == CoverageJobStatus.running;
+      _showLegacyResultNotice = false;
+      if (showResults) {
+        _phase = _Phase.results;
+      } else if (state.status == CoverageJobStatus.running) {
+        _phase = _Phase.analyzing;
+      }
+      if (state.pauseReason == CoveragePauseReason.failed) {
+        _error = context.l10n.aiErrorUnknown;
+      } else if (state.status != CoverageJobStatus.paused ||
+          state.pauseReason != CoveragePauseReason.failed) {
+        _error = null;
+      }
+    });
+  }
+
+  Future<void> _refreshVerdictsFromCoverageStore({
+    bool incremental = false,
+  }) async {
+    final store = CoverageVerdictStore(SnapshotCache.cacheDir());
+    List<CoverageVerdict> coverageVerdicts;
+    if (incremental) {
+      final chunk = await store.readAppendedSince(
+        widget.snapshotId,
+        _coverageVerdictByteOffset,
+      );
+      _coverageVerdictByteOffset = chunk.fileLength;
+      if (chunk.appended.isEmpty) return;
+      coverageVerdicts = _mergeCoverageVerdictRows(chunk.appended);
+    } else {
+      coverageVerdicts = await store.readPages(
+        widget.snapshotId,
+        pageCount: _coverageVerdictPageCount,
+        pageSize: _coverageVerdictPageSize,
+      );
+      _coverageVerdictByteOffset = await store.fileByteLength(
+        widget.snapshotId,
+      );
+    }
+    if (!mounted) return;
+    _applyCoverageVerdictRows(coverageVerdicts, preserveUiState: incremental);
+  }
+
+  List<CoverageVerdict> _mergeCoverageVerdictRows(
+    Iterable<CoverageVerdict> appended,
+  ) {
+    final byPath = {for (final row in _coverageVerdictRows) row.path: row};
+    for (final row in appended) {
+      byPath[row.path] = row;
+    }
+    final merged = byPath.values.toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+    return merged;
+  }
+
+  void _applyCoverageVerdictRows(
+    List<CoverageVerdict> coverageVerdicts, {
+    bool preserveUiState = false,
+  }) {
+    final savedReview = preserveUiState
+        ? Map<String, _ReviewDecision>.from(_reviewDecisions)
+        : null;
+    final savedSelected = preserveUiState ? Set<String>.from(_selected) : null;
+    final savedExpandedGroups = preserveUiState
+        ? Set<String>.from(_expandedGroupPaths)
+        : null;
+    final savedExpandedReviews = preserveUiState
+        ? Set<String>.from(_expandedReviewPaths)
+        : null;
+    final savedPresentation = preserveUiState
+        ? (
+            query: _resultsQuery,
+            filter: _resultFilterMode,
+            sort: _resultSortMode,
+          )
+        : null;
+    final verdicts = coverageVerdictsToAiVerdicts(
+      coverageVerdicts,
+    ).map(_withCandidateMeta).toList();
+    for (final verdict in coverageVerdicts) {
+      if (verdict.sizeBytes > 0) {
+        _sizeByPath[verdict.path] = verdict.sizeBytes;
+      }
+    }
+    setState(() {
+      _coverageVerdictRows = coverageVerdicts;
+      if (preserveUiState && savedPresentation != null) {
+        _resultsQuery = savedPresentation.query;
+        _resultFilterMode = savedPresentation.filter;
+        _resultSortMode = savedPresentation.sort;
+      } else {
+        _resetResultsPresentation();
+      }
+      _verdicts = verdicts;
+      _invalidateResultGroups();
+      if (preserveUiState && savedReview != null) {
+        _reviewDecisions
+          ..clear()
+          ..addAll(savedReview);
+        for (final verdict in verdicts) {
+          if (verdict.verdict == 'review_needed' &&
+              !_reviewDecisions.containsKey(verdict.path)) {
+            _reviewDecisions[verdict.path] = _ReviewDecision.pending;
+          }
+        }
+      } else {
+        _reviewDecisions
+          ..clear()
+          ..addEntries(
+            verdicts
+                .where((verdict) => verdict.verdict == 'review_needed')
+                .map(
+                  (verdict) => MapEntry(verdict.path, _ReviewDecision.pending),
+                ),
+          );
+      }
+      if (preserveUiState && savedSelected != null) {
+        _selected
+          ..clear()
+          ..addAll(savedSelected);
+      } else {
+        _selected
+          ..clear()
+          ..addAll(_selectedPathsForResults(verdicts));
+      }
+      if (preserveUiState && savedExpandedGroups != null) {
+        _expandedGroupPaths
+          ..clear()
+          ..addAll(savedExpandedGroups);
+      } else {
+        _expandedGroupPaths.addAll(_defaultExpandedGroupPaths());
+      }
+      if (preserveUiState && savedExpandedReviews != null) {
+        _expandedReviewPaths
+          ..clear()
+          ..addAll(savedExpandedReviews);
+      }
+      _hasExistingResult = verdicts.isNotEmpty;
+    });
+  }
+
+  Future<void> _startFullCoverageAnalysis() async {
+    final generation = _beginOperation();
+    if (!await _ensurePrivacyAccepted(generation)) return;
+    if (!_isCurrent(generation)) return;
+    final provider = await widget.gateway.resolveProvider();
+    if (!_isCurrent(generation)) return;
+    if (provider == null) {
+      setState(() => _hasProvider = false);
+      return;
+    }
+    final mode = await widget.gateway.getMode();
+    if (!_isCurrent(generation)) return;
+    setState(() {
+      _analyzing = true;
+      _phase = _Phase.analyzing;
+      _error = null;
+      _showLegacyResultNotice = false;
+      _coverageVerdictByteOffset = 0;
+      _coverageVerdictRows = const [];
+      _resetResultsPresentation();
+      _selected.clear();
+      _reviewDecisions.clear();
+      _expandedGroupPaths.clear();
+      _expandedReviewPaths.clear();
+      _invalidateResultGroups();
+    });
+    final started = await AiCoverageCoordinator.instance.startFullCoverage(
+      snapshotId: widget.snapshotId,
+      mode: mode,
+      provider: provider,
+    );
+    if (!mounted || !_isCurrent(generation)) return;
+    if (!started) {
+      setState(() {
+        _analyzing = false;
+        _phase = _Phase.precheck;
+        _error = context.l10n.aiCoverageUnavailable;
+      });
+    }
+  }
+
+  Future<void> _resumeFullCoverage() async {
+    final provider = await widget.gateway.resolveProvider();
+    if (provider == null) {
+      if (mounted) setState(() => _hasProvider = false);
+      return;
+    }
+    await AiCoverageCoordinator.instance.prepareService(provider);
+    final resumed = await AiCoverageCoordinator.instance.tryResumeCoverage(
+      widget.snapshotId,
+    );
+    if (!resumed && mounted) {
+      showTopToast(context, message: context.l10n.aiCoverageBusyOtherSnapshot);
+    }
+  }
+
+  Future<void> _cancelFullCoverage() async {
+    await AiCoverageCoordinator.instance.cancelCoverage(widget.snapshotId);
+  }
+
+  Future<void> _raiseCoverageBudget() async {
+    final state = _coverageJobState;
+    if (state == null) return;
+    final l10n = context.l10n;
+    final isTokenBudget = state.budgetTokens > 0;
+    final currentLimit = isTokenBudget
+        ? state.budgetTokens
+        : state.budgetCredits;
+    final suggested = isTokenBudget
+        ? (currentLimit + AiSettingsStore.defaultCoverageBudgetTokens ~/ 2)
+        : currentLimit + 10;
+    final controller = TextEditingController(text: '$suggested');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aiCoverageRaiseBudgetTitle),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: isTokenBudget
+                ? l10n.aiSettingsCoverageBudgetTokensHint
+                : l10n.aiSettingsCoverageBudgetCreditsHint,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.aiCoverageRaiseBudget),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final parsed = int.tryParse(controller.text.trim());
+    if (parsed == null || parsed <= currentLimit) {
+      if (mounted) {
+        showTopToast(context, message: l10n.aiCoverageBudgetInvalid);
+      }
+      return;
+    }
+    if (isTokenBudget) {
+      await AiSettingsStore.instance.setCoverageBudgetTokens(parsed);
+    } else {
+      await AiSettingsStore.instance.setCoverageBudgetCredits(parsed);
+    }
+    final provider = await widget.gateway.resolveProvider();
+    if (provider == null) {
+      if (mounted) setState(() => _hasProvider = false);
+      return;
+    }
+    await AiCoverageCoordinator.instance.prepareService(provider);
+    final raised = await AiCoverageCoordinator.instance.tryRaiseBudgetAndResume(
+      snapshotId: widget.snapshotId,
+      budgetTokens: isTokenBudget ? parsed : 0,
+      budgetCredits: isTokenBudget ? 0 : parsed,
+    );
+    if (!raised && mounted) {
+      showTopToast(context, message: context.l10n.aiCoverageBusyOtherSnapshot);
+    }
+  }
+
+  Widget? _buildCoverageBanner() {
+    if (!_useFullCoverage) return null;
+    final state = _coverageJobState;
+    if (state == null || state.snapshotId != widget.snapshotId) return null;
+    if (state.status == CoverageJobStatus.idle ||
+        state.status == CoverageJobStatus.cancelled) {
+      return null;
+    }
+    return CoverageJobBanner(
+      state: state,
+      verdictRows: _coverageVerdictRows,
+      onPause: state.status == CoverageJobStatus.running
+          ? () => unawaited(AiCoverageCoordinator.instance.pauseCoverage())
+          : null,
+      onResume: state.status == CoverageJobStatus.paused
+          ? () => unawaited(_resumeFullCoverage())
+          : null,
+      onCancel:
+          (state.status == CoverageJobStatus.running ||
+              state.status == CoverageJobStatus.paused)
+          ? () => unawaited(_cancelFullCoverage())
+          : null,
+      onRaiseBudget:
+          state.status == CoverageJobStatus.paused &&
+              state.pauseReason == CoveragePauseReason.budget
+          ? () => unawaited(_raiseCoverageBudget())
+          : null,
+    );
+  }
+
+  Widget? _buildLegacyResultNotice() {
+    if (!_showLegacyResultNotice) return null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppleSpacing.sm),
+      child: Text(
+        context.l10n.aiCoverageLegacyResultNotice,
+        style: AppleTypography.caption.copyWith(color: context.volward.warning),
+      ),
+    );
+  }
+
+  List<AiVerdict> _unanalyzedVerdicts() {
+    final state = _coverageJobState;
+    if (!_useFullCoverage || state == null) return const [];
+    if (state.status == CoverageJobStatus.completed) return const [];
+    final pending = state.totalUnclassified - state.analyzedFiles;
+    if (pending <= 0) return const [];
+    return buildUnanalyzedDisplayVerdicts(
+      pendingFileCount: pending,
+      previewCandidates: _unknown,
+      verdictPaths: _verdicts.map((verdict) => verdict.path).toSet(),
+      itemReason: context.l10n.aiCoverageUnanalyzedReason,
+      aggregateSummaryReason: (remaining) =>
+          context.l10n.aiCoverageUnanalyzedAggregate(remaining),
+    );
   }
 
   Future<void> _recordByokTokenUsage({
@@ -1059,10 +1494,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         candidateCount: 0,
       ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
-      _Phase.analyzing => _buildProgressBody(
-        label: context.l10n.aiWorkspacePhaseAnalyzing,
-        candidateCount: _unknown.length,
-      ),
+      _Phase.analyzing =>
+        _useFullCoverage && _verdicts.isNotEmpty
+            ? _buildResults()
+            : _buildProgressBody(
+                label: context.l10n.aiWorkspacePhaseAnalyzing,
+                candidateCount:
+                    _coverageJobState?.totalUnclassified ?? _unknown.length,
+              ),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -1107,7 +1546,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final l10n = context.l10n;
     final tokens = context.volward;
     final canAnalyze =
-        _hasProvider && !(_mode == AiMode.platform && _platformCredits == 0);
+        _hasProvider &&
+        !(_mode == AiMode.platform && _platformCredits == 0) &&
+        (!_useFullCoverage || (_coverageHydrated && !_coverageHydrating));
     final needsSettings =
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
@@ -1128,7 +1569,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           l10n.aiPreCheckUnknownTitle(_unknown.length, _estimatedTokens),
           style: context.vwCaption,
         ),
-        if (_truncated) ...[
+        if (_truncated && !_useFullCoverage) ...[
           const SizedBox(height: AppleSpacing.xs),
           Text(
             l10n.aiTruncatedNotice(_unknown.length, _candidatesBeforeCap),
@@ -1141,6 +1582,27 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             l10n.aiPrecheckCreditsCost(_platformCredits!),
             style: context.vwCaption,
           ),
+        ],
+        if (_useFullCoverage) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(l10n.aiCoverageFullRunHint, style: context.vwCaption),
+          if (_coverageHydrating) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            Text(l10n.aiCoverageHydrating, style: context.vwCaption),
+          ],
+          if (_mode == AiMode.platform &&
+              _platformCredits != null &&
+              _coverageBudgetCredits != null &&
+              _platformCredits! < _coverageBudgetCredits!) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            Text(
+              l10n.aiCoveragePlatformBudgetWarning(
+                _platformCredits!,
+                _coverageBudgetCredits!,
+              ),
+              style: AppleTypography.caption.copyWith(color: tokens.warning),
+            ),
+          ],
         ],
         if (needsSettings) ...[
           const SizedBox(height: AppleSpacing.md),
@@ -1272,6 +1734,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       ...localKeep,
       ..._verdicts.where((verdict) => verdict.verdict == 'review_needed'),
       ..._verdicts.where((verdict) => verdict.verdict == 'keep'),
+      ..._unanalyzedVerdicts(),
     ];
     final directoryPaths = <String>{
       ..._unknown
@@ -1346,6 +1809,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           .toList(growable: false);
       if (visibleItems.isEmpty) continue;
       final sortedItems = _sortedVisibleItems(visibleItems);
+      if (sortedItems.isEmpty) continue;
       visibleGroups.add(
         _VisibleResultGroup(
           group: group,
@@ -1413,6 +1877,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       ),
       ...sortBucket(items.where((item) => item.verdict == 'safe_to_remove')),
       ...sortBucket(items.where((item) => item.verdict == 'keep')),
+      ...sortBucket(items.where((item) => item.verdict == 'unanalyzed')),
     ];
   }
 
@@ -1516,7 +1981,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _ReviewDecision.keep => 2,
       },
       'safe_to_remove' => 3,
-      _ => 4,
+      'keep' => 4,
+      'unanalyzed' => 5,
+      _ => 6,
     };
   }
 
@@ -1626,6 +2093,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                 key: AiAnalysisWorkspace.summaryKey,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_buildLegacyResultNotice() case final legacy?) ...[
+                    legacy,
+                  ],
+                  if (_buildCoverageBanner() case final banner?) ...[
+                    banner,
+                    const SizedBox(height: AppleSpacing.sm),
+                  ],
                   _buildResultsOverview(summary: summary, wide: wide),
                   if (normalizedGroups.isNotEmpty) ...[
                     const SizedBox(height: AppleSpacing.sm),
@@ -2313,6 +2787,7 @@ class _ResultRow extends StatelessWidget {
     final tokens = context.volward;
     final isSafe = item.verdict == 'safe_to_remove';
     final isReview = item.verdict == 'review_needed';
+    final isUnanalyzed = item.verdict == 'unanalyzed';
     final subtitle = switch (item.verdict) {
       'safe_to_remove' => [
         item.confidence,
@@ -2320,6 +2795,7 @@ class _ResultRow extends StatelessWidget {
         if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
       ].join(' · '),
       'review_needed' => reviewStatusLabel,
+      'unanalyzed' => item.reason,
       _ => [
         context.l10n.aiResultsMetricProtected,
         item.confidence,
@@ -2340,6 +2816,11 @@ class _ResultRow extends StatelessWidget {
         size: 18,
         color: tokens.warning,
       ),
+      'unanalyzed' => Icon(
+        Icons.hourglass_empty_outlined,
+        size: 18,
+        color: tokens.inkMuted48,
+      ),
       _ => Icon(Icons.lock_outline, size: 18, color: tokens.inkMuted48),
     };
     final titleBlock = Column(
@@ -2353,7 +2834,11 @@ class _ResultRow extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: context.vwFinePrint.copyWith(
-            color: isReview ? tokens.warning : null,
+            color: isReview
+                ? tokens.warning
+                : isUnanalyzed
+                ? tokens.inkMuted80
+                : null,
           ),
         ),
       ],

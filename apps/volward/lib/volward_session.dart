@@ -7,6 +7,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 
 import 'ai/ai_provider.dart';
+import 'ai/native_coverage_engine.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
 import 'bridge/native_bridge.dart';
@@ -1934,6 +1935,20 @@ class VolwardSession extends ChangeNotifier {
 
   bool get hasAiSessionApi =>
       _ready && _engine != null && VolwardNativeBridge.instance.hasAiSessionApi;
+
+  bool get hasAiCoverageApi =>
+      _ready &&
+      _engine != null &&
+      VolwardNativeBridge.instance.hasAiCoverageApi;
+
+  NativeCoverageEngine? get coverageEngine {
+    final engine = _engine;
+    if (!hasAiCoverageApi || engine == null) return null;
+    return NativeCoverageEngine(
+      bridge: VolwardNativeBridge.instance,
+      engine: engine,
+    );
+  }
 
   bool get hasAiContractApi =>
       _ready && VolwardNativeBridge.instance.hasAiContractApi;

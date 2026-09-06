@@ -20,10 +20,11 @@ use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
-    ai_aggregate_path_from_delete_target, AiCandidateBuilder, AnalysisOptions, Capability,
-    CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
-    CleanupCandidateAnalyzer, DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink,
-    OsKnowledgeBase, SimilarPhotoAnalyzer, DEFAULT_CANDIDATE_CAP,
+    ai_aggregate_path_from_delete_target, build_ai_coverage_plan, coverage_group_member_paths,
+    AiCandidateBuilder, AiCoveragePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
+    CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
+    DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink, OsKnowledgeBase,
+    SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
 };
 
 use crate::proto;
@@ -72,6 +73,7 @@ pub struct VolwardEngine {
     is_ai_candidates_building: Arc<AtomicBool>,
     ai_candidates_json: Arc<Mutex<Option<String>>>,
     ai_candidates_generation: Arc<std::sync::atomic::AtomicU64>,
+    ai_coverage_plan: Arc<Mutex<Option<AiCoveragePlan>>>,
     capability_registry: Arc<Mutex<CapabilityRegistry>>,
     /// Async capability jobs keyed by job id; clone-safe interior mutability.
     capability_jobs: CapabilityJobStore,
@@ -119,6 +121,7 @@ impl VolwardEngine {
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            ai_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(capability_registry)),
             capability_jobs: CapabilityJobStore::new(),
         }
@@ -158,6 +161,14 @@ impl VolwardEngine {
         if let Ok(mut g) = self.last_snapshot.lock() {
             *g = Some(snapshot);
         }
+    }
+
+    pub fn set_last_index(&self, index: SnapshotIndex) {
+        let version = self.index_version.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Ok(mut g) = self.last_index.lock() {
+            *g = Some(index);
+        }
+        let _ = version;
     }
 
     /// Current catalog version — Dart uses this as `SnapshotQueryKey.version`
@@ -965,6 +976,35 @@ impl VolwardEngine {
     /// `last_snapshot`), then falls back to in-memory `last_snapshot`
     /// (tests / legacy). Heavy work: call via
     /// [`Self::start_build_ai_candidates_async`] from the UI path.
+    fn index_for_ai(&self, snapshot_id: &str) -> Result<SnapshotIndex, String> {
+        if let Ok(guard) = self.last_index.lock() {
+            if let Some(index) = guard.as_ref() {
+                if index.snapshot_id != snapshot_id {
+                    return Err(format!(
+                        "error:snapshot_id mismatch: got {}, expected {snapshot_id}",
+                        index.snapshot_id
+                    ));
+                }
+                return Ok(index.clone());
+            }
+        }
+        let snapshot = self
+            .last_snapshot
+            .lock()
+            .map_err(|_| "error:lock".to_string())?
+            .clone();
+        let Some(snapshot) = snapshot else {
+            return Err("error:no index or snapshot loaded".to_string());
+        };
+        if snapshot.snapshot_id != snapshot_id {
+            return Err(format!(
+                "error:snapshot_id mismatch: got {}, expected {snapshot_id}",
+                snapshot.snapshot_id
+            ));
+        }
+        Ok(SnapshotIndex::from_snapshot_with_version(&snapshot, 1))
+    }
+
     pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
         use std::collections::HashSet;
         use volward_core::{
@@ -1199,6 +1239,7 @@ impl VolwardEngine {
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            ai_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
             capability_jobs: CapabilityJobStore::new(),
         };
@@ -1216,6 +1257,92 @@ impl VolwardEngine {
             .ok()
             .and_then(|g| g.clone())
             .unwrap_or_else(|| "error:not_ready".to_string())
+    }
+
+    pub fn build_ai_coverage_plan_json(&self, snapshot_id: &str) -> String {
+        let kb = volward_core::os_knowledge::OsKnowledgeBase::for_current_platform();
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        let plan = build_ai_coverage_plan(&index, &kb);
+        let snapshot_id = plan.snapshot_id.clone();
+        let root_path = plan.root_path.clone();
+        let root_size_bytes = plan.root_size_bytes;
+        let scanned_at_ms = plan.scanned_at_ms;
+        let stats = plan.stats.clone();
+        let total_unclassified = plan.total_unclassified;
+        let pre_classified_count = plan.pre_classified_count;
+        let group_rows = plan.group_rows;
+        let file_rows = plan.file_rows;
+        let estimated_pages = (plan.rows.len() as u64).div_ceil(40);
+        if let Ok(mut slot) = self.ai_coverage_plan.lock() {
+            *slot = Some(plan);
+        }
+        serde_json::json!({
+            "snapshot_id": snapshot_id,
+            "plan_version": AI_COVERAGE_PLAN_VERSION,
+            "root_path": root_path,
+            "root_size_bytes": root_size_bytes,
+            "scanned_at_ms": scanned_at_ms,
+            "stats": stats,
+            "total_unclassified": total_unclassified,
+            "pre_classified_count": pre_classified_count,
+            "group_rows": group_rows,
+            "file_rows": file_rows,
+            "estimated_pages": estimated_pages,
+        })
+        .to_string()
+    }
+
+    pub fn next_ai_coverage_page_json(
+        &self,
+        snapshot_id: &str,
+        plan_version: u64,
+        cursor: u64,
+        page_size: u32,
+    ) -> String {
+        let page_size = page_size.max(1) as usize;
+        let guard = match self.ai_coverage_plan.lock() {
+            Ok(guard) => guard,
+            Err(_) => return "error:lock".to_string(),
+        };
+        let Some(plan) = guard.as_ref() else {
+            return "error:coverage plan not built".to_string();
+        };
+        if plan.snapshot_id != snapshot_id || plan.plan_version != plan_version {
+            return "error:coverage plan mismatch".to_string();
+        }
+        let (rows, next_cursor) = plan.page(cursor, page_size);
+        let out_snapshot_id = plan.snapshot_id.clone();
+        serde_json::json!({
+            "snapshot_id": out_snapshot_id,
+            "plan_version": plan.plan_version,
+            "next_cursor": next_cursor,
+            "rows": rows,
+        })
+        .to_string()
+    }
+
+    pub fn resolve_ai_coverage_group_json(&self, snapshot_id: &str, group_path: &str) -> String {
+        let kb = volward_core::os_knowledge::OsKnowledgeBase::for_current_platform();
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        let members = coverage_group_member_paths(&index, &kb, group_path);
+        serde_json::json!({
+            "snapshot_id": snapshot_id,
+            "path": group_path,
+            "members": members
+                .into_iter()
+                .map(|(path, size_bytes)| serde_json::json!({
+                    "path": path,
+                    "size_bytes": size_bytes,
+                }))
+                .collect::<Vec<_>>(),
+        })
+        .to_string()
     }
 
     pub fn save_ai_result_json(&self, snapshot_id: &str, result_json: &str) -> bool {
@@ -2059,6 +2186,90 @@ mod tests {
         assert_eq!(
             parent_path_of("//server/share").as_deref(),
             Some("//server/share")
+        );
+    }
+
+    #[test]
+    fn coverage_plan_builds_from_index_and_pages_without_truncation() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let engine = VolwardEngine::new();
+        let root = "/Users/x";
+        let mut builder = SnapshotIndexBuilder::new(root);
+        for i in 0..120 {
+            let path = if i % 2 == 0 {
+                format!("/Users/x/Library/Caches/cursor/f{i}.bin")
+            } else {
+                format!("/Users/x/plain/f{i}.bin")
+            };
+            builder.record_file_size(&path, (i + 1) as u64);
+        }
+        let index = builder.finish(
+            "coverage-snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let summary = engine.build_ai_coverage_plan_json("coverage-snap");
+        assert!(summary.contains(r#""total_unclassified":120"#), "{summary}");
+        assert!(summary.contains(r#""group_rows":1"#), "{summary}");
+        assert!(summary.contains(r#""plan_version":1"#), "{summary}");
+
+        let page1 = engine.next_ai_coverage_page_json("coverage-snap", 1, 0, 40);
+        let parsed: serde_json::Value = serde_json::from_str(&page1).unwrap();
+        assert_eq!(parsed["rows"].as_array().unwrap().len(), 40);
+        assert_eq!(parsed["next_cursor"], 40);
+
+        let page2 = engine.next_ai_coverage_page_json("coverage-snap", 1, 40, 40);
+        let parsed2: serde_json::Value = serde_json::from_str(&page2).unwrap();
+        assert_eq!(parsed2["rows"].as_array().unwrap().len(), 21);
+        assert_eq!(parsed2["next_cursor"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn coverage_group_resolution_returns_all_members() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let engine = VolwardEngine::new();
+        let root = "/Users/x";
+        let mut builder = SnapshotIndexBuilder::new(root);
+        for i in 0..250 {
+            builder.record_file_size(
+                &format!("/Users/x/Library/Caches/cursor/f{i}.bin"),
+                (i + 1) as u64,
+            );
+        }
+        builder.record_file_size("/Users/x/Library/Caches/cursor/Code/nested.bin", 1);
+        let index = builder.finish(
+            "coverage-snap2".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        engine.build_ai_coverage_plan_json("coverage-snap2");
+        let json = engine.resolve_ai_coverage_group_json(
+            "coverage-snap2",
+            "/Users/x/Library/Caches/cursor",
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["members"].as_array().unwrap().len(), 251, "{json}");
+    }
+
+    #[test]
+    fn coverage_plan_rejects_snapshot_mismatch() {
+        let engine = VolwardEngine::new();
+        let summary = engine.build_ai_coverage_plan_json("missing-snap");
+        assert!(
+            summary.contains("error:no index or snapshot loaded"),
+            "{summary}"
         );
     }
 }

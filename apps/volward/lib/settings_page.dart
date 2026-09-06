@@ -42,6 +42,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late bool _deletableOnly;
   final _apiKeyController = TextEditingController();
+  final _coverageBudgetTokensController = TextEditingController();
+  final _coverageBudgetCreditsController = TextEditingController();
   AiMode _aiMode = AiMode.off;
   bool _hasByokKey = false;
   PlatformUser? _platformUser;
@@ -58,6 +60,8 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     _apiKeyController.dispose();
+    _coverageBudgetTokensController.dispose();
+    _coverageBudgetCreditsController.dispose();
     super.dispose();
   }
 
@@ -82,10 +86,15 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       }
       if (!mounted) return;
+      final budget = await store.coverageBudgetForMode(mode);
       setState(() {
         _aiMode = mode;
         _hasByokKey = key != null && key.isNotEmpty;
         _platformUser = platformUser;
+        _coverageBudgetTokensController.text =
+            '${budget.tokens > 0 ? budget.tokens : AiSettingsStore.defaultCoverageBudgetTokens}';
+        _coverageBudgetCreditsController.text =
+            '${budget.credits > 0 ? budget.credits : AiSettingsStore.defaultCoverageBudgetCredits}';
         if (_hasByokKey) {
           _apiKeyController.text = '••••••••••••••••';
         }
@@ -93,6 +102,28 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (_) {
       // Keep defaults when settings file / keychain is unavailable.
     }
+  }
+
+  Future<void> _saveCoverageBudget({required bool tokens}) async {
+    final l10n = context.l10n;
+    final raw = tokens
+        ? _coverageBudgetTokensController.text.trim()
+        : _coverageBudgetCreditsController.text.trim();
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed <= 0) {
+      if (mounted) {
+        showTopToast(context, message: l10n.aiSettingsCoverageBudgetInvalid);
+      }
+      return;
+    }
+    final store = AiSettingsStore.instance;
+    if (tokens) {
+      await store.setCoverageBudgetTokens(parsed);
+    } else {
+      await store.setCoverageBudgetCredits(parsed);
+    }
+    if (!mounted) return;
+    showTopToast(context, message: l10n.aiSettingsCoverageBudgetSaved);
   }
 
   Future<void> _linkPlatformEmail() async {
@@ -415,6 +446,37 @@ class _SettingsPageState extends State<SettingsPage> {
                           onPressed: _openPurchase,
                         ),
                       ],
+                      const SizedBox(height: AppleSpacing.md),
+                      Text(
+                        l10n.aiSettingsCoverageBudgetCreditsLabel,
+                        style: context.vwCaptionStrong,
+                      ),
+                      const SizedBox(height: AppleSpacing.xs),
+                      TextField(
+                        controller: _coverageBudgetCreditsController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: l10n.aiSettingsCoverageBudgetCreditsHint,
+                          isDense: true,
+                          filled: true,
+                          fillColor: v.surfacePearl,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppleRadius.sm),
+                            borderSide: BorderSide(color: v.hairline),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppleRadius.sm),
+                            borderSide: BorderSide(color: v.hairline),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppleSpacing.sm),
+                      AppleButton(
+                        label: l10n.aiSettingsCoverageBudgetSave,
+                        variant: AppleButtonVariant.pearl,
+                        onPressed: () =>
+                            unawaited(_saveCoverageBudget(tokens: false)),
+                      ),
                     ],
                     if (_aiMode == AiMode.byok) ...[
                       const SizedBox(height: AppleSpacing.md),
@@ -461,6 +523,37 @@ class _SettingsPageState extends State<SettingsPage> {
                                 : null,
                           ),
                         ],
+                      ),
+                      const SizedBox(height: AppleSpacing.md),
+                      Text(
+                        l10n.aiSettingsCoverageBudgetTokensLabel,
+                        style: context.vwCaptionStrong,
+                      ),
+                      const SizedBox(height: AppleSpacing.xs),
+                      TextField(
+                        controller: _coverageBudgetTokensController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: l10n.aiSettingsCoverageBudgetTokensHint,
+                          isDense: true,
+                          filled: true,
+                          fillColor: v.surfacePearl,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppleRadius.sm),
+                            borderSide: BorderSide(color: v.hairline),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppleRadius.sm),
+                            borderSide: BorderSide(color: v.hairline),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppleSpacing.sm),
+                      AppleButton(
+                        label: l10n.aiSettingsCoverageBudgetSave,
+                        variant: AppleButtonVariant.pearl,
+                        onPressed: () =>
+                            unawaited(_saveCoverageBudget(tokens: true)),
                       ),
                     ],
                     const SizedBox(height: AppleSpacing.md),

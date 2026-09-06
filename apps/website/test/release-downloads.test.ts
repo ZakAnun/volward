@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   RELEASES_FALLBACK_FILE_NAME,
   fetchLatestRelease,
+  fetchReleaseByTag,
   resolveDownloadAssets,
   resolveDownloads,
 } from '../src/lib/release-downloads';
@@ -250,6 +251,29 @@ describe('fetchLatestRelease', () => {
   });
 });
 
+describe('fetchReleaseByTag', () => {
+  it('requests the tagged release endpoint', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => versionedRelease,
+    });
+
+    await fetchReleaseByTag('v0.0.3', {
+      fetchFn,
+      env: { GITHUB_TOKEN: 'ghp_build_token' },
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.github.com/repos/ZakAnun/volward/releases/tags/v0.0.3',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer ghp_build_token',
+        }),
+      }),
+    );
+  });
+});
+
 describe('resolveDownloads', () => {
   it('falls back to the complete releases page when the API request fails', async () => {
     const warn = vi.fn();
@@ -264,5 +288,52 @@ describe('resolveDownloads', () => {
     expect(downloads.every((item) => item.href === GITHUB_RELEASES_URL)).toBe(true);
     expect(downloads.every((item) => item.fileName !== '')).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('rate limited'));
+  });
+
+  it('fails fast in strict mode when the API request fails', async () => {
+    await expect(
+      resolveDownloads('en', {
+        fetchFn: vi.fn().mockRejectedValue(new Error('rate limited')),
+        env: { WEBSITE_REQUIRE_RELEASE: '1' },
+      }),
+    ).rejects.toThrow('rate limited');
+  });
+
+  it('fails fast in strict mode when the latest release is missing platform assets', async () => {
+    await expect(
+      resolveDownloads('en', {
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            tag_name: 'v0.0.6',
+            assets: [
+              {
+                name: 'volward-latest-macos-arm64.zip',
+                browser_download_url:
+                  'https://github.com/ZakAnun/volward/releases/download/v0.0.6/volward-latest-macos-arm64.zip',
+              },
+            ],
+          }),
+        }),
+        env: { WEBSITE_REQUIRE_RELEASE: '1' },
+      }),
+    ).rejects.toThrow(/missing download assets for:/);
+  });
+
+  it('uses EXPECTED_RELEASE_TAG instead of latest when provided', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => versionedRelease,
+    });
+
+    await resolveDownloads('en', {
+      fetchFn,
+      env: { EXPECTED_RELEASE_TAG: 'v0.0.3' },
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.github.com/repos/ZakAnun/volward/releases/tags/v0.0.3',
+      expect.any(Object),
+    );
   });
 });

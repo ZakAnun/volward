@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'ai_contract.dart';
 import 'ai_provider.dart';
+import 'cancel_token.dart';
 import '../volward_session.dart';
 
 const _kRequestTimeout = Duration(seconds: 90);
@@ -30,14 +31,15 @@ class ByokAiProvider implements AiProvider {
     this.contract,
     http.Client? client,
     this.requestTimeout = _kRequestTimeout,
-  }) : _client = client ?? http.Client(),
-       _ownsClient = client == null;
+  }) : _ownsClient = client == null,
+       _client = client ?? http.Client();
 
   final String apiKey;
   final Duration requestTimeout;
   final AiContract? contract;
-  final http.Client _client;
   final bool _ownsClient;
+  http.Client _client;
+  bool _clientClosed = false;
   bool _tokenUsageComplete = true;
 
   /// Legacy accessor used by cost estimate UI; model is owned by the contract.
@@ -60,15 +62,35 @@ class ByokAiProvider implements AiProvider {
   /// Call when the provider is no longer needed (closes owned client only).
   void dispose() {
     if (_ownsClient) {
-      _client.close();
+      try {
+        _client.close();
+      } catch (_) {}
     }
+  }
+
+  http.Client _ensureClient() {
+    if (_clientClosed) {
+      _client = http.Client();
+      _clientClosed = false;
+    }
+    return _client;
+  }
+
+  void _abortClient() {
+    _clientClosed = true;
+    try {
+      _client.close();
+    } catch (_) {}
   }
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
 
   @override
-  Future<List<AiVerdict>> analyze(List<AiCandidate> candidates) async {
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
     lastTokenUsage = null;
     _tokenUsageComplete = true;
     if (apiKey.trim().isEmpty) {
@@ -77,23 +99,62 @@ class ByokAiProvider implements AiProvider {
     final contract = _resolveContract();
     final size = contract.batchSize();
     final out = <AiVerdict>[];
+    var promptTokens = 0;
+    var completionTokens = 0;
+    var estimated = false;
     for (var i = 0; i < candidates.length; i += size) {
       final end = i + size < candidates.length ? i + size : candidates.length;
-      out.addAll(await _analyzeBatch(contract, candidates.sublist(i, end)));
+      final sub = await _analyzeBatch(
+        contract,
+        candidates.sublist(i, end),
+        cancelToken: cancelToken,
+      );
+      out.addAll(sub.verdicts);
+      promptTokens += sub.promptTokens;
+      completionTokens += sub.completionTokens;
+      estimated = estimated || sub.estimated;
+      // Reflect completed batches incrementally so a later failure still
+      // leaves the partial usage for the caller (workspace) to record.
+      lastTokenUsage = ByokTokenUsage(
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+        totalTokens: promptTokens + completionTokens,
+      );
+      _tokenUsageComplete = !estimated;
     }
-    return out;
+    return AnalyzeResult(
+      verdicts: out,
+      tokens: promptTokens + completionTokens,
+      credits: 0,
+      inputTokens: promptTokens,
+      outputTokens: completionTokens,
+      estimated: estimated,
+    );
   }
 
-  Future<List<AiVerdict>> _analyzeBatch(
+  Future<
+    ({
+      List<AiVerdict> verdicts,
+      int promptTokens,
+      int completionTokens,
+      bool estimated,
+    })
+  >
+  _analyzeBatch(
     AiContract contract,
-    List<AiCandidate> batch,
-  ) async {
+    List<AiCandidate> batch, {
+    CancelToken? cancelToken,
+  }) async {
     final body = contract.buildRequestJson(batch);
     final endpoint = contract.upstreamEndpoint();
+    cancelToken?.whenCancelled.then((_) => _abortClient());
     for (var attempt = 0; attempt < 3; attempt++) {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CoverageCancelledException();
+      }
       late final http.Response response;
       try {
-        response = await _client
+        response = await _ensureClient()
             .post(
               Uri.parse(endpoint),
               headers: {
@@ -106,6 +167,9 @@ class ByokAiProvider implements AiProvider {
       } on TimeoutException {
         throw Exception('request_timeout');
       } on http.ClientException catch (e) {
+        if (cancelToken?.isCancelled ?? false) {
+          throw const CoverageCancelledException();
+        }
         throw Exception('network_error:$e');
       }
 
@@ -119,65 +183,52 @@ class ByokAiProvider implements AiProvider {
       if (response.statusCode != 200) {
         throw Exception('api_error:${response.statusCode}');
       }
-      _recordTokenUsage(response.body, batch);
-      return contract.parseResponseJson(response.body, batch);
+      final usage = _extractTokenUsage(response.body, batch);
+      return (
+        verdicts: contract.parseResponseJson(response.body, batch),
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        estimated: usage.estimated,
+      );
     }
     throw Exception('rate_limited_after_retries');
   }
 
-  void _recordTokenUsage(String responseBody, List<AiCandidate> batch) {
+  ({int promptTokens, int completionTokens, bool estimated}) _extractTokenUsage(
+    String responseBody,
+    List<AiCandidate> batch,
+  ) {
     try {
       final decoded = jsonDecode(responseBody);
       if (decoded is! Map) {
-        _recordEstimatedTokenUsage(batch);
-        return;
+        return _estimatedUsage(batch);
       }
       final usage = decoded['usage'];
       if (usage is! Map) {
-        _recordEstimatedTokenUsage(batch);
-        return;
+        return _estimatedUsage(batch);
       }
       final promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
       final completionTokens = (usage['completion_tokens'] as num?)?.toInt();
       if (promptTokens == null || completionTokens == null) {
-        _recordEstimatedTokenUsage(batch);
-        return;
+        return _estimatedUsage(batch);
       }
-      final totalTokens =
-          (usage['total_tokens'] as num?)?.toInt() ??
-          promptTokens + completionTokens;
-      _accumulateTokenUsage(
-        ByokTokenUsage(
-          promptTokens: promptTokens,
-          completionTokens: completionTokens,
-          totalTokens: totalTokens,
-        ),
+      return (
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+        estimated: false,
       );
     } catch (_) {
-      _recordEstimatedTokenUsage(batch);
+      return _estimatedUsage(batch);
     }
   }
 
-  void _recordEstimatedTokenUsage(List<AiCandidate> batch) {
-    _tokenUsageComplete = false;
-    final promptTokens = batch.length * 8 + 200;
-    final completionTokens = batch.length * 40;
-    _accumulateTokenUsage(
-      ByokTokenUsage(
-        promptTokens: promptTokens,
-        completionTokens: completionTokens,
-        totalTokens: promptTokens + completionTokens,
-      ),
-    );
-  }
-
-  void _accumulateTokenUsage(ByokTokenUsage usage) {
-    final previous = lastTokenUsage;
-    lastTokenUsage = ByokTokenUsage(
-      promptTokens: (previous?.promptTokens ?? 0) + usage.promptTokens,
-      completionTokens:
-          (previous?.completionTokens ?? 0) + usage.completionTokens,
-      totalTokens: (previous?.totalTokens ?? 0) + usage.totalTokens,
+  ({int promptTokens, int completionTokens, bool estimated}) _estimatedUsage(
+    List<AiCandidate> batch,
+  ) {
+    return (
+      promptTokens: batch.length * 8 + 200,
+      completionTokens: batch.length * 40,
+      estimated: true,
     );
   }
 }

@@ -57,7 +57,7 @@ void main() {
     final out = await p.analyze([
       const AiCandidate(path: '/a', sizeBytes: 1, isDir: false),
     ]);
-    expect(out.single.verdict, 'keep');
+    expect(out.verdicts.single.verdict, 'keep');
   });
 
   test('accumulates reported token usage across batches', () async {

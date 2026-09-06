@@ -692,6 +692,113 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String aiCoverageProgress(int analyzed, int total) {
+    return '覆盖率：已分析 $analyzed / $total 个文件';
+  }
+
+  @override
+  String get aiCoverageFullRunHint => '全量覆盖分析会在后台持续运行，直到每个未分类文件都有 AI 结论。';
+
+  @override
+  String get aiCoveragePause => '暂停覆盖分析';
+
+  @override
+  String get aiCoverageResume => '继续覆盖分析';
+
+  @override
+  String get aiCoverageCompletedNotice => '本次扫描已全部完成 AI 覆盖分析。';
+
+  @override
+  String aiCoverageUnanalyzedCount(int count) {
+    return '尚有 $count 个文件未分析';
+  }
+
+  @override
+  String aiCoverageSourceStats(int file, int group, int local) {
+    return '逐文件 $file · 目录级 $group · 本地预分类 $local';
+  }
+
+  @override
+  String aiCoverageBudgetPaused(int used, int budget) {
+    return '已达预算上限（$used/$budget）。可继续分析，或在设置中提高上限。';
+  }
+
+  @override
+  String get aiCoverageLegacyResultNotice =>
+      '当前显示的是旧版 Top-150 结果。启动全量覆盖可分析全部未分类文件。';
+
+  @override
+  String get aiCoverageUnanalyzedReason => '等待 AI 覆盖分析';
+
+  @override
+  String aiCoverageUnanalyzedAggregate(int count) {
+    return '另有 $count 个文件等待分析';
+  }
+
+  @override
+  String get aiCoverageCancel => '停止覆盖分析';
+
+  @override
+  String get aiCoverageRaiseBudget => '提高上限并继续';
+
+  @override
+  String get aiCoverageRaiseBudgetTitle => '提高覆盖分析预算';
+
+  @override
+  String get aiCoverageNotifyTitle => 'Volward AI';
+
+  @override
+  String aiCoverageNotifyComplete(int analyzed, int total) {
+    return '覆盖分析完成：已分析 $analyzed/$total 个文件。';
+  }
+
+  @override
+  String aiCoverageNotifyBudgetPaused(int analyzed, int total) {
+    return '已达预算上限，覆盖分析已暂停：$analyzed/$total 已分析。';
+  }
+
+  @override
+  String get aiCoverageNotifyFailed => '覆盖分析因错误暂停，请打开 AI 结果页重试。';
+
+  @override
+  String get aiCoverageBudgetInvalid => '请输入高于当前上限的预算值。';
+
+  @override
+  String get aiCoverageHydrating => '正在加载覆盖分析任务状态…';
+
+  @override
+  String get aiCoverageUnavailable => '当前无法启动全量覆盖分析，请等待扫描加载完成后再试。';
+
+  @override
+  String get aiCoverageBusyOtherSnapshot => '另一个扫描正在运行全量覆盖分析，请等待其完成或先暂停后再试。';
+
+  @override
+  String aiCoveragePlatformBudgetWarning(int available, int budget) {
+    return '平台余额（$available）低于全量运行预算（$budget），分析可能提前暂停。';
+  }
+
+  @override
+  String get aiSettingsCoverageBudgetInvalid => '请输入大于 0 的数值。';
+
+  @override
+  String get aiSettingsCoverageBudgetTokensLabel => '全量覆盖 token 预算（自带密钥）';
+
+  @override
+  String get aiSettingsCoverageBudgetTokensHint => '500000';
+
+  @override
+  String get aiSettingsCoverageBudgetCreditsLabel => '全量覆盖积分预算（平台模式）';
+
+  @override
+  String get aiSettingsCoverageBudgetCreditsHint => '20';
+
+  @override
+  String get aiSettingsCoverageBudgetSave => '保存预算';
+
+  @override
+  String get aiSettingsCoverageBudgetSaved => '覆盖分析预算已保存';
+
+  @override
   String get aiCleanupSourceAiToolCache => 'AI 工具缓存/临时文件';
 
   @override
