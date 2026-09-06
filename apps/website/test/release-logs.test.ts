@@ -166,4 +166,32 @@ describe('resolveReleaseLogs', () => {
     ).resolves.toEqual([]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('offline'));
   });
+
+  it('fails fast in strict mode when the GitHub request fails', async () => {
+    await expect(
+      resolveReleaseLogs('en', {
+        fetchFn: vi.fn().mockRejectedValue(new Error('offline')),
+        env: { WEBSITE_REQUIRE_RELEASE: '1' },
+      }),
+    ).rejects.toThrow('offline');
+  });
+
+  it('fails fast in strict mode when no release logs can be displayed', async () => {
+    await expect(
+      resolveReleaseLogs('en', {
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => [
+            {
+              tag_name: 'v0.0.6',
+              html_url: 'https://github.com/ZakAnun/volward/releases/tag/v0.0.6',
+              published_at: '2026-09-03T13:16:36Z',
+              body: '',
+            },
+          ],
+        }),
+        env: { WEBSITE_REQUIRE_RELEASE: '1' },
+      }),
+    ).rejects.toThrow(/empty list/);
+  });
 });

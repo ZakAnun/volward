@@ -607,3 +607,5 @@ jobs:
        needs.upload-windows-assets.result == 'success')
     uses: ./.github/workflows/website-release.yml
     secrets: inherit
+    with:
+      expected_release_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}

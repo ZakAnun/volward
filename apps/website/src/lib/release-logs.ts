@@ -1,3 +1,4 @@
+import { isStrictReleaseBuild, type ReleaseBuildOptions } from './release-build-options';
 import { GITHUB_REPO, type Locale } from './site';
 
 const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`;
@@ -11,9 +12,10 @@ type FetchReleaseLogsOptions = {
   env?: Record<string, string | undefined>;
 };
 
-type ResolveReleaseLogsOptions = FetchReleaseLogsOptions & {
-  logger?: Logger;
-};
+type ResolveReleaseLogsOptions = FetchReleaseLogsOptions &
+  ReleaseBuildOptions & {
+    logger?: Logger;
+  };
 
 type GitHubReleaseLogPayload = {
   tag_name?: unknown;
@@ -136,10 +138,23 @@ export async function resolveReleaseLogs(
   locale: Locale,
   options: ResolveReleaseLogsOptions = {},
 ): Promise<ReleaseLog[]> {
+  const env = options.env ?? process.env;
+  const strict = isStrictReleaseBuild(env, options);
+
   try {
     const releases = await fetchReleaseLogs(options);
-    return resolveReleaseLogItems(locale, releases);
+    const logs = resolveReleaseLogItems(locale, releases);
+
+    if (strict && logs.length === 0) {
+      throw new Error('GitHub release logs resolved to an empty list');
+    }
+
+    return logs;
   } catch (error) {
+    if (strict) {
+      throw error;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     options.logger?.warn(`[website] Skipping GitHub release logs: ${message}`);
 
