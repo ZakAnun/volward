@@ -597,3 +597,13 @@ jobs:
           fi
           gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+  deploy-website:
+    name: Deploy website
+    needs: [create-release, upload-windows-assets]
+    if: |
+      always() &&
+      (needs.create-release.result == 'success' ||
+       needs.upload-windows-assets.result == 'success')
+    uses: ./.github/workflows/website-release.yml
+    secrets: inherit
