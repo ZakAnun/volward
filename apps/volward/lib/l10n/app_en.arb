@@ -186,6 +186,9 @@
       "error": {}
     }
   },
+  "scanPauseFailed": "Couldn't pause the current scan. Stay on this folder.",
+  "scanCacheUnreadable": "This folder's cache is unreadable. Scanning again.",
+  "scanCacheTooLarge": "This folder's cache is too large to restore. Scan again to refresh it.",
   "scanStatusFull": "Full",
   "scanStatusIncremental": "Incremental",
   "scanStatusFiles": "{mode} scan: {count} files",
@@ -585,6 +588,13 @@
       "safe": {"type": "int"},
       "review": {"type": "int"},
       "keep": {"type": "int"}
+    }
+  },
+  "aiResultsDecisionSummary": "{bytes} reclaimable · {review} need review",
+  "@aiResultsDecisionSummary": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "review": {"type": "int"}
     }
   },
   "aiResultsMetricAnalyzed": "Analyzed",

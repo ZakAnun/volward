@@ -142,7 +142,7 @@ class _PendingPreviewSession extends VolwardSession {
   }
 
   @override
-  Future<String> runScan() async {
+  Future<String> runScan({ScanRunMode mode = ScanRunMode.auto}) async {
     runScanCalls++;
     return 'scan-$runScanCalls';
   }

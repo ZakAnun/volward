@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use uuid::Uuid;
@@ -11,6 +12,7 @@ use crate::manifest::{
 };
 use crate::model::{PlatformCapabilities, ScanPhase, ScanProgress, ScanStats, StorageSnapshot};
 use crate::os_knowledge::OsKnowledgeBase;
+use crate::pause_store::FilePauseStore;
 use crate::platform::{PlatformError, PlatformStorage, WalkAction, WalkOptions};
 use crate::scan_tree::{find_subtree, ScanTreeBuilder};
 use crate::SnapshotIndexBuilder;
@@ -37,6 +39,8 @@ pub struct ScanOrchestrator<'a> {
     os_kb: OsKnowledgeBase,
     manifest_store: FileManifestStore,
     snapshot_store: FileSnapshotStore,
+    pause_store: FilePauseStore,
+    persist_pause_signal: Option<Arc<AtomicBool>>,
 }
 
 impl<'a> ScanOrchestrator<'a> {
@@ -56,6 +60,8 @@ impl<'a> ScanOrchestrator<'a> {
             os_kb: OsKnowledgeBase::for_current_platform(),
             manifest_store: FileManifestStore::new(cache_dir.join("manifests")),
             snapshot_store: FileSnapshotStore::new(cache_dir.join("snapshots")),
+            pause_store: FilePauseStore::new(cache_dir.join("pauses")),
+            persist_pause_signal: None,
         }
     }
 
@@ -69,13 +75,24 @@ impl<'a> ScanOrchestrator<'a> {
             .parent()
             .map(|parent| parent.join("snapshots"))
             .unwrap_or_else(|| PathBuf::from("snapshots"));
+        let pause_dir = manifest_dir
+            .parent()
+            .map(|parent| parent.join("pauses"))
+            .unwrap_or_else(|| PathBuf::from("pauses"));
         Self {
             platform,
             classifier,
             os_kb: OsKnowledgeBase::for_current_platform(),
             manifest_store: FileManifestStore::new(manifest_dir),
             snapshot_store: FileSnapshotStore::new(snapshot_dir),
+            pause_store: FilePauseStore::new(pause_dir),
+            persist_pause_signal: None,
         }
+    }
+
+    pub fn with_pause_signal(mut self, persist_pause_signal: Arc<AtomicBool>) -> Self {
+        self.persist_pause_signal = Some(persist_pause_signal);
+        self
     }
 
     pub fn probe(&self) -> PlatformCapabilities {
@@ -418,6 +435,7 @@ impl<'a> ScanOrchestrator<'a> {
         user_selected: Vec<String>,
         incremental: bool,
         cancel: &AtomicBool,
+        persist_pause_on_cancel: bool,
         mut on_progress: impl FnMut(ScanProgress),
     ) -> Result<crate::SnapshotIndex, PlatformError> {
         on_progress(ScanProgress {
@@ -435,6 +453,7 @@ impl<'a> ScanOrchestrator<'a> {
         let mut bytes_seen = 0u64;
         let mut warnings = Vec::new();
         let mut dir_fingerprints = HashMap::<String, DirFingerprint>::new();
+        let mut seen_directories = HashSet::<String>::new();
         let mut walk_completed = false;
 
         let loaded_manifest = incremental
@@ -445,23 +464,25 @@ impl<'a> ScanOrchestrator<'a> {
                     && manifest.size_accounting == crate::manifest::SIZE_ACCOUNTING_VERSION
             });
 
-        if incremental && loaded_manifest.is_none() {
-            warnings.push(
-                "Incremental scan: no prior scan cache for this root; performing a full walk."
-                    .to_string(),
-            );
-        }
-
-        let incremental_cache = loaded_manifest.and_then(|manifest| {
-            self.snapshot_store
-                .load_index(root_path)
-                .filter(|index| index.snapshot_id == manifest.snapshot_id)
-                .map(|index| (manifest, index))
-        });
+        let incremental_cache = incremental
+            .then(|| self.pause_store.load(root_path))
+            .flatten()
+            .filter(|(manifest, _)| {
+                manifest.root == root_path
+                    && manifest.size_accounting == crate::manifest::SIZE_ACCOUNTING_VERSION
+            })
+            .or_else(|| {
+                loaded_manifest.and_then(|manifest| {
+                    self.snapshot_store
+                        .load_index(root_path)
+                        .filter(|index| index.snapshot_id == manifest.snapshot_id)
+                        .map(|index| (manifest, index))
+                })
+            });
         if incremental && incremental_cache.is_none() {
             warnings.push(
-                "Incremental scan: cached index missing or outdated; performing a full walk."
-                    .to_string(),
+                "Incremental scan: no valid pause or completed cache for this root; performing a full walk."
+                    .to_string()
             );
         }
         let baseline_fingerprints = incremental_cache.as_ref().map(|(manifest, _index)| {
@@ -491,7 +512,7 @@ impl<'a> ScanOrchestrator<'a> {
         let mut last_path: Option<String> = None;
         let mut progress_counter = 0u64;
         let mut walk = |e: crate::model::RawFsEntry| -> WalkAction {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            if cancel.load(std::sync::atomic::Ordering::Acquire) {
                 return WalkAction::Stop;
             }
             stats.paths_seen += 1;
@@ -510,6 +531,7 @@ impl<'a> ScanOrchestrator<'a> {
 
             if e.is_dir {
                 stats.dirs_seen += 1;
+                seen_directories.insert(e.path.clone());
                 if let Some(fingerprint) = e.dir_fingerprint {
                     if baseline_fingerprints
                         .as_ref()
@@ -557,13 +579,19 @@ impl<'a> ScanOrchestrator<'a> {
             }
             Err(other) => return Err(other),
             Ok(skipped) => {
-                walk_completed = true;
-                stats.paths_skipped = skipped;
-                stats.truncated = false;
-                if skipped > 0 {
-                    warnings.push(format!(
-                        "{skipped} path(s) skipped due to permission or I/O errors."
-                    ));
+                if cancel.load(std::sync::atomic::Ordering::Acquire) {
+                    stats.truncated = true;
+                    stats.incomplete_reason = Some("Scan cancelled.".into());
+                    warnings.push("Scan cancelled.".into());
+                } else {
+                    walk_completed = true;
+                    stats.paths_skipped = skipped;
+                    stats.truncated = false;
+                    if skipped > 0 {
+                        warnings.push(format!(
+                            "{skipped} path(s) skipped due to permission or I/O errors."
+                        ));
+                    }
                 }
             }
         }
@@ -613,7 +641,12 @@ impl<'a> ScanOrchestrator<'a> {
             stats.clone(),
         );
 
-        if walk_completed {
+        if walk_completed && !stats.truncated {
+            self.pause_store.clear(root_path).map_err(|error| {
+                PlatformError::Io(std::io::Error::other(format!(
+                    "failed to clear pause baseline: {error}"
+                )))
+            })?;
             {
                 let mut manifest = ScanManifest {
                     root: root_path.to_string(),
@@ -633,6 +666,38 @@ impl<'a> ScanOrchestrator<'a> {
                     warnings.push(format!("Failed to save scan manifest: {error}"));
                 }
             }
+        } else if stats.truncated
+            && (persist_pause_on_cancel
+                || self
+                    .persist_pause_signal
+                    .as_ref()
+                    .is_some_and(|signal| signal.load(std::sync::atomic::Ordering::Acquire)))
+        {
+            let incomplete_directories = seen_directories
+                .iter()
+                .filter(|directory| {
+                    dir_fingerprints.get(*directory).is_none_or(|fingerprint| {
+                        index
+                            .query_directory(directory, None, false, "name")
+                            .direct_children
+                            .len()
+                            < fingerprint.children_count as usize
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            dir_fingerprints.retain(|directory, _| {
+                !incomplete_directories
+                    .iter()
+                    .any(|incomplete| path_is_at_or_below(incomplete, directory))
+            });
+            self.pause_store
+                .save(root_path, &index, &dir_fingerprints)
+                .map_err(|error| {
+                    PlatformError::Io(std::io::Error::other(format!(
+                        "failed to save pause baseline: {error}"
+                    )))
+                })?;
         }
 
         on_progress(ScanProgress {
@@ -798,6 +863,7 @@ fn unix_ms() -> i64 {
 mod tests {
     use super::*;
     use crate::model::{CapabilityLevel, EntryCategory, ScanRoot, VolumeStats};
+    use crate::pause_store::FilePauseStore;
     use std::fs;
     use std::sync::atomic::AtomicBool;
     use tempfile::TempDir;
@@ -817,6 +883,7 @@ mod tests {
     struct TempDirPlatform {
         root: ScanRoot,
         entries: Vec<crate::model::RawFsEntry>,
+        cancel_after_entries: Option<usize>,
     }
 
     impl PlatformStorage for TempDirPlatform {
@@ -848,7 +915,7 @@ mod tests {
             on_entry: &mut dyn FnMut(crate::model::RawFsEntry) -> WalkAction,
         ) -> Result<u64, PlatformError> {
             let mut skipped_dirs = Vec::<String>::new();
-            for entry in &self.entries {
+            for (position, entry) in self.entries.iter().enumerate() {
                 if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(PlatformError::Cancelled);
                 }
@@ -872,6 +939,9 @@ mod tests {
                     WalkAction::Stop => return Ok(0),
                     WalkAction::SkipSubtree => continue,
                     WalkAction::Continue => {}
+                }
+                if self.cancel_after_entries == Some(position + 1) {
+                    cancel.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             Ok(0)
@@ -931,6 +1001,7 @@ mod tests {
                 label: "temp".to_string(),
             },
             entries,
+            cancel_after_entries: None,
         };
 
         (temp, platform)
@@ -1075,6 +1146,7 @@ mod tests {
                 vec![],
                 false,
                 &cancel,
+                false,
                 |_p| {},
             )
             .expect("index scan should succeed");
@@ -1132,7 +1204,14 @@ mod tests {
             ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
 
         let seed = orchestrator
-            .run_index_scan("seed-index".to_string(), vec![], false, &cancel, |_p| {})
+            .run_index_scan(
+                "seed-index".to_string(),
+                vec![],
+                false,
+                &cancel,
+                false,
+                |_p| {},
+            )
             .expect("seed index scan should succeed");
         assert_eq!(
             seed.query_directory(&cache_dir.to_string_lossy(), None, false, "name")
@@ -1148,6 +1227,7 @@ mod tests {
                 vec![],
                 true,
                 &cancel,
+                false,
                 |progress| {
                     if progress.phase == ScanPhase::Done {
                         done_paths_seen = progress.paths_seen;
@@ -1160,6 +1240,296 @@ mod tests {
         assert_eq!(done_paths_seen, 1);
         assert_eq!(caches.direct_entries.len(), 1);
         assert_eq!(caches.direct_entries[0].size_bytes, 6);
+    }
+
+    #[test]
+    fn cancelled_index_scan_can_persist_pause_baseline() {
+        let (temp, mut platform) = build_temp_scan_platform(3);
+        platform.cancel_after_entries = Some(2);
+        let root_path = platform.root.path.clone();
+        let manifest_dir = temp.path().join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        let index = orchestrator
+            .run_index_scan(
+                "pause-index".to_string(),
+                vec![],
+                false,
+                &cancel,
+                true,
+                |_p| {},
+            )
+            .expect("cancelled index scan should return its partial index");
+
+        assert_eq!(index.scan_state, "Cancelled");
+        assert!(FilePauseStore::new(temp.path().join("pauses"))
+            .load(&root_path)
+            .is_some());
+        assert!(FileManifestStore::new(manifest_dir)
+            .load(&root_path)
+            .is_none());
+    }
+
+    #[test]
+    fn cancelled_mid_directory_does_not_persist_its_fingerprint() {
+        let (temp, mut platform) = build_temp_scan_platform(0);
+        let root_path = platform.root.path.clone();
+        let nested_dir = temp.path().join("nested").to_string_lossy().to_string();
+        let first_file = temp
+            .path()
+            .join("nested/first.txt")
+            .to_string_lossy()
+            .to_string();
+        let second_file = temp
+            .path()
+            .join("nested/second.txt")
+            .to_string_lossy()
+            .to_string();
+        platform.entries = vec![
+            crate::model::RawFsEntry {
+                path: root_path.clone(),
+                is_dir: true,
+                size_bytes: 0,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: nested_dir.clone(),
+                is_dir: true,
+                size_bytes: 0,
+                dir_fingerprint: Some(DirFingerprint {
+                    mtime_secs: 1,
+                    children_count: 2,
+                    max_child_mtime_secs: 2,
+                }),
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: first_file,
+                is_dir: false,
+                size_bytes: 1,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: second_file,
+                is_dir: false,
+                size_bytes: 1,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+        ];
+        platform.cancel_after_entries = Some(3);
+        let manifest_dir = temp.path().join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        orchestrator
+            .run_index_scan(
+                "mid-directory-pause".to_string(),
+                vec![],
+                false,
+                &cancel,
+                true,
+                |_p| {},
+            )
+            .expect("cancelled scan should persist a pause");
+
+        let pause_store = FilePauseStore::new(temp.path().join("pauses"));
+        let (manifest, _) = pause_store.load(&root_path).expect("pause should exist");
+        assert!(
+            !manifest.dir_fingerprints.contains_key(&nested_dir),
+            "unfinished directory fingerprint must not be reusable"
+        );
+
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        platform.cancel_after_entries = None;
+        let mut done_paths_seen = 0;
+        ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir)
+            .run_index_scan(
+                "mid-directory-resume".to_string(),
+                vec![],
+                true,
+                &cancel,
+                false,
+                |progress| {
+                    if progress.phase == ScanPhase::Done {
+                        done_paths_seen = progress.paths_seen;
+                    }
+                },
+            )
+            .expect("resume should complete");
+
+        assert_eq!(done_paths_seen, 4);
+    }
+
+    #[test]
+    fn cancelled_index_scan_reports_pause_save_failure() {
+        let (temp, mut platform) = build_temp_scan_platform(2);
+        platform.cancel_after_entries = Some(1);
+        let cache_root = temp.path().join("cache-root");
+        fs::write(&cache_root, b"not a directory").expect("create blocking cache file");
+        let manifest_dir = cache_root.join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        let error = orchestrator
+            .run_index_scan(
+                "pause-save-failure".to_string(),
+                vec![],
+                false,
+                &cancel,
+                true,
+                |_p| {},
+            )
+            .expect_err("pause persistence failure must reach the caller");
+
+        assert!(error.to_string().contains("failed to save pause baseline"));
+    }
+
+    #[test]
+    fn cancelled_index_scan_without_pause_preserves_completed_manifest() {
+        let (temp, mut platform) = build_temp_scan_platform(2);
+        let root_path = platform.root.path.clone();
+        let manifest_dir = temp.path().join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+        let completed = orchestrator
+            .run_index_scan(
+                "completed-index".to_string(),
+                vec![],
+                false,
+                &cancel,
+                false,
+                |_p| {},
+            )
+            .expect("completed scan should succeed");
+
+        platform.cancel_after_entries = Some(platform.entries.len());
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+        let cancelled = orchestrator
+            .run_index_scan(
+                "cancel-without-pause".to_string(),
+                vec![],
+                false,
+                &cancel,
+                false,
+                |_p| {},
+            )
+            .expect("cancelled scan should return");
+
+        assert_eq!(cancelled.scan_state, "Cancelled");
+        assert_eq!(
+            FileManifestStore::new(&manifest_dir)
+                .load(&root_path)
+                .expect("completed manifest must remain")
+                .snapshot_id,
+            completed.snapshot_id
+        );
+        assert!(FilePauseStore::new(temp.path().join("pauses"))
+            .load(&root_path)
+            .is_none());
+    }
+
+    #[test]
+    fn incremental_index_scan_prefers_pause_baseline() {
+        let (temp, mut platform) = build_temp_scan_platform(2);
+        let root_path = platform.root.path.clone();
+        let cache_dir = temp.path().join("Caches").to_string_lossy().to_string();
+        let cache_file = temp
+            .path()
+            .join("Caches/keep.cache")
+            .to_string_lossy()
+            .to_string();
+        platform.entries = vec![
+            crate::model::RawFsEntry {
+                path: root_path.clone(),
+                is_dir: true,
+                size_bytes: 0,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: cache_dir.clone(),
+                is_dir: true,
+                size_bytes: 0,
+                dir_fingerprint: Some(DirFingerprint {
+                    mtime_secs: 1,
+                    children_count: 1,
+                    max_child_mtime_secs: 2,
+                }),
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: cache_file,
+                is_dir: false,
+                size_bytes: 6,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: temp.path().join("other.txt").to_string_lossy().to_string(),
+                is_dir: false,
+                size_bytes: 1,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+        ];
+        platform.cancel_after_entries = Some(3);
+        let manifest_dir = temp.path().join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        orchestrator
+            .run_index_scan(
+                "pause-seed".to_string(),
+                vec![],
+                false,
+                &cancel,
+                true,
+                |_p| {},
+            )
+            .expect("pause seed scan should return");
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        platform.cancel_after_entries = None;
+
+        let mut done_paths_seen = 0;
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+        let resumed = orchestrator
+            .run_index_scan(
+                "pause-resume".to_string(),
+                vec![],
+                true,
+                &cancel,
+                false,
+                |progress| {
+                    if progress.phase == ScanPhase::Done {
+                        done_paths_seen = progress.paths_seen;
+                    }
+                },
+            )
+            .expect("incremental scan should resume from pause");
+
+        assert_eq!(done_paths_seen, 3);
+        assert_eq!(
+            resumed
+                .query_directory(&cache_dir, None, false, "name")
+                .direct_entries
+                .len(),
+            1
+        );
+        assert!(FilePauseStore::new(temp.path().join("pauses"))
+            .load(&root_path)
+            .is_none());
     }
 
     #[test]

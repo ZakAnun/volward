@@ -17,6 +17,7 @@ import 'capabilities/capability_result_cache.dart';
 import 'proto/snapshot_pb_decoder.dart';
 import 'scan_entry_record.dart';
 import 'scan_preview.dart';
+import 'scan_root_record.dart';
 import 'scan_tree.dart';
 import 'scan_snapshot_merge.dart';
 import 'scan_snapshot_state.dart';
@@ -32,7 +33,7 @@ class ScanCancelledException implements Exception {
   String toString() => message;
 }
 
-enum _RootSwitchContinuation { previewOnly, forcePeek, fullScan }
+enum ScanRunMode { auto, resume, rescan }
 
 @immutable
 class ScanProgressViewState {
@@ -147,6 +148,7 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic> _capabilities = {};
   bool _deepScanReady = false;
   bool _scanning = false;
+  bool _scanPreparing = false;
   bool _deleting = false;
   String? _lastJobId;
   ScanSnapshotState? _lastSnapshot;
@@ -244,6 +246,11 @@ class VolwardSession extends ChangeNotifier {
   String? _lastNativeProgressPhase;
   bool _scanRunningOnMainEngine = false;
   bool _scanCancelRequested = false;
+  bool _scanPauseRequested = false;
+  int _nextScanRunId = 0;
+  int? _activeScanRunId;
+  int? _completedScanRunId;
+  String? _scanStartErrorToPreserve;
   bool _targetPreviewLoading = false;
   DateTime? _targetPreviewStartedAt;
   int _cacheRestoreGeneration = 0;
@@ -255,6 +262,22 @@ class VolwardSession extends ChangeNotifier {
   File? sessionStateFileForTest;
   @visibleForTesting
   Future<String> Function(File file)? sessionStateReaderForTest;
+  @visibleForTesting
+  Future<bool> Function()? pauseCurrentScanForTest;
+  @visibleForTesting
+  ScanRootRecordStore? rootRecordStoreForTest;
+  @visibleForTesting
+  String Function(String root, String cacheDir)? pauseRequestForTest;
+  @visibleForTesting
+  String? Function()? pauseErrorForTest;
+  @visibleForTesting
+  Future<void> Function()? scanPreparationWaitForTest;
+  @visibleForTesting
+  Duration? nativeScanStopTimeoutForTest;
+  @visibleForTesting
+  Duration? restoreDelayForTest;
+  @visibleForTesting
+  VoidCallback? restoreDelayStartedForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -267,6 +290,10 @@ class VolwardSession extends ChangeNotifier {
 
   /// Cap cache restore wait so a bad or huge local cache does not pin the UI.
   static const Duration _cacheRestoreTimeout = Duration(seconds: 8);
+
+  /// Bound native-stop waits so a stuck `is_scan_running` cannot hang pause.
+  /// Timeout is failure (stay put), never treated as idle/stopped.
+  static const Duration _nativeScanStopTimeout = Duration(seconds: 8);
 
   static const Duration _minTargetPreviewLoading = Duration(milliseconds: 180);
 
@@ -402,6 +429,7 @@ class VolwardSession extends ChangeNotifier {
   void primeTransientScanStateForTest({
     Map<String, dynamic>? progress,
     bool scanning = true,
+    bool preparing = false,
     bool openScanPorts = true,
     String? lastJobId,
   }) {
@@ -409,6 +437,8 @@ class VolwardSession extends ChangeNotifier {
         ? null
         : Map<String, dynamic>.from(progress);
     _scanning = scanning;
+    _scanPreparing = preparing;
+    _activeScanRunId = scanning ? ++_nextScanRunId : null;
     _scanStartedAt = scanning ? DateTime.utc(2026, 8, 3) : null;
     _lastJobId = lastJobId;
     _workerCancelPort = null;
@@ -576,18 +606,22 @@ class VolwardSession extends ChangeNotifier {
       _lastNativeProgressNotifyAt != null ||
       _lastNativeProgressPhase != null ||
       _scanCancelRequested ||
+      _scanPauseRequested ||
       _scanRunningOnMainEngine ||
       !_scanChannelsClosed ||
       scanRunnerForTest != null;
 
   void _clearScanTransientState() {
     _closeScanChannels();
+    _scanPreparing = false;
     _scanProgress = null;
     _lastJobId = null;
+    _activeScanRunId = null;
     _workerCancelPort = null;
     _activeScanCompleter = null;
     _scanRunningOnMainEngine = false;
     _scanCancelRequested = false;
+    _scanPauseRequested = false;
     _lastScanActivityAt = null;
     _savingPhaseStartedAt = null;
     _lastNativeProgressNotifyAt = null;
@@ -644,6 +678,7 @@ class VolwardSession extends ChangeNotifier {
       _lastNativeProgressNotifyAt != null ||
       _lastNativeProgressPhase != null ||
       _scanCancelRequested ||
+      _scanPauseRequested ||
       _scanRunningOnMainEngine ||
       !_scanChannelsClosed ||
       scanRunnerForTest != null;
@@ -854,8 +889,9 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<bool> _restoreCachedSnapshot() async {
+  Future<bool> _restoreCachedSnapshot({String? preferredPath}) async {
     if (!_ready || _scanning) return false;
+    _lastError = null;
     _restoringSnapshot = true;
     notifyListeners();
     var restoredSnapshot = false;
@@ -864,9 +900,9 @@ class VolwardSession extends ChangeNotifier {
       final generation = ++_cacheRestoreGeneration;
 
       final preferredRoot = _preferredRestoreRoot();
-      final path = await SnapshotCache.latestSnapshotPath(
-        preferredRoot: preferredRoot,
-      );
+      final path =
+          preferredPath ??
+          await SnapshotCache.latestSnapshotPath(preferredRoot: preferredRoot);
       if (path == null) return false;
       if (generation != _cacheRestoreGeneration) return false;
       if (ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot()) !=
@@ -889,6 +925,7 @@ class VolwardSession extends ChangeNotifier {
         try {
           final size = await cacheFile.length();
           if (size > _maxAutoRestoreBytes) {
+            _lastError = 'scan-cache-too-large';
             debugPrint(
               'VolwardSession: skip Dart snapshot restore for oversized cache '
               '$path (${size ~/ (1024 * 1024)} MB)',
@@ -901,13 +938,15 @@ class VolwardSession extends ChangeNotifier {
         restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
       }
       if (restored == null) return false;
-      if (generation != _cacheRestoreGeneration) return false;
       final restoredRoot = restored.tree?.path;
       if (restoredRoot == null ||
           ScanTreeBuilder.normalizeRoot(restoredRoot) !=
               ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot())) {
         return false;
       }
+      restoreDelayStartedForTest?.call();
+      await Future<void>.delayed(restoreDelayForTest ?? Duration.zero);
+      if (generation != _cacheRestoreGeneration) return false;
       _lastSnapshot = restored;
       restoredSnapshot = true;
       _logSnapshotMemoryState('restore');
@@ -919,6 +958,18 @@ class VolwardSession extends ChangeNotifier {
       _notifyListeners();
     }
     return restoredSnapshot;
+  }
+
+  Future<bool> _restorePausedCheckpoint(String root) async {
+    final record = await _rootRecordStore.load(root);
+    final path = record?.checkpointPath;
+    if (record?.status != ScanRootStatus.paused ||
+        path == null ||
+        path.isEmpty ||
+        !await File(path).exists()) {
+      return false;
+    }
+    return _restoreCachedSnapshot(preferredPath: path);
   }
 
   Future<ScanSnapshotState?> _restoreIndexCache(
@@ -1197,33 +1248,199 @@ class VolwardSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch the active scan root, implementing Plan B:
-  ///
-  /// * When the selected root changes, the current scan is cancelled if
-  ///   necessary, the new root is previewed immediately, and a fresh scan is
-  ///   started automatically so the persisted cache follows the new folder.
-  ///
-  /// * Re-selecting the same root while a scan is already running keeps that
-  ///   scan alive and only refreshes the visible preview.
-  ///
-  /// Callers can set [startFullScan] to false to prepare and preview the root
-  /// without automatically starting a fresh full scan.
+  ScanRootRecordStore get _rootRecordStore =>
+      rootRecordStoreForTest ?? ScanRootRecordStore(SnapshotCache.cacheDir());
+
+  Future<ScanRootStatus> _statusFor(
+    String root, {
+    bool considerActiveScan = true,
+  }) async {
+    final normalized = ScanTreeBuilder.normalizeRoot(root);
+    final record = await _rootRecordStore.load(normalized);
+    final completedPath = await SnapshotCache.latestSnapshotPath(
+      preferredRoot: normalized,
+    );
+    return ScanRootRecordStore.inferredStatus(
+      root: normalized,
+      isCurrentAndScanning:
+          considerActiveScan &&
+          _scanning &&
+          _scanRoots.isNotEmpty &&
+          ScanTreeBuilder.normalizeRoot(_scanRoots.first) == normalized,
+      record: record,
+      hasCompletedSnapshot: completedPath != null,
+    );
+  }
+
+  Future<void> _clearPauseArtifacts(
+    String root, [
+    ScanRootRecord? existing,
+  ]) async {
+    final record = existing ?? await _rootRecordStore.load(root);
+    final checkpointPath = record?.checkpointPath;
+    if (checkpointPath != null && checkpointPath.isNotEmpty) {
+      for (final path in [
+        checkpointPath,
+        checkpointPath.replaceFirst('.index.json', '.manifest.json'),
+      ]) {
+        try {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
+        } catch (_) {
+          // Best effort: Rust also clears pause files after a completed scan.
+        }
+      }
+    }
+  }
+
+  Future<bool> pauseCurrentScanForSwitch() async {
+    if (!_scanning) return true;
+    if (_scanPreparing) {
+      _scanPreparing = false;
+      _scanning = false;
+      _activeScanRunId = null;
+      _stopScanElapsedTimer();
+      _scanProgress = null;
+      _publishScanProgress();
+      return true;
+    }
+    final root = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    final hook = pauseCurrentScanForTest;
+    if (hook != null) {
+      final paused = await hook();
+      if (!paused) {
+        _lastError = 'scan-pause-failed';
+        _notifyListeners();
+        return false;
+      }
+      if (!await _waitForScanIdle()) {
+        _scanPauseRequested = false;
+        _lastError = 'scan-pause-failed';
+        _notifyListeners();
+        return false;
+      }
+      return true;
+    }
+
+    final engine = _engine;
+    final pauseRequest = pauseRequestForTest;
+    if (pauseRequest == null && (engine == null || !_scanRunningOnMainEngine)) {
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
+    _scanPauseRequested = true;
+    final cacheDir = SnapshotCache.cacheDir().path;
+    final checkpointPath =
+        pauseRequest?.call(root, cacheDir) ??
+        VolwardNativeBridge.instance.requestScanPause(engine!, root, cacheDir);
+    if (checkpointPath.startsWith('error:')) {
+      _scanPauseRequested = false;
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
+
+    final activeScanStartedAt = _scanStartedAt;
+    final activeScanRunId = _activeScanRunId;
+    if (!await _waitForScanIdle()) {
+      _scanPauseRequested = false;
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
+    final completedPath = await SnapshotCache.latestSnapshotPath(
+      preferredRoot: root,
+    );
+    if ((activeScanRunId != null &&
+            _completedScanRunId == activeScanRunId &&
+            _hasAuthoritativeSnapshot) ||
+        await _isFreshCompletedSnapshot(completedPath, activeScanStartedAt)) {
+      final saved = await _saveRootRecord(
+        ScanRootRecord(
+          root: root,
+          status: ScanRootStatus.completed,
+          snapshotId: _lastSnapshot?.snapshotId ?? '',
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      if (!saved) return false;
+      await _clearPauseArtifacts(root);
+      return true;
+    }
+    final pauseError =
+        pauseErrorForTest?.call() ??
+        (engine == null
+            ? null
+            : VolwardNativeBridge.instance.getLastPauseError(engine));
+    if (pauseError != null && pauseError.isNotEmpty) {
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
+    if (!await File(checkpointPath).exists()) {
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
+    final record = ScanRootRecord(
+      root: root,
+      status: ScanRootStatus.paused,
+      snapshotId: _lastSnapshot?.snapshotId ?? '',
+      checkpointPath: checkpointPath,
+      jobId: _lastJobId,
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    if (!await _saveRootRecord(record)) return false;
+    final saved = await _rootRecordStore.load(root);
+    if (saved?.status != ScanRootStatus.paused ||
+        saved?.checkpointPath != checkpointPath) {
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
+    return true;
+  }
+
+  Future<bool> _isFreshCompletedSnapshot(
+    String? path,
+    DateTime? scanStartedAt,
+  ) async {
+    if (path == null) return false;
+    if (scanStartedAt == null) return false;
+    try {
+      return !(await File(path).lastModified()).isBefore(scanStartedAt);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _saveRootRecord(ScanRootRecord record) async {
+    try {
+      await _rootRecordStore.save(record);
+      return true;
+    } catch (e, st) {
+      _lastError = 'scan-pause-failed';
+      debugPrint('VolwardSession: save scan root record failed: $e\n$st');
+      _notifyListeners();
+      return false;
+    }
+  }
+
+  /// Switches to [path], restoring, resuming, or scanning from its cache state.
   Future<void> switchScanRoot(
     String? path, {
-    bool startFullScan = true,
     bool validateBeforeSwitch = false,
   }) async {
     final requestGeneration = ++_rootSwitchRequestGeneration;
-    final newRoots = path != null ? [path] : <String>[];
     final newRoot = ScanTreeBuilder.normalizeRoot(path ?? _defaultScanRoot());
-    List<Map<String, dynamic>>? preparedPreview;
+    final newRoots = path != null ? [newRoot] : <String>[];
     if (validateBeforeSwitch && path != null) {
       try {
         await validateScanRoot(newRoot);
-        preparedPreview = await _readTargetPreview(
-          newRoot,
-          throwOnFailure: true,
-        );
+        await _readTargetPreview(newRoot, throwOnFailure: true);
       } catch (_) {
         if (requestGeneration != _rootSwitchRequestGeneration) return;
         rethrow;
@@ -1231,18 +1448,14 @@ class VolwardSession extends ChangeNotifier {
       if (requestGeneration != _rootSwitchRequestGeneration) return;
     }
 
-    final generation = ++_rootSwitchGeneration;
     final currentRoot = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
     );
     final keepRunningScan = _scanning && newRoot == currentRoot;
-    final _RootSwitchContinuation continuation;
-    if (!startFullScan) {
-      continuation = _RootSwitchContinuation.previewOnly;
-    } else if (keepRunningScan) {
-      continuation = _RootSwitchContinuation.forcePeek;
-    } else {
-      continuation = _RootSwitchContinuation.fullScan;
+    if (_scanning && !keepRunningScan) {
+      final paused = await pauseCurrentScanForSwitch();
+      if (!paused) return;
+      if (requestGeneration != _rootSwitchRequestGeneration) return;
     }
 
     // User-selected scan root (folder picker / root switch). Skip null clears and
@@ -1255,9 +1468,17 @@ class VolwardSession extends ChangeNotifier {
       );
     }
 
-    if (_scanning && !keepRunningScan) {
-      cancelScan();
+    if (keepRunningScan) {
+      final generation = _rootSwitchGeneration;
+      unawaited(() async {
+        await previewTarget(expectedGeneration: generation);
+        if (generation != _rootSwitchGeneration) return;
+        unawaited(peekScan(newRoot, force: true));
+      }());
+      return;
     }
+
+    final generation = ++_rootSwitchGeneration;
     _invalidateCacheRestore();
 
     _scanRoots = newRoots;
@@ -1278,68 +1499,85 @@ class VolwardSession extends ChangeNotifier {
     await _persistSessionState();
     _notifyListeners();
 
-    unawaited(
-      _previewThenContinueRootSwitch(
-        generation,
-        newRoot: newRoot,
-        continuation: continuation,
-        preparedPreview: preparedPreview,
-      ),
-    );
+    unawaited(_continueRootSwitch(generation, newRoot));
   }
 
-  Future<void> _previewThenContinueRootSwitch(
-    int generation, {
-    required String newRoot,
-    required _RootSwitchContinuation continuation,
-    List<Map<String, dynamic>>? preparedPreview,
-  }) async {
-    final restored = await _restoreCachedSnapshot();
+  Future<void> _continueRootSwitch(int generation, String newRoot) async {
+    final status = await _statusFor(newRoot);
     if (generation != _rootSwitchGeneration) return;
-    if (restored) {
-      _targetPreviewLoading = false;
-      _targetPreviewStartedAt = null;
-      _notifyListeners();
-    } else if (preparedPreview == null) {
-      await previewTarget(expectedGeneration: generation);
-    } else {
-      await _applyTargetPreview(
-        newRoot,
-        preparedPreview,
-        expectedGeneration: generation,
-      );
-    }
-    if (generation != _rootSwitchGeneration) return;
-    switch (continuation) {
-      case _RootSwitchContinuation.previewOnly:
-        return;
-      case _RootSwitchContinuation.forcePeek:
-        unawaited(peekScan(newRoot, force: true));
-        return;
-      case _RootSwitchContinuation.fullScan:
-        await _waitForScanIdle(generation);
+    switch (status) {
+      case ScanRootStatus.completed:
+        final restored = await _restoreCachedSnapshot();
         if (generation != _rootSwitchGeneration) return;
-        // Fire-and-forget — errors surface via _lastError / notifyListeners.
-        unawaited(_runScanAutostart(generation));
+        if (!restored) {
+          if (_lastError == 'scan-cache-too-large') {
+            _clearTargetPreviewLoading(generation);
+            return;
+          }
+          _lastError = 'scan-cache-unreadable';
+          await _runScanAutostart(generation, ScanRunMode.auto);
+        } else {
+          _targetPreviewLoading = false;
+          _targetPreviewStartedAt = null;
+          _notifyListeners();
+        }
+        return;
+      case ScanRootStatus.paused:
+        final restored = await _restorePausedCheckpoint(newRoot);
+        if (generation != _rootSwitchGeneration) return;
+        if (!restored) {
+          if (_lastError == 'scan-cache-too-large') {
+            _clearTargetPreviewLoading(generation);
+            return;
+          }
+          _lastError = 'scan-cache-unreadable';
+          await _runScanAutostart(generation, ScanRunMode.auto);
+          return;
+        }
+        await _runScanAutostart(generation, ScanRunMode.resume);
+        return;
+      case ScanRootStatus.empty:
+        await _runScanAutostart(generation, ScanRunMode.auto);
+        return;
+      case ScanRootStatus.scanning:
+        return;
     }
   }
 
-  Future<void> _waitForScanIdle(int generation) async {
-    while (_scanning && generation == _rootSwitchGeneration) {
+  Future<bool> _waitForScanIdle() async {
+    final timeout = nativeScanStopTimeoutForTest ?? _nativeScanStopTimeout;
+    final startedAt = DateTime.now();
+    while (_scanning) {
+      if (DateTime.now().difference(startedAt) >= timeout) {
+        return false;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    return true;
   }
 
   /// Internal helper: start a scan and store the completion status without
   /// surfacing a Future to the caller (used by [switchScanRoot]).
-  Future<void> _runScanAutostart([int? generation]) async {
-    if (generation != null && generation != _rootSwitchGeneration) return;
+  Future<void> _runScanAutostart(
+    int generation, [
+    ScanRunMode mode = ScanRunMode.auto,
+  ]) async {
+    if (generation != _rootSwitchGeneration) return;
+    final restoreError = switch (_lastError) {
+      'scan-cache-unreadable' || 'scan-cache-too-large' => _lastError,
+      _ => null,
+    };
+    _scanStartErrorToPreserve = restoreError;
     try {
-      await runScan();
+      await runScan(mode: mode);
     } on ScanCancelledException {
       // Cancelled by the user or by a subsequent switchScanRoot — ignore.
     } catch (e, st) {
       debugPrint('VolwardSession: auto-started scan failed: $e\n$st');
+    } finally {
+      if (_scanStartErrorToPreserve == restoreError) {
+        _scanStartErrorToPreserve = null;
+      }
     }
   }
 
@@ -1483,7 +1721,7 @@ class VolwardSession extends ChangeNotifier {
   /// to the normal full scan worker so large refreshes stay file-backed rather
   /// than shipping a giant snapshot through the UI isolate.
   Future<void> refreshCurrentDirectory([String? path]) async {
-    if (!_ready || _engine == null) return;
+    if (!_ready || (_engine == null && scanRunnerForTest == null)) return;
     final targetPath = path ?? refreshTargetPath;
     final root = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
@@ -1510,7 +1748,7 @@ class VolwardSession extends ChangeNotifier {
           await Future<void>.delayed(const Duration(milliseconds: 50));
         }
         if (generation != _rootSwitchGeneration) return;
-        await runScan();
+        await runScan(mode: ScanRunMode.rescan);
       } else {
         final refreshed = await peekScan(target, force: true);
         if (!refreshed) {
@@ -1682,13 +1920,39 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<String> runScan() async {
+  void _throwIfScanPreparationIsStale(
+    int scanRunId,
+    int generation,
+    String ownerRoot,
+  ) {
+    final activeRoot = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    if (_activeScanRunId != scanRunId ||
+        !_scanning ||
+        generation != _rootSwitchGeneration ||
+        activeRoot != ownerRoot) {
+      throw ScanCancelledException();
+    }
+  }
+
+  Future<String> runScan({ScanRunMode mode = ScanRunMode.auto}) async {
     if (!_ready) {
       throw StateError(_initError ?? 'Native engine not ready');
     }
     if (_scanning) {
       throw StateError('A scan is already in progress');
     }
+    final effectiveRoots = List<String>.unmodifiable(
+      _scanRoots.isNotEmpty ? _scanRoots : [_defaultScanRoot()],
+    );
+    final ownerRoot = ScanTreeBuilder.normalizeRoot(effectiveRoots.first);
+    final effectiveIncremental = switch (mode) {
+      ScanRunMode.resume => true,
+      ScanRunMode.rescan => false,
+      ScanRunMode.auto => _incrementalScan,
+    };
+
     final testRunner = scanRunnerForTest;
     if (testRunner == null && !hasSnapshotFileApi) {
       throw StateError(
@@ -1696,21 +1960,56 @@ class VolwardSession extends ChangeNotifier {
         'then fully restart the app.',
       );
     }
-    if (testRunner == null && _incrementalScan && !canUseIncrementalScan) {
+    if (testRunner == null && effectiveIncremental && !canUseIncrementalScan) {
       throw StateError(
         'Incremental scan requires an updated native library. Rebuild the Rust library '
         'for this platform, then fully restart the app.',
       );
     }
 
-    final effectiveRoots = _scanRoots.isNotEmpty
-        ? _scanRoots
-        : [_defaultScanRoot()];
+    final ownerGeneration = _rootSwitchGeneration;
+    final scanRunId = ++_nextScanRunId;
+    final ownerSnapshotId = _lastSnapshot?.snapshotId;
+    _scanning = true;
+    _scanPreparing = true;
+    _activeScanRunId = scanRunId;
+    _notifyListeners();
+    ScanRootRecord? previousRecord;
+    var previousSnapshotId = ownerSnapshotId;
+    var previousStatus = ScanRootStatus.empty;
+    var rescanClearStarted = false;
+    try {
+      previousRecord = await _rootRecordStore.load(ownerRoot);
+      previousSnapshotId = previousRecord?.snapshotId ?? ownerSnapshotId;
+      _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
+      previousStatus = await _statusFor(ownerRoot, considerActiveScan: false);
+      _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
+      if (mode == ScanRunMode.rescan) {
+        rescanClearStarted = true;
+        await _rootRecordStore.clear(ownerRoot);
+        _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
+      }
+    } catch (_) {
+      if (_activeScanRunId == scanRunId) {
+        _scanPreparing = false;
+        _scanning = false;
+        _activeScanRunId = null;
+        _notifyListeners();
+      }
+      if (rescanClearStarted) {
+        await _restoreRootRecordAfterScanFailure(
+          ownerRoot,
+          previousRecord,
+          previousStatus,
+          previousSnapshotId,
+        );
+      }
+      rethrow;
+    }
 
     _invalidateCacheRestore();
-    _scanning = true;
     final scanStartedAt = DateTime.now();
-    final incrementalProp = _incrementalScan ? 1 : 0;
+    final incrementalProp = effectiveIncremental ? 1 : 0;
     unawaited(
       Analytics.instance.track(AnalyticsEvents.scanStarted, {
         'incremental': incrementalProp,
@@ -1718,16 +2017,17 @@ class VolwardSession extends ChangeNotifier {
     );
     var scanSucceeded = false;
     try {
-      final scanGeneration = _rootSwitchGeneration;
+      final scanGeneration = ownerGeneration;
       _targetPreviewLoading = false;
       _targetPreviewStartedAt = null;
-      _lastError = null;
+      _lastError = _scanStartErrorToPreserve;
       _lastDeleteReport = null;
       _scanProgress = null;
       _workerCancelPort = null;
       _scanChannelsClosed = false;
       _scanRunningOnMainEngine = false;
       _scanCancelRequested = false;
+      _scanPauseRequested = false;
       _lastScanActivityAt = null;
       _savingPhaseStartedAt = null;
       _lastNativeProgressNotifyAt = null;
@@ -1738,15 +2038,27 @@ class VolwardSession extends ChangeNotifier {
       _cancelPendingForcedPeeks();
       _startScanElapsedTimer();
       _setScanProgressPhase('DiscoveringRoots', pathsSeen: 0);
-      await _waitForIndexLoadDrain(_cacheRestoreGeneration);
-      if (scanGeneration != _rootSwitchGeneration) {
-        _scanning = false;
-        _finalizeScanTransientState();
-        _notifyListeners();
-        throw ScanCancelledException();
+      final preparationWait = scanPreparationWaitForTest;
+      if (preparationWait != null) {
+        await preparationWait();
+      } else {
+        await _waitForIndexLoadDrain(_cacheRestoreGeneration);
+      }
+      try {
+        _throwIfScanPreparationIsStale(scanRunId, scanGeneration, ownerRoot);
+      } on ScanCancelledException {
+        if (_activeScanRunId == scanRunId) {
+          _scanning = false;
+          _activeScanRunId = null;
+          _finalizeScanTransientState();
+          _notifyListeners();
+        }
+        rethrow;
       }
 
       if (testRunner != null) {
+        _scanPreparing = false;
+        _notifyListeners();
         final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
         _lastJobId = jobId;
         try {
@@ -1760,7 +2072,10 @@ class VolwardSession extends ChangeNotifier {
             _notifyListeners();
           }
           scanSucceeded = true;
-          return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
+          final snapshotId = snapshot?.snapshotId ?? 'done';
+          await _recordCompletedScan(ownerRoot, snapshotId);
+          _completedScanRunId = scanRunId;
+          return snapshotId;
         } finally {
           _scanning = false;
           _finalizeScanTransientState();
@@ -1773,7 +2088,11 @@ class VolwardSession extends ChangeNotifier {
         _lastJobId = jobId;
         try {
           final snapshot = await _awaitScanWithStallGuard(
-            _runIndexScanOnMainEngine(jobId, effectiveRoots),
+            _runIndexScanOnMainEngine(
+              jobId,
+              effectiveRoots,
+              incremental: effectiveIncremental,
+            ),
           );
           if (scanGeneration == _rootSwitchGeneration) {
             _lastSnapshot = snapshot;
@@ -1782,7 +2101,10 @@ class VolwardSession extends ChangeNotifier {
             _notifyListeners();
           }
           scanSucceeded = true;
-          return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
+          final snapshotId = snapshot?.snapshotId ?? 'done';
+          await _recordCompletedScan(ownerRoot, snapshotId);
+          _completedScanRunId = scanRunId;
+          return snapshotId;
         } on ScanCancelledException catch (e) {
           _lastError = e.message;
           rethrow;
@@ -1894,8 +2216,10 @@ class VolwardSession extends ChangeNotifier {
           _scanReceivePort!.sendPort,
           effectiveRoots,
           _scanCancelInitPort!.sendPort,
-          _incrementalScan,
+          effectiveIncremental,
         ]);
+        _scanPreparing = false;
+        _notifyListeners();
         final snapshot = await _awaitScanWithStallGuard(completer.future);
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
@@ -1904,7 +2228,10 @@ class VolwardSession extends ChangeNotifier {
           _notifyListeners();
         }
         scanSucceeded = true;
-        return _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
+        final snapshotId = snapshot?.snapshotId ?? 'done';
+        await _recordCompletedScan(ownerRoot, snapshotId);
+        _completedScanRunId = scanRunId;
+        return snapshotId;
       } on ScanCancelledException catch (e) {
         _lastError = e.message;
         rethrow;
@@ -1920,6 +2247,22 @@ class VolwardSession extends ChangeNotifier {
         _finalizeScanTransientState();
         _notifyListeners();
       }
+    } on ScanCancelledException {
+      await _restoreRootRecordAfterScanFailure(
+        ownerRoot,
+        previousRecord,
+        previousStatus,
+        previousSnapshotId,
+      );
+      rethrow;
+    } catch (_) {
+      await _restoreRootRecordAfterScanFailure(
+        ownerRoot,
+        previousRecord,
+        previousStatus,
+        previousSnapshotId,
+      );
+      rethrow;
     } finally {
       unawaited(
         Analytics.instance.track(AnalyticsEvents.scanCompleted, {
@@ -1931,6 +2274,49 @@ class VolwardSession extends ChangeNotifier {
         }),
       );
     }
+  }
+
+  Future<void> _restoreRootRecordAfterScanFailure(
+    String root,
+    ScanRootRecord? previousRecord,
+    ScanRootStatus previousStatus,
+    String? previousSnapshotId,
+  ) async {
+    final current = await _rootRecordStore.load(root);
+    final checkpointPath = current?.checkpointPath;
+    if (current?.status == ScanRootStatus.paused &&
+        checkpointPath != null &&
+        checkpointPath.isNotEmpty &&
+        await File(checkpointPath).exists()) {
+      return;
+    }
+    if (previousRecord != null) {
+      await _rootRecordStore.save(previousRecord);
+    } else if (previousStatus == ScanRootStatus.empty) {
+      await _rootRecordStore.clear(root);
+    } else if (previousStatus == ScanRootStatus.completed) {
+      await _rootRecordStore.save(
+        ScanRootRecord(
+          root: root,
+          status: ScanRootStatus.completed,
+          snapshotId: previousSnapshotId ?? '',
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+  }
+
+  Future<void> _recordCompletedScan(String root, String snapshotId) async {
+    final previous = await _rootRecordStore.load(root);
+    await _rootRecordStore.save(
+      ScanRootRecord(
+        root: root,
+        status: ScanRootStatus.completed,
+        snapshotId: snapshotId,
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await _clearPauseArtifacts(root, previous);
   }
 
   bool get hasAiSessionApi =>
@@ -2404,8 +2790,9 @@ class VolwardSession extends ChangeNotifier {
 
   Future<ScanSnapshotState?> _runIndexScanOnMainEngine(
     String jobId,
-    List<String> roots,
-  ) async {
+    List<String> roots, {
+    required bool incremental,
+  }) async {
     if (!_ready || _engine == null) {
       throw StateError('Native engine not ready');
     }
@@ -2417,17 +2804,26 @@ class VolwardSession extends ChangeNotifier {
       _engine!,
       jobId,
       roots,
-      incremental: _incrementalScan,
+      incremental: incremental,
     );
     if (startResult.startsWith('error:')) {
       throw StateError(startResult);
     }
 
     _scanRunningOnMainEngine = true;
+    _scanPreparing = false;
     _touchScanActivity(phase: 'Walking');
+    _notifyListeners();
 
     while (bridge.isScanRunning(_engine!)) {
       await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (_scanPauseRequested) {
+        final stopped = await _waitForNativeScanToStop(bridge);
+        if (!stopped) {
+          continue;
+        }
+        throw ScanCancelledException();
+      }
       if (!_scanning || _scanCancelRequested) {
         bridge.cancelScan(_engine!);
         await _waitForNativeScanToStop(bridge);
@@ -2442,7 +2838,7 @@ class VolwardSession extends ChangeNotifier {
         _notifyNativeProgressIfNeeded(phase);
       }
     }
-    if (_scanCancelRequested || !_scanning) {
+    if (_scanPauseRequested || _scanCancelRequested || !_scanning) {
       throw ScanCancelledException();
     }
 
@@ -2460,16 +2856,27 @@ class VolwardSession extends ChangeNotifier {
     return ScanSnapshotState.fromIndexSummary(summary);
   }
 
-  /// Bound the native shutdown wait so a cancelled `runScan()` cannot hang
-  /// forever if `isScanRunning` never clears.
-  Future<void> _waitForNativeScanToStop(VolwardNativeBridge bridge) async {
+  Future<bool> _waitForNativeScanToStop(VolwardNativeBridge bridge) async {
     final engine = _engine;
-    if (engine == null) return;
-    final deadline = DateTime.now().add(const Duration(seconds: 2));
-    while (bridge.isScanRunning(engine) && DateTime.now().isBefore(deadline)) {
+    if (engine == null) return true;
+    return _waitUntilNativeScanStops(() => bridge.isScanRunning(engine));
+  }
+
+  Future<bool> _waitUntilNativeScanStops(bool Function() isRunning) async {
+    final timeout = nativeScanStopTimeoutForTest ?? _nativeScanStopTimeout;
+    final startedAt = DateTime.now();
+    while (isRunning()) {
+      if (DateTime.now().difference(startedAt) >= timeout) {
+        return false;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    return true;
   }
+
+  @visibleForTesting
+  Future<bool> waitForNativeScanToStopForTest(bool Function() isRunning) =>
+      _waitUntilNativeScanStops(isRunning);
 
   void _notifyNativeProgressIfNeeded(String? phase) {
     final now = DateTime.now();

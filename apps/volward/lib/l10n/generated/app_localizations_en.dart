@@ -343,6 +343,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get scanPauseFailed =>
+      'Couldn\'t pause the current scan. Stay on this folder.';
+
+  @override
+  String get scanCacheUnreadable =>
+      'This folder\'s cache is unreadable. Scanning again.';
+
+  @override
+  String get scanCacheTooLarge =>
+      'This folder\'s cache is too large to restore. Scan again to refresh it.';
+
+  @override
   String get scanStatusFull => 'Full';
 
   @override
@@ -893,6 +905,11 @@ class AppLocalizationsEn extends AppLocalizations {
     int keep,
   ) {
     return '$analyzed analyzed · $bytes total · $safe safe · $review pending review · $keep kept';
+  }
+
+  @override
+  String aiResultsDecisionSummary(String bytes, int review) {
+    return '$bytes reclaimable · $review need review';
   }
 
   @override

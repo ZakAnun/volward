@@ -326,6 +326,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get scanPauseFailed => '无法暂停当前扫描，仍留在当前目录。';
+
+  @override
+  String get scanCacheUnreadable => '该目录缓存无法读取，正在重新扫描。';
+
+  @override
+  String get scanCacheTooLarge => '该目录缓存过大，无法恢复。请手动重新扫描。';
+
+  @override
   String get scanStatusFull => '全量';
 
   @override
@@ -854,6 +863,11 @@ class AppLocalizationsZh extends AppLocalizations {
     int keep,
   ) {
     return '共分析 $analyzed 项 · 总计 $bytes · $safe 项安全 · $review 项待确认 · $keep 项保留';
+  }
+
+  @override
+  String aiResultsDecisionSummary(String bytes, int review) {
+    return '可清理 $bytes · $review 项待确认';
   }
 
   @override

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -140,6 +139,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
     required this.onDeletingChanged,
     required this.onDeleteCompleted,
     this.gateway = const ProductionAiAnalysisGateway(),
+    this.debugCoverageJobState,
   });
 
   static const workspaceKey = Key('ai-analysis-workspace');
@@ -149,6 +149,8 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const settingsKey = Key('ai-analysis-open-settings');
   static const resultsListKey = Key('ai-analysis-results-list');
   static const summaryKey = Key('ai-analysis-summary');
+  static const decisionSummaryKey = Key('ai-analysis-decision-summary');
+  static const searchToggleKey = Key('ai-analysis-search-toggle');
   static const deleteKey = Key('ai-analysis-delete');
   static const headerKey = Key('ai-analysis-header');
   static const selectedSummaryKey = Key('ai-analysis-selected-summary');
@@ -161,6 +163,10 @@ class AiAnalysisWorkspace extends StatefulWidget {
   final ValueChanged<bool> onDeletingChanged;
   final VoidCallback onDeleteCompleted;
   final AiAnalysisGateway gateway;
+
+  /// Test-only: inject a coverage job without hydrating the coordinator.
+  @visibleForTesting
+  final CoverageJobState? debugCoverageJobState;
 
   @override
   State<AiAnalysisWorkspace> createState() => _AiAnalysisWorkspaceState();
@@ -196,7 +202,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   final ScrollController _resultsScrollController = ScrollController();
   final TextEditingController _resultsSearchController =
       TextEditingController();
-  double _headerCollapseProgress = 0;
+  bool _resultsSearchExpanded = false;
   String _resultsQuery = '';
   _ResultFilterMode _resultFilterMode = _ResultFilterMode.all;
   _ResultSortMode _resultSortMode = _ResultSortMode.priority;
@@ -210,7 +216,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int _coverageVerdictPageCount = 2;
   static const _coverageVerdictPageSize = 500;
   int _coverageVerdictByteOffset = 0;
-  bool _showLegacyResultNotice = false;
   List<CoverageVerdict> _coverageVerdictRows = const [];
 
   int _beginOperation() => ++_operationGeneration;
@@ -240,7 +245,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   void initState() {
     super.initState();
-    _resultsScrollController.addListener(_updateHeaderCollapseProgress);
     _resultsScrollController.addListener(_maybeLoadMoreCoverageVerdicts);
     AiCoverageCoordinator.instance.addJobStateListener(_onCoverageJobState);
     _bootstrap();
@@ -250,31 +254,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void dispose() {
     AiCoverageCoordinator.instance.removeJobStateListener(_onCoverageJobState);
     _operationGeneration++;
-    _resultsScrollController
-      ..removeListener(_updateHeaderCollapseProgress)
-      ..dispose();
+    _resultsScrollController.dispose();
     _resultsSearchController.dispose();
     super.dispose();
-  }
-
-  void _updateHeaderCollapseProgress() {
-    if (!_resultsScrollController.hasClients) return;
-    final nextProgress = (_resultsScrollController.offset / 64)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    if ((nextProgress - _headerCollapseProgress).abs() < 0.01) return;
-    setState(() => _headerCollapseProgress = nextProgress);
   }
 
   void _resetResultsScroll() {
     if (_resultsScrollController.hasClients) {
       _resultsScrollController.jumpTo(0);
     }
-    _headerCollapseProgress = 0;
   }
 
   void _resetResultsPresentation() {
     _resultsSearchController.clear();
+    _resultsSearchExpanded = false;
     _resultsQuery = '';
     _resultFilterMode = _ResultFilterMode.all;
     _resultSortMode = _ResultSortMode.priority;
@@ -333,7 +326,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coverageHydrating = false;
       _coverageHydrated = false;
       _coverageBudgetCredits = null;
-      _showLegacyResultNotice = false;
       _coverageVerdictRows = const [];
     });
     try {
@@ -546,7 +538,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _expandedGroupPaths.addAll(_defaultExpandedGroupPaths());
         _hasExistingResult = true;
         _error = null;
-        _showLegacyResultNotice = _useFullCoverage && _coverageJobState == null;
         _phase = _Phase.results;
       });
       return true;
@@ -817,7 +808,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     setState(() {
       _coverageJobState = state;
       _analyzing = state.status == CoverageJobStatus.running;
-      _showLegacyResultNotice = false;
       if (showResults) {
         _phase = _Phase.results;
       } else if (state.status == CoverageJobStatus.running) {
@@ -973,7 +963,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _analyzing = true;
       _phase = _Phase.analyzing;
       _error = null;
-      _showLegacyResultNotice = false;
       _coverageVerdictByteOffset = 0;
       _coverageVerdictRows = const [];
       _resetResultsPresentation();
@@ -1085,11 +1074,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget? _buildCoverageBanner() {
-    if (!_useFullCoverage) return null;
-    final state = _coverageJobState;
+    final state = widget.debugCoverageJobState ?? _coverageJobState;
+    if (widget.debugCoverageJobState == null && !_useFullCoverage) {
+      return null;
+    }
     if (state == null || state.snapshotId != widget.snapshotId) return null;
     if (state.status == CoverageJobStatus.idle ||
-        state.status == CoverageJobStatus.cancelled) {
+        state.status == CoverageJobStatus.cancelled ||
+        state.status == CoverageJobStatus.completed) {
       return null;
     }
     return CoverageJobBanner(
@@ -1111,17 +1103,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               state.pauseReason == CoveragePauseReason.budget
           ? () => unawaited(_raiseCoverageBudget())
           : null,
-    );
-  }
-
-  Widget? _buildLegacyResultNotice() {
-    if (!_showLegacyResultNotice) return null;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppleSpacing.sm),
-      child: Text(
-        context.l10n.aiCoverageLegacyResultNotice,
-        style: AppleTypography.caption.copyWith(color: context.volward.warning),
-      ),
     );
   }
 
@@ -1439,10 +1420,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
-    final headerCollapseProgress =
-        _phase == _Phase.results || _phase == _Phase.deleting
-        ? _headerCollapseProgress
-        : 0.0;
     return DecoratedBox(
       key: AiAnalysisWorkspace.workspaceKey,
       decoration: BoxDecoration(
@@ -1453,10 +1430,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       child: Column(
         children: [
           _WorkspaceHeader(
-            targetLabel: widget.targetLabel,
             phaseLabel: _phaseLabel(context),
             phaseStep: _phaseStep,
-            collapseProgress: headerCollapseProgress,
             onBack: _deleting ? null : widget.onExit,
           ),
           Divider(height: 1, color: tokens.dividerSoft),
@@ -1758,34 +1733,25 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   _OverallResultSummaryData _overallResultSummaryFor(
     List<AiResultGroup> groups,
   ) {
-    var safeCount = 0;
+    var safeBytes = 0;
     var reviewCount = 0;
-    var keepCount = 0;
-    var analyzedCount = 0;
-    var totalBytes = 0;
     for (final group in groups) {
-      analyzedCount += group.items.length;
-      totalBytes += group.totalBytes;
       for (final item in group.items) {
         switch (item.verdict) {
           case 'safe_to_remove':
-            safeCount++;
+            safeBytes += _sizeByPath[item.path] ?? 0;
             break;
           case 'review_needed':
             if (_isPendingReview(item)) reviewCount++;
             break;
           case 'keep':
-            keepCount++;
             break;
         }
       }
     }
     return _OverallResultSummaryData(
-      analyzedCount: analyzedCount,
-      totalBytes: totalBytes,
-      safeCount: safeCount,
+      safeBytes: safeBytes,
       reviewCount: reviewCount,
-      keepCount: keepCount,
     );
   }
 
@@ -2075,56 +2041,73 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final normalizedGroups = _normalizedResultGroups();
     final summary = _overallResultSummaryFor(normalizedGroups);
     final rows = _resultRows(_visibleResultGroups(normalizedGroups));
-    final tokens = context.volward;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 720;
         final horizontalPadding = wide ? AppleSpacing.lg : AppleSpacing.md;
         return Column(
           children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                AppleSpacing.lg,
-                horizontalPadding,
-                AppleSpacing.md,
-              ),
-              child: Column(
-                key: AiAnalysisWorkspace.summaryKey,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_buildLegacyResultNotice() case final legacy?) ...[
-                    legacy,
-                  ],
-                  if (_buildCoverageBanner() case final banner?) ...[
-                    banner,
-                    const SizedBox(height: AppleSpacing.sm),
-                  ],
-                  _buildResultsOverview(summary: summary, wide: wide),
-                  if (normalizedGroups.isNotEmpty) ...[
-                    const SizedBox(height: AppleSpacing.sm),
-                    _buildResultsToolbar(wide: wide),
-                  ],
-                ],
-              ),
-            ),
-            Divider(height: 1, color: tokens.dividerSoft),
             Expanded(
-              child: rows.isEmpty
-                  ? _buildResultsEmptyState(
-                      filtered: normalizedGroups.isNotEmpty,
+              child: CustomScrollView(
+                controller: _resultsScrollController,
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      AppleSpacing.md,
+                      horizontalPadding,
+                      0,
+                    ),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        key: AiAnalysisWorkspace.summaryKey,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_buildCoverageBanner() case final banner?) ...[
+                            KeyedSubtree(
+                              key: const Key('ai-analysis-coverage-progress'),
+                              child: banner,
+                            ),
+                            const SizedBox(height: AppleSpacing.sm),
+                          ],
+                          Text(
+                            context.l10n.aiResultsDecisionSummary(
+                              _formatBytes(summary.safeBytes),
+                              summary.reviewCount,
+                            ),
+                            key: AiAnalysisWorkspace.decisionSummaryKey,
+                            style: context.vwBodyStrong,
+                          ),
+                          if (normalizedGroups.isNotEmpty) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            _buildResultsToolbar(wide: wide),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (rows.isEmpty)
+                    SliverFillRemaining(
+                      child: _buildResultsEmptyState(
+                        filtered: normalizedGroups.isNotEmpty,
+                      ),
                     )
-                  : ListView.builder(
-                      key: AiAnalysisWorkspace.resultsListKey,
-                      controller: _resultsScrollController,
+                  else
+                    SliverPadding(
                       padding: EdgeInsets.symmetric(
                         horizontal: horizontalPadding,
                       ),
-                      itemCount: rows.length,
-                      itemBuilder: (context, index) {
-                        return _buildResultStreamRow(rows[index]);
-                      },
+                      sliver: SliverList(
+                        key: AiAnalysisWorkspace.resultsListKey,
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) =>
+                              _buildResultStreamRow(rows[index]),
+                          childCount: rows.length,
+                        ),
+                      ),
                     ),
+                ],
+              ),
             ),
             _buildResultsActionBar(
               horizontalPadding: horizontalPadding,
@@ -2133,66 +2116,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ],
         );
       },
-    );
-  }
-
-  Widget _buildResultsOverview({
-    required _OverallResultSummaryData summary,
-    required bool wide,
-  }) {
-    final tokens = context.volward;
-    final metrics = [
-      _ResultMetricData(
-        value: '${summary.analyzedCount}',
-        label: context.l10n.aiResultsMetricAnalyzed,
-      ),
-      _ResultMetricData(
-        value: '${summary.safeCount}',
-        label: context.l10n.aiResultsMetricSafe,
-        color: tokens.primary,
-      ),
-      _ResultMetricData(
-        value: '${summary.reviewCount}',
-        label: context.l10n.aiResultsMetricReview,
-        color: summary.reviewCount > 0 ? tokens.warning : null,
-      ),
-      _ResultMetricData(
-        value: '${summary.keepCount}',
-        label: context.l10n.aiResultsMetricKept,
-        color: tokens.inkMuted80,
-      ),
-    ];
-    final metricStrip = wide
-        ? Row(
-            children: [
-              for (var index = 0; index < metrics.length; index++)
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: index == metrics.length - 1 ? 0 : AppleSpacing.sm,
-                    ),
-                    child: _ResultMetric(data: metrics[index]),
-                  ),
-                ),
-            ],
-          )
-        : Wrap(
-            spacing: AppleSpacing.lg,
-            runSpacing: AppleSpacing.sm,
-            children: metrics
-                .map((metric) => _ResultMetric(data: metric))
-                .toList(),
-          );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        metricStrip,
-        const SizedBox(height: AppleSpacing.xs),
-        Text(
-          context.l10n.aiResultsTotalSize(_formatBytes(summary.totalBytes)),
-          style: context.vwFinePrint,
-        ),
-      ],
     );
   }
 
@@ -2283,6 +2206,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       spacing: AppleSpacing.xs,
       runSpacing: AppleSpacing.xs,
       children: [
+        IconButton(
+          key: AiAnalysisWorkspace.searchToggleKey,
+          tooltip: context.l10n.aiResultsSearchHint,
+          icon: const Icon(Icons.search_rounded, size: 18),
+          onPressed: () => setState(() {
+            _resultsSearchExpanded = !_resultsSearchExpanded;
+            if (!_resultsSearchExpanded) {
+              _resultsSearchController.clear();
+              _resultsQuery = '';
+              _invalidateVisibleGroups();
+            }
+          }),
+        ),
         _buildResultsMenuButton<_ResultFilterMode>(
           label: _resultFilterLabel(_resultFilterMode),
           initialValue: _resultFilterMode,
@@ -2317,6 +2253,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         ),
       ],
     );
+    if (!_resultsSearchExpanded) return menus;
     if (!wide) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3074,75 +3011,23 @@ class _VisibleResultGroup {
 
 class _OverallResultSummaryData {
   const _OverallResultSummaryData({
-    required this.analyzedCount,
-    required this.totalBytes,
-    required this.safeCount,
+    required this.safeBytes,
     required this.reviewCount,
-    required this.keepCount,
   });
 
-  final int analyzedCount;
-  final int totalBytes;
-  final int safeCount;
+  final int safeBytes;
   final int reviewCount;
-  final int keepCount;
-}
-
-class _ResultMetricData {
-  const _ResultMetricData({
-    required this.value,
-    required this.label,
-    this.color,
-  });
-
-  final String value;
-  final String label;
-  final Color? color;
-}
-
-class _ResultMetric extends StatelessWidget {
-  const _ResultMetric({required this.data});
-
-  final _ResultMetricData data;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.volward;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          data.value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: context.vwBodyStrong.copyWith(color: data.color ?? tokens.ink),
-        ),
-        const SizedBox(height: 1),
-        Text(
-          data.label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: context.vwFinePrint,
-        ),
-      ],
-    );
-  }
 }
 
 class _WorkspaceHeader extends StatelessWidget {
   const _WorkspaceHeader({
-    required this.targetLabel,
     required this.phaseLabel,
     required this.phaseStep,
-    required this.collapseProgress,
     required this.onBack,
   });
 
-  final String targetLabel;
   final String phaseLabel;
   final int phaseStep;
-  final double collapseProgress;
   final VoidCallback? onBack;
 
   @override
@@ -3150,21 +3035,16 @@ class _WorkspaceHeader extends StatelessWidget {
     final l10n = context.l10n;
     final tokens = context.volward;
     final phaseSemantics = '$phaseLabel, step $phaseStep of 5';
-    final t = collapseProgress.clamp(0.0, 1.0).toDouble();
-    final verticalPadding = ui.lerpDouble(AppleSpacing.sm, AppleSpacing.xs, t)!;
-    final targetProgress = 1 - t;
     final phaseIndicator = Semantics(
       value: phaseSemantics,
       child: ExcludeSemantics(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(phaseLabel, style: context.vwCaptionStrong),
-            const SizedBox(width: AppleSpacing.xs),
             for (var step = 1; step <= 5; step++) ...[
               Container(
-                width: 6,
-                height: 6,
+                width: 4,
+                height: 4,
                 decoration: BoxDecoration(
                   color: step <= phaseStep
                       ? tokens.primary
@@ -3178,109 +3058,36 @@ class _WorkspaceHeader extends StatelessWidget {
         ),
       ),
     );
-    final titleBlock = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          l10n.aiWorkspaceTitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: context.vwBodyStrong.copyWith(
-            fontSize: ui.lerpDouble(17, 15, t),
-            height: ui.lerpDouble(1.24, 1.12, t),
-          ),
-        ),
-        if (targetLabel.isNotEmpty)
-          ClipRect(
-            child: Align(
-              alignment: Alignment.topLeft,
-              heightFactor: targetProgress,
-              child: Opacity(
-                opacity: targetProgress,
-                // RepaintBoundary keeps the text rasterized at its natural
-                // resolution while fractional opacity/clip reveal the label;
-                // without it the text layer is re-rasterized at fractional
-                // scale and renders blurry on some GPUs (Intel Macs).
-                child: RepaintBoundary(
-                  child: Text(
-                    targetLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.vwFinePrint,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
+    final title = Text(
+      l10n.aiWorkspaceTitle,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: context.vwBodyStrong.copyWith(fontSize: 15, height: 1.12),
     );
     return DecoratedBox(
       key: AiAnalysisWorkspace.headerKey,
-      decoration: BoxDecoration(
-        color: tokens.canvas.withValues(alpha: ui.lerpDouble(0, 0.72, t)!),
-      ),
+      decoration: BoxDecoration(color: tokens.canvas),
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: EdgeInsets.symmetric(
+          padding: const EdgeInsets.symmetric(
             horizontal: AppleSpacing.md,
-            vertical: verticalPadding,
+            vertical: AppleSpacing.xs,
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 420;
-              final backButton = AppleButton(
+          child: Row(
+            children: [
+              AppleButton(
                 key: AiAnalysisWorkspace.backKey,
-                label: compact ? l10n.back : l10n.aiWorkspaceBack,
+                label: l10n.aiWorkspaceBack,
                 icon: Icons.arrow_back,
                 variant: AppleButtonVariant.pearl,
                 onPressed: onBack,
-              );
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    backButton,
-                    const SizedBox(height: AppleSpacing.xs),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Wrap(
-                        alignment: WrapAlignment.end,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: AppleSpacing.xxs,
-                        runSpacing: AppleSpacing.xxs,
-                        children: [
-                          Text(phaseLabel, style: context.vwCaptionStrong),
-                          for (var step = 1; step <= 5; step++)
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: step <= phaseStep
-                                    ? tokens.primary
-                                    : tokens.inkMuted48.withValues(alpha: 0.35),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppleSpacing.xs),
-                    titleBlock,
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  backButton,
-                  const SizedBox(width: AppleSpacing.xs),
-                  Expanded(child: titleBlock),
-                  const SizedBox(width: AppleSpacing.sm),
-                  phaseIndicator,
-                ],
-              );
-            },
+              ),
+              const SizedBox(width: AppleSpacing.xs),
+              Expanded(child: title),
+              const SizedBox(width: AppleSpacing.sm),
+              phaseIndicator,
+            ],
           ),
         ),
       ),

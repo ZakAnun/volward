@@ -45,6 +45,14 @@ typedef VolwardGetLastProgressJson = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardCancelScanNative = Void Function(Pointer<Void>);
 typedef VolwardCancelScan = void Function(Pointer<Void>);
 
+typedef VolwardRequestScanPauseNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardRequestScanPause =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef VolwardGetLastPauseErrorNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardGetLastPauseError = Pointer<Utf8> Function(Pointer<Void>);
+
 typedef VolwardGetLastSnapshotJsonNative =
     Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardGetLastSnapshotJson = Pointer<Utf8> Function(Pointer<Void>);
@@ -296,6 +304,8 @@ final class VolwardNativeBridge implements VolwardBridge {
     _cancelScan = _lib
         .lookup<NativeFunction<VolwardCancelScanNative>>('volward_cancel_scan')
         .asFunction();
+    _requestScanPause = _tryLookupRequestScanPause();
+    _getLastPauseError = _tryLookupGetLastPauseError();
     _getLastSnapshotJson = _lib
         .lookup<NativeFunction<VolwardGetLastSnapshotJsonNative>>(
           'volward_get_last_snapshot_json',
@@ -533,6 +543,8 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardStartScanAsyncWithOptions? _startScanAsyncWithOptions;
   late final VolwardIsScanRunning _isScanRunning;
   late final VolwardCancelScan _cancelScan;
+  late final VolwardRequestScanPause? _requestScanPause;
+  late final VolwardGetLastPauseError? _getLastPauseError;
   late final VolwardGetLastSnapshotJson _getLastSnapshotJson;
   late final VolwardGetLastProgressJson _getLastProgressJson;
   late final VolwardSetLastSnapshotJson _setLastSnapshotJson;
@@ -701,6 +713,28 @@ final class VolwardNativeBridge implements VolwardBridge {
   }
 
   void cancelScan(Pointer<Void> engine) => _cancelScan(engine);
+
+  String requestScanPause(Pointer<Void> engine, String root, String cacheDir) {
+    final fn = _requestScanPause;
+    if (fn == null) {
+      return 'error:native dylib missing volward_request_scan_pause — rebuild Rust';
+    }
+    final rootPtr = root.toNativeUtf8();
+    final cacheDirPtr = cacheDir.toNativeUtf8();
+    try {
+      final out = fn(engine, rootPtr, cacheDirPtr);
+      return _decodeStringPtr(out) ?? 'error:null pause response';
+    } finally {
+      calloc.free(rootPtr);
+      calloc.free(cacheDirPtr);
+    }
+  }
+
+  String? getLastPauseError(Pointer<Void> engine) {
+    final fn = _getLastPauseError;
+    if (fn == null) return 'native dylib missing volward_get_last_pause_error';
+    return _decodeStringPtr(fn(engine));
+  }
 
   Map<String, dynamic>? getLastSnapshot(Pointer<Void> engine) {
     final ptr = _getLastSnapshotJson(engine);
@@ -1093,6 +1127,30 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardEmptyTrashJsonNative>>(
             'volward_empty_trash_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardRequestScanPause? _tryLookupRequestScanPause() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardRequestScanPauseNative>>(
+            'volward_request_scan_pause',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardGetLastPauseError? _tryLookupGetLastPauseError() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardGetLastPauseErrorNative>>(
+            'volward_get_last_pause_error',
           )
           .asFunction();
     } on Object {

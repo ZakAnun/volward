@@ -9,6 +9,7 @@ import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
+import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
@@ -361,6 +362,7 @@ Widget _workspaceShell(
   VoidCallback? onExit,
   VoidCallback? onOpenSettings,
   Locale locale = const Locale('en'),
+  CoverageJobState? coverageJobState,
 }) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -376,6 +378,7 @@ Widget _workspaceShell(
         onOpenSettings: onOpenSettings ?? () {},
         onDeletingChanged: onDeletingChanged ?? (_) {},
         onDeleteCompleted: onDeleteCompleted ?? () {},
+        debugCoverageJobState: coverageJobState,
       ),
     ),
   );
@@ -404,6 +407,7 @@ Future<void> _openResults(
   ValueChanged<bool>? onDeletingChanged,
   VoidCallback? onDeleteCompleted,
   Locale locale = const Locale('en'),
+  CoverageJobState? coverageJobState,
 }) async {
   gateway
     ..candidatesJson = candidatesJson ?? _candidatePayload()
@@ -414,6 +418,7 @@ Future<void> _openResults(
       onDeletingChanged: onDeletingChanged,
       onDeleteCompleted: onDeleteCompleted,
       locale: locale,
+      coverageJobState: coverageJobState,
     ),
   );
   await _pumpUntilFound(
@@ -1741,30 +1746,18 @@ void main() {
     await _openResults(tester, _FakeGateway());
 
     expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.summaryKey),
-        matching: find.text('3'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Analyzed'), findsOneWidget);
-    expect(find.text('Safe to remove'), findsOneWidget);
-    expect(find.text('Needs review'), findsOneWidget);
-    expect(find.text('Kept'), findsOneWidget);
-    expect(find.text('600 B total'), findsOneWidget);
-    expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.decisionSummaryKey), findsOneWidget);
+    expect(find.text('100 B reclaimable · 1 need review'), findsOneWidget);
+    expect(find.text('Analyzed'), findsNothing);
+    expect(find.text('Safe to remove'), findsNothing);
+    expect(find.text('Kept'), findsNothing);
+    expect(find.text('600 B total'), findsNothing);
+    expect(find.text('Search path, reason, source, or hint'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.searchToggleKey), findsOneWidget);
     expect(find.text('All'), findsOneWidget);
     expect(find.text('Priority'), findsOneWidget);
     expect(find.text('Recommended first'), findsNothing);
     expect(find.text('Show all results'), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.summaryKey),
-        matching: find.text('Safe to remove'),
-      ),
-      findsOneWidget,
-    );
     expect(find.text('Review needed'), findsNothing);
     expect(find.text('Kept by AI'), findsNothing);
     expect(find.text('1 item selected · 100 B'), findsOneWidget);
@@ -1819,6 +1812,8 @@ void main() {
       ),
     );
 
+    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
+    await tester.pumpAndSettle();
     await _expandGroup(tester, '/tmp');
 
     expect(find.text('2 items selected · 800 B'), findsOneWidget);
@@ -1866,6 +1861,8 @@ void main() {
   testWidgets('empty result filters offer a reset action', (tester) async {
     await _openResults(tester, _FakeGateway());
 
+    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'does-not-exist');
     await tester.pumpAndSettle();
 
@@ -1920,15 +1917,9 @@ void main() {
       ),
     );
 
-    expect(
-      find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.summaryKey),
-        matching: find.text('12'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('120 B total'), findsOneWidget);
-    expect(find.text('Analyzed'), findsOneWidget);
+    expect(find.text('90 B reclaimable · 2 need review'), findsOneWidget);
+    expect(find.text('120 B total'), findsNothing);
+    expect(find.text('Analyzed'), findsNothing);
     expect(find.text('9 items selected · 90 B'), findsOneWidget);
     expect(
       find.text('2 pending review items are excluded until you decide.'),
@@ -2094,12 +2085,6 @@ void main() {
     expect(find.text('Back to Overview'), findsOneWidget);
     expect(backAction, findsOneWidget);
     expect(tester.getSize(backAction).width, greaterThan(96));
-    final expandedHeaderHeight = tester
-        .getSize(find.byKey(AiAnalysisWorkspace.headerKey))
-        .height;
-    final summaryTopBeforeScroll = tester
-        .getTopLeft(find.byKey(AiAnalysisWorkspace.summaryKey))
-        .dy;
     final deleteTopBeforeScroll = tester
         .getTopLeft(find.byKey(AiAnalysisWorkspace.deleteKey))
         .dy;
@@ -2107,34 +2092,23 @@ void main() {
     await _expandGroup(tester, '/tmp');
     expect(_resultItem('/tmp/safe-0.cache'), findsOneWidget);
 
-    await tester.drag(
-      find.byKey(AiAnalysisWorkspace.resultsListKey),
-      const Offset(0, -500),
-    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
     await tester.pumpAndSettle();
 
-    final resultsScrollable = find.descendant(
-      of: find.byKey(AiAnalysisWorkspace.resultsListKey),
-      matching: find.byType(Scrollable),
-    );
     final scrollableState = tester.state<ScrollableState>(
-      resultsScrollable.first,
+      find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      ),
     );
 
     expect(find.text('Back to Overview'), findsOneWidget);
     expect(backAction, findsOneWidget);
     expect(
-      tester.getTopLeft(find.byKey(AiAnalysisWorkspace.summaryKey)).dy,
-      closeTo(summaryTopBeforeScroll, 12),
-    );
-    expect(
       tester.getTopLeft(find.byKey(AiAnalysisWorkspace.deleteKey)).dy,
       closeTo(deleteTopBeforeScroll, 12),
     );
-    expect(
-      tester.getSize(find.byKey(AiAnalysisWorkspace.headerKey)).height,
-      lessThan(expandedHeaderHeight),
-    );
+    expect(find.byKey(AiAnalysisWorkspace.headerKey), findsOneWidget);
     expect(scrollableState.position.pixels, greaterThan(0));
     expect(_resultItem('/tmp/safe-0.cache'), findsNothing);
     expect(find.text('18 items selected · 180 B'), findsOneWidget);
@@ -2195,12 +2169,11 @@ void main() {
     await _expandGroup(tester, '/tmp/large-tree');
     expect(find.text('/tmp/large-tree/group-2/item-9998.cache'), findsNothing);
 
-    final resultsScrollable = find.descendant(
-      of: find.byKey(AiAnalysisWorkspace.resultsListKey),
-      matching: find.byType(Scrollable),
-    );
     final scrollableState = tester.state<ScrollableState>(
-      resultsScrollable.first,
+      find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      ),
     );
     scrollableState.position.jumpTo(scrollableState.position.maxScrollExtent);
     await tester.pumpAndSettle();
@@ -2242,26 +2215,20 @@ void main() {
       ),
     );
 
-    final resultsList = find.byKey(AiAnalysisWorkspace.resultsListKey);
     expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.summaryKey),
-        matching: find.text('Analyzed'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('180 B total'), findsOneWidget);
-    expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
+    expect(find.text('180 B reclaimable · 0 need review'), findsOneWidget);
+    expect(find.text('Analyzed'), findsNothing);
+    expect(find.text('180 B total'), findsNothing);
+    expect(find.text('Search path, reason, source, or hint'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.searchToggleKey), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
     await _expandGroup(tester, '/tmp');
     expect(_resultItem('/tmp/compact-safe-0.cache'), findsOneWidget);
 
-    await tester.drag(resultsList, const Offset(0, -400));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(AiAnalysisWorkspace.summaryKey), findsOneWidget);
-    expect(find.text('Search path, reason, source, or hint'), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.headerKey), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -2271,19 +2238,13 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _openResults(tester, _FakeGateway(), locale: const Locale('zh'));
 
-    expect(
-      find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.summaryKey),
-        matching: find.text('3'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('已分析'), findsOneWidget);
-    expect(find.text('安全可移除'), findsOneWidget);
-    expect(find.text('需要确认'), findsOneWidget);
-    expect(find.text('已保留'), findsOneWidget);
-    expect(find.text('总计 600 B'), findsOneWidget);
-    expect(find.text('搜索路径、原因、来源或提示'), findsOneWidget);
+    expect(find.text('可清理 100 B · 1 项待确认'), findsOneWidget);
+    expect(find.text('已分析'), findsNothing);
+    expect(find.text('安全可移除'), findsNothing);
+    expect(find.text('需要确认'), findsNothing);
+    expect(find.text('已保留'), findsNothing);
+    expect(find.text('总计 600 B'), findsNothing);
+    expect(find.text('搜索路径、原因、来源或提示'), findsNothing);
     expect(find.text('全部'), findsOneWidget);
     expect(find.text('优先级'), findsOneWidget);
     expect(find.text('已选择 1 项 · 100 B'), findsOneWidget);
@@ -2321,4 +2282,38 @@ void main() {
       semantics.dispose();
     }
   });
+
+  testWidgets(
+    'completed coverage job hides the ai-analysis-coverage-progress banner',
+    (tester) async {
+      await _openResults(
+        tester,
+        _FakeGateway(),
+        coverageJobState: const CoverageJobState(
+          snapshotId: 'snapshot-1',
+          rootPath: '/home',
+          planVersion: 1,
+          cursor: 1,
+          totalUnclassified: 1,
+          analyzedFiles: 1,
+          preClassifiedCount: 0,
+          status: CoverageJobStatus.completed,
+          usedTokens: 0,
+          usedCredits: 0,
+          budgetTokens: 1000,
+          budgetCredits: 0,
+          updatedAtMs: 1,
+        ),
+      );
+
+      expect(
+        find.byKey(AiAnalysisWorkspace.decisionSummaryKey),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('ai-analysis-coverage-progress')),
+        findsNothing,
+      );
+    },
+  );
 }

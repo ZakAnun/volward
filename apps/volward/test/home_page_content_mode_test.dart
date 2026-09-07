@@ -278,6 +278,7 @@ class _QueuedOverviewProvider implements StorageOverviewProvider {
 class _Session extends VolwardSession {
   _Session({
     this.exposePreview = false,
+    this.authoritativeSnapshot = true,
     this.startupRootGate,
     this.restoredRootOnLoad,
     this.snapshotFileApi = true,
@@ -291,6 +292,7 @@ class _Session extends VolwardSession {
   }
 
   final bool exposePreview;
+  final bool authoritativeSnapshot;
   final Completer<String>? startupRootGate;
   final String? restoredRootOnLoad;
   final bool snapshotFileApi;
@@ -300,8 +302,11 @@ class _Session extends VolwardSession {
   bool postDeleteRefreshPendingForTest = false;
   int previewCalls = 0;
   String? switchedRoot;
-  bool? switchStartedScan;
+  int switchRootCalls = 0;
+  bool useRealSwitchStateMachineForTest = false;
   int runScanCalls = 0;
+  ScanRunMode? lastRunScanMode;
+  String? errorForTest;
   int cancelCalls = 0;
   int listenerAdds = 0;
   int listenerRemoves = 0;
@@ -327,7 +332,11 @@ class _Session extends VolwardSession {
 
   /// Content-mode tests exercise cached-home UX, not cold-start auto-scan.
   @override
-  bool get hasAuthoritativeSnapshotForCurrentRoot => true;
+  bool get hasAuthoritativeSnapshotForCurrentRoot => authoritativeSnapshot;
+
+  @override
+  String? get lastError =>
+      useRealSwitchStateMachineForTest ? super.lastError : errorForTest;
 
   @override
   bool get restoringSnapshot => exposePreview;
@@ -351,6 +360,11 @@ class _Session extends VolwardSession {
 
   void setPostDeleteRefreshPending(bool value) {
     postDeleteRefreshPendingForTest = value;
+    notifyListeners();
+  }
+
+  void setLastError(String? value) {
+    errorForTest = value;
     notifyListeners();
   }
 
@@ -387,14 +401,17 @@ class _Session extends VolwardSession {
   @override
   Future<void> switchScanRoot(
     String? path, {
-    bool startFullScan = true,
     bool validateBeforeSwitch = false,
   }) async {
+    switchRootCalls++;
+    if (useRealSwitchStateMachineForTest) {
+      await super.switchScanRoot(path, validateBeforeSwitch: false);
+      return;
+    }
     if (validateBeforeSwitch && path != null) {
       await validateScanRoot(path);
     }
     switchedRoot = path;
-    switchStartedScan = startFullScan;
     if (path == null) {
       clearScanRoots();
     } else {
@@ -403,8 +420,9 @@ class _Session extends VolwardSession {
   }
 
   @override
-  Future<String> runScan() {
+  Future<String> runScan({ScanRunMode mode = ScanRunMode.auto}) {
     runScanCalls++;
+    lastRunScanMode = mode;
     return scanGate?.future ?? Future<String>.value('scan-id');
   }
 
@@ -864,7 +882,7 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsNothing);
     expect(session.switchedRoot, '/home/Downloads');
-    expect(session.switchStartedScan, isFalse);
+    expect(session.runScanCalls, 0);
 
     candidateGate.complete(_HomeAiGateway._emptyCandidates);
     await tester.pump();
@@ -1197,7 +1215,6 @@ void main() {
     await tester.pump();
 
     expect(session.switchedRoot, '/picked/');
-    expect(session.switchStartedScan, isTrue);
     expect(find.byType(StorageStewardHome), findsNothing);
     expect(overviewProvider.selectedPaths, ['/', '/picked']);
 
@@ -1241,7 +1258,6 @@ void main() {
     await tester.tap(find.byKey(HomePage.browseHomeActionKey));
     await tester.pump();
 
-    expect(session.switchStartedScan, isTrue);
     expect(session.scanRoots, isEmpty);
     expect(find.byType(StorageStewardHome), findsNothing);
     expect(overviewProvider.selectedPaths, ['/', homeRoot]);
@@ -1286,7 +1302,6 @@ void main() {
     await tester.tap(find.byKey(HomePage.browseHomeActionKey));
     await tester.pump();
 
-    expect(session.switchStartedScan, isTrue);
     expect(session.scanRoots, isEmpty);
     expect(find.byType(StorageStewardHome), findsNothing);
     expect(overviewProvider.selectedPaths, ['/', homeRoot]);
@@ -1327,7 +1342,6 @@ void main() {
     await tester.pump();
 
     expect(session.switchedRoot, '/picked');
-    expect(session.switchStartedScan, isFalse);
     expect(session.runScanCalls, 0);
     expect(overviewProvider.selectedPaths, ['/', '/picked']);
     expect(find.byType(StorageStewardHome), findsOneWidget);
@@ -1671,9 +1685,136 @@ void main() {
     await tester.pump();
 
     expect(session.switchedRoot, '/home/Downloads');
-    expect(session.switchStartedScan, isFalse);
     expect(session.runScanCalls, 0);
     expect(overviewProvider.selectedPaths, ['/', '/home/Downloads']);
+  });
+
+  testWidgets('scanning target selection delegates root switch to session', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-scanning-target-switch.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    tester
+        .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+        .onSelectTarget(_overviewData().locations[2]);
+    await tester.pump();
+
+    expect(session.switchRootCalls, 1);
+    expect(session.switchedRoot, '/home/Downloads');
+  });
+
+  testWidgets('pause failure keeps current home target and shows toast', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pause-failure.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..useRealSwitchStateMachineForTest = true
+      ..pauseCurrentScanForTest = (() async => false)
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    tester
+        .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+        .onSelectTarget(_overviewData().locations[2]);
+    await tester.pump();
+
+    expect(session.switchRootCalls, 1);
+    expect(session.scanRoots, ['/']);
+    expect(
+      tester
+          .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+          .summary
+          .selectedLocation
+          ?.path,
+      '/',
+    );
+    expect(
+      find.text("Couldn't pause the current scan. Stay on this folder."),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('custom folder pause failure keeps current folder and mode', (
+    tester,
+  ) async {
+    final session = _Session(exposePreview: true)
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-custom-pause-failure.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..useRealSwitchStateMachineForTest = true
+      ..pauseCurrentScanForTest = (() async => false)
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final overviewProvider = _OverviewProvider();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        directoryPicker: ({required confirmButtonText}) async =>
+            '/work/archive',
+        storageOverviewProvider: overviewProvider,
+      ),
+    );
+
+    await _openLastScan(tester);
+    await tester.pump();
+    expect(find.byType(ScanColumnView), findsOneWidget);
+
+    await tester.tap(find.byKey(HomePage.browseFolderActionKey));
+    await tester.pump();
+
+    expect(session.switchRootCalls, 1);
+    expect(session.scanRoots, ['/']);
+    expect(session.recentCustomRoots, isEmpty);
+    expect(overviewProvider.selectedPaths, ['/']);
+    expect(find.byType(StorageStewardHome), findsNothing);
+    expect(find.byType(ScanColumnView), findsOneWidget);
+    expect(
+      find.text("Couldn't pause the current scan. Stay on this folder."),
+      findsOneWidget,
+    );
   });
 
   testWidgets('home scan stays disabled without snapshot file capability', (
@@ -2191,6 +2332,7 @@ void main() {
     await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
     await tester.pump();
     expect(session.runScanCalls, 1);
+    expect(session.lastRunScanMode, ScanRunMode.rescan);
 
     session.primeTransientScanStateForTest(
       scanning: true,
@@ -2200,6 +2342,131 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(StorageStewardHome.scanActionKey));
     expect(session.cancelCalls, 1);
+  });
+
+  testWidgets(
+    'live scan during preparation without a snapshot keeps scanning UI',
+    (tester) async {
+      final session = _Session(authoritativeSnapshot: false)
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-home-live-preparing.json',
+        )
+        ..rootExistsForTest = ((_) => true)
+        ..primeTransientScanStateForTest(
+          scanning: true,
+          preparing: true,
+          openScanPorts: false,
+        );
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await _pumpHome(
+        tester,
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+
+      expect(session.scanning, isTrue);
+      expect(session.lastSnapshot, isNull);
+      expect(find.byKey(StorageStewardHome.statusChipKey), findsOneWidget);
+      final home = tester.widget<StorageStewardHome>(
+        find.byType(StorageStewardHome),
+      );
+      expect(home.onScan, isNull);
+      expect(home.onCancelScan, isNotNull);
+    },
+  );
+
+  testWidgets('live scan without a snapshot keeps the status chip visible', (
+    tester,
+  ) async {
+    final session = _Session(authoritativeSnapshot: false)
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-live-no-snapshot.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..primeTransientScanStateForTest(
+        progress: const {'phase': 'Walking', 'paths_seen': 1},
+        scanning: true,
+        openScanPorts: false,
+      );
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    expect(session.lastSnapshot, isNull);
+    expect(find.byKey(StorageStewardHome.statusChipKey), findsOneWidget);
+  });
+
+  testWidgets('state-machine errors show one localized toast per error', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-state-machine-errors.json',
+      )
+      ..rootExistsForTest = ((_) => true);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    session.setLastError('scan-pause-failed');
+    await tester.pump();
+    expect(
+      find.text("Couldn't pause the current scan. Stay on this folder."),
+      findsOneWidget,
+    );
+
+    session.notifyListeners();
+    await tester.pump();
+    expect(
+      find.text("Couldn't pause the current scan. Stay on this folder."),
+      findsOneWidget,
+    );
+
+    session.setLastError('scan-cache-unreadable');
+    await tester.pump();
+    expect(
+      find.text("This folder's cache is unreadable. Scanning again."),
+      findsOneWidget,
+    );
+
+    session.setLastError('scan-cache-too-large');
+    await tester.pump();
+    expect(
+      find.text(
+        "This folder's cache is too large to restore. Scan again to refresh it.",
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('cancelling an in-flight scan re-enables start scan', (

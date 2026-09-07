@@ -5,6 +5,7 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use crate::VolwardEngine;
+use volward_core::pause_store::FilePauseStore;
 
 fn to_c_string(s: String) -> *mut c_char {
     CString::new(s)
@@ -120,6 +121,37 @@ pub unsafe extern "C" fn volward_cancel_scan(engine: *mut VolwardEngine) {
     if let Some(e) = engine_ref(engine) {
         e.cancel_scan();
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_request_scan_pause(
+    engine: *mut VolwardEngine,
+    root: *const c_char,
+    cache_dir: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return to_c_string("error:null engine".to_string());
+    };
+    let Some(root) = cstr_to_string(root) else {
+        return to_c_string("error:null root".to_string());
+    };
+    let Some(cache_dir) = cstr_to_string(cache_dir) else {
+        return to_c_string("error:null cache dir".to_string());
+    };
+    e.pause_current_scan();
+    let path =
+        FilePauseStore::new(std::path::PathBuf::from(cache_dir).join("pauses")).index_path(&root);
+    to_c_string(path.to_string_lossy().into_owned())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_get_last_pause_error(engine: *mut VolwardEngine) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    e.get_last_pause_error()
+        .map(to_c_string)
+        .unwrap_or(ptr::null_mut())
 }
 
 #[no_mangle]
@@ -357,9 +389,7 @@ pub unsafe extern "C" fn volward_ai_is_candidates_building(engine: *mut VolwardE
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn volward_ai_get_candidates_json(
-    engine: *mut VolwardEngine,
-) -> *mut c_char {
+pub unsafe extern "C" fn volward_ai_get_candidates_json(engine: *mut VolwardEngine) -> *mut c_char {
     let Some(e) = engine_ref(engine) else {
         return ptr::null_mut();
     };
@@ -390,12 +420,7 @@ pub unsafe extern "C" fn volward_ai_next_coverage_page_json(
         return ptr::null_mut();
     };
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
-    to_c_string(e.next_ai_coverage_page_json(
-        &snapshot_id,
-        plan_version,
-        cursor,
-        page_size,
-    ))
+    to_c_string(e.next_ai_coverage_page_json(&snapshot_id, plan_version, cursor, page_size))
 }
 
 #[no_mangle]
@@ -782,6 +807,29 @@ mod ai_contract_tests {
     }
 
     #[test]
+    fn request_scan_pause_returns_the_rust_pause_index_path() {
+        let mut engine = VolwardEngine::new();
+        let cache = tempfile::TempDir::new().unwrap();
+        let root = CString::new("/Users/test/Downloads").unwrap();
+        let cache_dir = CString::new(cache.path().to_string_lossy().as_bytes()).unwrap();
+
+        let actual = unsafe {
+            take(volward_request_scan_pause(
+                &mut engine,
+                root.as_ptr(),
+                cache_dir.as_ptr(),
+            ))
+        };
+        let expected = FilePauseStore::new(cache.path().join("pauses"))
+            .index_path("/Users/test/Downloads")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(actual, expected);
+        assert!(unsafe { volward_get_last_pause_error(&mut engine) }.is_null());
+    }
+
+    #[test]
     fn build_request_json_ignores_member_paths() {
         let input = CString::new(
             r#"[{"path":"/a","size_bytes":1,"is_dir":true,"member_paths":["/a/secret"]}]"#,
@@ -799,8 +847,12 @@ mod ai_contract_tests {
         let upstream = r#"{"choices":[{"finish_reason":"stop","message":{"content":"[{\"path\":\"/a\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"x\"}]"}}]}"#;
         let body = CString::new(upstream).unwrap();
         let batch = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
-        let out =
-            unsafe { take(volward_ai_parse_response_json(body.as_ptr(), batch.as_ptr())) };
+        let out = unsafe {
+            take(volward_ai_parse_response_json(
+                body.as_ptr(),
+                batch.as_ptr(),
+            ))
+        };
         let arr: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(arr[0]["verdict"], "keep");
     }
@@ -811,8 +863,12 @@ mod ai_contract_tests {
             CString::new(r#"{"choices":[{"finish_reason":"length","message":{"content":"["}}]}"#)
                 .unwrap();
         let batch = CString::new(r#"[{"path":"/a","size_bytes":1,"is_dir":false}]"#).unwrap();
-        let out =
-            unsafe { take(volward_ai_parse_response_json(body.as_ptr(), batch.as_ptr())) };
+        let out = unsafe {
+            take(volward_ai_parse_response_json(
+                body.as_ptr(),
+                batch.as_ptr(),
+            ))
+        };
         let arr: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(arr[0]["path"], "/a");
         assert_eq!(arr[0]["verdict"], "review_needed");
@@ -821,16 +877,29 @@ mod ai_contract_tests {
     #[test]
     fn parse_response_json_reports_null_pointers() {
         let batch = CString::new("[]").unwrap();
-        let a = unsafe { take(volward_ai_parse_response_json(std::ptr::null(), batch.as_ptr())) };
+        let a = unsafe {
+            take(volward_ai_parse_response_json(
+                std::ptr::null(),
+                batch.as_ptr(),
+            ))
+        };
         assert_eq!(a, "error:null response");
         let body = CString::new("{}").unwrap();
-        let b = unsafe { take(volward_ai_parse_response_json(body.as_ptr(), std::ptr::null())) };
+        let b = unsafe {
+            take(volward_ai_parse_response_json(
+                body.as_ptr(),
+                std::ptr::null(),
+            ))
+        };
         assert_eq!(b, "error:null batch");
     }
 
     #[test]
     fn batch_size_matches_crate_constant() {
-        assert_eq!(unsafe { volward_ai_batch_size() } as usize, volward_ai::BATCH_SIZE);
+        assert_eq!(
+            unsafe { volward_ai_batch_size() } as usize,
+            volward_ai::BATCH_SIZE
+        );
     }
 
     #[test]

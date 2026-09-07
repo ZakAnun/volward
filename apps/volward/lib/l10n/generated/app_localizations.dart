@@ -662,6 +662,24 @@ abstract class AppLocalizations {
   /// **'Scan failed: {error}'**
   String scanStatusFailed(Object error);
 
+  /// No description provided for @scanPauseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t pause the current scan. Stay on this folder.'**
+  String get scanPauseFailed;
+
+  /// No description provided for @scanCacheUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder\'s cache is unreadable. Scanning again.'**
+  String get scanCacheUnreadable;
+
+  /// No description provided for @scanCacheTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder\'s cache is too large to restore. Scan again to refresh it.'**
+  String get scanCacheTooLarge;
+
   /// No description provided for @scanStatusFull.
   ///
   /// In en, this message translates to:
@@ -1560,6 +1578,12 @@ abstract class AppLocalizations {
     int review,
     int keep,
   );
+
+  /// No description provided for @aiResultsDecisionSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} reclaimable · {review} need review'**
+  String aiResultsDecisionSummary(String bytes, int review);
 
   /// No description provided for @aiResultsMetricAnalyzed.
   ///
