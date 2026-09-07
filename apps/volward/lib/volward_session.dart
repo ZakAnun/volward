@@ -246,6 +246,9 @@ class VolwardSession extends ChangeNotifier {
   bool _scanRunningOnMainEngine = false;
   bool _scanCancelRequested = false;
   bool _scanPauseRequested = false;
+  int _nextScanRunId = 0;
+  int? _activeScanRunId;
+  int? _completedScanRunId;
   bool _targetPreviewLoading = false;
   DateTime? _targetPreviewStartedAt;
   int _cacheRestoreGeneration = 0;
@@ -419,6 +422,7 @@ class VolwardSession extends ChangeNotifier {
         ? null
         : Map<String, dynamic>.from(progress);
     _scanning = scanning;
+    _activeScanRunId = scanning ? ++_nextScanRunId : null;
     _scanStartedAt = scanning ? DateTime.utc(2026, 8, 3) : null;
     _lastJobId = lastJobId;
     _workerCancelPort = null;
@@ -1303,12 +1307,15 @@ class VolwardSession extends ChangeNotifier {
     }
 
     final activeScanStartedAt = _scanStartedAt;
+    final activeScanRunId = _activeScanRunId;
     final generation = _rootSwitchGeneration;
     await _waitForScanIdle(generation);
     final completedPath = await SnapshotCache.latestSnapshotPath(
       preferredRoot: root,
     );
-    if (_hasAuthoritativeSnapshot ||
+    if ((activeScanRunId != null &&
+            _completedScanRunId == activeScanRunId &&
+            _hasAuthoritativeSnapshot) ||
         await _isFreshCompletedSnapshot(completedPath, activeScanStartedAt)) {
       final saved = await _saveRootRecord(
         ScanRootRecord(
@@ -1887,6 +1894,8 @@ class VolwardSession extends ChangeNotifier {
 
     _invalidateCacheRestore();
     _scanning = true;
+    final scanRunId = ++_nextScanRunId;
+    _activeScanRunId = scanRunId;
     final scanStartedAt = DateTime.now();
     final incrementalProp = effectiveIncremental ? 1 : 0;
     unawaited(
@@ -1943,6 +1952,7 @@ class VolwardSession extends ChangeNotifier {
           final snapshotId =
               _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
           await _recordCompletedScan(scanRoot, snapshotId, scanGeneration);
+          _completedScanRunId = scanRunId;
           return snapshotId;
         } finally {
           _scanning = false;
@@ -1972,6 +1982,7 @@ class VolwardSession extends ChangeNotifier {
           final snapshotId =
               _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
           await _recordCompletedScan(scanRoot, snapshotId, scanGeneration);
+          _completedScanRunId = scanRunId;
           return snapshotId;
         } on ScanCancelledException catch (e) {
           _lastError = e.message;
@@ -2097,6 +2108,7 @@ class VolwardSession extends ChangeNotifier {
         final snapshotId =
             _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
         await _recordCompletedScan(scanRoot, snapshotId, scanGeneration);
+        _completedScanRunId = scanRunId;
         return snapshotId;
       } on ScanCancelledException catch (e) {
         _lastError = e.message;
@@ -2696,16 +2708,21 @@ class VolwardSession extends ChangeNotifier {
     return ScanSnapshotState.fromIndexSummary(summary);
   }
 
-  /// Bound the native shutdown wait so a cancelled `runScan()` cannot hang
-  /// forever if `isScanRunning` never clears.
   Future<void> _waitForNativeScanToStop(VolwardNativeBridge bridge) async {
     final engine = _engine;
     if (engine == null) return;
-    final deadline = DateTime.now().add(const Duration(seconds: 2));
-    while (bridge.isScanRunning(engine) && DateTime.now().isBefore(deadline)) {
+    await _waitUntilNativeScanStops(() => bridge.isScanRunning(engine));
+  }
+
+  Future<void> _waitUntilNativeScanStops(bool Function() isRunning) async {
+    while (isRunning()) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
+
+  @visibleForTesting
+  Future<void> waitForNativeScanToStopForTest(bool Function() isRunning) =>
+      _waitUntilNativeScanStops(isRunning);
 
   void _notifyNativeProgressIfNeeded(String? phase) {
     final now = DateTime.now();

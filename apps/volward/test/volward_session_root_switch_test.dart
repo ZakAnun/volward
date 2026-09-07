@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/scan_root_record.dart';
+import 'package:volward/scan_snapshot_state.dart';
 import 'package:volward/snapshot_cache.dart';
 import 'package:volward/volward_session.dart';
 
@@ -199,6 +200,76 @@ void main() {
       );
     },
   );
+
+  test(
+    'old authoritative snapshot does not replace current pause checkpoint',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-old-snapshot',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const currentRoot = '/Users/test/Existing';
+      final checkpoint = File('${temp.path}/pause.index.json');
+      await checkpoint.writeAsString('{}');
+      final store = ScanRootRecordStore(temp);
+      await store.save(
+        ScanRootRecord(
+          root: currentRoot,
+          status: ScanRootStatus.paused,
+          snapshotId: 'old-snapshot',
+          checkpointPath: checkpoint.path,
+          updatedAtMs: 1700000000000,
+        ),
+      );
+      late RecordingSession session;
+      session = RecordingSession()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([currentRoot])
+        ..setSnapshotForTest(
+          ScanSnapshotState.fromWire({
+            'snapshot_id': 'old-snapshot',
+            'tree': {
+              'path': currentRoot,
+              'name': 'Existing',
+              'is_dir': true,
+              'children': const [],
+            },
+            'entries': const [],
+          }),
+        )
+        ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+        ..pauseRequestForTest = (_, _) {
+          scheduleMicrotask(session.clearTransientScanStateForTest);
+          return checkpoint.path;
+        }
+        ..pauseErrorForTest = () => null;
+
+      await session.switchScanRoot('/next');
+
+      expect(session.scanRoots, ['/next']);
+      expect((await store.load(currentRoot))?.status, ScanRootStatus.paused);
+      expect(await checkpoint.exists(), isTrue);
+    },
+  );
+
+  test('native stop wait does not treat two-second deadline as idle', () async {
+    final session = RecordingSession();
+    var nativeRunning = true;
+    var waitCompleted = false;
+    final waiting = session
+        .waitForNativeScanToStopForTest(() => nativeRunning)
+        .then((_) => waitCompleted = true);
+
+    await Future<void>.delayed(const Duration(milliseconds: 2100));
+
+    expect(waitCompleted, isFalse);
+    nativeRunning = false;
+    await waiting.timeout(const Duration(seconds: 1));
+  });
 
   test(
     'record save failure makes pause fail without switching roots',
