@@ -120,6 +120,193 @@ ScanSnapshotState scanSnapshot(String id, String root) =>
     });
 
 void main() {
+  test('stale restore does not apply after a newer switch', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-switch-stale-restore',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'slow-restore',
+      snapshotName: 'slow-restore',
+      root: '/slow-restore',
+      snapshotId: 'slow-restore-scan',
+      scannedAtMs: 1700000000900,
+      sizeBytes: 512,
+      reclaimableBytes: 7,
+    );
+
+    final session = RecordingSession();
+    session.restoreDelayForTest = const Duration(milliseconds: 50);
+    unawaited(session.switchScanRoot('/slow-restore'));
+    await session.switchScanRoot('/fast');
+    await waitUntil(
+      () => session.scanRoots.first == '/fast' && session.scanCalls >= 1,
+    );
+
+    expect(session.scanRoots, ['/fast']);
+    expect(session.lastSnapshot?.tree?.path, isNot('/slow-restore'));
+  });
+
+  test('rescan overwrites completed cache for the current root only', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-rescan-current-root',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    const rootA = '/Users/test/A';
+    const rootB = '/Users/test/B';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'root-a',
+      snapshotName: 'root-a',
+      root: rootA,
+      snapshotId: 'old-a',
+      scannedAtMs: 1700000001000,
+      sizeBytes: 100,
+      reclaimableBytes: 10,
+    );
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'root-b',
+      snapshotName: 'root-b',
+      root: rootB,
+      snapshotId: 'old-b',
+      scannedAtMs: 1700000001100,
+      sizeBytes: 200,
+      reclaimableBytes: 20,
+    );
+    final store = ScanRootRecordStore(temp);
+    await store.save(
+      const ScanRootRecord(
+        root: rootA,
+        status: ScanRootStatus.completed,
+        snapshotId: 'old-a',
+        updatedAtMs: 1700000001000,
+      ),
+    );
+    await store.save(
+      const ScanRootRecord(
+        root: rootB,
+        status: ScanRootStatus.completed,
+        snapshotId: 'old-b',
+        updatedAtMs: 1700000001100,
+      ),
+    );
+    final session = VolwardSession.test()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots(['/other']);
+
+    await session.switchScanRoot(rootA);
+    await waitUntil(() => session.lastSnapshot?.snapshotId == 'old-a');
+    session.scanRunnerForTest = (_, __) async => scanSnapshot('new-a', rootA);
+    await session.runScan(mode: ScanRunMode.rescan);
+
+    expect((await store.load(rootA))?.snapshotId, 'new-a');
+    expect((await store.load(rootB))?.snapshotId, 'old-b');
+  });
+
+  test('completed scan writes only to its owner root after a switch', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-completion-owner-root',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    const ownerRoot = '/Users/test/Owner';
+    const currentRoot = '/Users/test/Current';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'current',
+      snapshotName: 'current',
+      root: currentRoot,
+      snapshotId: 'current-scan',
+      scannedAtMs: 1700000001200,
+      sizeBytes: 300,
+      reclaimableBytes: 30,
+    );
+    final store = ScanRootRecordStore(temp);
+    await store.save(
+      const ScanRootRecord(
+        root: currentRoot,
+        status: ScanRootStatus.completed,
+        snapshotId: 'current-scan',
+        updatedAtMs: 1700000001200,
+      ),
+    );
+    final scanStarted = Completer<void>();
+    final scanGate = Completer<ScanSnapshotState?>();
+    final session = VolwardSession.test()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots([ownerRoot])
+      ..pauseCurrentScanForTest = (() async => true)
+      ..scanRunnerForTest = (_, __) {
+        scanStarted.complete();
+        return scanGate.future;
+      };
+
+    final scan = session.runScan(mode: ScanRunMode.rescan);
+    await scanStarted.future;
+    await session.switchScanRoot(currentRoot);
+    await waitUntil(() => session.lastSnapshot?.snapshotId == 'current-scan');
+    scanGate.complete(scanSnapshot('owner-scan', ownerRoot));
+    await scan;
+
+    expect(session.lastSnapshot?.snapshotId, 'current-scan');
+    expect((await store.load(ownerRoot))?.snapshotId, 'owner-scan');
+    expect((await store.load(currentRoot))?.snapshotId, 'current-scan');
+  });
+
+  test('corrupt completed manifest autostarts with unreadable error', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-corrupt-manifest',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    const root = '/Users/test/CorruptManifest';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'corrupt',
+      snapshotName: 'corrupt',
+      root: root,
+      snapshotId: 'corrupt-scan',
+      scannedAtMs: 1700000001300,
+      sizeBytes: 400,
+      reclaimableBytes: 40,
+    );
+    File('${temp.path}/manifests/corrupt.json').writeAsStringSync('{');
+    final store = ScanRootRecordStore(temp);
+    await store.save(
+      const ScanRootRecord(
+        root: root,
+        status: ScanRootStatus.completed,
+        snapshotId: 'corrupt-scan',
+        updatedAtMs: 1700000001300,
+      ),
+    );
+    final session = RecordingSession()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots(['/other']);
+
+    await session.switchScanRoot(root);
+    await waitUntil(() => session.scanCalls == 1);
+
+    expect(session.scanCalls, 1);
+    expect(session.lastError, 'scan-cache-unreadable');
+  });
+
   test('empty root auto-starts a full scan after switch', () async {
     final session = RecordingSession();
     await session.switchScanRoot('/empty');

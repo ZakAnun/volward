@@ -272,6 +272,8 @@ class VolwardSession extends ChangeNotifier {
   String? Function()? pauseErrorForTest;
   @visibleForTesting
   Future<void> Function()? scanPreparationWaitForTest;
+  @visibleForTesting
+  Duration? restoreDelayForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -604,6 +606,7 @@ class VolwardSession extends ChangeNotifier {
     _scanPreparing = false;
     _scanProgress = null;
     _lastJobId = null;
+    _activeScanRunId = null;
     _workerCancelPort = null;
     _activeScanCompleter = null;
     _scanRunningOnMainEngine = false;
@@ -881,6 +884,7 @@ class VolwardSession extends ChangeNotifier {
     _lastError = null;
     _restoringSnapshot = true;
     notifyListeners();
+    await Future<void>.delayed(restoreDelayForTest ?? Duration.zero);
     var restoredSnapshot = false;
     try {
       await loadSessionStateIfNeeded();
@@ -1916,7 +1920,7 @@ class VolwardSession extends ChangeNotifier {
     final effectiveRoots = List<String>.unmodifiable(
       _scanRoots.isNotEmpty ? _scanRoots : [_defaultScanRoot()],
     );
-    final scanRoot = ScanTreeBuilder.normalizeRoot(effectiveRoots.first);
+    final ownerRoot = ScanTreeBuilder.normalizeRoot(effectiveRoots.first);
     final effectiveIncremental = switch (mode) {
       ScanRunMode.resume => true,
       ScanRunMode.rescan => false,
@@ -1937,7 +1941,7 @@ class VolwardSession extends ChangeNotifier {
       );
     }
 
-    final runGeneration = _rootSwitchGeneration;
+    final ownerGeneration = _rootSwitchGeneration;
     final scanRunId = ++_nextScanRunId;
     _scanning = true;
     _scanPreparing = true;
@@ -1946,14 +1950,14 @@ class VolwardSession extends ChangeNotifier {
     var previousStatus = ScanRootStatus.empty;
     var rescanClearStarted = false;
     try {
-      previousRecord = await _rootRecordStore.load(scanRoot);
-      _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
-      previousStatus = await _statusFor(scanRoot, considerActiveScan: false);
-      _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
+      previousRecord = await _rootRecordStore.load(ownerRoot);
+      _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
+      previousStatus = await _statusFor(ownerRoot, considerActiveScan: false);
+      _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
       if (mode == ScanRunMode.rescan) {
         rescanClearStarted = true;
-        await _rootRecordStore.clear(scanRoot);
-        _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
+        await _rootRecordStore.clear(ownerRoot);
+        _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
       }
     } catch (_) {
       if (_activeScanRunId == scanRunId) {
@@ -1964,7 +1968,7 @@ class VolwardSession extends ChangeNotifier {
       }
       if (rescanClearStarted) {
         await _restoreRootRecordAfterScanFailure(
-          scanRoot,
+          ownerRoot,
           previousRecord,
           previousStatus,
         );
@@ -1982,7 +1986,7 @@ class VolwardSession extends ChangeNotifier {
     );
     var scanSucceeded = false;
     try {
-      final scanGeneration = runGeneration;
+      final scanGeneration = ownerGeneration;
       _targetPreviewLoading = false;
       _targetPreviewStartedAt = null;
       _lastError = _scanStartErrorToPreserve;
@@ -2010,7 +2014,7 @@ class VolwardSession extends ChangeNotifier {
         await _waitForIndexLoadDrain(_cacheRestoreGeneration);
       }
       try {
-        _throwIfScanPreparationIsStale(scanRunId, scanGeneration, scanRoot);
+        _throwIfScanPreparationIsStale(scanRunId, scanGeneration, ownerRoot);
       } on ScanCancelledException {
         if (_activeScanRunId == scanRunId) {
           _scanning = false;
@@ -2037,9 +2041,8 @@ class VolwardSession extends ChangeNotifier {
             _notifyListeners();
           }
           scanSucceeded = true;
-          final snapshotId =
-              _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
-          await _recordCompletedScan(scanRoot, snapshotId, scanGeneration);
+          final snapshotId = snapshot?.snapshotId ?? 'done';
+          await _recordCompletedScan(ownerRoot, snapshotId);
           _completedScanRunId = scanRunId;
           return snapshotId;
         } finally {
@@ -2067,9 +2070,8 @@ class VolwardSession extends ChangeNotifier {
             _notifyListeners();
           }
           scanSucceeded = true;
-          final snapshotId =
-              _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
-          await _recordCompletedScan(scanRoot, snapshotId, scanGeneration);
+          final snapshotId = snapshot?.snapshotId ?? 'done';
+          await _recordCompletedScan(ownerRoot, snapshotId);
           _completedScanRunId = scanRunId;
           return snapshotId;
         } on ScanCancelledException catch (e) {
@@ -2195,9 +2197,8 @@ class VolwardSession extends ChangeNotifier {
           _notifyListeners();
         }
         scanSucceeded = true;
-        final snapshotId =
-            _lastSnapshot?.snapshotId ?? snapshot?.snapshotId ?? 'done';
-        await _recordCompletedScan(scanRoot, snapshotId, scanGeneration);
+        final snapshotId = snapshot?.snapshotId ?? 'done';
+        await _recordCompletedScan(ownerRoot, snapshotId);
         _completedScanRunId = scanRunId;
         return snapshotId;
       } on ScanCancelledException catch (e) {
@@ -2217,14 +2218,14 @@ class VolwardSession extends ChangeNotifier {
       }
     } on ScanCancelledException {
       await _restoreRootRecordAfterScanFailure(
-        scanRoot,
+        ownerRoot,
         previousRecord,
         previousStatus,
       );
       rethrow;
     } catch (_) {
       await _restoreRootRecordAfterScanFailure(
-        scanRoot,
+        ownerRoot,
         previousRecord,
         previousStatus,
       );
@@ -2271,12 +2272,7 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _recordCompletedScan(
-    String root,
-    String snapshotId,
-    int generation,
-  ) async {
-    if (generation != _rootSwitchGeneration) return;
+  Future<void> _recordCompletedScan(String root, String snapshotId) async {
     final previous = await _rootRecordStore.load(root);
     await _rootRecordStore.save(
       ScanRootRecord(
