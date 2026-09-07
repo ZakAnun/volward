@@ -194,6 +194,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   bool _targetPreparationPending = false;
   int _scanStartGeneration = 0;
   int? _prefetchScheduledGeneration;
+  String? _lastObservedSessionError;
 
   // ---------- canonical snapshot cache ----------
   ScanTreeNode? _cachedResolvedTree;
@@ -232,6 +233,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     _subscribedSession = widget.session;
     _subscribedSession.addListener(_onSessionChanged);
     _lastPostDeleteRefreshPending = _s.postDeleteRefreshPending;
+    _lastObservedSessionError = _s.lastError;
     _scheduleSessionStartup(_subscribedSession);
     if (Platform.isLinux) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -463,6 +465,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       _lastRefreshingDirectoryCount = _s.refreshingDirectoryPaths.length;
       _lastTargetPreviewLoading = _s.targetPreviewLoading;
       _lastPostDeleteRefreshPending = _s.postDeleteRefreshPending;
+      _lastObservedSessionError = _s.lastError;
       _prevScanning = _s.scanning;
       _lastHasResults = _hasResults;
       _homeTargetPath = null;
@@ -573,6 +576,11 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   }
 
   void _onSessionChanged() {
+    final sessionError = _s.lastError;
+    if (sessionError != _lastObservedSessionError) {
+      _lastObservedSessionError = sessionError;
+      _showStateMachineErrorToast(sessionError);
+    }
     final deletingChanged = _lastDeleting != _s.deleting;
     _lastDeleting = _s.deleting;
     final refreshingDirectoryCount = _s.refreshingDirectoryPaths.length;
@@ -706,6 +714,17 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     }
     _lastHasResults = hasResults;
     _prevScanning = _s.scanning;
+  }
+
+  void _showStateMachineErrorToast(String? error) {
+    final message = switch (error) {
+      'scan-pause-failed' => context.l10n.scanPauseFailed,
+      'scan-cache-unreadable' => context.l10n.scanCacheUnreadable,
+      'scan-cache-too-large' => context.l10n.scanCacheTooLarge,
+      _ => null,
+    };
+    if (message == null) return;
+    showTopToast(context, message: message, type: ToastType.error);
   }
 
   String _scanRootPath() {
@@ -1647,7 +1666,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     setState(() => _scanStartPending = true);
     String? nextStatus;
     try {
-      final id = await session.runScan();
+      final id = await session.runScan(mode: ScanRunMode.rescan);
       if (!mounted || !_isCurrentScanStart(session, generation)) return;
       final snapshot = session.lastSnapshot;
       final count = snapshot?.filesInSnapshot ?? 0;
