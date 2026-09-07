@@ -302,6 +302,8 @@ class _Session extends VolwardSession {
   bool postDeleteRefreshPendingForTest = false;
   int previewCalls = 0;
   String? switchedRoot;
+  int switchRootCalls = 0;
+  bool useRealSwitchStateMachineForTest = false;
   int runScanCalls = 0;
   ScanRunMode? lastRunScanMode;
   String? errorForTest;
@@ -333,7 +335,8 @@ class _Session extends VolwardSession {
   bool get hasAuthoritativeSnapshotForCurrentRoot => authoritativeSnapshot;
 
   @override
-  String? get lastError => errorForTest;
+  String? get lastError =>
+      useRealSwitchStateMachineForTest ? super.lastError : errorForTest;
 
   @override
   bool get restoringSnapshot => exposePreview;
@@ -400,6 +403,11 @@ class _Session extends VolwardSession {
     String? path, {
     bool validateBeforeSwitch = false,
   }) async {
+    switchRootCalls++;
+    if (useRealSwitchStateMachineForTest) {
+      await super.switchScanRoot(path, validateBeforeSwitch: false);
+      return;
+    }
     if (validateBeforeSwitch && path != null) {
       await validateScanRoot(path);
     }
@@ -1679,6 +1687,86 @@ void main() {
     expect(session.switchedRoot, '/home/Downloads');
     expect(session.runScanCalls, 0);
     expect(overviewProvider.selectedPaths, ['/', '/home/Downloads']);
+  });
+
+  testWidgets('scanning target selection delegates root switch to session', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-scanning-target-switch.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    tester
+        .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+        .onSelectTarget(_overviewData().locations[2]);
+    await tester.pump();
+
+    expect(session.switchRootCalls, 1);
+    expect(session.switchedRoot, '/home/Downloads');
+  });
+
+  testWidgets('pause failure keeps current home target and shows toast', (
+    tester,
+  ) async {
+    final session = _Session()
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-pause-failure.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..useRealSwitchStateMachineForTest = true
+      ..pauseCurrentScanForTest = (() async => false)
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+      ),
+    );
+
+    tester
+        .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+        .onSelectTarget(_overviewData().locations[2]);
+    await tester.pump();
+
+    expect(session.switchRootCalls, 1);
+    expect(session.scanRoots, ['/']);
+    expect(
+      tester
+          .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+          .summary
+          .selectedLocation
+          ?.path,
+      '/',
+    );
+    expect(
+      find.text("Couldn't pause the current scan. Stay on this folder."),
+      findsOneWidget,
+    );
   });
 
   testWidgets('home scan stays disabled without snapshot file capability', (

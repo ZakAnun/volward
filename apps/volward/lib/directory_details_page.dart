@@ -1454,7 +1454,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   }
 
   Future<void> _prepareHomeTarget(String path) async {
-    if (_s.scanning || _targetPreparationPending) return;
+    if (_targetPreparationPending) return;
     final session = _s;
     final sessionGeneration = _sessionGeneration;
     _scanStartGeneration++;
