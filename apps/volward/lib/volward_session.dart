@@ -273,6 +273,8 @@ class VolwardSession extends ChangeNotifier {
   @visibleForTesting
   Future<void> Function()? scanPreparationWaitForTest;
   @visibleForTesting
+  Duration? nativeScanStopTimeoutForTest;
+  @visibleForTesting
   Duration? restoreDelayForTest;
   @visibleForTesting
   VoidCallback? restoreDelayStartedForTest;
@@ -289,6 +291,10 @@ class VolwardSession extends ChangeNotifier {
   /// Cap cache restore wait so a bad or huge local cache does not pin the UI.
   static const Duration _cacheRestoreTimeout = Duration(seconds: 8);
 
+  /// Bound native-stop waits so a stuck `is_scan_running` cannot hang pause.
+  /// Timeout is failure (stay put), never treated as idle/stopped.
+  static const Duration _nativeScanStopTimeout = Duration(seconds: 8);
+
   static const Duration _minTargetPreviewLoading = Duration(milliseconds: 180);
 
   /// Maximum time before requesting cancellation of a peek-scan isolate.
@@ -301,7 +307,7 @@ class VolwardSession extends ChangeNotifier {
   String? get lastError => _lastError;
   Map<String, dynamic> get capabilities => _capabilities;
   bool get deepScanReady => _deepScanReady;
-  bool get scanning => _scanning && !_scanPreparing;
+  bool get scanning => _scanning;
   bool get deleting => _deleting;
   String? get lastJobId => _lastJobId;
 
@@ -423,6 +429,7 @@ class VolwardSession extends ChangeNotifier {
   void primeTransientScanStateForTest({
     Map<String, dynamic>? progress,
     bool scanning = true,
+    bool preparing = false,
     bool openScanPorts = true,
     String? lastJobId,
   }) {
@@ -430,6 +437,7 @@ class VolwardSession extends ChangeNotifier {
         ? null
         : Map<String, dynamic>.from(progress);
     _scanning = scanning;
+    _scanPreparing = preparing;
     _activeScanRunId = scanning ? ++_nextScanRunId : null;
     _scanStartedAt = scanning ? DateTime.utc(2026, 8, 3) : null;
     _lastJobId = lastJobId;
@@ -1307,7 +1315,12 @@ class VolwardSession extends ChangeNotifier {
         _notifyListeners();
         return false;
       }
-      await _waitForScanIdle();
+      if (!await _waitForScanIdle()) {
+        _scanPauseRequested = false;
+        _lastError = 'scan-pause-failed';
+        _notifyListeners();
+        return false;
+      }
       return true;
     }
 
@@ -1325,14 +1338,19 @@ class VolwardSession extends ChangeNotifier {
         VolwardNativeBridge.instance.requestScanPause(engine!, root, cacheDir);
     if (checkpointPath.startsWith('error:')) {
       _scanPauseRequested = false;
-      _lastError = checkpointPath;
+      _lastError = 'scan-pause-failed';
       _notifyListeners();
       return false;
     }
 
     final activeScanStartedAt = _scanStartedAt;
     final activeScanRunId = _activeScanRunId;
-    await _waitForScanIdle();
+    if (!await _waitForScanIdle()) {
+      _scanPauseRequested = false;
+      _lastError = 'scan-pause-failed';
+      _notifyListeners();
+      return false;
+    }
     final completedPath = await SnapshotCache.latestSnapshotPath(
       preferredRoot: root,
     );
@@ -1526,10 +1544,16 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _waitForScanIdle() async {
+  Future<bool> _waitForScanIdle() async {
+    final timeout = nativeScanStopTimeoutForTest ?? _nativeScanStopTimeout;
+    final startedAt = DateTime.now();
     while (_scanning) {
+      if (DateTime.now().difference(startedAt) >= timeout) {
+        return false;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    return true;
   }
 
   /// Internal helper: start a scan and store the completion status without
@@ -1949,6 +1973,7 @@ class VolwardSession extends ChangeNotifier {
     _scanning = true;
     _scanPreparing = true;
     _activeScanRunId = scanRunId;
+    _notifyListeners();
     ScanRootRecord? previousRecord;
     var previousSnapshotId = ownerSnapshotId;
     var previousStatus = ScanRootStatus.empty;
@@ -2793,7 +2818,10 @@ class VolwardSession extends ChangeNotifier {
     while (bridge.isScanRunning(_engine!)) {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (_scanPauseRequested) {
-        await _waitForNativeScanToStop(bridge);
+        final stopped = await _waitForNativeScanToStop(bridge);
+        if (!stopped) {
+          continue;
+        }
         throw ScanCancelledException();
       }
       if (!_scanning || _scanCancelRequested) {
@@ -2828,20 +2856,26 @@ class VolwardSession extends ChangeNotifier {
     return ScanSnapshotState.fromIndexSummary(summary);
   }
 
-  Future<void> _waitForNativeScanToStop(VolwardNativeBridge bridge) async {
+  Future<bool> _waitForNativeScanToStop(VolwardNativeBridge bridge) async {
     final engine = _engine;
-    if (engine == null) return;
-    await _waitUntilNativeScanStops(() => bridge.isScanRunning(engine));
+    if (engine == null) return true;
+    return _waitUntilNativeScanStops(() => bridge.isScanRunning(engine));
   }
 
-  Future<void> _waitUntilNativeScanStops(bool Function() isRunning) async {
+  Future<bool> _waitUntilNativeScanStops(bool Function() isRunning) async {
+    final timeout = nativeScanStopTimeoutForTest ?? _nativeScanStopTimeout;
+    final startedAt = DateTime.now();
     while (isRunning()) {
+      if (DateTime.now().difference(startedAt) >= timeout) {
+        return false;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    return true;
   }
 
   @visibleForTesting
-  Future<void> waitForNativeScanToStopForTest(bool Function() isRunning) =>
+  Future<bool> waitForNativeScanToStopForTest(bool Function() isRunning) =>
       _waitUntilNativeScanStops(isRunning);
 
   void _notifyNativeProgressIfNeeded(String? phase) {

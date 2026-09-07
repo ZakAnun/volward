@@ -428,4 +428,37 @@ void main() {
       expect(session.hasAuthoritativeSnapshotForCurrentRoot, isFalse);
     },
   );
+
+  test('scanning stays true while waiting for index load drain', () async {
+    const root = '/Users/test/Preparing';
+    final drainStarted = Completer<void>();
+    final releaseDrain = Completer<void>();
+    final session = VolwardSession.test()
+      ..setScanRoots([root])
+      ..scanPreparationWaitForTest = () async {
+        drainStarted.complete();
+        await releaseDrain.future;
+      }
+      ..scanRunnerForTest = (_, __) async => snapshot('prepared-scan', root);
+    addTearDown(session.dispose);
+
+    final scan = session.runScan();
+    await drainStarted.future;
+
+    expect(session.scanning, isTrue);
+    await expectLater(
+      session.runScan(),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'A scan is already in progress',
+        ),
+      ),
+    );
+
+    releaseDrain.complete();
+    expect(await scan, 'prepared-scan');
+    expect(session.scanning, isFalse);
+  });
 }

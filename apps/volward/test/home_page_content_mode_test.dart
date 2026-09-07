@@ -2344,6 +2344,45 @@ void main() {
     expect(session.cancelCalls, 1);
   });
 
+  testWidgets(
+    'live scan during preparation without a snapshot keeps scanning UI',
+    (tester) async {
+      final session = _Session(authoritativeSnapshot: false)
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-home-live-preparing.json',
+        )
+        ..rootExistsForTest = ((_) => true)
+        ..primeTransientScanStateForTest(
+          scanning: true,
+          preparing: true,
+          openScanPorts: false,
+        );
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await _pumpHome(
+        tester,
+        _shell(
+          session,
+          themeSettings,
+          updater,
+          storageOverviewProvider: _OverviewProvider(),
+        ),
+      );
+
+      expect(session.scanning, isTrue);
+      expect(session.lastSnapshot, isNull);
+      expect(find.byKey(StorageStewardHome.statusChipKey), findsOneWidget);
+      final home = tester.widget<StorageStewardHome>(
+        find.byType(StorageStewardHome),
+      );
+      expect(home.onScan, isNull);
+      expect(home.onCancelScan, isNotNull);
+    },
+  );
+
   testWidgets('live scan without a snapshot keeps the status chip visible', (
     tester,
   ) async {

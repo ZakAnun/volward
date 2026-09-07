@@ -698,6 +698,70 @@ void main() {
   });
 
   test(
+    'native stop wait timeout reports failure while still running',
+    () async {
+      final session = RecordingSession()
+        ..nativeScanStopTimeoutForTest = const Duration(milliseconds: 80);
+
+      final stopped = await session
+          .waitForNativeScanToStopForTest(() => true)
+          .timeout(const Duration(seconds: 1));
+
+      expect(stopped, isFalse);
+    },
+  );
+
+  test('native pause error is normalized to scan-pause-failed', () async {
+    final session = RecordingSession()
+      ..setScanRoots(['/Users/test/Current'])
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+      ..pauseRequestForTest = (_, _) =>
+          'error:missing volward_request_scan_pause';
+
+    await expectLater(session.switchScanRoot('/next'), completes);
+
+    expect(session.scanRoots, ['/Users/test/Current']);
+    expect(session.lastError, 'scan-pause-failed');
+  });
+
+  test(
+    'native stop timeout fails pause and stays on the current folder',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-native-stop-timeout',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const currentRoot = '/Users/test/Current';
+      final checkpoint = File('${temp.path}/pause.index.json');
+      await checkpoint.writeAsString('{}');
+      final store = ScanRootRecordStore(temp);
+      final session = RecordingSession()
+        ..rootRecordStoreForTest = store
+        ..nativeScanStopTimeoutForTest = const Duration(milliseconds: 80)
+        ..setScanRoots([currentRoot])
+        ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+        ..pauseRequestForTest = (_, _) {
+          return checkpoint.path;
+        }
+        ..pauseErrorForTest = () => null;
+
+      await expectLater(
+        session.switchScanRoot('/next').timeout(const Duration(seconds: 2)),
+        completes,
+      );
+
+      expect(session.scanRoots, [currentRoot]);
+      expect(session.lastError, 'scan-pause-failed');
+      expect(session.scanning, isTrue);
+      expect(await store.load(currentRoot), isNull);
+    },
+  );
+
+  test(
     'record save failure makes pause fail without switching roots',
     () async {
       final temp = await Directory.systemTemp.createTemp(
