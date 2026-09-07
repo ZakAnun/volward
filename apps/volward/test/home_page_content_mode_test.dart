@@ -387,14 +387,13 @@ class _Session extends VolwardSession {
   @override
   Future<void> switchScanRoot(
     String? path, {
-    bool startFullScan = true,
     bool validateBeforeSwitch = false,
   }) async {
     if (validateBeforeSwitch && path != null) {
       await validateScanRoot(path);
     }
     switchedRoot = path;
-    switchStartedScan = startFullScan;
+    switchStartedScan = true;
     if (path == null) {
       clearScanRoots();
     } else {
@@ -403,7 +402,7 @@ class _Session extends VolwardSession {
   }
 
   @override
-  Future<String> runScan() {
+  Future<String> runScan({ScanRunMode mode = ScanRunMode.auto}) {
     runScanCalls++;
     return scanGate?.future ?? Future<String>.value('scan-id');
   }

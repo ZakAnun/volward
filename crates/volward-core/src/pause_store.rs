@@ -68,7 +68,7 @@ impl FilePauseStore {
         }
     }
 
-    fn index_path(&self, root: &str) -> PathBuf {
+    pub fn index_path(&self, root: &str) -> PathBuf {
         self.base_dir
             .join(format!("{}.index.json", hash_root(root)))
     }

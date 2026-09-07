@@ -1,7 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/scan_root_record.dart';
+import 'package:volward/snapshot_cache.dart';
 import 'package:volward/volward_session.dart';
+
+import 'support/cached_snapshot.dart';
 
 class RecordingSession extends VolwardSession {
   RecordingSession() : super.test();
@@ -10,6 +14,7 @@ class RecordingSession extends VolwardSession {
   int peekCalls = 0;
   int scanCalls = 0;
   bool? lastPeekForce;
+  final List<ScanRunMode> scanModes = [];
 
   @override
   Future<void> previewTarget({int? expectedGeneration}) async {
@@ -24,8 +29,9 @@ class RecordingSession extends VolwardSession {
   }
 
   @override
-  Future<String> runScan() async {
+  Future<String> runScan({ScanRunMode mode = ScanRunMode.auto}) async {
     scanCalls++;
+    scanModes.add(mode);
     return 'scan-$scanCalls';
   }
 }
@@ -37,25 +43,39 @@ Future<void> waitUntil(bool Function() done, {int maxTicks = 20}) async {
 }
 
 void main() {
-  test('prepared root previews without starting a full scan', () async {
+  test('empty root auto-starts a full scan after switch', () async {
     final session = RecordingSession();
-    await session.switchScanRoot('/prepared', startFullScan: false);
-    await waitUntil(() => session.previewCalls == 1);
-
-    expect(session.scanRoots, ['/prepared']);
-    expect(session.previewCalls, 1);
-    expect(session.peekCalls, 0);
-    expect(session.scanCalls, 0);
+    await session.switchScanRoot('/empty');
+    await waitUntil(() => session.scanCalls == 1);
+    expect(session.scanRoots, ['/empty']);
+    expect(session.scanCalls, 1);
   });
 
-  test('existing switchScanRoot callers still auto-start', () async {
-    final session = RecordingSession();
-    await session.switchScanRoot('/legacy');
-    await waitUntil(() => session.previewCalls == 1 && session.scanCalls == 1);
+  test('completed root restores and does not scan', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-switch-completed',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    const cachedRoot = '/Users/test/Downloads';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'downloads',
+      snapshotName: 'downloads',
+      root: cachedRoot,
+      snapshotId: 'downloads-scan',
+      scannedAtMs: 1700000000200,
+      sizeBytes: 512,
+      reclaimableBytes: 7,
+    );
 
-    expect(session.previewCalls, 1);
-    expect(session.peekCalls, 0);
-    expect(session.scanCalls, 1);
+    final session = RecordingSession()..setScanRoots(['/other']);
+    await session.switchScanRoot(cachedRoot);
+    await waitUntil(() => session.lastSnapshot?.snapshotId == 'downloads-scan');
+    expect(session.scanCalls, 0);
   });
 
   test('same running root keeps its scan and forces a peek', () async {
@@ -103,5 +123,66 @@ void main() {
     expect(session.scanRoots, ['/existing']);
     expect(session.previewCalls, 0);
     expect(session.scanCalls, 0);
+  });
+
+  test('pause failure keeps the current root', () async {
+    final session = RecordingSession()
+      ..setScanRoots(['/a'])
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+      ..pauseCurrentScanForTest = () async => false;
+    await session.switchScanRoot('/b');
+    expect(session.scanRoots, ['/a']);
+    expect(session.lastError, isNotNull);
+    expect(session.scanCalls, 0);
+  });
+
+  test('scanning root pauses then target empty auto-starts', () async {
+    final session = RecordingSession()
+      ..setScanRoots(['/a'])
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+      ..pauseCurrentScanForTest = () async => true;
+    await session.switchScanRoot('/b');
+    await waitUntil(() => session.scanCalls == 1);
+    expect(session.scanRoots, ['/b']);
+  });
+
+  test('paused root restores its checkpoint and resumes', () async {
+    final temp = await Directory.systemTemp.createTemp('volward-switch-paused');
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    const pausedRoot = '/Users/test/Paused';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'checkpoint-source',
+      snapshotName: 'checkpoint-source',
+      root: pausedRoot,
+      snapshotId: 'paused-scan',
+      scannedAtMs: 1700000000300,
+      sizeBytes: 256,
+      reclaimableBytes: 3,
+    );
+    final checkpointPath = '${temp.path}/snapshots/checkpoint-source.json';
+    final store = ScanRootRecordStore(temp);
+    await store.save(
+      ScanRootRecord(
+        root: pausedRoot,
+        status: ScanRootStatus.paused,
+        snapshotId: 'paused-scan',
+        checkpointPath: checkpointPath,
+        updatedAtMs: 1700000000300,
+      ),
+    );
+
+    final session = RecordingSession()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots(['/other']);
+    await session.switchScanRoot(pausedRoot);
+    await waitUntil(() => session.scanCalls == 1);
+
+    expect(session.lastSnapshot?.snapshotId, 'paused-scan');
+    expect(session.scanModes, [ScanRunMode.resume]);
   });
 }

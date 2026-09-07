@@ -1444,7 +1444,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       final normalized = ScanTreeBuilder.normalizeRoot(path);
       final current = ScanTreeBuilder.normalizeRoot(_scanRootPath());
       if (normalized != current) {
-        if (!await _switchToValidatedRoot(normalized, startFullScan: false)) {
+        if (!await _switchToValidatedRoot(normalized)) {
           return;
         }
       }
@@ -1458,16 +1458,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     }
   }
 
-  Future<bool> _switchToValidatedRoot(
-    String path, {
-    bool startFullScan = true,
-  }) async {
+  Future<bool> _switchToValidatedRoot(String path) async {
     try {
-      await _s.switchScanRoot(
-        path,
-        startFullScan: startFullScan,
-        validateBeforeSwitch: true,
-      );
+      await _s.switchScanRoot(path, validateBeforeSwitch: true);
       return mounted;
     } catch (error) {
       if (!mounted) return false;
