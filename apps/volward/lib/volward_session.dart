@@ -148,6 +148,7 @@ class VolwardSession extends ChangeNotifier {
   Map<String, dynamic> _capabilities = {};
   bool _deepScanReady = false;
   bool _scanning = false;
+  bool _scanPreparing = false;
   bool _deleting = false;
   String? _lastJobId;
   ScanSnapshotState? _lastSnapshot;
@@ -294,7 +295,7 @@ class VolwardSession extends ChangeNotifier {
   String? get lastError => _lastError;
   Map<String, dynamic> get capabilities => _capabilities;
   bool get deepScanReady => _deepScanReady;
-  bool get scanning => _scanning;
+  bool get scanning => _scanning && !_scanPreparing;
   bool get deleting => _deleting;
   String? get lastJobId => _lastJobId;
 
@@ -1232,7 +1233,10 @@ class VolwardSession extends ChangeNotifier {
   ScanRootRecordStore get _rootRecordStore =>
       rootRecordStoreForTest ?? ScanRootRecordStore(SnapshotCache.cacheDir());
 
-  Future<ScanRootStatus> _statusFor(String root) async {
+  Future<ScanRootStatus> _statusFor(
+    String root, {
+    bool considerActiveScan = true,
+  }) async {
     final normalized = ScanTreeBuilder.normalizeRoot(root);
     final record = await _rootRecordStore.load(normalized);
     final completedPath = await SnapshotCache.latestSnapshotPath(
@@ -1241,6 +1245,7 @@ class VolwardSession extends ChangeNotifier {
     return ScanRootRecordStore.inferredStatus(
       root: normalized,
       isCurrentAndScanning:
+          considerActiveScan &&
           _scanning &&
           _scanRoots.isNotEmpty &&
           ScanTreeBuilder.normalizeRoot(_scanRoots.first) == normalized,
@@ -1272,6 +1277,12 @@ class VolwardSession extends ChangeNotifier {
 
   Future<bool> pauseCurrentScanForSwitch() async {
     if (!_scanning) return true;
+    if (_scanPreparing) {
+      _scanPreparing = false;
+      _scanning = false;
+      _activeScanRunId = null;
+      return true;
+    }
     final root = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
     );
@@ -1873,6 +1884,22 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  void _throwIfScanPreparationIsStale(
+    int scanRunId,
+    int generation,
+    String ownerRoot,
+  ) {
+    final activeRoot = ScanTreeBuilder.normalizeRoot(
+      _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
+    );
+    if (_activeScanRunId != scanRunId ||
+        !_scanning ||
+        generation != _rootSwitchGeneration ||
+        activeRoot != ownerRoot) {
+      throw ScanCancelledException();
+    }
+  }
+
   Future<String> runScan({ScanRunMode mode = ScanRunMode.auto}) async {
     if (!_ready) {
       throw StateError(_initError ?? 'Native engine not ready');
@@ -1880,12 +1907,10 @@ class VolwardSession extends ChangeNotifier {
     if (_scanning) {
       throw StateError('A scan is already in progress');
     }
-    final effectiveRoots = _scanRoots.isNotEmpty
-        ? _scanRoots
-        : [_defaultScanRoot()];
+    final effectiveRoots = List<String>.unmodifiable(
+      _scanRoots.isNotEmpty ? _scanRoots : [_defaultScanRoot()],
+    );
     final scanRoot = ScanTreeBuilder.normalizeRoot(effectiveRoots.first);
-    final previousRecord = await _rootRecordStore.load(scanRoot);
-    final previousStatus = await _statusFor(scanRoot);
     final effectiveIncremental = switch (mode) {
       ScanRunMode.resume => true,
       ScanRunMode.rescan => false,
@@ -1905,14 +1930,35 @@ class VolwardSession extends ChangeNotifier {
         'for this platform, then fully restart the app.',
       );
     }
-    if (mode == ScanRunMode.rescan) {
-      await _rootRecordStore.clear(scanRoot);
+
+    final runGeneration = _rootSwitchGeneration;
+    final scanRunId = ++_nextScanRunId;
+    _scanning = true;
+    _scanPreparing = true;
+    _activeScanRunId = scanRunId;
+    late final ScanRootRecord? previousRecord;
+    late final ScanRootStatus previousStatus;
+    try {
+      previousRecord = await _rootRecordStore.load(scanRoot);
+      _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
+      previousStatus = await _statusFor(scanRoot, considerActiveScan: false);
+      _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
+      if (mode == ScanRunMode.rescan) {
+        await _rootRecordStore.clear(scanRoot);
+        _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
+      }
+      _scanPreparing = false;
+    } catch (_) {
+      if (_activeScanRunId == scanRunId) {
+        _scanPreparing = false;
+        _scanning = false;
+        _activeScanRunId = null;
+        _notifyListeners();
+      }
+      rethrow;
     }
 
     _invalidateCacheRestore();
-    _scanning = true;
-    final scanRunId = ++_nextScanRunId;
-    _activeScanRunId = scanRunId;
     final scanStartedAt = DateTime.now();
     final incrementalProp = effectiveIncremental ? 1 : 0;
     unawaited(
@@ -1920,10 +1966,9 @@ class VolwardSession extends ChangeNotifier {
         'incremental': incrementalProp,
       }),
     );
-    final runGeneration = _rootSwitchGeneration;
     var scanSucceeded = false;
     try {
-      final scanGeneration = _rootSwitchGeneration;
+      final scanGeneration = runGeneration;
       _targetPreviewLoading = false;
       _targetPreviewStartedAt = null;
       _lastError = _scanStartErrorToPreserve;

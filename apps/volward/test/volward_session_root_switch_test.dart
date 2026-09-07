@@ -59,6 +59,24 @@ class FailingCompletedSaveStore extends ScanRootRecordStore {
   }
 }
 
+class DelayedFirstLoadStore extends ScanRootRecordStore {
+  DelayedFirstLoadStore(super.directory);
+
+  final firstLoadStarted = Completer<void>();
+  final releaseFirstLoad = Completer<void>();
+  int loadCalls = 0;
+
+  @override
+  Future<ScanRootRecord?> load(String root) async {
+    loadCalls++;
+    if (loadCalls == 1) {
+      firstLoadStarted.complete();
+      await releaseFirstLoad.future;
+    }
+    return super.load(root);
+  }
+}
+
 Future<void> waitUntil(bool Function() done, {int maxTicks = 20}) async {
   for (var tick = 0; tick < maxTicks && !done(); tick++) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -154,6 +172,61 @@ void main() {
     expect((await store.load(root))?.status, ScanRootStatus.completed);
     expect((await store.load(root))?.snapshotId, 'same-root-completed');
   });
+
+  test(
+    'root switch cancels a scan waiting for root status before it can run',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-during-scan-setup',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      const staleRoot = '/Users/test/Stale';
+      const currentRoot = '/Users/test/Current';
+      final store = DelayedFirstLoadStore(temp);
+      final scanGate = Completer<void>();
+      final scannedRoots = <String>[];
+      var activeScans = 0;
+      var maxActiveScans = 0;
+      final session = VolwardSession.test()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([staleRoot])
+        ..scanRunnerForTest = (_, roots) async {
+          scannedRoots.add(roots.single);
+          activeScans++;
+          maxActiveScans = maxActiveScans < activeScans
+              ? activeScans
+              : maxActiveScans;
+          try {
+            await scanGate.future;
+            return scanSnapshot('scan-${roots.single}', roots.single);
+          } finally {
+            activeScans--;
+          }
+        };
+
+      Object? staleError;
+      final staleScan = session.runScan().catchError((Object error) {
+        staleError = error;
+        return 'stale-scan-cancelled';
+      });
+      await store.firstLoadStarted.future;
+
+      await session.switchScanRoot(currentRoot);
+      await waitUntil(() => scannedRoots.contains(currentRoot));
+      store.releaseFirstLoad.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      scanGate.complete();
+      await staleScan;
+      await waitUntil(() => !session.scanning);
+
+      expect(staleError, isA<ScanCancelledException>());
+      expect(scannedRoots, [currentRoot]);
+      expect(maxActiveScans, 1);
+      expect(session.scanRoots, [currentRoot]);
+      expect(session.lastSnapshot?.tree?.path, currentRoot);
+      expect(await store.load(staleRoot), isNull);
+    },
+  );
 
   test('validated switch preserves the current root on failure', () async {
     final session = RecordingSession()
