@@ -113,17 +113,19 @@ void main() {
             updatedAtMs: 1700000000700,
           ),
         );
+        final runnerStarted = Completer<void>();
         final scanCompleter = Completer<ScanSnapshotState?>();
         final session = VolwardSession.test()
           ..rootRecordStoreForTest = store
           ..setScanRoots([root])
           ..setIncrementalScan(true)
-          ..scanRunnerForTest = (_, _) => scanCompleter.future;
+          ..scanRunnerForTest = (_, _) {
+            if (!runnerStarted.isCompleted) runnerStarted.complete();
+            return scanCompleter.future;
+          };
 
         final refresh = session.refreshCurrentDirectory();
-        for (var tick = 0; tick < 20 && !session.scanning; tick++) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
+        await runnerStarted.future;
 
         expect(session.scanning, isTrue);
         expect(await store.load(root), isNull);
