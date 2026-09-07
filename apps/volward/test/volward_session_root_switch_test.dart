@@ -127,6 +127,34 @@ void main() {
     expect(session.scanCalls, 0);
   });
 
+  test('same-root reselect accepts the running scan completion', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-switch-same-root-completion',
+    );
+    addTearDown(() => temp.deleteSync(recursive: true));
+    const root = '/Users/test/Active';
+    final store = ScanRootRecordStore(temp);
+    final scanGate = Completer<ScanSnapshotState?>();
+    final session = VolwardSession.test()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots([root])
+      ..scanRunnerForTest = (_, __) => scanGate.future;
+
+    final scan = session.runScan();
+    await waitUntil(() => session.scanning);
+    final generation = session.rootSwitchGeneration;
+
+    await session.switchScanRoot(root);
+    expect(session.rootSwitchGeneration, generation);
+
+    scanGate.complete(scanSnapshot('same-root-completed', root));
+    await scan;
+
+    expect(session.lastSnapshot?.snapshotId, 'same-root-completed');
+    expect((await store.load(root))?.status, ScanRootStatus.completed);
+    expect((await store.load(root))?.snapshotId, 'same-root-completed');
+  });
+
   test('validated switch preserves the current root on failure', () async {
     final session = RecordingSession()
       ..setScanRoots(['/existing'])
@@ -528,6 +556,51 @@ void main() {
       expect(session.scanModes, [ScanRunMode.auto]);
     },
   );
+
+  test('oversized cache clears target preview loading and notifies', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-switch-oversized-loading',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+    const root = '/Users/test/Oversized';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'oversized-loading',
+      snapshotName: 'oversized-loading',
+      root: root,
+      snapshotId: 'oversized-loading-scan',
+      scannedAtMs: 1700000000800,
+      sizeBytes: 1,
+      reclaimableBytes: 0,
+    );
+    final oversizedFile = File('${temp.path}/snapshots/oversized-loading.json');
+    final oversizedHandle = oversizedFile.openSync(mode: FileMode.append);
+    oversizedHandle.truncateSync(128 * 1024 * 1024 + 1);
+    oversizedHandle.closeSync();
+
+    final observableStates = <({String? error, bool loading})>[];
+    final session = RecordingSession()..setScanRoots(['/other']);
+    session.addListener(() {
+      observableStates.add((
+        error: session.lastError,
+        loading: session.targetPreviewLoading,
+      ));
+    });
+
+    await session.switchScanRoot(root);
+    await waitUntil(() => session.lastError == 'scan-cache-too-large');
+
+    expect(session.targetPreviewLoading, isFalse);
+    expect(
+      observableStates,
+      contains((error: 'scan-cache-too-large', loading: false)),
+    );
+    expect(session.scanCalls, 0);
+  });
 
   test(
     'corrupt cache error remains observable after automatic scan starts',

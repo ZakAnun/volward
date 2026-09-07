@@ -1416,7 +1416,6 @@ class VolwardSession extends ChangeNotifier {
       if (!paused) return;
       if (requestGeneration != _rootSwitchRequestGeneration) return;
     }
-    final generation = ++_rootSwitchGeneration;
 
     // User-selected scan root (folder picker / root switch). Skip null clears and
     // launch-time [setScanRoots] so startup restore is not counted.
@@ -1428,6 +1427,17 @@ class VolwardSession extends ChangeNotifier {
       );
     }
 
+    if (keepRunningScan) {
+      final generation = _rootSwitchGeneration;
+      unawaited(() async {
+        await previewTarget(expectedGeneration: generation);
+        if (generation != _rootSwitchGeneration) return;
+        unawaited(peekScan(newRoot, force: true));
+      }());
+      return;
+    }
+
+    final generation = ++_rootSwitchGeneration;
     _invalidateCacheRestore();
 
     _scanRoots = newRoots;
@@ -1448,14 +1458,6 @@ class VolwardSession extends ChangeNotifier {
     await _persistSessionState();
     _notifyListeners();
 
-    if (keepRunningScan) {
-      unawaited(() async {
-        await previewTarget(expectedGeneration: generation);
-        if (generation != _rootSwitchGeneration) return;
-        unawaited(peekScan(newRoot, force: true));
-      }());
-      return;
-    }
     unawaited(_continueRootSwitch(generation, newRoot));
   }
 
@@ -1467,7 +1469,10 @@ class VolwardSession extends ChangeNotifier {
         final restored = await _restoreCachedSnapshot();
         if (generation != _rootSwitchGeneration) return;
         if (!restored) {
-          if (_lastError == 'scan-cache-too-large') return;
+          if (_lastError == 'scan-cache-too-large') {
+            _clearTargetPreviewLoading(generation);
+            return;
+          }
           _lastError = 'scan-cache-unreadable';
           await _runScanAutostart(generation, ScanRunMode.auto);
         } else {
@@ -1480,7 +1485,10 @@ class VolwardSession extends ChangeNotifier {
         final restored = await _restorePausedCheckpoint(newRoot);
         if (generation != _rootSwitchGeneration) return;
         if (!restored) {
-          if (_lastError == 'scan-cache-too-large') return;
+          if (_lastError == 'scan-cache-too-large') {
+            _clearTargetPreviewLoading(generation);
+            return;
+          }
           _lastError = 'scan-cache-unreadable';
           await _runScanAutostart(generation, ScanRunMode.auto);
           return;
