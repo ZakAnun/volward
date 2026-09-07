@@ -2126,24 +2126,20 @@ class VolwardSession extends ChangeNotifier {
         _notifyListeners();
       }
     } on ScanCancelledException {
+      await _restoreRootRecordAfterScanFailure(
+        scanRoot,
+        previousRecord,
+        previousStatus,
+        runGeneration,
+      );
       rethrow;
     } catch (_) {
-      if (runGeneration == _rootSwitchGeneration) {
-        if (previousRecord != null) {
-          await _rootRecordStore.save(previousRecord);
-        } else if (previousStatus == ScanRootStatus.empty) {
-          await _rootRecordStore.clear(scanRoot);
-        } else if (previousStatus == ScanRootStatus.completed) {
-          await _rootRecordStore.save(
-            ScanRootRecord(
-              root: scanRoot,
-              status: ScanRootStatus.completed,
-              snapshotId: _lastSnapshot?.snapshotId ?? '',
-              updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-        }
-      }
+      await _restoreRootRecordAfterScanFailure(
+        scanRoot,
+        previousRecord,
+        previousStatus,
+        runGeneration,
+      );
       rethrow;
     } finally {
       unawaited(
@@ -2158,6 +2154,37 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  Future<void> _restoreRootRecordAfterScanFailure(
+    String root,
+    ScanRootRecord? previousRecord,
+    ScanRootStatus previousStatus,
+    int generation,
+  ) async {
+    if (generation != _rootSwitchGeneration) return;
+    final current = await _rootRecordStore.load(root);
+    final checkpointPath = current?.checkpointPath;
+    if (current?.status == ScanRootStatus.paused &&
+        checkpointPath != null &&
+        checkpointPath.isNotEmpty &&
+        await File(checkpointPath).exists()) {
+      return;
+    }
+    if (previousRecord != null) {
+      await _rootRecordStore.save(previousRecord);
+    } else if (previousStatus == ScanRootStatus.empty) {
+      await _rootRecordStore.clear(root);
+    } else if (previousStatus == ScanRootStatus.completed) {
+      await _rootRecordStore.save(
+        ScanRootRecord(
+          root: root,
+          status: ScanRootStatus.completed,
+          snapshotId: _lastSnapshot?.snapshotId ?? '',
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+  }
+
   Future<void> _recordCompletedScan(
     String root,
     String snapshotId,
@@ -2165,7 +2192,6 @@ class VolwardSession extends ChangeNotifier {
   ) async {
     if (generation != _rootSwitchGeneration) return;
     final previous = await _rootRecordStore.load(root);
-    await _clearPauseArtifacts(root, previous);
     await _rootRecordStore.save(
       ScanRootRecord(
         root: root,
@@ -2174,6 +2200,7 @@ class VolwardSession extends ChangeNotifier {
         updatedAtMs: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+    await _clearPauseArtifacts(root, previous);
   }
 
   bool get hasAiSessionApi =>

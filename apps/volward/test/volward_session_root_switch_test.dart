@@ -47,11 +47,35 @@ class FailingSaveStore extends ScanRootRecordStore {
   }
 }
 
+class FailingCompletedSaveStore extends ScanRootRecordStore {
+  FailingCompletedSaveStore(super.directory);
+
+  @override
+  Future<void> save(ScanRootRecord record) async {
+    if (record.status == ScanRootStatus.completed) {
+      throw const FileSystemException('completed record save failed');
+    }
+    await super.save(record);
+  }
+}
+
 Future<void> waitUntil(bool Function() done, {int maxTicks = 20}) async {
   for (var tick = 0; tick < maxTicks && !done(); tick++) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
 }
+
+ScanSnapshotState scanSnapshot(String id, String root) =>
+    ScanSnapshotState.fromWire({
+      'snapshot_id': id,
+      'tree': {
+        'path': root,
+        'name': root.split('/').last,
+        'is_dir': true,
+        'children': const [],
+      },
+      'entries': const [],
+    });
 
 void main() {
   test('empty root auto-starts a full scan after switch', () async {
@@ -300,6 +324,117 @@ void main() {
 
       expect(session.scanRoots, [currentRoot]);
       expect(session.lastError, 'scan-pause-failed');
+    },
+  );
+
+  test('cancelled rescan restores the previous completed record', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-cancelled-rescan',
+    );
+    addTearDown(() => temp.deleteSync(recursive: true));
+    const root = '/Users/test/Completed';
+    final store = ScanRootRecordStore(temp);
+    await store.save(
+      const ScanRootRecord(
+        root: root,
+        status: ScanRootStatus.completed,
+        snapshotId: 'completed-scan',
+        updatedAtMs: 1700000000000,
+      ),
+    );
+    final session = VolwardSession.test()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots([root])
+      ..scanRunnerForTest = (_, __) async {
+        throw ScanCancelledException();
+      };
+
+    await expectLater(
+      session.runScan(mode: ScanRunMode.rescan),
+      throwsA(isA<ScanCancelledException>()),
+    );
+
+    final restored = await store.load(root);
+    expect(restored?.status, ScanRootStatus.completed);
+    expect(restored?.snapshotId, 'completed-scan');
+  });
+
+  test('cancelled rescan preserves a newly written paused record', () async {
+    final temp = await Directory.systemTemp.createTemp('volward-paused-rescan');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    const root = '/Users/test/Completed';
+    final checkpoint = File('${temp.path}/pause.index.json');
+    await checkpoint.writeAsString('{}');
+    final store = ScanRootRecordStore(temp);
+    await store.save(
+      const ScanRootRecord(
+        root: root,
+        status: ScanRootStatus.completed,
+        snapshotId: 'completed-scan',
+        updatedAtMs: 1700000000000,
+      ),
+    );
+    final session = VolwardSession.test()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots([root])
+      ..scanRunnerForTest = (_, __) async {
+        await store.save(
+          ScanRootRecord(
+            root: root,
+            status: ScanRootStatus.paused,
+            snapshotId: 'paused-scan',
+            checkpointPath: checkpoint.path,
+            updatedAtMs: 1700000000100,
+          ),
+        );
+        throw ScanCancelledException();
+      };
+
+    await expectLater(
+      session.runScan(mode: ScanRunMode.rescan),
+      throwsA(isA<ScanCancelledException>()),
+    );
+
+    final paused = await store.load(root);
+    expect(paused?.status, ScanRootStatus.paused);
+    expect(paused?.checkpointPath, checkpoint.path);
+  });
+
+  test(
+    'completed record save failure preserves the paused checkpoint',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-completed-save-failure',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      const root = '/Users/test/Paused';
+      final checkpoint = File('${temp.path}/pause.index.json');
+      final manifest = File('${temp.path}/pause.manifest.json');
+      await checkpoint.writeAsString('{}');
+      await manifest.writeAsString('{}');
+      final store = FailingCompletedSaveStore(temp);
+      await store.save(
+        ScanRootRecord(
+          root: root,
+          status: ScanRootStatus.paused,
+          snapshotId: 'paused-scan',
+          checkpointPath: checkpoint.path,
+          updatedAtMs: 1700000000000,
+        ),
+      );
+      final session = VolwardSession.test()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([root])
+        ..scanRunnerForTest = (_, __) async => scanSnapshot('new-scan', root);
+
+      await expectLater(
+        session.runScan(mode: ScanRunMode.resume),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect((await store.load(root))?.status, ScanRootStatus.paused);
+      expect(await checkpoint.exists(), isTrue);
+      expect(await manifest.exists(), isTrue);
     },
   );
 
