@@ -182,6 +182,45 @@ void main() {
   });
 
   test(
+    'concurrent same-root switch still waits for pause checkpoint',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-concurrent-pause',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      const currentRoot = '/Users/test/Current';
+      final checkpoint = File('${temp.path}/pause.index.json');
+      final pauseRequested = Completer<void>();
+      final store = ScanRootRecordStore(temp);
+      late RecordingSession session;
+      session = RecordingSession()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([currentRoot])
+        ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+        ..pauseRequestForTest = (_, _) {
+          pauseRequested.complete();
+          return checkpoint.path;
+        }
+        ..pauseErrorForTest = () => null;
+
+      var firstSwitchCompleted = false;
+      final firstSwitch = session
+          .switchScanRoot('/next')
+          .then((_) => firstSwitchCompleted = true);
+      await pauseRequested.future;
+
+      await session.switchScanRoot(currentRoot);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(firstSwitchCompleted, isFalse);
+      await checkpoint.writeAsString('{}');
+      session.clearTransientScanStateForTest();
+      await firstSwitch.timeout(const Duration(seconds: 1));
+      expect((await store.load(currentRoot))?.status, ScanRootStatus.paused);
+    },
+  );
+
+  test(
     'completed native scan switches when pause checkpoint is absent',
     () async {
       final temp = await Directory.systemTemp.createTemp(
@@ -487,6 +526,53 @@ void main() {
 
       expect(session.scanCalls, 1);
       expect(session.scanModes, [ScanRunMode.auto]);
+    },
+  );
+
+  test(
+    'corrupt cache error remains observable after automatic scan starts',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-corrupt-error',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const corruptRoot = '/Users/test/Corrupt';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'corrupt-visible',
+        snapshotName: 'corrupt-visible',
+        root: corruptRoot,
+        snapshotId: 'corrupt-visible-scan',
+        scannedAtMs: 1700000000700,
+        sizeBytes: 1,
+        reclaimableBytes: 0,
+      );
+      File(
+        '${temp.path}/snapshots/corrupt-visible.json',
+      ).writeAsStringSync('{');
+      final scanGate = Completer<ScanSnapshotState?>();
+      final observedErrorsAfterScanStart = <String?>[];
+      final session = VolwardSession.test()
+        ..setScanRoots(['/other'])
+        ..scanRunnerForTest = (_, _) => scanGate.future;
+      session.addListener(() {
+        if (session.scanning) {
+          observedErrorsAfterScanStart.add(session.lastError);
+        }
+      });
+
+      await session.switchScanRoot(corruptRoot);
+      await waitUntil(() => session.scanning);
+
+      expect(session.lastError, 'scan-cache-unreadable');
+      expect(observedErrorsAfterScanStart, contains('scan-cache-unreadable'));
+
+      scanGate.complete(scanSnapshot('replacement-scan', corruptRoot));
+      await waitUntil(() => !session.scanning);
     },
   );
 

@@ -249,6 +249,7 @@ class VolwardSession extends ChangeNotifier {
   int _nextScanRunId = 0;
   int? _activeScanRunId;
   int? _completedScanRunId;
+  String? _scanStartErrorToPreserve;
   bool _targetPreviewLoading = false;
   DateTime? _targetPreviewStartedAt;
   int _cacheRestoreGeneration = 0;
@@ -1308,8 +1309,7 @@ class VolwardSession extends ChangeNotifier {
 
     final activeScanStartedAt = _scanStartedAt;
     final activeScanRunId = _activeScanRunId;
-    final generation = _rootSwitchGeneration;
-    await _waitForScanIdle(generation);
+    await _waitForScanIdle();
     final completedPath = await SnapshotCache.latestSnapshotPath(
       preferredRoot: root,
     );
@@ -1495,8 +1495,8 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _waitForScanIdle(int generation) async {
-    while (_scanning && generation == _rootSwitchGeneration) {
+  Future<void> _waitForScanIdle() async {
+    while (_scanning) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
@@ -1508,12 +1508,21 @@ class VolwardSession extends ChangeNotifier {
     ScanRunMode mode = ScanRunMode.auto,
   ]) async {
     if (generation != _rootSwitchGeneration) return;
+    final restoreError = switch (_lastError) {
+      'scan-cache-unreadable' || 'scan-cache-too-large' => _lastError,
+      _ => null,
+    };
+    _scanStartErrorToPreserve = restoreError;
     try {
       await runScan(mode: mode);
     } on ScanCancelledException {
       // Cancelled by the user or by a subsequent switchScanRoot — ignore.
     } catch (e, st) {
       debugPrint('VolwardSession: auto-started scan failed: $e\n$st');
+    } finally {
+      if (_scanStartErrorToPreserve == restoreError) {
+        _scanStartErrorToPreserve = null;
+      }
     }
   }
 
@@ -1909,7 +1918,7 @@ class VolwardSession extends ChangeNotifier {
       final scanGeneration = _rootSwitchGeneration;
       _targetPreviewLoading = false;
       _targetPreviewStartedAt = null;
-      _lastError = null;
+      _lastError = _scanStartErrorToPreserve;
       _lastDeleteReport = null;
       _scanProgress = null;
       _workerCancelPort = null;
