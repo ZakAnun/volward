@@ -77,6 +77,30 @@ class DelayedFirstLoadStore extends ScanRootRecordStore {
   }
 }
 
+class ClearedThenDelayedStore extends ScanRootRecordStore {
+  ClearedThenDelayedStore(super.directory);
+
+  final clearCompleted = Completer<void>();
+  final releaseClear = Completer<void>();
+
+  @override
+  Future<void> clear(String root) async {
+    await super.clear(root);
+    clearCompleted.complete();
+    await releaseClear.future;
+  }
+}
+
+class ClearThenFailStore extends ScanRootRecordStore {
+  ClearThenFailStore(super.directory);
+
+  @override
+  Future<void> clear(String root) async {
+    await super.clear(root);
+    throw const FileSystemException('clear failed after deleting record');
+  }
+}
+
 Future<void> waitUntil(bool Function() done, {int maxTicks = 20}) async {
   for (var tick = 0; tick < maxTicks && !done(); tick++) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -498,6 +522,134 @@ void main() {
     expect(restored?.status, ScanRootStatus.completed);
     expect(restored?.snapshotId, 'completed-scan');
   });
+
+  test(
+    'root switch during rescan clear restores the previous completed record',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-during-rescan-clear',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      const staleRoot = '/Users/test/Completed';
+      const currentRoot = '/Users/test/Current';
+      final store = ClearedThenDelayedStore(temp);
+      await store.save(
+        const ScanRootRecord(
+          root: staleRoot,
+          status: ScanRootStatus.completed,
+          snapshotId: 'completed-scan',
+          updatedAtMs: 1700000000000,
+        ),
+      );
+      final scannedRoots = <String>[];
+      final session = VolwardSession.test()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([staleRoot])
+        ..scanRunnerForTest = (_, roots) async {
+          scannedRoots.add(roots.single);
+          return scanSnapshot('scan-${roots.single}', roots.single);
+        };
+
+      Object? staleError;
+      final staleScan = session.runScan(mode: ScanRunMode.rescan).catchError((
+        Object error,
+      ) {
+        staleError = error;
+        return 'stale-scan-cancelled';
+      });
+      await store.clearCompleted.future;
+
+      await session.switchScanRoot(currentRoot);
+      store.releaseClear.complete();
+      await staleScan;
+      await waitUntil(() => scannedRoots.contains(currentRoot));
+
+      final restored = await store.load(staleRoot);
+      expect(staleError, isA<ScanCancelledException>());
+      expect(restored?.status, ScanRootStatus.completed);
+      expect(restored?.snapshotId, 'completed-scan');
+      expect(session.scanRoots, [currentRoot]);
+      expect(scannedRoots, [currentRoot]);
+    },
+  );
+
+  test('rescan clear failure restores the previous completed record', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-rescan-clear-failure',
+    );
+    addTearDown(() => temp.deleteSync(recursive: true));
+    const root = '/Users/test/Completed';
+    final store = ClearThenFailStore(temp);
+    await store.save(
+      const ScanRootRecord(
+        root: root,
+        status: ScanRootStatus.completed,
+        snapshotId: 'completed-scan',
+        updatedAtMs: 1700000000000,
+      ),
+    );
+    final session = VolwardSession.test()
+      ..rootRecordStoreForTest = store
+      ..setScanRoots([root])
+      ..scanRunnerForTest = (_, __) async => scanSnapshot('unexpected', root);
+
+    await expectLater(
+      session.runScan(mode: ScanRunMode.rescan),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    final restored = await store.load(root);
+    expect(restored?.status, ScanRootStatus.completed);
+    expect(restored?.snapshotId, 'completed-scan');
+  });
+
+  test(
+    'root switch cancels preparation while waiting for index load drain',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-during-index-drain',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      const staleRoot = '/Users/test/Stale';
+      const currentRoot = '/Users/test/Current';
+      final store = ScanRootRecordStore(temp);
+      final drainStarted = Completer<void>();
+      final releaseDrain = Completer<void>();
+      var drainCalls = 0;
+      final scannedRoots = <String>[];
+      final session = VolwardSession.test()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([staleRoot])
+        ..scanPreparationWaitForTest = () async {
+          drainCalls++;
+          if (drainCalls == 1) {
+            drainStarted.complete();
+            await releaseDrain.future;
+          }
+        }
+        ..scanRunnerForTest = (_, roots) async {
+          scannedRoots.add(roots.single);
+          return scanSnapshot('scan-${roots.single}', roots.single);
+        };
+
+      Object? staleError;
+      final staleScan = session.runScan().catchError((Object error) {
+        staleError = error;
+        return 'stale-scan-cancelled';
+      });
+      await drainStarted.future;
+
+      await session.switchScanRoot(currentRoot);
+      releaseDrain.complete();
+      await staleScan;
+      await waitUntil(() => scannedRoots.contains(currentRoot));
+
+      expect(staleError, isA<ScanCancelledException>());
+      expect(session.scanRoots, [currentRoot]);
+      expect(scannedRoots, [currentRoot]);
+      expect(session.lastError, isNot('scan-pause-failed'));
+    },
+  );
 
   test('cancelled rescan preserves a newly written paused record', () async {
     final temp = await Directory.systemTemp.createTemp('volward-paused-rescan');

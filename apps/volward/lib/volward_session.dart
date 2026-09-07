@@ -270,6 +270,8 @@ class VolwardSession extends ChangeNotifier {
   String Function(String root, String cacheDir)? pauseRequestForTest;
   @visibleForTesting
   String? Function()? pauseErrorForTest;
+  @visibleForTesting
+  Future<void> Function()? scanPreparationWaitForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -599,6 +601,7 @@ class VolwardSession extends ChangeNotifier {
 
   void _clearScanTransientState() {
     _closeScanChannels();
+    _scanPreparing = false;
     _scanProgress = null;
     _lastJobId = null;
     _workerCancelPort = null;
@@ -1281,6 +1284,9 @@ class VolwardSession extends ChangeNotifier {
       _scanPreparing = false;
       _scanning = false;
       _activeScanRunId = null;
+      _stopScanElapsedTimer();
+      _scanProgress = null;
+      _publishScanProgress();
       return true;
     }
     final root = ScanTreeBuilder.normalizeRoot(
@@ -1936,24 +1942,32 @@ class VolwardSession extends ChangeNotifier {
     _scanning = true;
     _scanPreparing = true;
     _activeScanRunId = scanRunId;
-    late final ScanRootRecord? previousRecord;
-    late final ScanRootStatus previousStatus;
+    ScanRootRecord? previousRecord;
+    var previousStatus = ScanRootStatus.empty;
+    var rescanClearStarted = false;
     try {
       previousRecord = await _rootRecordStore.load(scanRoot);
       _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
       previousStatus = await _statusFor(scanRoot, considerActiveScan: false);
       _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
       if (mode == ScanRunMode.rescan) {
+        rescanClearStarted = true;
         await _rootRecordStore.clear(scanRoot);
         _throwIfScanPreparationIsStale(scanRunId, runGeneration, scanRoot);
       }
-      _scanPreparing = false;
     } catch (_) {
       if (_activeScanRunId == scanRunId) {
         _scanPreparing = false;
         _scanning = false;
         _activeScanRunId = null;
         _notifyListeners();
+      }
+      if (rescanClearStarted) {
+        await _restoreRootRecordAfterScanFailure(
+          scanRoot,
+          previousRecord,
+          previousStatus,
+        );
       }
       rethrow;
     }
@@ -1989,15 +2003,27 @@ class VolwardSession extends ChangeNotifier {
       _cancelPendingForcedPeeks();
       _startScanElapsedTimer();
       _setScanProgressPhase('DiscoveringRoots', pathsSeen: 0);
-      await _waitForIndexLoadDrain(_cacheRestoreGeneration);
-      if (scanGeneration != _rootSwitchGeneration) {
-        _scanning = false;
-        _finalizeScanTransientState();
-        _notifyListeners();
-        throw ScanCancelledException();
+      final preparationWait = scanPreparationWaitForTest;
+      if (preparationWait != null) {
+        await preparationWait();
+      } else {
+        await _waitForIndexLoadDrain(_cacheRestoreGeneration);
+      }
+      try {
+        _throwIfScanPreparationIsStale(scanRunId, scanGeneration, scanRoot);
+      } on ScanCancelledException {
+        if (_activeScanRunId == scanRunId) {
+          _scanning = false;
+          _activeScanRunId = null;
+          _finalizeScanTransientState();
+          _notifyListeners();
+        }
+        rethrow;
       }
 
       if (testRunner != null) {
+        _scanPreparing = false;
+        _notifyListeners();
         final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
         _lastJobId = jobId;
         try {
@@ -2159,6 +2185,8 @@ class VolwardSession extends ChangeNotifier {
           _scanCancelInitPort!.sendPort,
           effectiveIncremental,
         ]);
+        _scanPreparing = false;
+        _notifyListeners();
         final snapshot = await _awaitScanWithStallGuard(completer.future);
         if (scanGeneration == _rootSwitchGeneration) {
           _lastSnapshot = snapshot;
@@ -2192,7 +2220,6 @@ class VolwardSession extends ChangeNotifier {
         scanRoot,
         previousRecord,
         previousStatus,
-        runGeneration,
       );
       rethrow;
     } catch (_) {
@@ -2200,7 +2227,6 @@ class VolwardSession extends ChangeNotifier {
         scanRoot,
         previousRecord,
         previousStatus,
-        runGeneration,
       );
       rethrow;
     } finally {
@@ -2220,9 +2246,7 @@ class VolwardSession extends ChangeNotifier {
     String root,
     ScanRootRecord? previousRecord,
     ScanRootStatus previousStatus,
-    int generation,
   ) async {
-    if (generation != _rootSwitchGeneration) return;
     final current = await _rootRecordStore.load(root);
     final checkpointPath = current?.checkpointPath;
     if (current?.status == ScanRootStatus.paused &&
@@ -2757,7 +2781,9 @@ class VolwardSession extends ChangeNotifier {
     }
 
     _scanRunningOnMainEngine = true;
+    _scanPreparing = false;
     _touchScanActivity(phase: 'Walking');
+    _notifyListeners();
 
     while (bridge.isScanRunning(_engine!)) {
       await Future<void>.delayed(const Duration(milliseconds: 300));
