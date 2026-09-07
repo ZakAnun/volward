@@ -9,6 +9,7 @@ import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
+import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
@@ -361,6 +362,7 @@ Widget _workspaceShell(
   VoidCallback? onExit,
   VoidCallback? onOpenSettings,
   Locale locale = const Locale('en'),
+  CoverageJobState? coverageJobState,
 }) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -376,6 +378,7 @@ Widget _workspaceShell(
         onOpenSettings: onOpenSettings ?? () {},
         onDeletingChanged: onDeletingChanged ?? (_) {},
         onDeleteCompleted: onDeleteCompleted ?? () {},
+        debugCoverageJobState: coverageJobState,
       ),
     ),
   );
@@ -404,6 +407,7 @@ Future<void> _openResults(
   ValueChanged<bool>? onDeletingChanged,
   VoidCallback? onDeleteCompleted,
   Locale locale = const Locale('en'),
+  CoverageJobState? coverageJobState,
 }) async {
   gateway
     ..candidatesJson = candidatesJson ?? _candidatePayload()
@@ -414,6 +418,7 @@ Future<void> _openResults(
       onDeletingChanged: onDeletingChanged,
       onDeleteCompleted: onDeleteCompleted,
       locale: locale,
+      coverageJobState: coverageJobState,
     ),
   );
   await _pumpUntilFound(
@@ -2277,4 +2282,38 @@ void main() {
       semantics.dispose();
     }
   });
+
+  testWidgets(
+    'completed coverage job hides the ai-analysis-coverage-progress banner',
+    (tester) async {
+      await _openResults(
+        tester,
+        _FakeGateway(),
+        coverageJobState: const CoverageJobState(
+          snapshotId: 'snapshot-1',
+          rootPath: '/home',
+          planVersion: 1,
+          cursor: 1,
+          totalUnclassified: 1,
+          analyzedFiles: 1,
+          preClassifiedCount: 0,
+          status: CoverageJobStatus.completed,
+          usedTokens: 0,
+          usedCredits: 0,
+          budgetTokens: 1000,
+          budgetCredits: 0,
+          updatedAtMs: 1,
+        ),
+      );
+
+      expect(
+        find.byKey(AiAnalysisWorkspace.decisionSummaryKey),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('ai-analysis-coverage-progress')),
+        findsNothing,
+      );
+    },
+  );
 }

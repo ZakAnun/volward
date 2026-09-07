@@ -139,6 +139,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
     required this.onDeletingChanged,
     required this.onDeleteCompleted,
     this.gateway = const ProductionAiAnalysisGateway(),
+    this.debugCoverageJobState,
   });
 
   static const workspaceKey = Key('ai-analysis-workspace');
@@ -162,6 +163,10 @@ class AiAnalysisWorkspace extends StatefulWidget {
   final ValueChanged<bool> onDeletingChanged;
   final VoidCallback onDeleteCompleted;
   final AiAnalysisGateway gateway;
+
+  /// Test-only: inject a coverage job without hydrating the coordinator.
+  @visibleForTesting
+  final CoverageJobState? debugCoverageJobState;
 
   @override
   State<AiAnalysisWorkspace> createState() => _AiAnalysisWorkspaceState();
@@ -1069,11 +1074,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget? _buildCoverageBanner() {
-    if (!_useFullCoverage) return null;
-    final state = _coverageJobState;
+    final state = widget.debugCoverageJobState ?? _coverageJobState;
+    if (widget.debugCoverageJobState == null && !_useFullCoverage) {
+      return null;
+    }
     if (state == null || state.snapshotId != widget.snapshotId) return null;
     if (state.status == CoverageJobStatus.idle ||
-        state.status == CoverageJobStatus.cancelled) {
+        state.status == CoverageJobStatus.cancelled ||
+        state.status == CoverageJobStatus.completed) {
       return null;
     }
     return CoverageJobBanner(
