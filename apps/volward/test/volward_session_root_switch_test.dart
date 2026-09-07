@@ -140,10 +140,18 @@ void main() {
       reclaimableBytes: 7,
     );
 
+    final staleRestoreEntered = Completer<void>();
     final session = RecordingSession();
     session.restoreDelayForTest = const Duration(milliseconds: 50);
+    session.restoreDelayStartedForTest = () {
+      if (!staleRestoreEntered.isCompleted) {
+        staleRestoreEntered.complete();
+      }
+    };
     unawaited(session.switchScanRoot('/slow-restore'));
+    await staleRestoreEntered.future;
     await session.switchScanRoot('/fast');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     await waitUntil(
       () => session.scanRoots.first == '/fast' && session.scanCalls >= 1,
     );

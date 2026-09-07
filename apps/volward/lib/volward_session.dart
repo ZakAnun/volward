@@ -274,6 +274,8 @@ class VolwardSession extends ChangeNotifier {
   Future<void> Function()? scanPreparationWaitForTest;
   @visibleForTesting
   Duration? restoreDelayForTest;
+  @visibleForTesting
+  VoidCallback? restoreDelayStartedForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -884,7 +886,6 @@ class VolwardSession extends ChangeNotifier {
     _lastError = null;
     _restoringSnapshot = true;
     notifyListeners();
-    await Future<void>.delayed(restoreDelayForTest ?? Duration.zero);
     var restoredSnapshot = false;
     try {
       await loadSessionStateIfNeeded();
@@ -929,13 +930,15 @@ class VolwardSession extends ChangeNotifier {
         restored = await Isolate.run(() => _restoreSnapshotStateFile(path));
       }
       if (restored == null) return false;
-      if (generation != _cacheRestoreGeneration) return false;
       final restoredRoot = restored.tree?.path;
       if (restoredRoot == null ||
           ScanTreeBuilder.normalizeRoot(restoredRoot) !=
               ScanTreeBuilder.normalizeRoot(_preferredRestoreRoot())) {
         return false;
       }
+      restoreDelayStartedForTest?.call();
+      await Future<void>.delayed(restoreDelayForTest ?? Duration.zero);
+      if (generation != _cacheRestoreGeneration) return false;
       _lastSnapshot = restored;
       restoredSnapshot = true;
       _logSnapshotMemoryState('restore');
