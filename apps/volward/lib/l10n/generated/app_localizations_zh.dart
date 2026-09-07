@@ -866,6 +866,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String aiResultsDecisionSummary(String bytes, int review) {
+    return '可清理 $bytes · $review 项待确认';
+  }
+
+  @override
   String get aiResultsMetricAnalyzed => '已分析';
 
   @override

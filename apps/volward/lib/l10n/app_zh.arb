@@ -590,6 +590,13 @@
       "keep": {"type": "int"}
     }
   },
+  "aiResultsDecisionSummary": "可清理 {bytes} · {review} 项待确认",
+  "@aiResultsDecisionSummary": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "review": {"type": "int"}
+    }
+  },
   "aiResultsMetricAnalyzed": "已分析",
   "aiResultsMetricSafe": "安全可移除",
   "aiResultsMetricReview": "需要确认",

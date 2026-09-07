@@ -6,7 +6,7 @@ import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/widgets/coverage_job_banner.dart';
 
 void main() {
-  testWidgets('CoverageJobBanner shows pause and cancel while running', (
+  testWidgets('CoverageJobBanner is a single progress row while running', (
     tester,
   ) async {
     const state = CoverageJobState(
@@ -25,7 +25,6 @@ void main() {
       updatedAtMs: 1,
     );
     var paused = false;
-    var cancelled = false;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -45,7 +44,7 @@ void main() {
               ),
             ],
             onPause: () => paused = true,
-            onCancel: () => cancelled = true,
+            onCancel: () {},
           ),
         ),
       ),
@@ -53,13 +52,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('10'), findsWidgets);
+    expect(find.text('Pause coverage'), findsOneWidget);
+    expect(find.textContaining('per-file'), findsNothing);
+    expect(
+      find.text('This scan is fully covered by AI analysis.'),
+      findsNothing,
+    );
+    expect(find.text('Stop coverage'), findsNothing);
     await tester.tap(find.text('Pause coverage'));
     await tester.pumpAndSettle();
     expect(paused, isTrue);
-
-    await tester.tap(find.text('Stop coverage'));
-    await tester.pumpAndSettle();
-    expect(cancelled, isTrue);
   });
 
   testWidgets('CoverageJobBanner shows raise budget when budget paused', (
@@ -90,7 +92,16 @@ void main() {
         home: Scaffold(
           body: CoverageJobBanner(
             state: state,
-            verdictRows: const [],
+            verdictRows: const [
+              CoverageVerdict(
+                path: '/a',
+                verdict: 'keep',
+                confidence: 'high',
+                reason: 'x',
+                coverageSource: 'file',
+                sizeBytes: 1,
+              ),
+            ],
             onResume: () {},
             onRaiseBudget: () => raised = true,
           ),
@@ -100,6 +111,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Raise limit & resume'), findsOneWidget);
+    expect(find.textContaining('per-file'), findsNothing);
     await tester.tap(find.text('Raise limit & resume'));
     await tester.pumpAndSettle();
     expect(raised, isTrue);

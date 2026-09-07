@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../ai/coverage_job_state.dart';
-import '../ai/coverage_ui_helpers.dart';
 import '../ai/coverage_verdict_store.dart';
 import '../l10n/l10n.dart';
 import '../theme/apple_tokens.dart';
@@ -34,24 +33,8 @@ class CoverageJobBanner extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final l10n = context.l10n;
-    final tokens = context.volward;
     final isRunning = state.status == CoverageJobStatus.running;
     final isPaused = state.status == CoverageJobStatus.paused;
-    final isCompleted = state.status == CoverageJobStatus.completed;
-    final pending = (state.totalUnclassified - state.analyzedFiles).clamp(
-      0,
-      state.totalUnclassified,
-    );
-    final sourceStats = computeCoverageSourceStats(
-      verdicts: verdictRows,
-      preClassifiedCount: state.preClassifiedCount,
-    );
-    final budgetUsed = state.budgetTokens > 0
-        ? state.usedTokens
-        : state.usedCredits;
-    final budgetLimit = state.budgetTokens > 0
-        ? state.budgetTokens
-        : state.budgetCredits;
     final budgetPaused =
         isPaused && state.pauseReason == CoveragePauseReason.budget;
 
@@ -63,47 +46,19 @@ class CoverageJobBanner extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppleSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              l10n.aiCoverageProgress(
-                state.analyzedFiles,
-                state.totalUnclassified,
-              ),
-              style: context.vwBodyStrong,
-            ),
-            if (pending > 0 && !isCompleted) ...[
-              const SizedBox(height: AppleSpacing.xs),
-              Text(
-                l10n.aiCoverageUnanalyzedCount(pending),
-                style: AppleTypography.caption.copyWith(color: tokens.warning),
-              ),
-            ],
-            if (!sourceStats.isEmpty) ...[
-              const SizedBox(height: AppleSpacing.xs),
-              Text(
-                l10n.aiCoverageSourceStats(
-                  sourceStats.fileVerdicts,
-                  sourceStats.groupVerdicts,
-                  sourceStats.localPreClassified,
+            Expanded(
+              child: Text(
+                l10n.aiCoverageProgress(
+                  state.analyzedFiles,
+                  state.totalUnclassified,
                 ),
-                style: context.vwCaption,
+                style: context.vwBodyStrong,
               ),
-            ],
-            if (budgetPaused) ...[
-              const SizedBox(height: AppleSpacing.xs),
-              Text(
-                l10n.aiCoverageBudgetPaused(budgetUsed, budgetLimit),
-                style: AppleTypography.caption.copyWith(color: tokens.warning),
-              ),
-            ],
-            if (isCompleted) ...[
-              const SizedBox(height: AppleSpacing.xs),
-              Text(l10n.aiCoverageCompletedNotice, style: context.vwCaption),
-            ],
+            ),
             if (isRunning || isPaused) ...[
-              const SizedBox(height: AppleSpacing.sm),
+              const SizedBox(width: AppleSpacing.sm),
               Wrap(
                 spacing: AppleSpacing.sm,
                 runSpacing: AppleSpacing.sm,
@@ -128,13 +83,6 @@ class CoverageJobBanner extends StatelessWidget {
                       icon: Icons.trending_up_outlined,
                       variant: AppleButtonVariant.pearl,
                       onPressed: onRaiseBudget,
-                    ),
-                  if (onCancel != null)
-                    AppleButton(
-                      label: l10n.aiCoverageCancel,
-                      icon: Icons.stop_outlined,
-                      variant: AppleButtonVariant.pearl,
-                      onPressed: onCancel,
                     ),
                 ],
               ),

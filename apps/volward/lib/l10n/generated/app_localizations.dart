@@ -1579,6 +1579,12 @@ abstract class AppLocalizations {
     int keep,
   );
 
+  /// No description provided for @aiResultsDecisionSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} reclaimable · {review} need review'**
+  String aiResultsDecisionSummary(String bytes, int review);
+
   /// No description provided for @aiResultsMetricAnalyzed.
   ///
   /// In en, this message translates to:

@@ -908,6 +908,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiResultsDecisionSummary(String bytes, int review) {
+    return '$bytes reclaimable · $review need review';
+  }
+
+  @override
   String get aiResultsMetricAnalyzed => 'Analyzed';
 
   @override

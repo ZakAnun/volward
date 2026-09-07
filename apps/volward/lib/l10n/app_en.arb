@@ -590,6 +590,13 @@
       "keep": {"type": "int"}
     }
   },
+  "aiResultsDecisionSummary": "{bytes} reclaimable · {review} need review",
+  "@aiResultsDecisionSummary": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "review": {"type": "int"}
+    }
+  },
   "aiResultsMetricAnalyzed": "Analyzed",
   "aiResultsMetricSafe": "Safe to remove",
   "aiResultsMetricReview": "Needs review",
