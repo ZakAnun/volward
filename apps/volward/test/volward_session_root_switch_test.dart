@@ -59,6 +59,36 @@ class FailingCompletedSaveStore extends ScanRootRecordStore {
   }
 }
 
+class DelayedFirstCompletedSaveStore extends ScanRootRecordStore {
+  DelayedFirstCompletedSaveStore(super.directory, {this.failFirst = false});
+
+  final bool failFirst;
+  final firstCompletedSaveStarted = Completer<void>();
+  final releaseFirstCompletedSave = Completer<void>();
+  var completedSaveCalls = 0;
+  var _armed = false;
+
+  void arm() {
+    completedSaveCalls = 0;
+    _armed = true;
+  }
+
+  @override
+  Future<void> save(ScanRootRecord record) async {
+    if (_armed && record.status == ScanRootStatus.completed) {
+      completedSaveCalls++;
+      if (completedSaveCalls == 1) {
+        firstCompletedSaveStarted.complete();
+        await releaseFirstCompletedSave.future;
+        if (failFirst) {
+          throw const FileSystemException('completed record save failed');
+        }
+      }
+    }
+    await super.save(record);
+  }
+}
+
 class DelayedFirstLoadStore extends ScanRootRecordStore {
   DelayedFirstLoadStore(super.directory);
 
@@ -221,58 +251,67 @@ void main() {
     expect((await store.load(rootB))?.snapshotId, 'old-b');
   });
 
-  test('completed scan writes only to its owner root after a switch', () async {
-    final temp = await Directory.systemTemp.createTemp(
-      'volward-completion-owner-root',
-    );
-    addTearDown(() {
-      SnapshotCache.cacheDirForTest = null;
-      temp.deleteSync(recursive: true);
-    });
-    SnapshotCache.cacheDirForTest = temp;
-    const ownerRoot = '/Users/test/Owner';
-    const currentRoot = '/Users/test/Current';
-    writeCachedSnapshot(
-      cacheDir: temp,
-      manifestName: 'current',
-      snapshotName: 'current',
-      root: currentRoot,
-      snapshotId: 'current-scan',
-      scannedAtMs: 1700000001200,
-      sizeBytes: 300,
-      reclaimableBytes: 30,
-    );
-    final store = ScanRootRecordStore(temp);
-    await store.save(
-      const ScanRootRecord(
+  test(
+    'switch waits while a completed scan writes to its owner root',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-completion-owner-root',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const ownerRoot = '/Users/test/Owner';
+      const currentRoot = '/Users/test/Current';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'current',
+        snapshotName: 'current',
         root: currentRoot,
-        status: ScanRootStatus.completed,
         snapshotId: 'current-scan',
-        updatedAtMs: 1700000001200,
-      ),
-    );
-    final scanStarted = Completer<void>();
-    final scanGate = Completer<ScanSnapshotState?>();
-    final session = VolwardSession.test()
-      ..rootRecordStoreForTest = store
-      ..setScanRoots([ownerRoot])
-      ..pauseCurrentScanForTest = (() async => true)
-      ..scanRunnerForTest = (_, __) {
-        scanStarted.complete();
-        return scanGate.future;
-      };
+        scannedAtMs: 1700000001200,
+        sizeBytes: 300,
+        reclaimableBytes: 30,
+      );
+      final store = DelayedFirstCompletedSaveStore(temp);
+      await store.save(
+        const ScanRootRecord(
+          root: currentRoot,
+          status: ScanRootStatus.completed,
+          snapshotId: 'current-scan',
+          updatedAtMs: 1700000001200,
+        ),
+      );
+      store.arm();
+      final session = VolwardSession.test()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([ownerRoot])
+        ..pauseCurrentScanForTest = (() async => true)
+        ..scanRunnerForTest = (_, __) async =>
+            scanSnapshot('owner-scan', ownerRoot);
 
-    final scan = session.runScan(mode: ScanRunMode.rescan);
-    await scanStarted.future;
-    await session.switchScanRoot(currentRoot);
-    await waitUntil(() => session.lastSnapshot?.snapshotId == 'current-scan');
-    scanGate.complete(scanSnapshot('owner-scan', ownerRoot));
-    await scan;
+      final scan = session.runScan(mode: ScanRunMode.rescan);
+      await store.firstCompletedSaveStarted.future;
+      var switchCompleted = false;
+      final switching = session
+          .switchScanRoot(currentRoot)
+          .then((_) => switchCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
-    expect(session.lastSnapshot?.snapshotId, 'current-scan');
-    expect((await store.load(ownerRoot))?.snapshotId, 'owner-scan');
-    expect((await store.load(currentRoot))?.snapshotId, 'current-scan');
-  });
+      expect(switchCompleted, isFalse);
+      expect(session.scanRoots, [ownerRoot]);
+
+      store.releaseFirstCompletedSave.complete();
+      await scan;
+      await switching;
+      await waitUntil(() => session.lastSnapshot?.snapshotId == 'current-scan');
+
+      expect(session.lastSnapshot?.snapshotId, 'current-scan');
+      expect((await store.load(ownerRoot))?.snapshotId, 'owner-scan');
+      expect((await store.load(currentRoot))?.snapshotId, 'current-scan');
+    },
+  );
 
   test('corrupt completed manifest autostarts with unreadable error', () async {
     final temp = await Directory.systemTemp.createTemp(
@@ -492,10 +531,14 @@ void main() {
   });
 
   test('scanning root pauses then target empty auto-starts', () async {
-    final session = RecordingSession()
+    late RecordingSession session;
+    session = RecordingSession()
       ..setScanRoots(['/a'])
       ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
-      ..pauseCurrentScanForTest = () async => true;
+      ..pauseCurrentScanForTest = () async {
+        session.clearTransientScanStateForTest();
+        return true;
+      };
     await session.switchScanRoot('/b');
     await waitUntil(() => session.scanCalls == 1);
     expect(session.scanRoots, ['/b']);
@@ -717,6 +760,49 @@ void main() {
     expect(restored?.status, ScanRootStatus.completed);
     expect(restored?.snapshotId, 'completed-scan');
   });
+
+  test(
+    'failed completion save restores the snapshot id captured at scan start',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-failed-completion-rollback',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const rootA = '/Users/test/A';
+      const rootB = '/Users/test/B';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'root-a',
+        snapshotName: 'root-a',
+        root: rootA,
+        snapshotId: 'old-a',
+        scannedAtMs: 1700000001000,
+        sizeBytes: 100,
+        reclaimableBytes: 10,
+      );
+      final store = DelayedFirstCompletedSaveStore(temp, failFirst: true)
+        ..arm();
+      final session = VolwardSession.test()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([rootA])
+        ..setSnapshotForTest(scanSnapshot('old-a', rootA))
+        ..scanRunnerForTest = (_, __) async => scanSnapshot('new-a', rootA);
+
+      final scan = session.runScan(mode: ScanRunMode.rescan);
+      await store.firstCompletedSaveStarted.future;
+      session.setSnapshotForTest(scanSnapshot('current-b', rootB));
+      store.releaseFirstCompletedSave.complete();
+
+      await expectLater(scan, throwsA(isA<FileSystemException>()));
+      final restored = await store.load(rootA);
+      expect(restored?.status, ScanRootStatus.completed);
+      expect(restored?.snapshotId, 'old-a');
+    },
+  );
 
   test(
     'root switch during rescan clear restores the previous completed record',

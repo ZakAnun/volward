@@ -1307,8 +1307,7 @@ class VolwardSession extends ChangeNotifier {
         _notifyListeners();
         return false;
       }
-      _scanning = false;
-      _finalizeScanTransientState();
+      await _waitForScanIdle();
       return true;
     }
 
@@ -1946,14 +1945,17 @@ class VolwardSession extends ChangeNotifier {
 
     final ownerGeneration = _rootSwitchGeneration;
     final scanRunId = ++_nextScanRunId;
+    final ownerSnapshotId = _lastSnapshot?.snapshotId;
     _scanning = true;
     _scanPreparing = true;
     _activeScanRunId = scanRunId;
     ScanRootRecord? previousRecord;
+    var previousSnapshotId = ownerSnapshotId;
     var previousStatus = ScanRootStatus.empty;
     var rescanClearStarted = false;
     try {
       previousRecord = await _rootRecordStore.load(ownerRoot);
+      previousSnapshotId = previousRecord?.snapshotId ?? ownerSnapshotId;
       _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
       previousStatus = await _statusFor(ownerRoot, considerActiveScan: false);
       _throwIfScanPreparationIsStale(scanRunId, ownerGeneration, ownerRoot);
@@ -1974,6 +1976,7 @@ class VolwardSession extends ChangeNotifier {
           ownerRoot,
           previousRecord,
           previousStatus,
+          previousSnapshotId,
         );
       }
       rethrow;
@@ -2224,6 +2227,7 @@ class VolwardSession extends ChangeNotifier {
         ownerRoot,
         previousRecord,
         previousStatus,
+        previousSnapshotId,
       );
       rethrow;
     } catch (_) {
@@ -2231,6 +2235,7 @@ class VolwardSession extends ChangeNotifier {
         ownerRoot,
         previousRecord,
         previousStatus,
+        previousSnapshotId,
       );
       rethrow;
     } finally {
@@ -2250,6 +2255,7 @@ class VolwardSession extends ChangeNotifier {
     String root,
     ScanRootRecord? previousRecord,
     ScanRootStatus previousStatus,
+    String? previousSnapshotId,
   ) async {
     final current = await _rootRecordStore.load(root);
     final checkpointPath = current?.checkpointPath;
@@ -2268,7 +2274,7 @@ class VolwardSession extends ChangeNotifier {
         ScanRootRecord(
           root: root,
           status: ScanRootStatus.completed,
-          snapshotId: _lastSnapshot?.snapshotId ?? '',
+          snapshotId: previousSnapshotId ?? '',
           updatedAtMs: DateTime.now().millisecondsSinceEpoch,
         ),
       );
