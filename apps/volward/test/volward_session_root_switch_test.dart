@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +34,15 @@ class RecordingSession extends VolwardSession {
     scanCalls++;
     scanModes.add(mode);
     return 'scan-$scanCalls';
+  }
+}
+
+class FailingSaveStore extends ScanRootRecordStore {
+  FailingSaveStore(super.directory);
+
+  @override
+  Future<void> save(ScanRootRecord record) async {
+    throw const FileSystemException('record directory is read-only');
   }
 }
 
@@ -145,6 +155,134 @@ void main() {
     await waitUntil(() => session.scanCalls == 1);
     expect(session.scanRoots, ['/b']);
   });
+
+  test(
+    'completed native scan switches when pause checkpoint is absent',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-completed-race',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const completedRoot = '/Users/test/CompletedDuringPause';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'completed-during-pause',
+        snapshotName: 'completed-during-pause',
+        root: completedRoot,
+        snapshotId: 'completed-during-pause-scan',
+        scannedAtMs: 1700000000400,
+        sizeBytes: 1024,
+        reclaimableBytes: 11,
+      );
+      final store = ScanRootRecordStore(temp);
+      late RecordingSession session;
+      session = RecordingSession()
+        ..rootRecordStoreForTest = store
+        ..setScanRoots([completedRoot])
+        ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+        ..pauseRequestForTest = (_, _) {
+          scheduleMicrotask(session.clearTransientScanStateForTest);
+          return '${temp.path}/missing-pause.index.json';
+        }
+        ..pauseErrorForTest = () => 'scan already completed';
+
+      await session.switchScanRoot('/next');
+
+      expect(session.scanRoots, ['/next']);
+      expect(
+        (await store.load(completedRoot))?.status,
+        ScanRootStatus.completed,
+      );
+    },
+  );
+
+  test(
+    'record save failure makes pause fail without switching roots',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-record-failure',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const currentRoot = '/Users/test/Current';
+      final checkpoint = File('${temp.path}/pause.index.json');
+      await checkpoint.writeAsString('{}');
+      late RecordingSession session;
+      session = RecordingSession()
+        ..rootRecordStoreForTest = FailingSaveStore(temp)
+        ..setScanRoots([currentRoot])
+        ..primeTransientScanStateForTest(scanning: true, openScanPorts: false)
+        ..pauseRequestForTest = (_, _) {
+          scheduleMicrotask(session.clearTransientScanStateForTest);
+          return checkpoint.path;
+        }
+        ..pauseErrorForTest = () => null;
+
+      await expectLater(session.switchScanRoot('/next'), completes);
+
+      expect(session.scanRoots, [currentRoot]);
+      expect(session.lastError, 'scan-pause-failed');
+    },
+  );
+
+  test(
+    'stale oversized-cache error does not block corrupt cache scan',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-switch-stale-restore-error',
+      );
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.deleteSync(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+      const oversizedRoot = '/Users/test/Oversized';
+      const corruptRoot = '/Users/test/Corrupt';
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'oversized',
+        snapshotName: 'oversized',
+        root: oversizedRoot,
+        snapshotId: 'oversized-scan',
+        scannedAtMs: 1700000000500,
+        sizeBytes: 1,
+        reclaimableBytes: 0,
+      );
+      final oversizedFile = File('${temp.path}/snapshots/oversized.json');
+      final oversizedHandle = oversizedFile.openSync(mode: FileMode.append);
+      oversizedHandle.truncateSync(128 * 1024 * 1024 + 1);
+      oversizedHandle.closeSync();
+      writeCachedSnapshot(
+        cacheDir: temp,
+        manifestName: 'corrupt',
+        snapshotName: 'corrupt',
+        root: corruptRoot,
+        snapshotId: 'corrupt-scan',
+        scannedAtMs: 1700000000600,
+        sizeBytes: 1,
+        reclaimableBytes: 0,
+      );
+      File('${temp.path}/snapshots/corrupt.json').writeAsStringSync('{');
+
+      final session = RecordingSession()..setScanRoots(['/other']);
+      await session.switchScanRoot(oversizedRoot);
+      await waitUntil(() => session.lastError == 'scan-cache-too-large');
+      expect(session.scanCalls, 0);
+
+      await session.switchScanRoot(corruptRoot);
+      await waitUntil(() => session.scanCalls == 1);
+
+      expect(session.scanCalls, 1);
+      expect(session.scanModes, [ScanRunMode.auto]);
+    },
+  );
 
   test('paused root restores its checkpoint and resumes', () async {
     final temp = await Directory.systemTemp.createTemp('volward-switch-paused');

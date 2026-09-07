@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/scan_root_record.dart';
+import 'package:volward/scan_snapshot_state.dart';
+import 'package:volward/snapshot_cache.dart';
 import 'package:volward/volward_session.dart';
 
 void main() {
@@ -87,6 +91,47 @@ void main() {
       final session = VolwardSession.test();
       expect(session.catalogVersion, isA<int>());
     });
+
+    test(
+      'root refresh clears incremental state by using rescan mode',
+      () async {
+        final temp = await Directory.systemTemp.createTemp(
+          'volward-root-refresh-rescan',
+        );
+        addTearDown(() {
+          SnapshotCache.cacheDirForTest = null;
+          temp.deleteSync(recursive: true);
+        });
+        SnapshotCache.cacheDirForTest = temp;
+        const root = '/Users/test/RefreshRoot';
+        final store = ScanRootRecordStore(temp);
+        await store.save(
+          ScanRootRecord(
+            root: root,
+            status: ScanRootStatus.paused,
+            checkpointPath: '${temp.path}/old-checkpoint.index.json',
+            updatedAtMs: 1700000000700,
+          ),
+        );
+        final scanCompleter = Completer<ScanSnapshotState?>();
+        final session = VolwardSession.test()
+          ..rootRecordStoreForTest = store
+          ..setScanRoots([root])
+          ..setIncrementalScan(true)
+          ..scanRunnerForTest = (_, _) => scanCompleter.future;
+
+        final refresh = session.refreshCurrentDirectory();
+        for (var tick = 0; tick < 20 && !session.scanning; tick++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        expect(session.scanning, isTrue);
+        expect(await store.load(root), isNull);
+
+        scanCompleter.complete(null);
+        await refresh;
+      },
+    );
 
     test('loadSessionStateIfNeeded restores persisted scan roots', () async {
       final session = VolwardSession.test();

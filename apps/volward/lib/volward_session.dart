@@ -261,6 +261,10 @@ class VolwardSession extends ChangeNotifier {
   Future<bool> Function()? pauseCurrentScanForTest;
   @visibleForTesting
   ScanRootRecordStore? rootRecordStoreForTest;
+  @visibleForTesting
+  String Function(String root, String cacheDir)? pauseRequestForTest;
+  @visibleForTesting
+  String? Function()? pauseErrorForTest;
 
   /// Fail only when progress stalls during walk/classify (not total wall time).
   static const Duration _scanStallTimeout = Duration(minutes: 20);
@@ -865,6 +869,7 @@ class VolwardSession extends ChangeNotifier {
 
   Future<bool> _restoreCachedSnapshot({String? preferredPath}) async {
     if (!_ready || _scanning) return false;
+    _lastError = null;
     _restoringSnapshot = true;
     notifyListeners();
     var restoredSnapshot = false;
@@ -1279,17 +1284,17 @@ class VolwardSession extends ChangeNotifier {
     }
 
     final engine = _engine;
-    if (engine == null || !_scanRunningOnMainEngine) {
+    final pauseRequest = pauseRequestForTest;
+    if (pauseRequest == null && (engine == null || !_scanRunningOnMainEngine)) {
       _lastError = 'scan-pause-failed';
       _notifyListeners();
       return false;
     }
     _scanPauseRequested = true;
-    final checkpointPath = VolwardNativeBridge.instance.requestScanPause(
-      engine,
-      root,
-      SnapshotCache.cacheDir().path,
-    );
+    final cacheDir = SnapshotCache.cacheDir().path;
+    final checkpointPath =
+        pauseRequest?.call(root, cacheDir) ??
+        VolwardNativeBridge.instance.requestScanPause(engine!, root, cacheDir);
     if (checkpointPath.startsWith('error:')) {
       _scanPauseRequested = false;
       _lastError = checkpointPath;
@@ -1297,27 +1302,37 @@ class VolwardSession extends ChangeNotifier {
       return false;
     }
 
+    final activeScanStartedAt = _scanStartedAt;
     final generation = _rootSwitchGeneration;
     await _waitForScanIdle(generation);
-    final pauseError = VolwardNativeBridge.instance.getLastPauseError(engine);
+    final completedPath = await SnapshotCache.latestSnapshotPath(
+      preferredRoot: root,
+    );
+    if (_hasAuthoritativeSnapshot ||
+        await _isFreshCompletedSnapshot(completedPath, activeScanStartedAt)) {
+      final saved = await _saveRootRecord(
+        ScanRootRecord(
+          root: root,
+          status: ScanRootStatus.completed,
+          snapshotId: _lastSnapshot?.snapshotId ?? '',
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      if (!saved) return false;
+      await _clearPauseArtifacts(root);
+      return true;
+    }
+    final pauseError =
+        pauseErrorForTest?.call() ??
+        (engine == null
+            ? null
+            : VolwardNativeBridge.instance.getLastPauseError(engine));
     if (pauseError != null && pauseError.isNotEmpty) {
       _lastError = 'scan-pause-failed';
       _notifyListeners();
       return false;
     }
     if (!await File(checkpointPath).exists()) {
-      if (_hasAuthoritativeSnapshot) {
-        await _rootRecordStore.save(
-          ScanRootRecord(
-            root: root,
-            status: ScanRootStatus.completed,
-            snapshotId: _lastSnapshot?.snapshotId ?? '',
-            updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-          ),
-        );
-        await _clearPauseArtifacts(root);
-        return true;
-      }
       _lastError = 'scan-pause-failed';
       _notifyListeners();
       return false;
@@ -1330,7 +1345,7 @@ class VolwardSession extends ChangeNotifier {
       jobId: _lastJobId,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
-    await _rootRecordStore.save(record);
+    if (!await _saveRootRecord(record)) return false;
     final saved = await _rootRecordStore.load(root);
     if (saved?.status != ScanRootStatus.paused ||
         saved?.checkpointPath != checkpointPath) {
@@ -1339,6 +1354,31 @@ class VolwardSession extends ChangeNotifier {
       return false;
     }
     return true;
+  }
+
+  Future<bool> _isFreshCompletedSnapshot(
+    String? path,
+    DateTime? scanStartedAt,
+  ) async {
+    if (path == null) return false;
+    if (scanStartedAt == null) return false;
+    try {
+      return !(await File(path).lastModified()).isBefore(scanStartedAt);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _saveRootRecord(ScanRootRecord record) async {
+    try {
+      await _rootRecordStore.save(record);
+      return true;
+    } catch (e, st) {
+      _lastError = 'scan-pause-failed';
+      debugPrint('VolwardSession: save scan root record failed: $e\n$st');
+      _notifyListeners();
+      return false;
+    }
   }
 
   /// Switches to [path], restoring, resuming, or scanning from its cache state.
@@ -1610,7 +1650,7 @@ class VolwardSession extends ChangeNotifier {
   /// to the normal full scan worker so large refreshes stay file-backed rather
   /// than shipping a giant snapshot through the UI isolate.
   Future<void> refreshCurrentDirectory([String? path]) async {
-    if (!_ready || _engine == null) return;
+    if (!_ready || (_engine == null && scanRunnerForTest == null)) return;
     final targetPath = path ?? refreshTargetPath;
     final root = ScanTreeBuilder.normalizeRoot(
       _scanRoots.isNotEmpty ? _scanRoots.first : _defaultScanRoot(),
@@ -1637,7 +1677,7 @@ class VolwardSession extends ChangeNotifier {
           await Future<void>.delayed(const Duration(milliseconds: 50));
         }
         if (generation != _rootSwitchGeneration) return;
-        await runScan();
+        await runScan(mode: ScanRunMode.rescan);
       } else {
         final refreshed = await peekScan(target, force: true);
         if (!refreshed) {
