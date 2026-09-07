@@ -1769,6 +1769,54 @@ void main() {
     );
   });
 
+  testWidgets('custom folder pause failure keeps current folder and mode', (
+    tester,
+  ) async {
+    final session = _Session(exposePreview: true)
+      ..sessionStateFileForTest = File(
+        '${Directory.systemTemp.path}/volward-home-custom-pause-failure.json',
+      )
+      ..rootExistsForTest = ((_) => true)
+      ..useRealSwitchStateMachineForTest = true
+      ..pauseCurrentScanForTest = (() async => false)
+      ..primeTransientScanStateForTest(scanning: true, openScanPorts: false);
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final overviewProvider = _OverviewProvider();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        directoryPicker: ({required confirmButtonText}) async =>
+            '/work/archive',
+        storageOverviewProvider: overviewProvider,
+      ),
+    );
+
+    await _openLastScan(tester);
+    await tester.pump();
+    expect(find.byType(ScanColumnView), findsOneWidget);
+
+    await tester.tap(find.byKey(HomePage.browseFolderActionKey));
+    await tester.pump();
+
+    expect(session.switchRootCalls, 1);
+    expect(session.scanRoots, ['/']);
+    expect(session.recentCustomRoots, isEmpty);
+    expect(overviewProvider.selectedPaths, ['/']);
+    expect(find.byType(StorageStewardHome), findsNothing);
+    expect(find.byType(ScanColumnView), findsOneWidget);
+    expect(
+      find.text("Couldn't pause the current scan. Stay on this folder."),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('home scan stays disabled without snapshot file capability', (
     tester,
   ) async {

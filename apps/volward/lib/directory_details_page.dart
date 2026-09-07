@@ -1480,7 +1480,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   Future<bool> _switchToValidatedRoot(String path) async {
     try {
       await _s.switchScanRoot(path, validateBeforeSwitch: true);
-      return mounted;
+      return mounted &&
+          ScanTreeBuilder.normalizeRoot(_scanRootPath()) ==
+              ScanTreeBuilder.normalizeRoot(path);
     } catch (error) {
       if (!mounted) return false;
       showTopToast(
