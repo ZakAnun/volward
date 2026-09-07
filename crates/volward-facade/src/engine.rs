@@ -65,6 +65,7 @@ pub struct VolwardEngine {
     last_index: Arc<Mutex<Option<SnapshotIndex>>>,
     is_index_loading: Arc<AtomicBool>,
     last_index_load_error: Arc<Mutex<Option<String>>>,
+    last_pause_error: Arc<Mutex<Option<String>>>,
     index_load_generation: Arc<std::sync::atomic::AtomicU64>,
     /// Monotonic version counter — incremented each time last_index is rebuilt.
     index_version: Arc<std::sync::atomic::AtomicU64>,
@@ -115,6 +116,7 @@ impl VolwardEngine {
             last_index: Arc::new(Mutex::new(None)),
             is_index_loading: Arc::new(AtomicBool::new(false)),
             last_index_load_error: Arc::new(Mutex::new(None)),
+            last_pause_error: Arc::new(Mutex::new(None)),
             index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_progress: Arc::new(Mutex::new(None)),
@@ -618,8 +620,8 @@ impl VolwardEngine {
         }
 
         self.invalidate_index_load();
-        self.cancel.store(false, Ordering::Relaxed);
-        self.persist_pause.store(false, Ordering::Relaxed);
+        self.cancel.store(false, Ordering::Release);
+        self.persist_pause.store(false, Ordering::Release);
         let classifier = load_classifier(self.platform.as_ref());
         let orchestrator = ScanOrchestrator::new(self.platform.as_ref(), classifier);
         let cancel = self.cancel.clone();
@@ -671,12 +673,16 @@ impl VolwardEngine {
         // Clear any prior cancel request so a new async scan is not aborted
         // immediately when the shared main engine is reused after cancel.
         self.invalidate_index_load();
-        self.cancel.store(false, Ordering::Relaxed);
-        self.persist_pause.store(false, Ordering::Relaxed);
+        self.cancel.store(false, Ordering::Release);
+        self.persist_pause.store(false, Ordering::Release);
+        if let Ok(mut error) = self.last_pause_error.lock() {
+            *error = None;
+        }
 
         let platform = self.platform.clone();
         let cancel = self.cancel.clone();
         let persist_pause = self.persist_pause.clone();
+        let last_pause_error = self.last_pause_error.clone();
         let last_snapshot = self.last_snapshot.clone();
         let last_index = self.last_index.clone();
         let last_progress = self.last_progress.clone();
@@ -690,7 +696,7 @@ impl VolwardEngine {
         let handle = std::thread::spawn(move || {
             let classifier = load_classifier_from_arc(&platform);
             let orchestrator = ScanOrchestrator::new(platform.as_ref(), classifier)
-                .with_pause_signal(persist_pause);
+                .with_pause_signal(persist_pause.clone());
             match orchestrator.run_index_scan(
                 job_id_clone,
                 roots,
@@ -723,7 +729,12 @@ impl VolwardEngine {
                         }
                     }
                 }
-                Err(_e) => {
+                Err(error) => {
+                    if persist_pause.load(Ordering::Acquire) {
+                        if let Ok(mut last_error) = last_pause_error.lock() {
+                            *last_error = Some(error.to_string());
+                        }
+                    }
                     // snapshot stays None; caller should check via get_last_snapshot
                 }
             }
@@ -738,13 +749,20 @@ impl VolwardEngine {
     }
 
     pub fn cancel_scan(&self) {
-        self.persist_pause.store(false, Ordering::Relaxed);
-        self.cancel.store(true, Ordering::Relaxed);
+        self.persist_pause.store(false, Ordering::Release);
+        self.cancel.store(true, Ordering::Release);
     }
 
     pub fn pause_current_scan(&self) {
-        self.persist_pause.store(true, Ordering::Relaxed);
-        self.cancel.store(true, Ordering::Relaxed);
+        self.persist_pause.store(true, Ordering::Release);
+        self.cancel.store(true, Ordering::Release);
+    }
+
+    pub fn get_last_pause_error(&self) -> Option<String> {
+        self.last_pause_error
+            .lock()
+            .ok()
+            .and_then(|error| error.clone())
     }
 
     pub fn get_last_snapshot(&self) -> Option<StorageSnapshot> {
@@ -1245,6 +1263,7 @@ impl VolwardEngine {
             last_index: last_index.clone(),
             is_index_loading: Arc::new(AtomicBool::new(false)),
             last_index_load_error: Arc::new(Mutex::new(None)),
+            last_pause_error: Arc::new(Mutex::new(None)),
             index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_progress: Arc::new(Mutex::new(None)),
@@ -1638,8 +1657,19 @@ mod tests {
 
         engine.pause_current_scan();
 
-        assert!(engine.persist_pause.load(Ordering::Relaxed));
-        assert!(engine.cancel.load(Ordering::Relaxed));
+        assert!(engine.persist_pause.load(Ordering::Acquire));
+        assert!(engine.cancel.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn pause_persist_error_is_observable_to_caller() {
+        let engine = VolwardEngine::new();
+        *engine.last_pause_error.lock().unwrap() = Some("pause save failed".to_string());
+
+        assert_eq!(
+            engine.get_last_pause_error().as_deref(),
+            Some("pause save failed")
+        );
     }
 
     struct BlockingAnalyzer {

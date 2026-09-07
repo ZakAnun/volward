@@ -49,13 +49,22 @@ impl FilePauseStore {
             .then_some((manifest, index))
     }
 
-    pub fn clear(&self, root: &str) {
+    pub fn clear(&self, root: &str) -> Result<(), String> {
+        let mut failures = Vec::new();
         for path in [self.index_path(root), self.manifest_path(root)] {
-            match std::fs::remove_file(path) {
+            match std::fs::remove_file(&path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => {}
+                Err(error) => failures.push(format!("{}: {error}", path.display())),
             }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "failed to clear pause artifacts: {}",
+                failures.join("; ")
+            ))
         }
     }
 
@@ -118,7 +127,22 @@ mod tests {
             .snapshot_path
             .as_deref()
             .is_some_and(|path| path.ends_with(".index.json")));
-        store.clear("/Users/test/Downloads");
+        store.clear("/Users/test/Downloads").unwrap();
         assert!(store.load("/Users/test/Downloads").is_none());
+    }
+
+    #[test]
+    fn clear_reports_pause_artifacts_that_cannot_be_removed() {
+        let tmp = TempDir::new().unwrap();
+        let store = FilePauseStore::new(tmp.path());
+        let root = "/Users/test/Downloads";
+        std::fs::create_dir_all(store.manifest_path(root)).unwrap();
+
+        let error = store
+            .clear(root)
+            .expect_err("a remaining pause artifact must be reported");
+
+        assert!(error.contains("manifest.json"));
+        assert!(store.manifest_path(root).is_dir());
     }
 }

@@ -453,6 +453,7 @@ impl<'a> ScanOrchestrator<'a> {
         let mut bytes_seen = 0u64;
         let mut warnings = Vec::new();
         let mut dir_fingerprints = HashMap::<String, DirFingerprint>::new();
+        let mut seen_directories = HashSet::<String>::new();
         let mut walk_completed = false;
 
         let loaded_manifest = incremental
@@ -511,7 +512,7 @@ impl<'a> ScanOrchestrator<'a> {
         let mut last_path: Option<String> = None;
         let mut progress_counter = 0u64;
         let mut walk = |e: crate::model::RawFsEntry| -> WalkAction {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            if cancel.load(std::sync::atomic::Ordering::Acquire) {
                 return WalkAction::Stop;
             }
             stats.paths_seen += 1;
@@ -530,6 +531,7 @@ impl<'a> ScanOrchestrator<'a> {
 
             if e.is_dir {
                 stats.dirs_seen += 1;
+                seen_directories.insert(e.path.clone());
                 if let Some(fingerprint) = e.dir_fingerprint {
                     if baseline_fingerprints
                         .as_ref()
@@ -577,7 +579,7 @@ impl<'a> ScanOrchestrator<'a> {
             }
             Err(other) => return Err(other),
             Ok(skipped) => {
-                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                if cancel.load(std::sync::atomic::Ordering::Acquire) {
                     stats.truncated = true;
                     stats.incomplete_reason = Some("Scan cancelled.".into());
                     warnings.push("Scan cancelled.".into());
@@ -640,7 +642,11 @@ impl<'a> ScanOrchestrator<'a> {
         );
 
         if walk_completed && !stats.truncated {
-            self.pause_store.clear(root_path);
+            self.pause_store.clear(root_path).map_err(|error| {
+                PlatformError::Io(std::io::Error::other(format!(
+                    "failed to clear pause baseline: {error}"
+                )))
+            })?;
             {
                 let mut manifest = ScanManifest {
                     root: root_path.to_string(),
@@ -665,11 +671,33 @@ impl<'a> ScanOrchestrator<'a> {
                 || self
                     .persist_pause_signal
                     .as_ref()
-                    .is_some_and(|signal| signal.load(std::sync::atomic::Ordering::Relaxed)))
+                    .is_some_and(|signal| signal.load(std::sync::atomic::Ordering::Acquire)))
         {
-            if let Err(error) = self.pause_store.save(root_path, &index, &dir_fingerprints) {
-                warnings.push(format!("Failed to save pause baseline: {error}"));
-            }
+            let incomplete_directories = seen_directories
+                .iter()
+                .filter(|directory| {
+                    dir_fingerprints.get(*directory).is_none_or(|fingerprint| {
+                        index
+                            .query_directory(directory, None, false, "name")
+                            .direct_children
+                            .len()
+                            < fingerprint.children_count as usize
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            dir_fingerprints.retain(|directory, _| {
+                !incomplete_directories
+                    .iter()
+                    .any(|incomplete| path_is_at_or_below(incomplete, directory))
+            });
+            self.pause_store
+                .save(root_path, &index, &dir_fingerprints)
+                .map_err(|error| {
+                    PlatformError::Io(std::io::Error::other(format!(
+                        "failed to save pause baseline: {error}"
+                    )))
+                })?;
         }
 
         on_progress(ScanProgress {
@@ -1242,6 +1270,125 @@ mod tests {
         assert!(FileManifestStore::new(manifest_dir)
             .load(&root_path)
             .is_none());
+    }
+
+    #[test]
+    fn cancelled_mid_directory_does_not_persist_its_fingerprint() {
+        let (temp, mut platform) = build_temp_scan_platform(0);
+        let root_path = platform.root.path.clone();
+        let nested_dir = temp.path().join("nested").to_string_lossy().to_string();
+        let first_file = temp
+            .path()
+            .join("nested/first.txt")
+            .to_string_lossy()
+            .to_string();
+        let second_file = temp
+            .path()
+            .join("nested/second.txt")
+            .to_string_lossy()
+            .to_string();
+        platform.entries = vec![
+            crate::model::RawFsEntry {
+                path: root_path.clone(),
+                is_dir: true,
+                size_bytes: 0,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: nested_dir.clone(),
+                is_dir: true,
+                size_bytes: 0,
+                dir_fingerprint: Some(DirFingerprint {
+                    mtime_secs: 1,
+                    children_count: 2,
+                    max_child_mtime_secs: 2,
+                }),
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: first_file,
+                is_dir: false,
+                size_bytes: 1,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+            crate::model::RawFsEntry {
+                path: second_file,
+                is_dir: false,
+                size_bytes: 1,
+                dir_fingerprint: None,
+                modified_at_ms: None,
+            },
+        ];
+        platform.cancel_after_entries = Some(3);
+        let manifest_dir = temp.path().join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        orchestrator
+            .run_index_scan(
+                "mid-directory-pause".to_string(),
+                vec![],
+                false,
+                &cancel,
+                true,
+                |_p| {},
+            )
+            .expect("cancelled scan should persist a pause");
+
+        let pause_store = FilePauseStore::new(temp.path().join("pauses"));
+        let (manifest, _) = pause_store.load(&root_path).expect("pause should exist");
+        assert!(
+            !manifest.dir_fingerprints.contains_key(&nested_dir),
+            "unfinished directory fingerprint must not be reusable"
+        );
+
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        platform.cancel_after_entries = None;
+        let mut done_paths_seen = 0;
+        ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir)
+            .run_index_scan(
+                "mid-directory-resume".to_string(),
+                vec![],
+                true,
+                &cancel,
+                false,
+                |progress| {
+                    if progress.phase == ScanPhase::Done {
+                        done_paths_seen = progress.paths_seen;
+                    }
+                },
+            )
+            .expect("resume should complete");
+
+        assert_eq!(done_paths_seen, 4);
+    }
+
+    #[test]
+    fn cancelled_index_scan_reports_pause_save_failure() {
+        let (temp, mut platform) = build_temp_scan_platform(2);
+        platform.cancel_after_entries = Some(1);
+        let cache_root = temp.path().join("cache-root");
+        fs::write(&cache_root, b"not a directory").expect("create blocking cache file");
+        let manifest_dir = cache_root.join("manifests");
+        let cancel = AtomicBool::new(false);
+        let orchestrator =
+            ScanOrchestrator::with_manifest_store(&platform, Classifier::default(), &manifest_dir);
+
+        let error = orchestrator
+            .run_index_scan(
+                "pause-save-failure".to_string(),
+                vec![],
+                false,
+                &cancel,
+                true,
+                |_p| {},
+            )
+            .expect_err("pause persistence failure must reach the caller");
+
+        assert!(error.to_string().contains("failed to save pause baseline"));
     }
 
     #[test]
