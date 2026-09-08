@@ -102,3 +102,79 @@ message StorageSnapshot {
   ScanStats stats = 9;
   repeated string warnings = 10;
 }
+
+// ---------------------------------------------------------------------------
+// SnapshotIndex — compact catalog persisted per scan root (replaces JSON v5)
+// ---------------------------------------------------------------------------
+
+message IndexDirectoryRecord {
+  optional uint32 parent = 1;
+  uint32 name = 2;
+  uint64 size_bytes = 3;
+  bool scanned = 4;
+  bool peek_scanned = 5;
+  uint64 category_mask = 6;
+  uint64 deletable_category_mask = 7;
+  uint64 deletable_file_count = 8;
+}
+
+message IndexEntryRecord {
+  uint32 id = 1;
+  uint32 path = 2;
+  uint32 parent_path = 3;
+  uint32 display_name = 4;
+  uint64 size_bytes = 5;
+  uint32 category = 6;
+  bool deletable = 7;
+  optional int64 modified_at_ms = 8;
+}
+
+message IndexDirectoryMapEntry {
+  uint32 id = 1;
+  IndexDirectoryRecord record = 2;
+}
+
+message IndexEntryMapEntry {
+  uint32 id = 1;
+  IndexEntryRecord record = 2;
+}
+
+message IndexU32Pair {
+  uint32 key = 1;
+  uint32 value = 2;
+}
+
+message IndexU32U64Pair {
+  uint32 key = 1;
+  uint64 value = 2;
+}
+
+message IndexChildrenEntry {
+  uint32 key = 1;
+  repeated uint32 child_ids = 2;
+}
+
+message IndexStringCountEntry {
+  string key = 1;
+  uint64 value = 2;
+}
+
+message SnapshotIndex {
+  uint32 format_version = 1;
+  string snapshot_id = 2;
+  string root_path = 3;
+  int64 scanned_at_ms = 4;
+  uint64 version = 5;
+  string scan_state = 6;
+  uint64 reclaimable_estimate_bytes = 7;
+  ScanStats stats = 8;
+  repeated string strings = 9;
+  uint32 root_id = 10;
+  repeated IndexDirectoryMapEntry directories = 11;
+  repeated IndexEntryMapEntry entries = 12;
+  repeated IndexU32Pair entry_id_by_path = 13;
+  repeated IndexU32U64Pair file_size_by_path = 14;
+  repeated IndexChildrenEntry children = 15;
+  repeated IndexStringCountEntry category_counts = 16;
+  repeated IndexStringCountEntry deletable_counts = 17;
+}
