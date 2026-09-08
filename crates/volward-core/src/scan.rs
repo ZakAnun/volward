@@ -864,9 +864,35 @@ mod tests {
     use super::*;
     use crate::model::{CapabilityLevel, EntryCategory, ScanRoot, VolumeStats};
     use crate::pause_store::FilePauseStore;
+    use crate::SnapshotIndex;
     use std::fs;
     use std::sync::atomic::AtomicBool;
+    use std::sync::Once;
     use tempfile::TempDir;
+
+    static TEST_INDEX_PB_HOOKS: Once = Once::new();
+
+    /// JSON shim so scan tests can round-trip index caches without linking prost.
+    fn ensure_test_index_pb_hooks() {
+        use crate::manifest::{
+            register_index_pb_decoder, register_index_pb_writer, IndexPbDecoderFn,
+            IndexPbWriterFn,
+        };
+
+        TEST_INDEX_PB_HOOKS.call_once(|| {
+            fn write_shim(index: &SnapshotIndex, path: &str) -> Result<(), String> {
+                let bytes = serde_json::to_vec(index).map_err(|e| e.to_string())?;
+                std::fs::write(path, bytes).map_err(|e| e.to_string())
+            }
+
+            fn decode_shim(bytes: &[u8]) -> Result<SnapshotIndex, String> {
+                serde_json::from_slice(bytes).map_err(|e| e.to_string())
+            }
+
+            register_index_pb_writer(write_shim as IndexPbWriterFn);
+            register_index_pb_decoder(decode_shim as IndexPbDecoderFn);
+        });
+    }
 
     #[test]
     fn tier2_classifies_node_modules_when_tier1_misses() {
@@ -967,6 +993,7 @@ mod tests {
     }
 
     fn build_temp_scan_platform(file_count: usize) -> (TempDir, TempDirPlatform) {
+        ensure_test_index_pb_hooks();
         let temp = TempDir::new().expect("temp dir");
         let root_path = temp.path().to_string_lossy().to_string();
         let mut entries = Vec::new();

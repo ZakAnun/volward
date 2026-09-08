@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 volward-core = { path = "../volward-core" }
+volward-index-pb = { path = "../volward-index-pb" }
 platform-desktop = { path = "../platform-desktop" }
 serde_json = { workspace = true }
 postcard = { version = "1", features = ["use-std"] }

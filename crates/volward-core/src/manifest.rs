@@ -3,11 +3,43 @@ use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
 use crate::index::SnapshotIndex;
 use crate::model::StorageSnapshot;
+
+/// Registered by the platform layer (`volward-index-pb`) at startup.
+pub type IndexPbWriterFn = fn(&SnapshotIndex, &str) -> Result<(), String>;
+
+static INDEX_PB_WRITER: OnceLock<IndexPbWriterFn> = OnceLock::new();
+
+/// Register the protobuf index writer (called once from `volward-facade` init).
+pub fn register_index_pb_writer(writer: IndexPbWriterFn) {
+    let _ = INDEX_PB_WRITER.set(writer);
+}
+
+fn write_index_pb(index: &SnapshotIndex, path: &str) -> Result<(), String> {
+    INDEX_PB_WRITER
+        .get()
+        .ok_or_else(|| "SnapshotIndex PB writer not registered".to_string())?(index, path)
+}
+
+/// Decode a persisted index from raw bytes (`.pb` wire format).
+pub type IndexPbDecoderFn = fn(&[u8]) -> Result<SnapshotIndex, String>;
+
+static INDEX_PB_DECODER: OnceLock<IndexPbDecoderFn> = OnceLock::new();
+
+pub fn register_index_pb_decoder(decoder: IndexPbDecoderFn) {
+    let _ = INDEX_PB_DECODER.set(decoder);
+}
+
+fn decode_index_pb(bytes: &[u8]) -> Result<SnapshotIndex, String> {
+    INDEX_PB_DECODER
+        .get()
+        .ok_or_else(|| "SnapshotIndex PB decoder not registered".to_string())?(bytes)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DirFingerprint {
@@ -105,6 +137,10 @@ impl FileSnapshotStore {
         self.base_dir.join(format!("{}.json", hash_root(root)))
     }
 
+    pub fn index_path_for_root(&self, root: &str) -> PathBuf {
+        self.base_dir.join(format!("{}.pb", hash_root(root)))
+    }
+
     pub fn save_snapshot(&self, root: &str, snapshot: &StorageSnapshot) -> Result<PathBuf, String> {
         std::fs::create_dir_all(&self.base_dir).map_err(|e| e.to_string())?;
         let path = self.path_for_root(root);
@@ -119,14 +155,28 @@ impl FileSnapshotStore {
 
     pub fn save_index(&self, root: &str, index: &SnapshotIndex) -> Result<PathBuf, String> {
         std::fs::create_dir_all(&self.base_dir).map_err(|e| e.to_string())?;
-        let path = self.path_for_root(root);
-        let temp_path = temp_path_for(&path);
-        let file = File::create(&temp_path).map_err(|e| e.to_string())?;
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer(&mut writer, index).map_err(|e| e.to_string())?;
-        writer.flush().map_err(|e| e.to_string())?;
-        std::fs::rename(&temp_path, &path).map_err(|e| e.to_string())?;
+        let path = self.index_path_for_root(root);
+        write_index_pb(index, &path.to_string_lossy())?;
+
+        // Best-effort cleanup of legacy JSON cache for the same root hash.
+        let legacy_json = self.path_for_root(root);
+        let _ = std::fs::remove_file(legacy_json);
+
         Ok(path)
+    }
+
+    /// Load a persisted index from an explicit path (`.pb` or legacy `.json`).
+    pub fn load_index_from_path(path: &Path) -> Option<SnapshotIndex> {
+        match path.extension().and_then(|ext| ext.to_str()) {
+            Some("pb") => {
+                let bytes = std::fs::read(path).ok()?;
+                decode_index_pb(&bytes).ok()
+            }
+            _ => {
+                let file = File::open(path).ok()?;
+                serde_json::from_reader::<_, SnapshotIndex>(BufReader::new(file)).ok()
+            }
+        }
     }
 
     pub fn load_snapshot(&self, root: &str) -> Option<StorageSnapshot> {
@@ -135,8 +185,15 @@ impl FileSnapshotStore {
     }
 
     pub fn load_index(&self, root: &str) -> Option<SnapshotIndex> {
-        let file = File::open(self.path_for_root(root)).ok()?;
-        serde_json::from_reader::<_, SnapshotIndex>(BufReader::new(file)).ok()
+        let pb_path = self.index_path_for_root(root);
+        if pb_path.exists() {
+            return Self::load_index_from_path(&pb_path);
+        }
+        let json_path = self.path_for_root(root);
+        if json_path.exists() {
+            return Self::load_index_from_path(&json_path);
+        }
+        None
     }
 }
 
@@ -275,5 +332,58 @@ mod tests {
         assert_eq!(loaded.snapshot_id, snapshot.snapshot_id);
         assert_eq!(loaded.scanned_at_ms, snapshot.scanned_at_ms);
         assert_eq!(loaded.tree.path, snapshot.tree.path);
+    }
+
+    #[test]
+    fn load_index_falls_back_to_legacy_json() {
+        use crate::model::{
+            CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
+            StorageEntry,
+        };
+
+        let tmp = TempDir::new().expect("temp dir");
+        let store = FileSnapshotStore::new(tmp.path());
+        let root = "/Users/test/LegacyIndex";
+        let snapshot = StorageSnapshot {
+            snapshot_id: "legacy-index".to_string(),
+            scanned_at_ms: 1,
+            capability: CapabilityLevel::FullPath,
+            volume_total_bytes: 100,
+            volume_used_bytes: 50,
+            reclaimable_estimate_bytes: 10,
+            entries: vec![StorageEntry {
+                id: "e1".to_string(),
+                display_name: "file".to_string(),
+                path_or_uri: "/tmp/file".to_string(),
+                size_bytes: 10,
+                category: EntryCategory::Cache,
+                risk_level: RiskLevel::Low,
+                source_type: SourceType::File,
+                deletable: true,
+                reason: "test".to_string(),
+                modified_at_ms: None,
+            }],
+            tree: ScanTreeNode {
+                name: "root".to_string(),
+                path: root.to_string(),
+                is_dir: true,
+                size_bytes: 10,
+                entry_id: None,
+                children: vec![],
+            },
+            stats: ScanStats::default(),
+            warnings: vec![],
+        };
+        let index = SnapshotIndex::from(&snapshot);
+        let json_path = store.path_for_root(root);
+        std::fs::create_dir_all(json_path.parent().unwrap()).expect("create parent");
+        let file = File::create(&json_path).expect("create json");
+        serde_json::to_writer(file, &index).expect("write json");
+
+        let loaded = store.load_index(root).expect("legacy json load");
+        assert_eq!(
+            loaded.summary_json().unwrap(),
+            index.summary_json().unwrap()
+        );
     }
 }

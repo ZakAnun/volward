@@ -3081,6 +3081,7 @@ dependencies = [
  "postcard",
  "serde_json",
  "volward-core",
+ "volward-index-pb",
 ]
 
 [[package]]
@@ -3110,6 +3111,17 @@ dependencies = [
  "tempfile",
  "uuid",
  "volward-ai",
+ "volward-core",
+ "volward-index-pb",
+]
+
+[[package]]
+name = "volward-index-pb"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-build",
+ "tempfile",
  "volward-core",
 ]
 

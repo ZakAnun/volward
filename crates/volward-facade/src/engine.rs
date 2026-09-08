@@ -27,7 +27,7 @@ use volward_core::{
     SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
 };
 
-use crate::pb_convert::snapshot_index_from_proto;
+use volward_index_pb::decode_snapshot_index;
 use crate::proto;
 
 const MAX_CONCURRENT_CAPABILITY_JOBS: usize = 4;
@@ -90,6 +90,7 @@ impl Default for VolwardEngine {
 
 impl VolwardEngine {
     pub fn new() -> Self {
+        volward_index_pb::ensure_registered();
         let platform = Arc::new(DesktopPlatform::new());
         let mut capability_registry = CapabilityRegistry::new();
         capability_registry.register(Arc::new(LargeFileAnalyzer));
@@ -466,12 +467,8 @@ impl VolwardEngine {
 
     fn read_index_or_legacy_snapshot(path: &str) -> Result<SnapshotIndex, String> {
         if path.ends_with(".pb") {
-            use prost::Message;
-
             let bytes = std::fs::read(path).map_err(|e| format!("error:read pb: {e}"))?;
-            let msg = proto::SnapshotIndex::decode(bytes.as_slice())
-                .map_err(|e| format!("error:decode pb index: {e}"))?;
-            return snapshot_index_from_proto(msg);
+            return decode_snapshot_index(&bytes);
         }
 
         let file = File::open(path).map_err(|e| format!("error:open index: {e}"))?;

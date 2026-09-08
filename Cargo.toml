@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/volward-core",
+    "crates/volward-index-pb",
     "crates/platform-desktop",
     "crates/volward-facade",
     "crates/volward-cli",

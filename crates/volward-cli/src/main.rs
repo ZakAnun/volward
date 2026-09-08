@@ -6,6 +6,7 @@ use volward_core::scan::ScanOrchestrator;
 use volward_core::PlatformStorage;
 
 fn main() {
+    volward_index_pb::ensure_registered();
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         None | Some("smoke") => run_smoke(),

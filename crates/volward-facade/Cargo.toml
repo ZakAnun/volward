@@ -10,6 +10,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 volward-core = { path = "../volward-core" }
+volward-index-pb = { path = "../volward-index-pb" }
 volward-ai = { path = "../volward-ai" }
 platform-desktop = { path = "../platform-desktop" }
 serde = { workspace = true }

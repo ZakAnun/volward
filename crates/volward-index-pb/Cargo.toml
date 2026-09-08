@@ -1,0 +1,16 @@
+[package]
+name = "volward-index-pb"
+description = "SnapshotIndex protobuf encode/decode for Volward disk caches"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+volward-core = { path = "../volward-core" }
+prost = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
