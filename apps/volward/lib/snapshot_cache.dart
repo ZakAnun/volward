@@ -241,8 +241,11 @@ abstract final class SnapshotCache {
         .split(Platform.pathSeparator)
         .last
         .replaceFirst('.json', '');
-    final fallback = File('${cacheDir().path}/snapshots/$hash.json');
-    if (fallback.existsSync()) return fallback.path;
+    final snapshotsDir = '${cacheDir().path}/snapshots';
+    final pbFallback = File('$snapshotsDir/$hash.pb');
+    if (pbFallback.existsSync()) return pbFallback.path;
+    final jsonFallback = File('$snapshotsDir/$hash.json');
+    if (jsonFallback.existsSync()) return jsonFallback.path;
     return null;
   }
 }

@@ -112,6 +112,32 @@ void main() {
     expect(path, snapshotFile.path);
   });
 
+  test('latestSnapshotPath falls back to snapshots hash pb file', () async {
+    final temp = await Directory.systemTemp.createTemp('volward-cache-test');
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.delete(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
+
+    final manifests = Directory('${temp.path}/manifests')..createSync();
+    final snapshots = Directory('${temp.path}/snapshots')..createSync();
+
+    File('${snapshots.path}/cafebabe.pb').writeAsBytesSync([0x08, 0x01]);
+
+    File('${manifests.path}/cafebabe.json').writeAsStringSync(
+      jsonEncode({
+        'root': '/Users/pb',
+        'scanned_at_ms': 2500,
+        'snapshot_id': 'snap-pb',
+        'dir_fingerprints': {},
+      }),
+    );
+
+    final path = await SnapshotCache.latestSnapshotPath();
+    expect(path, '${snapshots.path}/cafebabe.pb');
+  });
+
   test('latestSnapshotPath falls back to snapshots hash file', () async {
     final temp = await Directory.systemTemp.createTemp('volward-cache-test');
     addTearDown(() {
