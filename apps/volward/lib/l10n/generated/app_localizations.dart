@@ -680,6 +680,12 @@ abstract class AppLocalizations {
   /// **'This folder\'s cache is too large to restore. Scan again to refresh it.'**
   String get scanCacheTooLarge;
 
+  /// No description provided for @scanCacheRestoreTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder\'s cache took too long to restore. Scanning again.'**
+  String get scanCacheRestoreTimeout;
+
   /// No description provided for @scanStatusFull.
   ///
   /// In en, this message translates to:

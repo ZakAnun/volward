@@ -335,6 +335,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanCacheTooLarge => '该目录缓存过大，无法恢复。请手动重新扫描。';
 
   @override
+  String get scanCacheRestoreTimeout => '该目录缓存恢复超时，正在重新扫描。';
+
+  @override
   String get scanStatusFull => '全量';
 
   @override

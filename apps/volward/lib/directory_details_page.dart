@@ -721,6 +721,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       'scan-pause-failed' => context.l10n.scanPauseFailed,
       'scan-cache-unreadable' => context.l10n.scanCacheUnreadable,
       'scan-cache-too-large' => context.l10n.scanCacheTooLarge,
+      'scan-cache-restore-timeout' => context.l10n.scanCacheRestoreTimeout,
       _ => null,
     };
     if (message == null) return;

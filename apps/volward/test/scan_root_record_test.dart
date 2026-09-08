@@ -35,7 +35,7 @@ void main() {
     addTearDown(() => dir.deleteSync(recursive: true));
     final store = ScanRootRecordStore(dir);
     await store.save(
-      ScanRootRecord(
+      const ScanRootRecord(
         root: '/a',
         status: ScanRootStatus.completed,
         snapshotId: 'done',

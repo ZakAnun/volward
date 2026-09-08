@@ -6,6 +6,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
+import 'cache_restore_policy.dart';
 import 'ai/ai_provider.dart';
 import 'ai/native_coverage_engine.dart';
 import 'analytics/analytics.dart';
@@ -288,8 +289,29 @@ class VolwardSession extends ChangeNotifier {
   /// Safety net for runaway scans; normal Home scans should finish well below this.
   static const Duration _scanAbsoluteMax = Duration(hours: 8);
 
-  /// Cap cache restore wait so a bad or huge local cache does not pin the UI.
-  static const Duration _cacheRestoreTimeout = Duration(seconds: 8);
+  /// Overrides [cacheRestoreTimeoutForByteSize] in tests.
+  @visibleForTesting
+  Duration? cacheRestoreTimeoutForTest;
+
+  /// Treats the session as index-capable without a native engine.
+  @visibleForTesting
+  bool treatAsIndexApiForTest = false;
+
+  /// In-memory index used by [treatAsIndexApiForTest] restore paths.
+  @visibleForTesting
+  ScanSnapshotState? engineIndexSnapshotForTest;
+
+  /// Counts async index load starts when [indexLoadAsyncResultForTest] is set.
+  @visibleForTesting
+  int startIndexLoadCallsForTest = 0;
+
+  /// When set, simulates [startLoadIndexFromPathAsync] return values per call.
+  @visibleForTesting
+  List<String>? indexLoadAsyncResultsForTest;
+
+  /// When set, simulates whether an async index load is in progress.
+  @visibleForTesting
+  bool Function()? isIndexLoadingForTest;
 
   /// Bound native-stop waits so a stuck `is_scan_running` cannot hang pause.
   /// Timeout is failure (stay put), never treated as idle/stopped.
@@ -313,6 +335,7 @@ class VolwardSession extends ChangeNotifier {
 
   /// True when the bundled dylib supports catalog index query/refresh APIs.
   bool get hasIndexApi {
+    if (treatAsIndexApiForTest) return _ready;
     // Guard: if the engine hasn't been initialised yet (e.g. in unit tests via
     // VolwardSession.test()), return false rather than attempting to dlopen the
     // dylib, which would crash in environments without the native library.
@@ -911,10 +934,12 @@ class VolwardSession extends ChangeNotifier {
       }
 
       ScanSnapshotState? restored;
+      var indexRestoreAttempted = false;
       if (hasIndexApi) {
         // Always try the Rust catalog loader before applying the Dart JSON
         // size guard. New dylibs do the load on a Rust worker thread so large
         // legacy snapshots do not block Flutter's main isolate.
+        indexRestoreAttempted = true;
         restored = await _restoreIndexCache(path, generation);
         if (generation != _cacheRestoreGeneration) {
           return false;
@@ -924,6 +949,11 @@ class VolwardSession extends ChangeNotifier {
         final cacheFile = File(path);
         try {
           final size = await cacheFile.length();
+          if (indexRestoreAttempted && size > _maxAutoRestoreBytes) {
+            // Async index load already failed; do not mislabel as too-large.
+            _lastError ??= 'scan-cache-unreadable';
+            return false;
+          }
           if (size > _maxAutoRestoreBytes) {
             _lastError = 'scan-cache-too-large';
             debugPrint(
@@ -972,44 +1002,177 @@ class VolwardSession extends ChangeNotifier {
     return _restoreCachedSnapshot(preferredPath: path);
   }
 
+  ScanSnapshotState? _snapshotFromLoadedEngineIndex(String preferredRoot) {
+    final injected = engineIndexSnapshotForTest;
+    if (injected != null) {
+      final treePath = injected.tree?.path;
+      if (treePath != null &&
+          indexSummaryMatchesRoot({'root_path': treePath}, preferredRoot)) {
+        return injected;
+      }
+      return null;
+    }
+    final engine = _engine;
+    if (engine == null) return null;
+    final summary = VolwardNativeBridge.instance.getIndexSummaryJson(engine);
+    if (!indexSummaryMatchesRoot(summary, preferredRoot)) {
+      return null;
+    }
+    return ScanSnapshotState.fromIndexSummary(summary!);
+  }
+
+  String? _startTestIndexLoad(String path) {
+    final scripted = indexLoadAsyncResultsForTest;
+    if (scripted == null || startIndexLoadCallsForTest >= scripted.length) {
+      return 'error:test index load script exhausted';
+    }
+    final result = scripted[startIndexLoadCallsForTest];
+    startIndexLoadCallsForTest++;
+    return result;
+  }
+
+  @visibleForTesting
+  Future<bool> restoreCachedSnapshotForTest({String? preferredPath}) {
+    return _restoreCachedSnapshot(preferredPath: preferredPath);
+  }
+
   Future<ScanSnapshotState?> _restoreIndexCache(
     String path,
     int generation,
   ) async {
+    if (generation != _cacheRestoreGeneration) return null;
+
+    final preferredRoot = _preferredRestoreRoot();
+    final reused = _snapshotFromLoadedEngineIndex(preferredRoot);
+    if (reused != null) {
+      debugPrint('VolwardSession: reused in-memory index for $preferredRoot');
+      return reused;
+    }
+
+    final cacheSize = await _fileSizeOrNull(path);
+    final timeout =
+        cacheRestoreTimeoutForTest ?? cacheRestoreTimeoutForByteSize(cacheSize);
+
+    if (treatAsIndexApiForTest) {
+      final scripted = indexLoadAsyncResultsForTest;
+      if (scripted != null) {
+        final startedAt = DateTime.now();
+        Duration remainingTimeout() {
+          final elapsed = DateTime.now().difference(startedAt);
+          final left = timeout - elapsed;
+          return left.isNegative ? Duration.zero : left;
+        }
+
+        while (generation == _cacheRestoreGeneration) {
+          if (remainingTimeout() <= Duration.zero) {
+            debugPrint(
+              'VolwardSession: cache restore timed out after '
+              '${timeout.inSeconds}s for $path',
+            );
+            _lastError = 'scan-cache-restore-timeout';
+            return null;
+          }
+
+          final loading = isIndexLoadingForTest?.call() ?? false;
+          if (loading) {
+            final drained = await _waitForIndexLoadDrain(
+              generation,
+              timeout: remainingTimeout(),
+            );
+            if (!drained) {
+              if (generation != _cacheRestoreGeneration) return null;
+              continue;
+            }
+            final loaded = _snapshotFromLoadedEngineIndex(preferredRoot);
+            if (loaded != null) return loaded;
+            continue;
+          }
+
+          final started = _startTestIndexLoad(path);
+          if (started == null || started.startsWith('error:')) {
+            _lastError = 'scan-cache-unreadable';
+            return null;
+          }
+          if (started.startsWith('busy:')) {
+            await _waitForIndexLoadDrain(
+              generation,
+              timeout: remainingTimeout(),
+            );
+            continue;
+          }
+
+          final drained = await _waitForIndexLoadDrain(
+            generation,
+            timeout: remainingTimeout(),
+          );
+          if (!drained) {
+            if (generation != _cacheRestoreGeneration) return null;
+            continue;
+          }
+          break;
+        }
+        if (generation != _cacheRestoreGeneration) return null;
+      }
+      return _snapshotFromLoadedEngineIndex(preferredRoot);
+    }
+
     final engine = _engine;
     if (engine == null) return null;
     final bridge = VolwardNativeBridge.instance;
-    final cacheSize = await _fileSizeOrNull(path);
-    if (generation != _cacheRestoreGeneration) return null;
 
     if (bridge.hasAsyncIndexLoadApi) {
       final startedAt = DateTime.now();
+      Duration remainingTimeout() {
+        final elapsed = DateTime.now().difference(startedAt);
+        final left = timeout - elapsed;
+        return left.isNegative ? Duration.zero : left;
+      }
+
       while (generation == _cacheRestoreGeneration) {
-        if (DateTime.now().difference(startedAt) > _cacheRestoreTimeout) {
+        if (remainingTimeout() <= Duration.zero) {
           bridge.invalidateIndexLoad(engine);
           debugPrint(
             'VolwardSession: cache restore timed out after '
-            '${_cacheRestoreTimeout.inSeconds}s for $path',
+            '${timeout.inSeconds}s for $path',
           );
+          _lastError = 'scan-cache-restore-timeout';
           return null;
         }
-        bridge.invalidateIndexLoad(engine);
+
+        if (bridge.isIndexLoading(engine)) {
+          final drained = await _waitForIndexLoadDrain(
+            generation,
+            timeout: remainingTimeout(),
+          );
+          if (!drained) {
+            if (generation != _cacheRestoreGeneration) return null;
+            continue;
+          }
+          final loaded = _snapshotFromLoadedEngineIndex(preferredRoot);
+          if (loaded != null) return loaded;
+          continue;
+        }
+
         final started = bridge.startLoadIndexFromPathAsync(engine, path);
         if (started == null || started.startsWith('error:')) {
           debugPrint(
             'VolwardSession: async index restore failed to start: $started',
           );
+          _lastError = 'scan-cache-unreadable';
           return null;
         }
         if (started.startsWith('busy:')) {
-          await _waitForIndexLoadDrain(generation);
+          await _waitForIndexLoadDrain(generation, timeout: remainingTimeout());
           continue;
         }
 
-        final drained = await _waitForIndexLoadDrain(generation);
+        final drained = await _waitForIndexLoadDrain(
+          generation,
+          timeout: remainingTimeout(),
+        );
         if (!drained) {
-          bridge.invalidateIndexLoad(engine);
-          return null;
+          if (generation != _cacheRestoreGeneration) return null;
+          continue;
         }
         break;
       }
@@ -1018,6 +1181,7 @@ class VolwardSession extends ChangeNotifier {
       final error = bridge.getLastIndexLoadError(engine);
       if (error != null && error.isNotEmpty) {
         debugPrint('VolwardSession: async index restore failed: $error');
+        _lastError = 'scan-cache-unreadable';
         return null;
       }
     } else {
@@ -1030,12 +1194,13 @@ class VolwardSession extends ChangeNotifier {
         return null;
       }
       final loaded = bridge.loadIndexFromPath(engine, path);
-      if (!loaded) return null;
+      if (!loaded) {
+        _lastError = 'scan-cache-unreadable';
+        return null;
+      }
     }
 
-    final summary = bridge.getIndexSummaryJson(engine);
-    if (summary == null || summary.containsKey('error')) return null;
-    return ScanSnapshotState.fromIndexSummary(summary);
+    return _snapshotFromLoadedEngineIndex(preferredRoot);
   }
 
   Future<int?> _fileSizeOrNull(String path) async {
@@ -1046,15 +1211,31 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
-  Future<bool> _waitForIndexLoadDrain(int generation) async {
+  Future<bool> _waitForIndexLoadDrain(
+    int generation, {
+    Duration timeout = const Duration(seconds: 120),
+  }) async {
+    if (treatAsIndexApiForTest) {
+      final startedAt = DateTime.now();
+      while (generation == _cacheRestoreGeneration) {
+        final loading = isIndexLoadingForTest?.call() ?? false;
+        if (!loading) break;
+        if (DateTime.now().difference(startedAt) > timeout) {
+          return false;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      }
+      return generation == _cacheRestoreGeneration;
+    }
+
     final engine = _engine;
     if (engine == null) return false;
     final bridge = VolwardNativeBridge.instance;
     if (!bridge.hasAsyncIndexLoadApi) return true;
     final startedAt = DateTime.now();
-    while (generation == _cacheRestoreGeneration &&
-        bridge.isIndexLoading(engine)) {
-      if (DateTime.now().difference(startedAt) > _cacheRestoreTimeout) {
+    while (generation == _cacheRestoreGeneration) {
+      if (!bridge.isIndexLoading(engine)) break;
+      if (DateTime.now().difference(startedAt) > timeout) {
         return false;
       }
       await Future<void>.delayed(const Duration(milliseconds: 120));
@@ -1514,7 +1695,7 @@ class VolwardSession extends ChangeNotifier {
             _clearTargetPreviewLoading(generation);
             return;
           }
-          _lastError = 'scan-cache-unreadable';
+          _lastError ??= 'scan-cache-unreadable';
           await _runScanAutostart(generation, ScanRunMode.auto);
         } else {
           _targetPreviewLoading = false;
@@ -1530,7 +1711,7 @@ class VolwardSession extends ChangeNotifier {
             _clearTargetPreviewLoading(generation);
             return;
           }
-          _lastError = 'scan-cache-unreadable';
+          _lastError ??= 'scan-cache-unreadable';
           await _runScanAutostart(generation, ScanRunMode.auto);
           return;
         }
@@ -1564,7 +1745,9 @@ class VolwardSession extends ChangeNotifier {
   ]) async {
     if (generation != _rootSwitchGeneration) return;
     final restoreError = switch (_lastError) {
-      'scan-cache-unreadable' || 'scan-cache-too-large' => _lastError,
+      'scan-cache-unreadable' ||
+      'scan-cache-too-large' ||
+      'scan-cache-restore-timeout' => _lastError,
       _ => null,
     };
     _scanStartErrorToPreserve = restoreError;
@@ -2042,7 +2225,10 @@ class VolwardSession extends ChangeNotifier {
       if (preparationWait != null) {
         await preparationWait();
       } else {
-        await _waitForIndexLoadDrain(_cacheRestoreGeneration);
+        await _waitForIndexLoadDrain(
+          _cacheRestoreGeneration,
+          timeout: const Duration(seconds: 120),
+        );
       }
       try {
         _throwIfScanPreparationIsStale(scanRunId, scanGeneration, ownerRoot);

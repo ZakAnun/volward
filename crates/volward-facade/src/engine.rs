@@ -536,7 +536,9 @@ impl VolwardEngine {
                     }
                 }
             }
-            is_index_loading.store(false, Ordering::Release);
+            if index_load_generation.load(Ordering::SeqCst) == load_generation {
+                is_index_loading.store(false, Ordering::Release);
+            }
         });
 
         "ok".to_string()
@@ -544,6 +546,9 @@ impl VolwardEngine {
 
     pub fn invalidate_index_load(&self) {
         self.index_load_generation.fetch_add(1, Ordering::SeqCst);
+        // Release the loading slot immediately so a superseding restore/scan can
+        // start without waiting for a stale worker to finish parsing.
+        self.is_index_loading.store(false, Ordering::Release);
         if let Ok(mut g) = self.last_index_load_error.lock() {
             *g = None;
         }
@@ -2172,10 +2177,91 @@ mod tests {
             "ok"
         );
         engine.invalidate_index_load();
+        assert!(!engine.is_index_loading());
+
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         assert!(!engine.is_index_loading());
         assert!(engine.get_last_index_load_error().is_none());
+    }
+
+    #[test]
+    fn invalidate_index_load_allows_immediate_retry() {
+        let engine = VolwardEngine::new();
+        let first_path = std::env::temp_dir().join(format!(
+            "volward-first-missing-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let second_path = std::env::temp_dir().join(format!(
+            "volward-second-missing-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+
+        assert_eq!(
+            engine.start_load_index_from_path_async(first_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        engine.invalidate_index_load();
+        assert!(!engine.is_index_loading());
+        assert_eq!(
+            engine.start_load_index_from_path_async(second_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        while engine.is_index_loading() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn stale_async_worker_does_not_clear_loading_for_superseding_load() {
+        let snapshot = minimal_snapshot();
+        let slow_path = std::env::temp_dir().join(format!(
+            "volward-slow-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let fast_path = std::env::temp_dir().join(format!(
+            "volward-fast-index-{}-{}.json",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+
+        {
+            let file = File::create(&slow_path).expect("create slow index");
+            serde_json::to_writer(BufWriter::new(file), &SnapshotIndex::from(&snapshot))
+                .expect("write slow index");
+        }
+        {
+            let file = File::create(&fast_path).expect("create fast index");
+            serde_json::to_writer(BufWriter::new(file), &SnapshotIndex::from(&snapshot))
+                .expect("write fast index");
+        }
+
+        let engine = VolwardEngine::new();
+        assert_eq!(
+            engine.start_load_index_from_path_async(slow_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        engine.invalidate_index_load();
+        assert_eq!(
+            engine.start_load_index_from_path_async(fast_path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        while engine.is_index_loading() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(engine.get_last_index_load_error().is_none());
+        assert!(
+            engine
+                .get_index_summary_json()
+                .expect("superseding load should publish")
+                .contains(&snapshot.snapshot_id)
+        );
+
+        let _ = std::fs::remove_file(&slow_path);
+        let _ = std::fs::remove_file(&fast_path);
     }
 
     #[test]

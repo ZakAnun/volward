@@ -189,6 +189,7 @@
   "scanPauseFailed": "无法暂停当前扫描，仍留在当前目录。",
   "scanCacheUnreadable": "该目录缓存无法读取，正在重新扫描。",
   "scanCacheTooLarge": "该目录缓存过大，无法恢复。请手动重新扫描。",
+  "scanCacheRestoreTimeout": "该目录缓存恢复超时，正在重新扫描。",
   "scanStatusFull": "全量",
   "scanStatusIncremental": "增量",
   "scanStatusFiles": "{mode}扫描：{count} 个文件",

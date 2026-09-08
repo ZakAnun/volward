@@ -355,6 +355,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This folder\'s cache is too large to restore. Scan again to refresh it.';
 
   @override
+  String get scanCacheRestoreTimeout =>
+      'This folder\'s cache took too long to restore. Scanning again.';
+
+  @override
   String get scanStatusFull => 'Full';
 
   @override
