@@ -233,4 +233,39 @@ void main() {
       expect(path, snapshotFile.path);
     },
   );
+
+  test(
+    'latestSnapshotPath prefers sibling protobuf when manifest still points at json',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('volward-cache-test');
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.delete(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      final manifests = Directory('${temp.path}/manifests')..createSync();
+      final snapshots = Directory('${temp.path}/snapshots')..createSync();
+
+      final jsonFile = File('${snapshots.path}/migrated.json')
+        ..writeAsStringSync(jsonEncode({'snapshot_id': 'snap-migrated'}));
+      final pbFile = File('${snapshots.path}/migrated.pb')
+        ..writeAsStringSync('pb-cache');
+
+      File('${manifests.path}/migrated.json').writeAsStringSync(
+        jsonEncode({
+          'root': '/Users/migrated',
+          'scanned_at_ms': 4000,
+          'snapshot_id': 'snap-migrated',
+          'snapshot_path': jsonFile.path,
+          'dir_fingerprints': {},
+        }),
+      );
+
+      final path = await SnapshotCache.latestSnapshotPath(
+        preferredRoot: '/Users/migrated',
+      );
+      expect(path, pbFile.path);
+    },
+  );
 }

@@ -27,7 +27,7 @@ use volward_core::{
     SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
 };
 
-use volward_index_pb::decode_snapshot_index;
+use volward_index_pb::{decode_snapshot_index, schedule_json_index_migration};
 use crate::proto;
 
 const MAX_CONCURRENT_CAPABILITY_JOBS: usize = 4;
@@ -461,6 +461,7 @@ impl VolwardEngine {
     pub fn load_index_from_path(&self, path: &str) -> Result<(), String> {
         self.invalidate_index_load();
         let index = Self::read_index_or_legacy_snapshot(path)?;
+        schedule_json_index_migration(path.to_string(), index.clone());
         self.set_loaded_index(index);
         Ok(())
     }
@@ -525,6 +526,7 @@ impl VolwardEngine {
         std::thread::spawn(move || {
             match Self::read_index_or_legacy_snapshot(&path) {
                 Ok(index) => {
+                    schedule_json_index_migration(path.clone(), index.clone());
                     if index_load_generation.load(Ordering::SeqCst) == load_generation {
                         index_version.store(index.version, Ordering::Relaxed);
                         if let Ok(mut g) = last_index.lock() {

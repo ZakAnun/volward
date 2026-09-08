@@ -231,10 +231,17 @@ abstract final class SnapshotCache {
     Map<String, dynamic> manifest,
   ) {
     final explicit = manifest['snapshot_path']?.toString();
-    if (explicit != null &&
-        explicit.isNotEmpty &&
-        File(explicit).existsSync()) {
-      return explicit;
+    if (explicit != null && explicit.isNotEmpty) {
+      final explicitFile = File(explicit);
+      if (explicitFile.existsSync()) {
+        if (explicit.endsWith('.json')) {
+          final pbPath = '${explicit.substring(0, explicit.length - 5)}.pb';
+          if (File(pbPath).existsSync()) {
+            return pbPath;
+          }
+        }
+        return explicit;
+      }
     }
 
     final hash = manifestFilePath

@@ -8,8 +8,10 @@ mod proto {
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use prost::Message;
+use volward_core::manifest::{FileManifestStore, ManifestStore};
 use volward_core::model;
 use volward_core::{
     DirectoryRecord, EntryRecord, SnapshotIndex, SnapshotIndexWire,
@@ -292,6 +294,76 @@ pub fn ensure_registered() {
     });
 }
 
+/// True when `path` is a persisted Volward cache JSON file under `…/snapshots/`.
+pub fn is_volward_persisted_snapshot_json(path: &str) -> bool {
+    let path = Path::new(path);
+    if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return false;
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if file_name.contains("checkpoint") || file_name.starts_with("volward-") {
+        return false;
+    }
+    let Some(snapshots_dir) = path.parent() else {
+        return false;
+    };
+    if snapshots_dir.file_name().and_then(|name| name.to_str()) != Some("snapshots") {
+        return false;
+    }
+    snapshots_dir
+        .parent()
+        .map(|cache_root| cache_root.join("manifests").is_dir())
+        .unwrap_or(false)
+}
+
+/// Rewrite a legacy JSON index cache as protobuf and point the manifest at it.
+pub fn migrate_json_index_cache_to_pb(
+    json_path: &str,
+    index: &SnapshotIndex,
+) -> Result<(), String> {
+    if !is_volward_persisted_snapshot_json(json_path) {
+        return Ok(());
+    }
+
+    let json_path = Path::new(json_path);
+    let cache_root = json_path
+        .parent()
+        .and_then(|dir| dir.parent())
+        .ok_or_else(|| "error:migration: snapshot path not under cache root".to_string())?;
+    let manifests_dir = cache_root.join("manifests");
+    if !manifests_dir.is_dir() {
+        return Ok(());
+    }
+
+    let pb_path = json_path.with_extension("pb");
+    let pb_path_str = pb_path.to_string_lossy();
+    write_snapshot_index_pb_atomic(index, &pb_path_str)?;
+
+    let manifest_store = FileManifestStore::new(&manifests_dir);
+    if let Some(mut manifest) = manifest_store.load(&index.root_path) {
+        manifest.snapshot_path = Some(pb_path_str.into_owned());
+        manifest_store.save(&manifest)?;
+    }
+
+    let _ = std::fs::remove_file(json_path);
+    Ok(())
+}
+
+/// Best-effort background migration after a successful JSON restore.
+pub fn schedule_json_index_migration(json_path: String, index: SnapshotIndex) {
+    if !is_volward_persisted_snapshot_json(&json_path) {
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Err(error) = migrate_json_index_cache_to_pb(&json_path, &index) {
+            eprintln!("Volward: json index migration to pb failed for {json_path}: {error}");
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +432,71 @@ mod tests {
             loaded.summary_json().unwrap(),
             index.summary_json().unwrap()
         );
+    }
+
+    #[test]
+    fn migrate_json_index_cache_to_pb_updates_manifest_and_removes_json() {
+        use volward_core::manifest::{ScanManifest, SIZE_ACCOUNTING_VERSION};
+        use std::collections::HashMap;
+
+        ensure_registered();
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let cache_root = tmp.path();
+        let manifests_dir = cache_root.join("manifests");
+        let snapshots_dir = cache_root.join("snapshots");
+        std::fs::create_dir_all(&manifests_dir).unwrap();
+        std::fs::create_dir_all(&snapshots_dir).unwrap();
+
+        let index = SnapshotIndex::from(&minimal_snapshot());
+        let json_path = snapshots_dir.join("cache.json");
+        let json_path_str = json_path.to_string_lossy().into_owned();
+        serde_json::to_writer(
+            std::fs::File::create(&json_path).unwrap(),
+            &index,
+        )
+        .unwrap();
+
+        let manifest_store = FileManifestStore::new(&manifests_dir);
+        manifest_store
+            .save(&ScanManifest {
+                root: index.root_path.clone(),
+                scanned_at_ms: index.scanned_at_ms,
+                snapshot_id: index.snapshot_id.clone(),
+                size_accounting: SIZE_ACCOUNTING_VERSION,
+                snapshot_path: Some(json_path_str.clone()),
+                dir_fingerprints: HashMap::new(),
+            })
+            .unwrap();
+
+        migrate_json_index_cache_to_pb(&json_path_str, &index).expect("migrate");
+
+        let pb_path = json_path.with_extension("pb");
+        assert!(pb_path.is_file());
+        assert!(!json_path.is_file());
+
+        let manifest = manifest_store.load(&index.root_path).expect("manifest");
+        assert_eq!(
+            manifest.snapshot_path.as_deref(),
+            Some(pb_path.to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn is_volward_persisted_snapshot_json_rejects_checkpoints() {
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let cache_root = tmp.path();
+        let snapshots_dir = cache_root.join("snapshots");
+        std::fs::create_dir_all(cache_root.join("manifests")).unwrap();
+        std::fs::create_dir_all(&snapshots_dir).unwrap();
+
+        let valid = snapshots_dir.join("abc.json");
+        assert!(is_volward_persisted_snapshot_json(
+            &valid.to_string_lossy()
+        ));
+
+        let checkpoint = snapshots_dir.join("volward-checkpoint.json");
+        assert!(!is_volward_persisted_snapshot_json(
+            &checkpoint.to_string_lossy()
+        ));
     }
 }
