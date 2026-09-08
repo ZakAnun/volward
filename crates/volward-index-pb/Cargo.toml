@@ -13,4 +13,5 @@ prost = { workspace = true }
 prost-build = { workspace = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 tempfile = "3"
