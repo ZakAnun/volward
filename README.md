@@ -1,208 +1,279 @@
 # Volward
 
-Volward 是一个跨平台桌面存储管家，帮你更快找出占空间的文件，先预览、再浏览、最后安全删除。
+跨平台桌面存储管家：更快找出占空间的文件，先预览、再浏览、最后安全删除。
 
-> 现在可以发布 macOS / Windows / Linux 安装包，但当前主要还是在 **macOS** 上验证和打磨。
+**官网：** [volwardapp.com](https://www.volwardapp.com) · **下载：** [GitHub Releases](https://github.com/ZakAnun/volward/releases/latest)（当前 **v0.0.6**）
 
-## 当前能力
+> macOS 上验证最完整；Windows / Linux 已提供正式安装包与应用内更新。
 
-### 渐进式扫描
+---
 
-- 默认从用户 Home 开始，也可以手动选择任意目录。
-- 选中目录后会先看到一层快速预览，不用等整盘扫完。
-- 扫描过程中可以边看边用，结果会逐步变完整。
-- 打开还没扫完的目录时，会优先补齐那一块内容。
-- 支持增量扫描，避免重复扫已经没有变化的目录。
-- 支持取消扫描，也有超时保护，避免任务卡太久。
+## 用户使用
 
-### 目录浏览与筛选
+### 能做什么
 
-- 主界面提供 Finder 式多列浏览，适合一路展开看文件夹层级。
-- 未扫完的目录会先显示加载态，等结果回来后再补上大小和内容。
-- 支持按分类、可删除状态和排序方式筛选：
-  - 分类：All / Cache / Temp / Media / System
-  - 删除状态：仅可删
-  - 排序：Size ↓ / Size ↑ / Name
-- 底部会显示当前选中的项目，方便先确认再操作。
+| 能力 | 说明 |
+|------|------|
+| **渐进式扫描** | 启动或切换目录时先 `quick_list` 一层预览；后台异步扫描或从缓存恢复完整 catalog |
+| **多列浏览** | Finder 式列视图；未扫完目录显示加载态，可 peek 优先补齐子树 |
+| **按目录缓存** | 每个扫描根目录独立 manifest + index（`.pb`）；切回已完成目录优先 restore，不必重扫 |
+| **增量扫描** | Settings 可开；基于目录指纹跳过未变化子树；暂停后可 resume |
+| **分类与筛选** | 浏览态按 **Cache / Temp / Media / System** 筛选，支持「仅可删」与 Size/Name 排序 |
+| **安全删除** | 删除前预览；确认后移入系统废纸篓，支持清空废纸篓 |
+| **Home 仪表盘** | 容量概览、当前目标下最大子项、快捷切换 Home / Desktop / Downloads 等 |
+| **AI Analyze** | 基于扫描 catalog 的 AI 覆盖分析（Platform 或 BYOK 模式，需联网） |
+| **应用内更新** | 检查 GitHub Releases，校验 SHA-256 后安装（可关自动下载） |
 
-### 分类与删除
+Rust 侧还实现了大文件、重复文件、相似照片、清理候选、应用占用、浏览器隐私等 **Capability 分析器**，目前主要通过 Session/FFI 与测试覆盖；**主界面用户入口以浏览 + AI Analyze 为主**。
 
-- 目前会自动识别这些常见类型：
-  - `Cache`：缓存路径，低风险，文件默认可删除
-  - `Temp`：临时路径或 `.tmp` 文件，低风险，文件默认可删除
-  - `Media`：图片、视频、PDF、DMG 等媒体/安装包，高风险，默认不可删除
-  - `System`：受保护系统路径，高风险，不可删除
-- 删除前会先做预览，告诉你大概能清出多少空间、哪些项目会失败。
-- 确认后会先移入系统废纸篓，而不是直接永久删除。
-- 还支持清空废纸篓。
+### 典型流程
 
-### 快照、恢复与当前目录刷新
+1. **首次启动**：恢复上次扫描根（或默认 Home）→ 即时预览 → 后台尝试 restore 缓存；若无有效缓存则 **自动开扫**。
+2. 扫描进行中可进入 **Browse** 多列查看；`paths_seen` 等进度会持续更新。
+3. 用筛选栏缩小范围，选中项目 → 删除预览 → 移入废纸篓。
+4. 需要 AI 辅助时进入 **AI Analyze**（Settings 中配置 Platform / BYOK / 关闭）。
+5. **切换扫描根**（Home 侧栏或设置）：`completed` 目录 restore；`empty` 自动扫；`paused` restore 后增量续扫。
 
-- 扫描结果会保存在本机，重启后可以继续上次的结果。
-- 如果只想更新当前正在看的目录，也可以单独刷新这一层。
+### 安装
 
-### 外观、语言与设置
+从 [Releases](https://github.com/ZakAnun/volward/releases/latest) 下载：
 
-- Settings 支持主题：跟随系统 / 浅色 / 深色。
-- 支持 6 种 accent 色。
-- 支持增量扫描开关。
-- 支持语言：跟随系统 / 中文 / English。
-- 这些设置都会保存在本地，下次打开还在。
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| macOS (Apple Silicon) | `volward-*-macos-arm64.zip` | 解压拖入 `/Applications` |
+| macOS (Intel) | `volward-*-macos-x64.zip` | 同上 |
+| Windows | `VolwardSetup-*-windows-x64.exe` | Inno Setup 安装器 |
+| Linux（推荐） | `Volward-*-linux-x86_64.AppImage` | `chmod +x` 后运行 |
+| Linux（便携） | `volward-*-linux-x64.tar.gz` | 解压后运行 `bundle/volward` |
 
-### 应用内更新
+各安装包附带 `.sha256`；应用内更新会自动校验。
 
-- 从 **v0.0.2** 起支持应用内更新（更早的 v0.0.1 需先手动安装一次新版本）；**v0.0.3** 起各桌面平台正式包均带 Aptabase 埋点。
-- 启动后会静默检查 GitHub Releases；有新版本时可选择立即更新或稍后。
-- Settings → About 可查看当前版本、手动检查更新、下载安装，失败时可打开下载页。
-- 发现可用更新时会展示 release notes 摘要（启动弹窗）。
-- 下载前会确认校验文件与安装包可达；下载后校验 SHA-256，通过后再安装并重启。
-- 自动更新支持：
-  - macOS：`.app` zip（正式 `.app` 安装形态）
-  - Windows：Inno Setup 安装器（x64）
-  - Linux：AppImage（x86_64）
-- Linux `tar.gz` 便携包可手动下载使用，但不参与自动更新。
+**首次运行提示**
+
+- **macOS**（未签名）：右键 `volward.app` → **打开**；或 `xattr -cr /Applications/volward.app`
+- **Windows**：SmartScreen →「更多信息」→「仍要运行」
+- **Linux**：AppImage 需执行权限；`tar.gz` 解压即用
+
+自动更新支持 macOS `.zip`、Windows 安装器、Linux AppImage；`tar.gz` 需手动下载。
 
 ### macOS 权限
 
-- 未授予 Full Disk Access (FDA) 时仍可扫描普通可读目录。
-- 深度扫描 `~/Library`、Safari、Messages、TCC 等受保护路径需要 FDA。
-- 应用内会提示你去打开所需权限。
+- 未授予 **完全磁盘访问（FDA）** 时，仍可扫描普通可读目录。
+- 深度访问 `~/Library`、Safari、Messages 等受 TCC 保护路径需要 FDA。
+- 应用内会引导打开 **系统设置 → 隐私与安全性 → 完全磁盘访问**。
 
-### 开发与诊断工具
+### 设置（Settings）
 
-- `volward-cli smoke`：命令行快速扫描一遍，方便确认程序可用。
-- `volward-cli scan-bench`：做性能基准。
-- 另外还有 Rust 和 Flutter 测试，用来保证核心流程稳定。
+| 项 | 说明 |
+|----|------|
+| 主题 | 跟随系统 / 浅色 / 深色 |
+| Accent | 6 种预设色 |
+| 增量扫描 | 默认关闭；开启后 resume/自动扫会走 fingerprint 增量 |
+| 语言 | 跟随系统 / 中文 / English |
+| 自动下载更新 | 控制是否在后台预拉更新包 |
+| AI | Off / Platform（`api.volwardapp.com`）/ BYOK |
 
-## 仓库结构
+偏好写入缓存目录下的 `settings.json`（AI 密钥等敏感项走 secure storage）。
+
+### 本机数据位置
+
+| 平台 | 缓存根目录 |
+|------|------------|
+| macOS | `~/Library/Application Support/Volward/` |
+| Linux | `$XDG_DATA_HOME/volward/` 或 `~/.local/share/volward/` |
+| Windows | `%APPDATA%\Volward\`（回退 `%LOCALAPPDATA%\Volward\`） |
+
+主要子目录（均在上述根目录下）：
+
+| 路径 | 内容 |
+|------|------|
+| `manifests/` | 每 root 的 manifest（目录指纹、`snapshot_path`） |
+| `snapshots/` | 持久化 SnapshotIndex（`.pb`；旧版可能仍有 `.json`） |
+| `root_records/` | 各 root 状态：`completed` / `paused` / `empty` / `scanning` |
+| `pauses/` | 扫描中途 pause 的截断 baseline |
+| `settings.json` | 主题、语言、增量扫描、自动更新等 |
+
+调试可设 `VOLWARD_CACHE_DIR` 指向临时目录（与 `SnapshotCache.cacheDir()` 一致）。
+
+---
+
+## 参与开发
+
+### 技术栈
+
+| 层 | 说明 |
+|----|------|
+| **UI** | Flutter 3（`apps/volward`，FVM 锁定 `stable`） |
+| **核心** | Rust：`volward-core` 扫描/分类/index，`platform-desktop` 文件 walk |
+| **FFI** | `volward-facade` → 各平台 `libvolward_facade` / `.dll` |
+| **持久化** | `volward-index-pb`（SnapshotIndex protobuf） |
+| **AI** | `volward-ai` + `server/`（`volward-platform-api` crate，可选部署） |
+| **官网** | `apps/website`（Astro） |
+
+Dart 通过 `VolwardNativeBridge` 调用 Rust；`VolwardSession` 统一编排扫描、restore、删除、AI。
+
+### 环境要求
+
+| 工具 | 用途 |
+|------|------|
+| Rust stable | workspace 构建与测试 |
+| FVM + Flutter stable | `apps/volward`（见 `.fvmrc`） |
+| `protoc` | `volward-facade` / index protobuf 生成 |
+| macOS：Xcode + Apple ID | Debug 签名与 TCC 联调 |
+
+### 仓库结构
 
 ```text
 volward/
-├── crates/volward-core      # 扫描、分类、删除、快照等核心逻辑
-├── crates/platform-desktop  # 桌面平台相关能力
-├── crates/volward-facade    # Flutter 调用的 Rust 桥接层
-├── crates/volward-cli       # 命令行工具
-├── apps/volward             # Flutter 桌面应用（Home + Settings）
-│   ├── lib/                 # UI 和应用状态
-│   └── macos/build_rust.sh  # 本地构建脚本
-└── rules/desktop.yaml       # 分类规则
+├── apps/volward/              # Flutter 桌面应用（见 apps/volward/README.md 模块表）
+├── apps/website/              # 产品官网
+├── crates/
+│   ├── volward-core/          # ScanOrchestrator、SnapshotIndex、分类、删除
+│   ├── volward-index-pb/      # index protobuf 编解码与原子写盘
+│   ├── volward-facade/        # VolwardEngine + C API
+│   ├── volward-ai/            # AI 协议与请求
+│   ├── platform-desktop/      # jwalk 并行 walk、FDA 探测、quick_list
+│   └── volward-cli/           # smoke / scan-bench
+├── server/                    # volward-platform-api（Platform AI / 计费等）
+├── proto/volward.proto
+├── rules/desktop.yaml         # Tier-1 分类规则
+├── rules/os_knowledge.yaml    # Tier-2 OS 知识库
+└── scripts/                   # setup、test_core、发布
 ```
 
-## 安装 / 下载
+### 快速开始
 
-从 [GitHub Releases](https://github.com/ZakAnun/volward/releases/latest) 下载最新版本（当前为 **v0.0.3**）：
-
-| 平台 | 文件 | 安装方式 |
-|------|------|----------|
-| macOS (Apple Silicon) | `volward-*-macos-arm64.zip` | 解压后拖入 `/Applications`，首次打开：右键 → 打开 |
-| macOS (Intel) | `volward-*-macos-x64.zip` | 同上 |
-| Windows | `VolwardSetup-*-windows-x64.exe` | 运行安装器，按提示安装后从开始菜单启动 |
-| Linux (recommended) | `Volward-v*-linux-x86_64.AppImage` | `chmod +x` 后双击或直接运行 |
-| Linux (portable) | `volward-*-linux-x64.tar.gz` | 解压后运行 `bundle/volward` |
-
-所有 release 资产都会附带对应的 `.sha256` 校验文件；应用内更新会验证后再安装。`.sha256` 文件本身不用来运行。
-
-### 首次运行绕过系统警告
-
-macOS 未签名应用：
+**macOS（日常推荐）**
 
 ```bash
-# 方式一：右键点击 volward.app → 打开（不要双击）
-# 方式二：终端移除隔离标记
-xattr -cr /Applications/volward.app
-```
-
-Windows SmartScreen 警告：点击「更多信息」→「仍要运行」。
-
-Linux：AppImage 首次运行前需要授予执行权限；tar.gz 版本解压即用。
-
-## 环境要求
-
-- macOS + Xcode，并在 Xcode -> Settings -> Accounts 登录自己的 Apple ID（用于 Debug 签名）。
-- Rust stable，`~/.cargo/bin` 在 PATH 中；也可由 setup 脚本安装。
-- FVM + Flutter stable，`apps/volward` 锁定 stable；也可由 setup 脚本安装。
-- `protoc`，可通过 `brew install protobuf` 安装；Rust facade 的 `build.rs` 需要它，也可由 setup 脚本安装。
-
-## 快速开始（macOS）
-
-```bash
-# 1) 首次：在仓库根目录执行（请先完成上面的 Xcode Apple ID 登录）
+# 首次：Xcode → Settings → Accounts 登录 Apple ID
 bash scripts/setup_macos.sh
 
-# 2) 日常开发 / 运行
 cd apps/volward
+fvm use stable          # 与 .fvmrc 对齐
 bash scripts/run_macos_debug.sh
+```
 
-# 如需手动分步（均从仓库根目录开始）
+`run_macos_debug.sh` 会：校验 Debug 签名配置 → `build_rust.sh` → `fvm flutter run -d macos`。  
+可选 `--dart-define=VOLWARD_API_BASE=...`（默认 `https://api.volwardapp.com/v1`）。
+
+**Linux**
+
+```bash
+cd apps/volward
+fvm use stable
+bash scripts/run_linux_debug.sh   # 需 Linux 本机；会先 cargo build -p volward-facade
+```
+
+**Windows**
+
+```bash
+# 在 Windows 的 Git Bash / MSYS2 中（脚本会拒绝 WSL/macOS 的 uname）
+cd apps/volward
+bash scripts/run_windows_debug.sh
+```
+
+**Rust 变更后** 必须重新编译 native 库再跑 Flutter：
+
+```bash
+# macOS
+cd apps/volward/macos && bash build_rust.sh
+# Linux / Windows debug 脚本内已包含 cargo build -p volward-facade
+```
+
+**手动分步（macOS）**
+
+```bash
 cd apps/volward/macos && bash build_rust.sh
 cd ..
-fvm install stable    # 首次（setup 已做过可跳过）
-fvm use stable
 fvm flutter pub get
 fvm flutter run -d macos
 ```
 
-`setup_macos.sh` 会帮你检查环境、安装依赖并完成本地构建准备。
+### 扫描架构
 
-Rust 或相关桥接变更后，请重新构建再启动。
-
-## 网络代理（可选）
-
-构建若遇 crates.io / pub 超时，可设置代理。
-
-```bash
-export http_proxy=http://127.0.0.1:7890
-export https_proxy=http://127.0.0.1:7890
-export HTTP_PROXY=$http_proxy
-export HTTPS_PROXY=$https_proxy
+```text
+VolwardSession (Dart, main isolate 轮询进度 ~300ms)
+  → startScanAsyncWithOptions(incremental)
+      → VolwardEngine：1× std::thread 跑 run_index_scan
+          → DesktopPlatform.walk_entries
+              jwalk + Rayon 专用线程池（默认 min(CPU, 8)，至少 2）
+          → SnapshotIndexBuilder
+          → 完成：snapshots/{hash}.pb + manifests/{hash}.json
 ```
 
-## 验证
-
-```bash
-# Rust
-export CARGO_TARGET_DIR="$(pwd)/target"
-bash scripts/test_core.sh rust
-cargo run -p volward-cli              # 等价于 volward-cli smoke
-cargo run -p volward-cli -- scan-bench # 可选性能基准
-
-# Flutter
-cd apps/volward
-bash ../../scripts/test_core.sh flutter
-fvm flutter run -d macos
-```
-
-## 数据目录
-
-| 路径 | 说明 |
+| 环节 | 并发 |
 |------|------|
-| `~/Library/Application Support/Volward/manifests/` | 扫描 manifest，含 snapshot / index 路径与目录指纹 |
-| `~/Library/Application Support/Volward/snapshots/` | 持久化 snapshot / catalog index |
-| `~/Library/Application Support/Volward/settings.json` | 主题、accent、语言、增量扫描等偏好 |
+| 目录 walk | 默认 **2–8** 线程（`VOLWARD_SCAN_THREADS=1..32` 可覆盖） |
+| 扫描任务 | **1** 个 Rust OS 线程（分类/index 在 walk 回调中串行处理） |
+| Index restore | **1** 个 Rust worker（`start_load_index_from_path_async`） |
+| Peek 子树 | Dart **Isolate**（`volwardPeekScanIsolate`） |
+| 旧路径全量扫 | Dart Isolate + 独立 engine（无 Index API 时 fallback） |
 
-测试可通过环境变量 `VOLWARD_CACHE_DIR` 指向临时目录。
+当前 release 构建均带 Index API，**主扫描路径不再走 Isolate**。
+
+### 验证与诊断
+
+```bash
+# curated 核心回归（与 CI 接近的子集）
+bash scripts/test_core.sh          # rust + flutter
+bash scripts/test_core.sh rust
+bash scripts/test_core.sh flutter
+
+# 更广覆盖
+cargo test                         # 全 workspace
+cd apps/volward && fvm flutter test
+
+# CLI
+cargo run -p volward-cli              # smoke（空 root 快速扫）
+cargo run -p volward-cli -- scan-bench [--root PATH] [--entries N]
+```
+
+修改 `lib/l10n/app_*.arb` 后：
+
+```bash
+cd apps/volward && fvm flutter gen-l10n
+# 提交 generated/ 下的 app_localizations*.dart
+```
+
+提交前建议：`bash scripts/install_git_hooks.sh`（pre-commit 含 dart format）。
+
+### 常见环境变量
+
+| 变量 | 作用 |
+|------|------|
+| `VOLWARD_CACHE_DIR` | 覆盖缓存根目录 |
+| `VOLWARD_SCAN_THREADS` | walk 并行线程数（1–32） |
+| `VOLWARD_API_BASE` | Debug 时 Platform API 地址 |
+| `VOLWARD_RULES_PATH` | 覆盖 `rules/desktop.yaml` 路径 |
+
+### 贡献建议
+
+1. 改动后跑相关测试：`bash scripts/test_core.sh` 或 targeted `cargo test -p …` / `fvm flutter test test/…dart`。
+2. Rust：`cargo fmt`；Dart：`bash scripts/check_dart_format.sh`。
+3. UI 文案改 ARB 并 `gen-l10n`。
+4. PR 请说明用户可见行为；较大改动可先开 Issue。
+
+---
 
 ## 当前状态
 
-Volward 现在已经能完成一条完整的日常流程：选目录、快速预览、边扫边看、筛选出可删项、移入废纸篓、再刷新结果。macOS 上验证最完整；Windows / Linux 已随 [v0.0.2](https://github.com/ZakAnun/volward/releases/tag/v0.0.2) 提供安装包，并从该版本起支持应用内更新。
+**主路径（已可用）：** 预览 → 扫描或缓存 restore → 多列浏览 → 筛选 → 废纸篓删除 → 按 root 切换与恢复 → 应用内更新 → AI Analyze（可选）。
 
-还留着一些预留能力和分发工作：
+**扫描分类（`classify.rs` / 筛选栏）：**
 
-- `AppData` / `Orphan` / `Duplicate` 目前还是预留分类。
-- 正式分发还需要补齐签名、Notarization，以及 Windows / Linux 的更完整联调。
+| 分类 | 扫描期行为 | 浏览筛选 |
+|------|------------|----------|
+| Cache / Temp | 低风险，文件默认可删 | 有独立 chip |
+| Media | 媒体/安装包扩展名，默认不可删 | 有 |
+| System | 受保护路径，不可删 | 有 |
+| BuildArtifact | 如 `node_modules`、DerivedData，可删 | **无独立 chip**（仍计入 catalog） |
+| AppData / Orphan / Duplicate | 枚举预留 | 无；重复等见 Capability 分析器 |
 
-## 设计文档
+**已知限制：** macOS 正式签名/Notarization 未完成；超大规模 home（数十万 catalog 条目）restore 后首屏渲染仍偏重；Windows/Linux 联调深度低于 macOS。
 
-设计与计划文档见 `docs/superpowers/`（本地参考；下表为 README 汇总状态）：
+---
 
-| 主题 | Spec | 状态 |
-|------|------|------|
-| MVP 闭环 | `specs/2026-05-29-mvp-closure-design.md` | 已实现 |
-| Finder 全量树 | `specs/2026-07-23-scan-tree-finder-design.md` | 已实现 v2 |
-| 全盘扫描性能 / 增量 | `specs/2026-07-23-full-scan-performance-design.md` | 已实现 P1 + P2（F0 bench；P0 Release 排除） |
-| 渐进式扫描 | `specs/2026-07-24-progressive-scan-design.md` | 已实现 Wave 1 + Wave 2 |
-| 单份快照 + 增量视图 | `specs/2026-07-29-single-snapshot-incremental-view-design.md` | 已实现（catalog/query 层） |
-| 中英 i18n | `specs/2026-07-30-volward-i18n-design.md` | 已实现 |
-| macOS Debug 签名 / TCC | `specs/2026-07-30-macos-debug-signing-tcc-design.md` | 已实现（分发未做） |
-| Catalog 当前目录刷新 | `specs/2026-07-31-catalog-backed-current-directory-refresh-design.md` | 已实现 |
-| 应用内更新 | `specs/2026-08-10-in-app-updater-design.md` | 已实现（v0.0.2+） |
+## 许可证
+
+Workspace crate 声明 **MIT**（见根目录 `Cargo.toml`）。
