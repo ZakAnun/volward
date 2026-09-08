@@ -27,6 +27,7 @@ use volward_core::{
     SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
 };
 
+use crate::pb_convert::snapshot_index_from_proto;
 use crate::proto;
 
 const MAX_CONCURRENT_CAPABILITY_JOBS: usize = 4;
@@ -464,6 +465,15 @@ impl VolwardEngine {
     }
 
     fn read_index_or_legacy_snapshot(path: &str) -> Result<SnapshotIndex, String> {
+        if path.ends_with(".pb") {
+            use prost::Message;
+
+            let bytes = std::fs::read(path).map_err(|e| format!("error:read pb: {e}"))?;
+            let msg = proto::SnapshotIndex::decode(bytes.as_slice())
+                .map_err(|e| format!("error:decode pb index: {e}"))?;
+            return snapshot_index_from_proto(msg);
+        }
+
         let file = File::open(path).map_err(|e| format!("error:open index: {e}"))?;
         Ok(match serde_json::from_reader::<_, SnapshotIndex>(file) {
             Ok(index) => index,
@@ -2043,6 +2053,34 @@ mod tests {
     }
 
     #[test]
+    fn load_index_from_path_accepts_pb_index() {
+        use prost::Message;
+
+        use crate::pb_convert::snapshot_index_to_proto;
+
+        let index = SnapshotIndex::from(&minimal_snapshot());
+        let expected_id = index.snapshot_id.clone();
+        let path = std::env::temp_dir().join(format!(
+            "volward-pb-index-{}.pb",
+            std::process::id()
+        ));
+
+        let pb = snapshot_index_to_proto(&index);
+        std::fs::write(&path, pb.encode_to_vec()).expect("write pb index");
+
+        let engine = VolwardEngine::new();
+        engine
+            .load_index_from_path(&path.to_string_lossy())
+            .expect("pb index should load");
+        let summary_json = engine
+            .get_index_summary_json()
+            .expect("index summary should exist");
+        assert!(summary_json.contains(&expected_id));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn load_index_from_path_accepts_legacy_snapshot_json() {
         let snapshot = minimal_snapshot();
         let expected_id = snapshot.snapshot_id.clone();
@@ -2132,6 +2170,39 @@ mod tests {
         assert!(report.contains(r#""freed_bytes":40"#), "{report}");
         assert!(!report.contains(r#""error""#), "{report}");
         let _ = users_path;
+    }
+
+    #[test]
+    fn async_load_index_from_path_accepts_pb_index() {
+        use prost::Message;
+
+        use crate::pb_convert::snapshot_index_to_proto;
+
+        let index = SnapshotIndex::from(&minimal_snapshot());
+        let expected_id = index.snapshot_id.clone();
+        let path = std::env::temp_dir().join(format!(
+            "volward-async-pb-index-{}.pb",
+            std::process::id()
+        ));
+
+        let pb = snapshot_index_to_proto(&index);
+        std::fs::write(&path, pb.encode_to_vec()).expect("write pb index");
+
+        let engine = VolwardEngine::new();
+        assert_eq!(
+            engine.start_load_index_from_path_async(path.to_string_lossy().into_owned()),
+            "ok"
+        );
+        while engine.is_index_loading() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(engine.get_last_index_load_error().is_none());
+        let summary_json = engine
+            .get_index_summary_json()
+            .expect("index summary should exist");
+        assert!(summary_json.contains(&expected_id));
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
