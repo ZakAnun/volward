@@ -104,6 +104,11 @@ impl StringTable {
         self.lookup.shrink_to_fit();
     }
 
+    /// Clone interned strings in ID order (for wire export).
+    pub(crate) fn clone_strings(&self) -> Vec<Box<str>> {
+        self.strings.clone()
+    }
+
     /// Iterate over all interned strings in ID order.
     pub fn iter(&self) -> impl Iterator<Item = (u32, &str)> + '_ {
         self.strings

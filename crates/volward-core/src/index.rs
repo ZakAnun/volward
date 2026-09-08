@@ -99,30 +99,30 @@ pub struct SnapshotIndexSummary {
 
 /// Internal directory record — all string fields interned to u32 IDs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct DirectoryRecord {
-    parent: Option<u32>,
-    name: u32,
-    size_bytes: u64,
-    scanned: bool,
-    peek_scanned: bool,
-    category_mask: u64,
-    deletable_category_mask: u64,
-    deletable_file_count: u64,
+pub struct DirectoryRecord {
+    pub parent: Option<u32>,
+    pub name: u32,
+    pub size_bytes: u64,
+    pub scanned: bool,
+    pub peek_scanned: bool,
+    pub category_mask: u64,
+    pub deletable_category_mask: u64,
+    pub deletable_file_count: u64,
 }
 
 /// Internal entry record — all string fields interned to u32 IDs.
 /// Converted to `SnapshotEntryRecord` (String fields) at query boundaries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EntryRecord {
-    id: u32,
-    path: u32,
-    parent_path: u32,
-    display_name: u32,
-    size_bytes: u64,
-    category: u32,
-    deletable: bool,
+pub struct EntryRecord {
+    pub id: u32,
+    pub path: u32,
+    pub parent_path: u32,
+    pub display_name: u32,
+    pub size_bytes: u64,
+    pub category: u32,
+    pub deletable: bool,
     #[serde(default)]
-    modified_at_ms: Option<i64>,
+    pub modified_at_ms: Option<i64>,
 }
 
 /// Public-facing directory record (exposed via `directory_record()`).
@@ -221,7 +221,7 @@ impl<'de> Deserialize<'de> for SnapshotIndex {
         D: serde::Deserializer<'de>,
     {
         use serde::de::Error;
-        let s = SnapshotIndexSerde::deserialize(deserializer)?;
+        let s = SnapshotIndexWire::deserialize(deserializer)?;
         if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 && s.format_version != 5 {
             return Err(D::Error::custom(format!(
                 "unsupported SnapshotIndex format_version {} (expected 2, 3, 4, or 5)",
@@ -269,32 +269,32 @@ impl<T: Serialize> Serialize for TupleMapEntries<'_, T> {
     }
 }
 
-/// Shadow struct for compact serialization.
-#[derive(Serialize, Deserialize)]
-struct SnapshotIndexSerde {
-    format_version: u32,
-    snapshot_id: String,
-    root_path: String,
-    scanned_at_ms: i64,
-    version: u64,
-    scan_state: String,
-    reclaimable_estimate_bytes: u64,
+/// Wire/export DTO for compact persistence (JSON v5 and protobuf).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotIndexWire {
+    pub format_version: u32,
+    pub snapshot_id: String,
+    pub root_path: String,
+    pub scanned_at_ms: i64,
+    pub version: u64,
+    pub scan_state: String,
+    pub reclaimable_estimate_bytes: u64,
     #[serde(default)]
-    stats: ScanStats,
-    strings: Vec<Box<str>>,
-    root_id: u32,
-    directories: Vec<(u32, DirectoryRecord)>,
-    entries: Vec<(u32, EntryRecord)>,
-    entry_id_by_path: Vec<(u32, u32)>,
+    pub stats: ScanStats,
+    pub strings: Vec<Box<str>>,
+    pub root_id: u32,
+    pub directories: Vec<(u32, DirectoryRecord)>,
+    pub entries: Vec<(u32, EntryRecord)>,
+    pub entry_id_by_path: Vec<(u32, u32)>,
     #[serde(default)]
-    file_size_by_path: Vec<(u32, u64)>,
-    children: Vec<(u32, Vec<u32>)>,
-    category_counts: HashMap<String, u64>,
-    deletable_counts: HashMap<String, u64>,
+    pub file_size_by_path: Vec<(u32, u64)>,
+    pub children: Vec<(u32, Vec<u32>)>,
+    pub category_counts: HashMap<String, u64>,
+    pub deletable_counts: HashMap<String, u64>,
 }
 
-impl From<SnapshotIndexSerde> for SnapshotIndex {
-    fn from(s: SnapshotIndexSerde) -> Self {
+impl From<SnapshotIndexWire> for SnapshotIndex {
+    fn from(s: SnapshotIndexWire) -> Self {
         let table = StringTable::from_strings(s.strings);
         let mut index = Self {
             snapshot_id: s.snapshot_id,
@@ -316,6 +316,56 @@ impl From<SnapshotIndexSerde> for SnapshotIndex {
         };
         index.compact_storage();
         index
+    }
+}
+
+impl SnapshotIndex {
+    /// Export a wire DTO for protobuf/compact persistence encoders.
+    pub fn to_wire(&self) -> SnapshotIndexWire {
+        SnapshotIndexWire {
+            format_version: 5,
+            snapshot_id: self.snapshot_id.clone(),
+            root_path: self.root_path.clone(),
+            scanned_at_ms: self.scanned_at_ms,
+            version: self.version,
+            scan_state: self.scan_state.clone(),
+            reclaimable_estimate_bytes: self.reclaimable_estimate_bytes,
+            stats: self.stats.clone(),
+            strings: self.table.clone_strings(),
+            root_id: self.root_id,
+            directories: self
+                .directory_by_id
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect(),
+            entries: self
+                .entry_by_id
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect(),
+            entry_id_by_path: self
+                .entry_id_by_path
+                .iter()
+                .map(|(k, v)| (*k, *v))
+                .collect(),
+            file_size_by_path: self
+                .file_size_by_path
+                .iter()
+                .map(|(k, v)| (*k, *v))
+                .collect(),
+            children: self
+                .children_by_id
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect(),
+            category_counts: self.category_counts.clone(),
+            deletable_counts: self.deletable_counts.clone(),
+        }
+    }
+
+    /// Import from a wire DTO (calls `compact_storage` internally).
+    pub fn from_wire(wire: SnapshotIndexWire) -> Self {
+        Self::from(wire)
     }
 }
 

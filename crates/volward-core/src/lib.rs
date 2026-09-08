@@ -45,8 +45,8 @@ pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;
 pub use delete::DeleteOrchestrator;
 pub use index::{
-    SnapshotDirectoryRecord, SnapshotEntryRecord, SnapshotIndex, SnapshotIndexBuilder,
-    SnapshotNodeRecord, SnapshotQueryResult,
+    DirectoryRecord, EntryRecord, SnapshotDirectoryRecord, SnapshotEntryRecord, SnapshotIndex,
+    SnapshotIndexBuilder, SnapshotIndexWire, SnapshotNodeRecord, SnapshotQueryResult,
 };
 pub use model::*;
 pub use platform::{PlatformError, PlatformStorage, WalkAction, WalkOptions};

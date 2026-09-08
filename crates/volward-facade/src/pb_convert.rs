@@ -5,12 +5,17 @@
 //! how prost happens to name those variants — the wire numbers are fixed by
 //! `proto/volward.proto` and mirrored here.
 //!
-//! Only encode (model -> proto) is implemented for now. Decode (proto -> model,
-//! needed for `set_last_snapshot` / delete round-trips) lands in a later phase.
+//! `StorageSnapshot` encode-only was the initial scope; `SnapshotIndex`
+//! encode/decode round-trips through the wire DTO exported by `volward-core`.
 
 use volward_core::model;
+use volward_core::{
+    DirectoryRecord, EntryRecord, SnapshotIndex, SnapshotIndexWire,
+};
 
 use crate::proto;
+
+const SNAPSHOT_INDEX_FORMAT_VERSION: u32 = 5;
 
 // --- enum -> proto field number (keep in sync with proto/volward.proto) ---
 
@@ -120,6 +125,224 @@ impl From<&model::StorageSnapshot> for proto::StorageSnapshot {
     }
 }
 
+// --- SnapshotIndex wire conversions ---
+
+fn directory_record_to_proto(rec: &DirectoryRecord) -> proto::IndexDirectoryRecord {
+    proto::IndexDirectoryRecord {
+        parent: rec.parent,
+        name: rec.name,
+        size_bytes: rec.size_bytes,
+        scanned: rec.scanned,
+        peek_scanned: rec.peek_scanned,
+        category_mask: rec.category_mask,
+        deletable_category_mask: rec.deletable_category_mask,
+        deletable_file_count: rec.deletable_file_count,
+    }
+}
+
+fn directory_record_from_proto(rec: proto::IndexDirectoryRecord) -> DirectoryRecord {
+    DirectoryRecord {
+        parent: rec.parent,
+        name: rec.name,
+        size_bytes: rec.size_bytes,
+        scanned: rec.scanned,
+        peek_scanned: rec.peek_scanned,
+        category_mask: rec.category_mask,
+        deletable_category_mask: rec.deletable_category_mask,
+        deletable_file_count: rec.deletable_file_count,
+    }
+}
+
+fn entry_record_to_proto(rec: &EntryRecord) -> proto::IndexEntryRecord {
+    proto::IndexEntryRecord {
+        id: rec.id,
+        path: rec.path,
+        parent_path: rec.parent_path,
+        display_name: rec.display_name,
+        size_bytes: rec.size_bytes,
+        category: rec.category,
+        deletable: rec.deletable,
+        modified_at_ms: rec.modified_at_ms,
+    }
+}
+
+fn entry_record_from_proto(rec: proto::IndexEntryRecord) -> EntryRecord {
+    EntryRecord {
+        id: rec.id,
+        path: rec.path,
+        parent_path: rec.parent_path,
+        display_name: rec.display_name,
+        size_bytes: rec.size_bytes,
+        category: rec.category,
+        deletable: rec.deletable,
+        modified_at_ms: rec.modified_at_ms,
+    }
+}
+
+fn wire_to_proto(wire: &SnapshotIndexWire) -> proto::SnapshotIndex {
+    proto::SnapshotIndex {
+        format_version: wire.format_version,
+        snapshot_id: wire.snapshot_id.clone(),
+        root_path: wire.root_path.clone(),
+        scanned_at_ms: wire.scanned_at_ms,
+        version: wire.version,
+        scan_state: wire.scan_state.clone(),
+        reclaimable_estimate_bytes: wire.reclaimable_estimate_bytes,
+        stats: Some(proto::ScanStats::from(&wire.stats)),
+        strings: wire.strings.iter().map(|s| s.to_string()).collect(),
+        root_id: wire.root_id,
+        directories: wire
+            .directories
+            .iter()
+            .map(|(id, record)| proto::IndexDirectoryMapEntry {
+                id: *id,
+                record: Some(directory_record_to_proto(record)),
+            })
+            .collect(),
+        entries: wire
+            .entries
+            .iter()
+            .map(|(id, record)| proto::IndexEntryMapEntry {
+                id: *id,
+                record: Some(entry_record_to_proto(record)),
+            })
+            .collect(),
+        entry_id_by_path: wire
+            .entry_id_by_path
+            .iter()
+            .map(|(key, value)| proto::IndexU32Pair {
+                key: *key,
+                value: *value,
+            })
+            .collect(),
+        file_size_by_path: wire
+            .file_size_by_path
+            .iter()
+            .map(|(key, value)| proto::IndexU32u64Pair {
+                key: *key,
+                value: *value,
+            })
+            .collect(),
+        children: wire
+            .children
+            .iter()
+            .map(|(key, child_ids)| proto::IndexChildrenEntry {
+                key: *key,
+                child_ids: child_ids.clone(),
+            })
+            .collect(),
+        category_counts: wire
+            .category_counts
+            .iter()
+            .map(|(key, value)| proto::IndexStringCountEntry {
+                key: key.clone(),
+                value: *value,
+            })
+            .collect(),
+        deletable_counts: wire
+            .deletable_counts
+            .iter()
+            .map(|(key, value)| proto::IndexStringCountEntry {
+                key: key.clone(),
+                value: *value,
+            })
+            .collect(),
+    }
+}
+
+fn wire_from_proto(msg: proto::SnapshotIndex) -> Result<SnapshotIndexWire, String> {
+    if msg.format_version != SNAPSHOT_INDEX_FORMAT_VERSION {
+        return Err(format!(
+            "unsupported SnapshotIndex format_version {} (expected {})",
+            msg.format_version, SNAPSHOT_INDEX_FORMAT_VERSION
+        ));
+    }
+    if msg.root_id as usize >= msg.strings.len() {
+        return Err(format!(
+            "invalid SnapshotIndex root_id {} for {} strings",
+            msg.root_id,
+            msg.strings.len()
+        ));
+    }
+
+    Ok(SnapshotIndexWire {
+        format_version: msg.format_version,
+        snapshot_id: msg.snapshot_id,
+        root_path: msg.root_path,
+        scanned_at_ms: msg.scanned_at_ms,
+        version: msg.version,
+        scan_state: msg.scan_state,
+        reclaimable_estimate_bytes: msg.reclaimable_estimate_bytes,
+        stats: msg
+            .stats
+            .map(|s| model::ScanStats {
+                paths_seen: s.paths_seen,
+                dirs_seen: s.dirs_seen,
+                files_seen: s.files_seen,
+                files_in_snapshot: s.files_in_snapshot,
+                paths_skipped: s.paths_skipped,
+                truncated: s.truncated,
+                incomplete_reason: s.incomplete_reason,
+            })
+            .unwrap_or_default(),
+        strings: msg.strings.into_iter().map(String::into_boxed_str).collect(),
+        root_id: msg.root_id,
+        directories: msg
+            .directories
+            .into_iter()
+            .map(|entry| {
+                let record = entry
+                    .record
+                    .ok_or_else(|| format!("missing directory record for id {}", entry.id))?;
+                Ok((entry.id, directory_record_from_proto(record)))
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+        entries: msg
+            .entries
+            .into_iter()
+            .map(|entry| {
+                let record = entry
+                    .record
+                    .ok_or_else(|| format!("missing entry record for id {}", entry.id))?;
+                Ok((entry.id, entry_record_from_proto(record)))
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+        entry_id_by_path: msg
+            .entry_id_by_path
+            .into_iter()
+            .map(|pair| (pair.key, pair.value))
+            .collect(),
+        file_size_by_path: msg
+            .file_size_by_path
+            .into_iter()
+            .map(|pair| (pair.key, pair.value))
+            .collect(),
+        children: msg
+            .children
+            .into_iter()
+            .map(|entry| (entry.key, entry.child_ids))
+            .collect(),
+        category_counts: msg
+            .category_counts
+            .into_iter()
+            .map(|entry| (entry.key, entry.value))
+            .collect(),
+        deletable_counts: msg
+            .deletable_counts
+            .into_iter()
+            .map(|entry| (entry.key, entry.value))
+            .collect(),
+    })
+}
+
+pub fn snapshot_index_to_proto(index: &SnapshotIndex) -> proto::SnapshotIndex {
+    wire_to_proto(&index.to_wire())
+}
+
+pub fn snapshot_index_from_proto(msg: proto::SnapshotIndex) -> Result<SnapshotIndex, String> {
+    Ok(SnapshotIndex::from_wire(wire_from_proto(msg)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +350,7 @@ mod tests {
         CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SourceType,
         StorageEntry, StorageSnapshot,
     };
+    use volward_core::SnapshotIndex;
 
     fn sample() -> StorageSnapshot {
         StorageSnapshot {
@@ -194,5 +418,54 @@ mod tests {
         let decoded = proto::StorageSnapshot::decode(bytes.as_slice()).expect("decode");
         assert_eq!(decoded.snapshot_id, "s1");
         assert_eq!(decoded.tree.unwrap().children[0].path, "/tmp/file");
+    }
+
+    fn minimal_snapshot() -> StorageSnapshot {
+        StorageSnapshot {
+            snapshot_id: "test-snap".to_string(),
+            scanned_at_ms: 1,
+            capability: CapabilityLevel::FullPath,
+            volume_total_bytes: 100,
+            volume_used_bytes: 50,
+            reclaimable_estimate_bytes: 10,
+            entries: vec![StorageEntry {
+                id: "e1".to_string(),
+                display_name: "file".to_string(),
+                path_or_uri: "/tmp/file".to_string(),
+                size_bytes: 10,
+                category: EntryCategory::Cache,
+                risk_level: RiskLevel::Low,
+                source_type: SourceType::File,
+                deletable: true,
+                reason: "test".to_string(),
+                modified_at_ms: None,
+            }],
+            tree: ScanTreeNode {
+                name: "root".to_string(),
+                path: "/".to_string(),
+                is_dir: true,
+                size_bytes: 10,
+                entry_id: None,
+                children: vec![],
+            },
+            stats: ScanStats::default(),
+            warnings: vec![],
+        }
+    }
+
+    #[test]
+    fn snapshot_index_pb_roundtrip_matches_summary() {
+        use prost::Message;
+
+        let index = SnapshotIndex::from(&minimal_snapshot());
+        let pb = snapshot_index_to_proto(&index);
+        assert_eq!(pb.format_version, SNAPSHOT_INDEX_FORMAT_VERSION);
+        let bytes = pb.encode_to_vec();
+        let decoded = proto::SnapshotIndex::decode(bytes.as_slice()).unwrap();
+        let restored = snapshot_index_from_proto(decoded).unwrap();
+        assert_eq!(
+            restored.summary_json().unwrap(),
+            index.summary_json().unwrap()
+        );
     }
 }
