@@ -1,8 +1,10 @@
 # Volward
 
+[![GitHub release](https://img.shields.io/github/v/release/ZakAnun/volward?label=release)](https://github.com/ZakAnun/volward/releases/latest)
+
 跨平台桌面存储管家：更快找出占空间的文件，先预览、再浏览、最后安全删除。
 
-**官网：** [volwardapp.com](https://www.volwardapp.com) · **下载：** [GitHub Releases](https://github.com/ZakAnun/volward/releases/latest)（当前 **v0.0.6**）
+**官网：** [volwardapp.com](https://www.volwardapp.com) · **下载：** [GitHub Releases（latest）](https://github.com/ZakAnun/volward/releases/latest)
 
 > macOS 上验证最完整；Windows / Linux 已提供正式安装包与应用内更新。
 
