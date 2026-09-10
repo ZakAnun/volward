@@ -1,0 +1,69 @@
+---
+import type { HeroDashboardCopy } from '../../lib/site';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  logoSrc: string;
+  /** Home dashboard: sidebar + panels only (matches StorageStewardHome). */
+  layout?: 'home' | 'chrome';
+}
+
+const { dashboard, logoSrc, layout = 'chrome' } = Astro.props;
+---
+
+<div class={`tour-app-frame ${layout === 'home' ? 'tour-app-frame--home' : ''}`}>
+  {layout !== 'home' && (
+    <div class="hero-topbar">
+      <div class="hero-topbar-brand">
+        <img src={logoSrc} alt="" />
+        <span>Volward</span>
+      </div>
+      <div class="hero-topbar-actions">
+        <div class="hero-volume-chip">
+          <span class="hero-chip-icon hero-chip-storage"></span>
+          <span>{dashboard.volumeName}</span>
+          <span class="hero-chip-caret"></span>
+        </div>
+        <div class="hero-topbar-chip">
+          <span class="hero-chip-icon hero-chip-folder"></span>
+          <span>{dashboard.chooseFolder}</span>
+        </div>
+        <div class="hero-settings-dot"></div>
+      </div>
+    </div>
+  )}
+
+  <div class="hero-board tour-app-board">
+    <aside class="hero-sidebar">
+      <div class="hero-logo-wrap">
+        <img src={logoSrc} alt="" />
+      </div>
+      <div class="hero-sidebar-list">
+        <div class="hero-sidebar-item hero-sidebar-item-active">
+          <span class="hero-target-icon hero-target-home"></span>
+          <span>{dashboard.targets.home}</span>
+        </div>
+        <div class="hero-sidebar-item">
+          <span class="hero-target-icon hero-target-apps"></span>
+          <span>{dashboard.targets.applications}</span>
+        </div>
+        <div class="hero-sidebar-item">
+          <span class="hero-target-icon hero-target-desktop"></span>
+          <span>{dashboard.targets.desktop}</span>
+        </div>
+        <div class="hero-sidebar-item">
+          <span class="hero-target-icon hero-target-downloads"></span>
+          <span>{dashboard.targets.downloads}</span>
+        </div>
+        <div class="hero-sidebar-item">
+          <span class="hero-target-icon hero-target-docs"></span>
+          <span>{dashboard.targets.documents}</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="tour-app-main">
+      <slot />
+    </div>
+  </div>
+</div>

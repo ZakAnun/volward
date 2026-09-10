@@ -1,0 +1,77 @@
+---
+import AppMockupShell from './AppMockupShell.astro';
+import TourAppFrame from './TourAppFrame.astro';
+import TourBrowseFrame from './TourBrowseFrame.astro';
+import MockupHomeOverview from './MockupHomeOverview.astro';
+import MockupBrowseState from './MockupBrowseState.astro';
+import MockupFilterState from './MockupFilterState.astro';
+import MockupCleanState from './MockupCleanState.astro';
+import type { HeroDashboardCopy, ProductTourMockupLabels } from '../../lib/site';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  labels: ProductTourMockupLabels;
+  logoSrc: string;
+}
+
+const { dashboard, labels, logoSrc } = Astro.props;
+---
+
+<div class="tour-mockup-states">
+  <div class="tour-mockup-state" data-mockup-state="scan">
+    <AppMockupShell variant="home" class="tour-mockup-shell tour-mockup-shell--home">
+      <TourAppFrame dashboard={dashboard} logoSrc={logoSrc} layout="home">
+        <MockupHomeOverview
+          dashboard={dashboard}
+          scanningLabel={labels.scanning}
+          showScanningNote={true}
+        />
+      </TourAppFrame>
+    </AppMockupShell>
+  </div>
+
+  <div class="tour-mockup-state" data-mockup-state="browse">
+    <AppMockupShell variant="home" class="tour-mockup-shell tour-mockup-shell--browse">
+      <TourBrowseFrame
+        dashboard={dashboard}
+        labels={labels}
+        logoSrc={logoSrc}
+        activeFilter="all"
+        stickySummary={labels.stickyBrowseResults}
+        stickyMode="idle"
+      >
+        <MockupBrowseState />
+      </TourBrowseFrame>
+    </AppMockupShell>
+  </div>
+
+  <div class="tour-mockup-state" data-mockup-state="filter">
+    <AppMockupShell variant="home" class="tour-mockup-shell tour-mockup-shell--browse">
+      <TourBrowseFrame
+        dashboard={dashboard}
+        labels={labels}
+        logoSrc={logoSrc}
+        activeFilter="cache"
+        stickySummary={labels.stickyBrowseResults}
+        stickyMode="idle"
+      >
+        <MockupFilterState />
+      </TourBrowseFrame>
+    </AppMockupShell>
+  </div>
+
+  <div class="tour-mockup-state" data-mockup-state="clean">
+    <AppMockupShell variant="home" class="tour-mockup-shell tour-mockup-shell--browse">
+      <TourBrowseFrame
+        dashboard={dashboard}
+        labels={labels}
+        logoSrc={logoSrc}
+        activeFilter="all"
+        stickySummary={labels.stickySelected}
+        stickyMode="selected"
+      >
+        <MockupCleanState />
+      </TourBrowseFrame>
+    </AppMockupShell>
+  </div>
+</div>

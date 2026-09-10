@@ -1,0 +1,36 @@
+<script>
+  import { initHeroScrollBridge } from '../lib/hero-scroll';
+  import { initPreviewOrchestrator } from '../lib/preview-orchestrator';
+  import { initProductTour, prefersReducedMotion } from '../lib/product-tour';
+  import { trackTourStepView } from '../lib/website-analytics';
+
+  const hero = document.querySelector<HTMLElement>('[data-hero-landing]');
+  const features = document.getElementById('features');
+  const layer = document.querySelector<HTMLElement>('[data-app-preview-layer]');
+  const tourRoot = document.querySelector<HTMLElement>('[data-product-tour]');
+  const reducedMotion = prefersReducedMotion();
+
+  const cleanups: Array<() => void> = [];
+
+  if (hero && features) {
+    cleanups.push(initHeroScrollBridge({ hero, features, reducedMotion }));
+  }
+
+  if (hero && features && layer && tourRoot) {
+    cleanups.push(
+      initPreviewOrchestrator({ hero, features, layer, tourRoot, reducedMotion }),
+    );
+    cleanups.push(
+      initProductTour({
+        root: tourRoot,
+        onStepView: (step) => {
+          void trackTourStepView(step);
+        },
+      }),
+    );
+  }
+
+  document.addEventListener('astro:before-swap', () => cleanups.forEach((fn) => fn()), {
+    once: true,
+  });
+</script>
