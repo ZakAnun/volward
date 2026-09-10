@@ -1,10 +1,11 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Nav from '../components/Nav.astro';
+import AppPreviewLayer from '../components/AppPreviewLayer.astro';
 import Hero from '../components/Hero.astro';
-import Features from '../components/Features.astro';
+import HomePreviewBootstrap from '../components/HomePreviewBootstrap.astro';
+import ProductTour from '../components/ProductTour.astro';
 import ReleaseNotes from '../components/ReleaseNotes.astro';
-import DownloadCards from '../components/DownloadCards.astro';
 import Footer from '../components/Footer.astro';
 import { GITHUB_RELEASES_URL, PAGE_COPY } from '../lib/site';
 import { resolveDownloads } from '../lib/release-downloads';
@@ -13,7 +14,6 @@ import { resolveReleaseLogs } from '../lib/release-logs';
 const copy = PAGE_COPY.en;
 const downloads = await resolveDownloads('en', { logger: console });
 const releaseLogs = await resolveReleaseLogs('en', { logger: console });
-const heroMetaItems = downloads.map((item) => item.label);
 const canonical = new URL('./', Astro.site?.href ?? 'http://localhost:4321').href;
 ---
 
@@ -35,35 +35,26 @@ const canonical = new URL('./', Astro.site?.href ?? 'http://localhost:4321').hre
     logoSrc="/branding/volward-logo.svg"
   />
 
-  <main>
+  <main class="page-main">
     <Hero
       eyebrow={copy.heroEyebrow}
       title={copy.heroTitle}
       lead={copy.heroLead}
-      ctaPrimary={copy.ctaDownload}
-      ctaPrimaryHref="#download"
-      ctaSecondary={copy.ctaLearn}
-      ctaSecondaryHref="#features"
-      wordmarkSrc="/branding/volward-wordmark.png"
-      logoSrc="/branding/volward-logo.png"
-      dashboard={copy.heroDashboard}
-      metaItems={heroMetaItems}
-    />
-    <Features
-      title={copy.navFeatures}
-      subtitle={copy.featureSectionTitle}
-      lead={copy.featureSectionLead}
-      features={copy.features}
-    />
-    <DownloadCards
-      title={copy.downloadTitle}
-      lead={copy.downloadLead}
-      items={downloads}
+      scrollHint={copy.heroScrollHint}
+      featureTeasers={copy.productTour.steps}
+      downloads={downloads}
       latestHref={GITHUB_RELEASES_URL}
       latestLabel={copy.downloadAllReleases}
       downloadPlatformAriaLabel={copy.downloadPlatformAriaLabel}
     />
+    <AppPreviewLayer
+      dashboard={copy.heroDashboard}
+      labels={copy.productTour.mockupLabels}
+      logoSrc="/branding/volward-logo.png"
+    />
+    <ProductTour copy={copy.productTour} />
     <ReleaseNotes title={copy.releaseLogTitle} items={releaseLogs} />
+    <HomePreviewBootstrap />
   </main>
 
   <Footer copy={copy.footerCopy} versionText={copy.footerVersion} unsignedText={copy.footerUnsigned} version="" />

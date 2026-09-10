@@ -1,0 +1,66 @@
+---
+import MockupBrowseFilterBar from './MockupBrowseFilterBar.astro';
+import type { HeroDashboardCopy, ProductTourMockupLabels } from '../../lib/site';
+import type { MockupFilterCategory } from './MockupBrowseFilterBar.astro';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  labels: ProductTourMockupLabels;
+  logoSrc: string;
+  activeFilter?: MockupFilterCategory;
+  stickySummary: string;
+  stickyMode?: 'idle' | 'selected';
+}
+
+const {
+  dashboard,
+  labels,
+  logoSrc,
+  activeFilter = 'all',
+  stickySummary,
+  stickyMode = 'idle',
+} = Astro.props;
+---
+
+<div class="tour-browse-frame">
+  <div class="tour-browse-topbar">
+    <div class="tour-browse-topbar-brand">
+      <img src={logoSrc} alt="" />
+      <span>Volward</span>
+      <span class="tour-browse-topbar-dot">·</span>
+      <span class="tour-browse-topbar-sub">{labels.navSubtitle}</span>
+    </div>
+    <div class="hero-settings-dot"></div>
+  </div>
+
+  <div class="tour-browse-chrome">
+    <div class="tour-browse-toolbar">
+      <span class="tour-browse-toolbar-label">{labels.resultsSummary}</span>
+      <div class="tour-browse-toolbar-actions">
+        <span class="tour-browse-toolbar-meta">{labels.scanTargetHome}</span>
+        <span class="tour-browse-toolbar-icon" aria-hidden="true">↻</span>
+        <span class="tour-browse-toolbar-chip">{labels.scanActionFolder}</span>
+        <span class="tour-browse-toolbar-chip">{labels.scanActionHome}</span>
+      </div>
+    </div>
+    <MockupBrowseFilterBar dashboard={dashboard} labels={labels} activeFilter={activeFilter} />
+  </div>
+
+  <div class="tour-browse-body">
+    <slot />
+  </div>
+
+  <div class="tour-sticky-bar tour-sticky-bar--in-frame">
+    <span class="tour-sticky-summary">{stickySummary}</span>
+    <div class="tour-sticky-actions">
+      {stickyMode === 'selected' ? (
+        <>
+          <span class="tour-sticky-action-pearl">{labels.trashActionEmpty}</span>
+          <span class="tour-sticky-action">{labels.moveToTrash}</span>
+        </>
+      ) : (
+        <span class="tour-sticky-action-pearl">{labels.scanActionRescan}</span>
+      )}
+    </div>
+  </div>
+</div>

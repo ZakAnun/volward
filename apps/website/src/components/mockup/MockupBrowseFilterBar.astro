@@ -1,0 +1,28 @@
+---
+import type { HeroDashboardCopy, ProductTourMockupLabels } from '../../lib/site';
+
+export type MockupFilterCategory = 'all' | 'cache' | 'temp' | 'media' | 'system';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  labels: ProductTourMockupLabels;
+  activeFilter: MockupFilterCategory;
+}
+
+const { dashboard, labels, activeFilter } = Astro.props;
+
+const chips: Array<{ id: MockupFilterCategory; label: string }> = [
+  { id: 'all', label: labels.filterAll },
+  { id: 'cache', label: dashboard.categories.cache },
+  { id: 'temp', label: dashboard.categories.temp },
+  { id: 'media', label: dashboard.categories.media },
+  { id: 'system', label: dashboard.categories.system },
+];
+---
+
+<div class="tour-filter-bar">
+  {chips.map((chip) => (
+    <span class={`tour-filter-chip ${activeFilter === chip.id ? 'is-active' : ''}`}>{chip.label}</span>
+  ))}
+  <span class="tour-filter-sort">{labels.sortSizeDesc}</span>
+</div>

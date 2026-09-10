@@ -1,0 +1,33 @@
+---
+import type { HeroDashboardCopy } from '../../lib/site';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  scanningLabel: string;
+}
+
+const { dashboard, scanningLabel } = Astro.props;
+---
+
+<div class="tour-scan-focus">
+  <div class="hero-status-chip">{dashboard.status}</div>
+  <div class="hero-capacity-path">{dashboard.capacityPath}</div>
+  <div class="hero-stat-value tour-scan-value">{dashboard.usedBytes}</div>
+  <p class="tour-scan-meta">
+    {dashboard.usedLabel} · {dashboard.reclaimable}
+  </p>
+  <div class="hero-meter tour-scan-meter" aria-hidden="true">
+    <span></span>
+  </div>
+  <p class="tour-scan-status">{scanningLabel}</p>
+  <div class="tour-home-actions">
+    <span class="tour-home-action tour-home-action-secondary">
+      <span class="hero-chip-icon hero-chip-folder"></span>
+      <span>{dashboard.browseFiles}</span>
+    </span>
+    <span class="tour-home-action tour-home-action-primary">
+      <span class="hero-scan-icon"></span>
+      <span>{dashboard.startScan}</span>
+    </span>
+  </div>
+</div>

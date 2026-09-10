@@ -1,0 +1,24 @@
+---
+import ProductTourMockup from './mockup/ProductTourMockup.astro';
+import type { HeroDashboardCopy, ProductTourMockupLabels } from '../lib/site';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  labels: ProductTourMockupLabels;
+  logoSrc: string;
+}
+
+const { dashboard, labels, logoSrc } = Astro.props;
+---
+
+<div class="app-preview-layer" data-app-preview-layer data-active-step="scan">
+  <div class="app-preview-viewport" data-app-preview-viewport>
+    <div class="product-story-mockup" data-tour-mockup data-active-step="scan">
+      <div class="tour-mockup-viewport" data-tour-mockup-viewport>
+        <div class="tour-mockup-scaler" data-tour-mockup-scaler>
+          <ProductTourMockup dashboard={dashboard} labels={labels} logoSrc={logoSrc} />
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

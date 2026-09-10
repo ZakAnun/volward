@@ -3,6 +3,7 @@ import {
   aptabaseInitOptions,
   completeTrackedNavigation,
   sanitizeAnalyticsProps,
+  trackTourStepView,
 } from '../src/lib/website-analytics';
 
 describe('aptabaseInitOptions', () => {
@@ -31,6 +32,12 @@ describe('sanitizeAnalyticsProps', () => {
       enabled: 1,
       disabled: 0,
     });
+  });
+});
+
+describe('trackTourStepView', () => {
+  it('exports a tour tracking helper', () => {
+    expect(typeof trackTourStepView).toBe('function');
   });
 });
 

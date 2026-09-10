@@ -1,0 +1,50 @@
+---
+const col1 = [
+  { name: 'Users', size: '386 GB', kind: 'folder' as const },
+  { name: 'Library', size: '132 GB', kind: 'folder' as const, active: true },
+  { name: 'Movies', size: '84 GB', kind: 'folder' as const },
+];
+
+const col2 = [
+  { name: 'Caches', size: '18 GB', kind: 'folder' as const, active: true },
+  { name: 'Logs', size: '2.1 GB', kind: 'folder' as const },
+  { name: 'com.apple.dt.Xcode', size: '4.8 GB', kind: 'folder' as const },
+];
+
+const col3 = [
+  { name: 'DerivedData', size: '12 GB', kind: 'folder' as const },
+  { name: 'ModuleCache', size: '1.2 GB', kind: 'folder' as const, active: true },
+];
+---
+
+<div class="tour-browse-main">
+  <div class="tour-column-view tour-column-view--browse">
+    <div class="tour-column">
+      {col1.map((row) => (
+        <div class={`tour-column-row ${row.active ? 'is-active' : ''}`}>
+          <span class={`hero-file-icon ${row.kind === 'folder' ? 'hero-file-folder' : 'hero-file-file'}`}></span>
+          <span>{row.name}</span>
+          <strong>{row.size}</strong>
+        </div>
+      ))}
+    </div>
+    <div class="tour-column">
+      {col2.map((row) => (
+        <div class={`tour-column-row ${row.active ? 'is-active' : ''}`}>
+          <span class={`hero-file-icon ${row.kind === 'folder' ? 'hero-file-folder' : 'hero-file-file'}`}></span>
+          <span>{row.name}</span>
+          <strong>{row.size}</strong>
+        </div>
+      ))}
+    </div>
+    <div class="tour-column">
+      {col3.map((row) => (
+        <div class={`tour-column-row ${row.active ? 'is-active' : ''}`}>
+          <span class={`hero-file-icon ${row.kind === 'folder' ? 'hero-file-folder' : 'hero-file-file'}`}></span>
+          <span>{row.name}</span>
+          <strong>{row.size}</strong>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>

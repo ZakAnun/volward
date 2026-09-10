@@ -1,182 +1,116 @@
 ---
+import DownloadPanel from './DownloadPanel.astro';
+import type { DownloadAsset, WorkflowStepCopy } from '../lib/site';
+
 interface Props {
   eyebrow: string;
   title: string;
   lead: string;
-  ctaPrimary: string;
-  ctaPrimaryHref: string;
-  ctaSecondary?: string;
-  ctaSecondaryHref?: string;
-  wordmarkSrc: string;
-  logoSrc: string;
-  dashboard: {
-    volumeName: string;
-    chooseFolder: string;
-    targets: {
-      home: string;
-      applications: string;
-      desktop: string;
-      downloads: string;
-      documents: string;
-    };
-    capacityPath: string;
-    usedBytes: string;
-    usedLabel: string;
-    totalBytes: string;
-    totalLabel: string;
-    availableBytes: string;
-    availableLabel: string;
-    largestTitle: string;
-    scannedLabel: string;
-    largestItems: Array<{
-      name: string;
-      size: string;
-      barWidth: string;
-      kind: 'folder' | 'file';
-    }>;
-    categories: {
-      cache: string;
-      temp: string;
-      media: string;
-      system: string;
-    };
-    status: string;
-    lastScan: string;
-    reclaimable: string;
-    browseFiles: string;
-    startScan: string;
-  };
-  metaItems: string[];
+  scrollHint: string;
+  featureTeasers: WorkflowStepCopy[];
+  downloads: DownloadAsset[];
+  latestHref: string;
+  latestLabel: string;
+  downloadPlatformAriaLabel: string;
 }
 
 const {
   eyebrow,
   title,
   lead,
-  ctaPrimary,
-  ctaSecondary,
-  ctaPrimaryHref,
-  ctaSecondaryHref,
-  logoSrc,
-  dashboard,
-  metaItems,
+  scrollHint,
+  featureTeasers,
+  downloads,
+  latestHref,
+  latestLabel,
+  downloadPlatformAriaLabel,
 } = Astro.props;
+
+const stepIcons: Record<string, string> = {
+  scan: '◎',
+  browse: '▤',
+  filter: '◑',
+  clean: '⌫',
+};
 ---
 
-<section class="hero section">
-  <div class="shell hero-shell">
-    <div class="hero-copy">
-      <p class="eyebrow">{eyebrow}</p>
-      <h1 class="title hero-title">{title}</h1>
-      <p class="lede hero-lead">{lead}</p>
-      <div class="button-row">
-        <a class="button button-primary" href={ctaPrimaryHref}>{ctaPrimary}</a>
-        {ctaSecondary && ctaSecondaryHref && (
-          <a class="button button-ghost" href={ctaSecondaryHref}>{ctaSecondary}</a>
-        )}
-      </div>
-      <div class="hero-meta" aria-label="Volward summary">
-        {metaItems.map((item) => (
-          <span class="hero-meta-pill">{item}</span>
-        ))}
+<section id="download" class="hero-landing" data-hero-landing>
+  <div class="hero-landing-bg" aria-hidden="true"></div>
+
+  <div class="hero-landing-body">
+    <div class="hero-landing-upper shell">
+      <div class="hero-landing-copy">
+        <div class="hero-landing-text">
+          <p class="hero-landing-eyebrow">{eyebrow}</p>
+          <h1 class="hero-landing-title">{title}</h1>
+          <p class="hero-landing-lead">{lead}</p>
+        </div>
+
+        <div class="hero-landing-download">
+          <DownloadPanel
+            variant="hero"
+            items={downloads}
+            latestHref={latestHref}
+            latestLabel={latestLabel}
+            downloadPlatformAriaLabel={downloadPlatformAriaLabel}
+            showFootnote={false}
+          />
+        </div>
+
+        <p class="hero-landing-release">
+          <a href={latestHref}>{latestLabel}</a>
+        </p>
       </div>
     </div>
 
-    <div class="hero-visual" aria-hidden="true">
-      <div class="hero-dashboard">
-        <div class="hero-topbar">
-          <div class="hero-topbar-brand">
-            <img src={logoSrc} alt="" />
-            <span>Volward</span>
-          </div>
-          <div class="hero-topbar-actions">
-            <div class="hero-volume-chip">
-              <span class="hero-chip-icon hero-chip-storage"></span>
-              <span>{dashboard.volumeName}</span>
-              <span class="hero-chip-caret"></span>
-            </div>
-            <div class="hero-topbar-chip">
-              <span class="hero-chip-icon hero-chip-folder"></span>
-              <span>{dashboard.chooseFolder}</span>
-            </div>
-            <div class="hero-settings-dot"></div>
-          </div>
-        </div>
-
-        <div class="hero-board">
-          <aside class="hero-sidebar">
-            <div class="hero-logo-wrap">
-              <img src={logoSrc} alt="" />
-            </div>
-            <div class="hero-sidebar-list">
-              <div class="hero-sidebar-item hero-sidebar-item-active"><span class="hero-target-icon hero-target-home"></span><span>{dashboard.targets.home}</span></div>
-              <div class="hero-sidebar-item"><span class="hero-target-icon hero-target-apps"></span><span>{dashboard.targets.applications}</span></div>
-              <div class="hero-sidebar-item"><span class="hero-target-icon hero-target-desktop"></span><span>{dashboard.targets.desktop}</span></div>
-              <div class="hero-sidebar-item"><span class="hero-target-icon hero-target-downloads"></span><span>{dashboard.targets.downloads}</span></div>
-              <div class="hero-sidebar-item"><span class="hero-target-icon hero-target-docs"></span><span>{dashboard.targets.documents}</span></div>
-            </div>
-          </aside>
-
-          <div class="hero-main">
-            <div class="hero-stat-panel">
-              <div class="hero-capacity-path">{dashboard.capacityPath}</div>
-              <div class="hero-stat-value">{dashboard.usedBytes}</div>
-              <div class="hero-stat-label">{dashboard.usedLabel}</div>
-              <div class="hero-capacity-metrics">
-                <div>
-                  <strong>{dashboard.totalBytes}</strong>
-                  <span>{dashboard.totalLabel}</span>
-                </div>
-                <div>
-                  <strong>{dashboard.availableBytes}</strong>
-                  <span>{dashboard.availableLabel}</span>
-                </div>
-              </div>
-              <div class="hero-meter" aria-hidden="true">
-                <span></span>
-              </div>
-            </div>
-
-            <div class="hero-panel hero-largest-panel">
-              <div class="hero-panel-head">
-                <strong>{dashboard.largestTitle}</strong>
-                <span>{dashboard.scannedLabel}</span>
-              </div>
-              <div class="hero-largest-list">
-                {dashboard.largestItems.map((item) => (
-                  <div class="hero-largest-row">
-                    <div class="hero-largest-title">
-                      <span class={`hero-file-icon ${item.kind === 'folder' ? 'hero-file-folder' : 'hero-file-file'}`}></span>
-                      <span>{item.name}</span>
-                      <strong>{item.size}</strong>
-                    </div>
-                    <div class="hero-largest-bar"><span style={`width: ${item.barWidth}`}></span></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div class="hero-panel hero-compose-panel">
-              <div class="hero-category-side">
-                <div class="hero-category-pie"></div>
-                <div class="hero-category-list">
-                  <div><span class="hero-category-dot hero-category-cache"></span><span>{dashboard.categories.cache}</span><strong>24%</strong></div>
-                  <div><span class="hero-category-dot hero-category-temp"></span><span>{dashboard.categories.temp}</span><strong>8%</strong></div>
-                  <div><span class="hero-category-dot hero-category-media"></span><span>{dashboard.categories.media}</span><strong>39%</strong></div>
-                  <div><span class="hero-category-dot hero-category-system"></span><span>{dashboard.categories.system}</span><strong>18%</strong></div>
-                </div>
-              </div>
-              <div class="hero-actions-side">
-                <div class="hero-status-chip">{dashboard.status}</div>
-                <div class="hero-scan-note">{dashboard.lastScan}</div>
-                <div class="hero-reclaim-note">{dashboard.reclaimable}</div>
-                <div class="hero-action-button hero-action-secondary"><span class="hero-chip-icon hero-chip-folder"></span><span>{dashboard.browseFiles}</span></div>
-                <div class="hero-action-button hero-action-primary"><span class="hero-scan-icon"></span><span>{dashboard.startScan}</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="hero-landing-preview-zone shell">
+      <div class="preview-slot preview-slot--hero" data-preview-slot="hero" aria-hidden="true"></div>
     </div>
   </div>
+
+  <nav class="hero-teasers shell" aria-label={scrollHint}>
+    {featureTeasers.map((step) => (
+      <a href={`#tour-${step.id}`} class="hero-teaser" data-hero-tour-link={step.id}>
+        <span class="hero-teaser-icon" aria-hidden="true">{stepIcons[step.id]}</span>
+        <span class="hero-teaser-name">{step.shortName}</span>
+      </a>
+    ))}
+  </nav>
+
+  <a href="#features" class="hero-scroll-hint" aria-label={scrollHint} data-hero-features-link>
+    <span class="hero-scroll-hint-icon" aria-hidden="true"></span>
+  </a>
 </section>
+
+<script>
+  import { animateScrollTo, resolveFeaturesScrollTop } from '../lib/hero-scroll';
+  import { prefersReducedMotion, scrollToTourStep } from '../lib/product-tour';
+  import type { WorkflowStepId } from '../lib/site';
+
+  const hero = document.querySelector<HTMLElement>('[data-hero-landing]');
+  const features = document.getElementById('features');
+  const tourRoot = document.querySelector<HTMLElement>('[data-product-tour]');
+  const reducedMotion = prefersReducedMotion();
+
+  document.querySelectorAll<HTMLAnchorElement>('[data-hero-tour-link]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const step = link.dataset.heroTourLink as WorkflowStepId | undefined;
+      if (step && tourRoot) {
+        scrollToTourStep(tourRoot, step, reducedMotion);
+        return;
+      }
+      if (features) {
+        void animateScrollTo(resolveFeaturesScrollTop(features), { reducedMotion });
+      }
+    });
+  });
+
+  document.querySelector<HTMLAnchorElement>('[data-hero-features-link]')?.addEventListener('click', (event) => {
+    if (!features) {
+      return;
+    }
+    event.preventDefault();
+    void animateScrollTo(resolveFeaturesScrollTop(features), { reducedMotion });
+  });
+</script>

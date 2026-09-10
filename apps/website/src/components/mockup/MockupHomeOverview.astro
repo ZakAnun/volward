@@ -1,0 +1,82 @@
+---
+import type { HeroDashboardCopy } from '../../lib/site';
+
+interface Props {
+  dashboard: HeroDashboardCopy;
+  scanningLabel?: string;
+  showScanningNote?: boolean;
+}
+
+const { dashboard, scanningLabel, showScanningNote = false } = Astro.props;
+
+const scanNote = showScanningNote && scanningLabel ? scanningLabel : dashboard.lastScan;
+---
+
+<div class="hero-main mockup-home-overview">
+  <div class="hero-stat-panel">
+    <div class="hero-stat-panel-body">
+      <div class="hero-capacity-path">{dashboard.capacityPath}</div>
+      <div class="hero-stat-value">{dashboard.usedBytes}</div>
+      <div class="hero-stat-label">{dashboard.usedLabel}</div>
+      <div class="hero-capacity-metrics">
+        <div class="hero-capacity-metric">
+          <strong>{dashboard.totalBytes}</strong>
+          <span>{dashboard.totalLabel}</span>
+        </div>
+        <div class="hero-capacity-metric">
+          <strong>{dashboard.availableBytes}</strong>
+          <span>{dashboard.availableLabel}</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-meter" aria-hidden="true">
+      <span></span>
+    </div>
+  </div>
+
+  <div class="hero-panel hero-largest-panel">
+    <div class="hero-panel-head">
+      <strong>{dashboard.largestTitle}</strong>
+      <span>{dashboard.scannedLabel}</span>
+    </div>
+    <div class="hero-largest-list">
+      {dashboard.largestItems.map((item) => (
+        <div class="hero-largest-row">
+          <div class="hero-largest-title">
+            <span class={`hero-file-icon ${item.kind === 'folder' ? 'hero-file-folder' : 'hero-file-file'}`}></span>
+            <span>{item.name}</span>
+            <strong>{item.size}</strong>
+          </div>
+          <div class="hero-largest-bar"><span style={`width: ${item.barWidth}`}></span></div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class="hero-panel hero-browse-card">
+    <div class="hero-browse-card-head">
+      <span class="hero-browse-card-scan-note">{scanNote}</span>
+      <div class="hero-status-chip">{dashboard.status}</div>
+    </div>
+    <div class="hero-category-side hero-browse-card-categories">
+      <div class="hero-category-pie"></div>
+      <div class="hero-category-list">
+        <div><span class="hero-category-dot hero-category-cache"></span><span>{dashboard.categories.cache}</span><strong>24%</strong></div>
+        <div><span class="hero-category-dot hero-category-temp"></span><span>{dashboard.categories.temp}</span><strong>8%</strong></div>
+        <div><span class="hero-category-dot hero-category-media"></span><span>{dashboard.categories.media}</span><strong>39%</strong></div>
+        <div><span class="hero-category-dot hero-category-system"></span><span>{dashboard.categories.system}</span><strong>18%</strong></div>
+      </div>
+    </div>
+    <p class="hero-browse-card-reclaim">{dashboard.reclaimable}</p>
+    <div class="hero-browse-card-actions">
+      <div class="hero-action-button hero-action-secondary">
+        <span class="hero-chip-icon hero-chip-folder"></span>
+        <span>{dashboard.browseFiles}</span>
+      </div>
+      <div class="hero-action-button hero-action-primary">
+        <span class="hero-scan-icon"></span>
+        <span>{dashboard.startScan}</span>
+      </div>
+    </div>
+  </div>
+</div>

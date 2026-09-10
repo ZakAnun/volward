@@ -1,4 +1,5 @@
 import { init, trackEvent, type AptabaseOptions } from '@aptabase/web';
+import type { WorkflowStepId } from './site';
 
 type AnalyticsProps = Record<string, string | number | boolean | null | undefined>;
 
@@ -83,6 +84,14 @@ export async function trackWebsiteEvent(eventName: string, props: AnalyticsProps
   }
 
   await trackEvent(eventName, websiteEventProps(props));
+}
+
+export async function trackTourStepView(step: WorkflowStepId): Promise<void> {
+  await trackWebsiteEvent('website_tour_step_view', { step });
+}
+
+export async function trackTourNavClick(step: WorkflowStepId): Promise<void> {
+  await trackWebsiteEvent('website_tour_nav_click', { step });
 }
 
 export async function completeTrackedNavigation(

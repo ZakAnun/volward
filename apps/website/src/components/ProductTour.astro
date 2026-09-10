@@ -1,0 +1,68 @@
+---
+import type { ProductTourCopy } from '../lib/site';
+
+interface Props {
+  copy: ProductTourCopy;
+}
+
+const { copy } = Astro.props;
+
+---
+
+<section id="features" class="product-story section" data-product-tour data-active-step="scan">
+  <div class="product-showcase" data-tour-showcase>
+    <div class="product-showcase-track" aria-hidden="true">
+      {copy.steps.map((step) => (
+        <div
+          id={`tour-${step.id}`}
+          class="product-showcase-spacer"
+          data-tour-panel={step.id}
+        ></div>
+      ))}
+    </div>
+
+    <div class="product-showcase-sticky">
+      <div class="product-showcase-canvas">
+        <nav class="product-guide-nav" aria-label={copy.sectionLabel}>
+          {copy.steps.map((step) => (
+            <a
+              href={`#tour-${step.id}`}
+              class="product-guide-item"
+              data-tour-progress={step.id}
+              data-tour-progress-link={step.id}
+              aria-current={step.id === 'scan' ? 'step' : 'false'}
+            >
+              <span class="product-guide-marker" aria-hidden="true">
+                <span class="product-guide-dot"></span>
+              </span>
+              <span class="product-guide-copy">
+                <span class="product-guide-label">{step.shortName}</span>
+                {step.title && <span class="product-guide-title">{step.title}</span>}
+                {step.hook && <span class="product-guide-hook">{step.hook}</span>}
+              </span>
+            </a>
+          ))}
+        </nav>
+
+        <div class="product-showcase-main">
+          <div class="product-guide-mobile-copy" aria-live="polite">
+            {copy.steps.map((step) => (
+              <div
+                class="product-guide-mobile-panel"
+                data-tour-mobile-caption={step.id}
+                data-active={step.id === 'scan' ? 'true' : 'false'}
+              >
+                <h3 class="product-guide-mobile-title">{step.title || step.shortName}</h3>
+                {step.hook && <p class="product-guide-mobile-hook">{step.hook}</p>}
+              </div>
+            ))}
+          </div>
+
+          <div class="product-showcase-stage">
+            <div class="preview-slot preview-slot--feature" data-preview-slot="feature" aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
