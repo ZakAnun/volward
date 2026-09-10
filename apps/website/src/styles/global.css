@@ -7,6 +7,11 @@
   --tour-inner-radius: 14px;
   color-scheme: light dark;
   --page-bg: #0b1524;
+  --page-glow: radial-gradient(
+    ellipse 80% 55% at 50% -8%,
+    rgba(0, 102, 204, 0.18),
+    transparent 70%
+  );
   --surface-raised: rgba(255, 255, 255, 0.08);
   --surface-overlay: rgba(255, 255, 255, 0.1);
   --header-bg: rgba(8, 16, 28, 0.82);
@@ -306,7 +311,7 @@ main {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-body:has(.hero-landing):not(.is-past-hero) .header {
+body:has(.hero-landing) .header {
   background: transparent;
   border-bottom-color: transparent;
   backdrop-filter: none;
@@ -327,9 +332,7 @@ body:has(.hero-landing):not(.is-past-hero) .header {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background:
-    radial-gradient(ellipse 80% 55% at 50% -8%, rgba(0, 102, 204, 0.18), transparent 70%),
-    linear-gradient(180deg, var(--hero-bg-top) 0%, var(--hero-bg-bottom) 100%);
+  background: var(--page-glow), linear-gradient(180deg, var(--hero-bg-top) 0%, var(--hero-bg-bottom) 100%);
 }
 
 
@@ -1358,7 +1361,7 @@ body:has(.hero-landing):not(.is-past-hero) .header {
 .page-main:has(.hero-landing) .product-story,
 .page-main:has(.hero-landing) .release-notes-section,
 .page-main:has(.hero-landing) .footer {
-  background: var(--page-bg);
+  background: var(--page-glow), var(--page-bg);
 }
 
 .product-story {
@@ -1372,7 +1375,7 @@ body:has(.hero-landing):not(.is-past-hero) .header {
   --tour-mockup-max-height: var(--tour-viewport-height);
   --tour-mockup-scale: 1;
   padding: 0;
-  background: var(--page-bg);
+  background: var(--page-glow), var(--page-bg);
   scroll-margin-top: var(--tour-sticky-top);
 }
 
@@ -1478,7 +1481,7 @@ body:has(.hero-landing):not(.is-past-hero) .header {
   justify-content: center;
   height: var(--tour-viewport-height);
   overflow: hidden;
-  background: var(--tour-surface);
+  background: var(--page-glow), var(--tour-surface);
   padding-block: 12px;
 }
 
@@ -2668,7 +2671,9 @@ body:has(.hero-landing):not(.is-past-hero) .header {
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --page-bg: #111113;
+    --page-bg: #0b1524;
+    --hero-bg-top: #0b1524;
+    --hero-bg-bottom: #0b1524;
     --surface-raised: #1c1c1e;
     --surface-overlay: rgba(28, 28, 30, 0.92);
     --header-bg: rgba(17, 17, 19, 0.88);
@@ -2703,6 +2708,7 @@ body:has(.hero-landing):not(.is-past-hero) .header {
 
   body::before {
     background:
+      radial-gradient(ellipse 70% 45% at 50% -10%, rgba(41, 151, 255, 0.14), transparent 70%),
       linear-gradient(135deg, rgba(41, 151, 255, 0.06) 0%, transparent 28%),
       linear-gradient(225deg, rgba(255, 255, 255, 0.02) 0%, transparent 24%);
   }
@@ -2741,9 +2747,10 @@ body:has(.hero-landing):not(.is-past-hero) .header {
     background: rgba(255, 255, 255, 0.08);
   }
 
-  body:has(.hero-landing):not(.is-past-hero) .header {
+  body:has(.hero-landing) .header {
     background: transparent;
     border-bottom-color: transparent;
+    backdrop-filter: none;
   }
 
   .hero-meta-pill {

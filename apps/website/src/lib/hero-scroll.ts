@@ -81,11 +81,6 @@ export type HeroScrollBridgeOptions = {
   reducedMotion?: boolean;
 };
 
-export function syncPastHeroState(hero: HTMLElement, headerOffset = HEADER_OFFSET): void {
-  const heroRect = hero.getBoundingClientRect();
-  document.body.classList.toggle('is-past-hero', heroRect.bottom <= headerOffset + 2);
-}
-
 export function initHeroScrollBridge({
   hero,
   features,
@@ -95,7 +90,6 @@ export function initHeroScrollBridge({
   let bridging = false;
 
   const unlockIfAtTop = () => {
-    syncPastHeroState(hero);
     if (window.scrollY <= 8) {
       locked = true;
       bridging = false;
@@ -174,14 +168,9 @@ export function initHeroScrollBridge({
     bridgeToFeatures();
   };
 
-  const onResize = () => syncPastHeroState(hero);
-
-  syncPastHeroState(hero);
-
   window.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('scroll', unlockIfAtTop, { passive: true });
-  window.addEventListener('resize', onResize, { passive: true });
   hero.addEventListener('touchstart', onTouchStart, { passive: true });
   hero.addEventListener('touchmove', onTouchMove, { passive: false });
 
@@ -189,9 +178,7 @@ export function initHeroScrollBridge({
     window.removeEventListener('wheel', onWheel);
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('scroll', unlockIfAtTop);
-    window.removeEventListener('resize', onResize);
     hero.removeEventListener('touchstart', onTouchStart);
     hero.removeEventListener('touchmove', onTouchMove);
-    document.body.classList.remove('is-past-hero');
   };
 }

@@ -165,6 +165,14 @@ export function prefersReducedMotion(): boolean {
   );
 }
 
+export function readPreviewMorphProgress(): number {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue('--preview-morph-progress')
+    .trim();
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function readTourCssVar(root: HTMLElement, name: string, fallback: number): number {
   const raw = getComputedStyle(root).getPropertyValue(name).trim();
   const parsed = Number.parseFloat(raw);
@@ -252,8 +260,15 @@ export function initProductTour({ root, onStepView }: ProductTourOptions): () =>
       return;
     }
 
-    const panels = measureTourPanelBounds(showcase);
-    const step = resolveActiveStepFromScroll(panels, window.scrollY, window.innerHeight);
+    const morphProgress = readPreviewMorphProgress();
+    const step =
+      morphProgress < 0.999
+        ? 'scan'
+        : resolveActiveStepFromScroll(
+            measureTourPanelBounds(showcase),
+            window.scrollY,
+            window.innerHeight,
+          );
 
     if (step === lastStep) {
       return;
