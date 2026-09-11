@@ -661,6 +661,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsVerifyOtp => 'Verify';
 
   @override
+  String get aiSettingsLinkSuccess => 'Email linked successfully';
+
+  @override
+  String get aiSettingsResendOtp => 'Resend code';
+
+  @override
+  String aiSettingsResendCooldown(int seconds) {
+    return 'Resend in ${seconds}s';
+  }
+
+  @override
+  String get aiSettingsInvalidEmail => 'Enter a valid email address';
+
+  @override
   String aiSettingsLinkedAs(String email) {
     return 'Linked as $email';
   }

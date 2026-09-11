@@ -410,6 +410,15 @@
   "aiSettingsEnterOtp": "6-digit code",
   "aiSettingsSendOtp": "Send code",
   "aiSettingsVerifyOtp": "Verify",
+  "aiSettingsLinkSuccess": "Email linked successfully",
+  "aiSettingsResendOtp": "Resend code",
+  "aiSettingsResendCooldown": "Resend in {seconds}s",
+  "@aiSettingsResendCooldown": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "aiSettingsInvalidEmail": "Enter a valid email address",
   "aiSettingsLinkedAs": "Linked as {email}",
   "@aiSettingsLinkedAs": {
     "placeholders": {

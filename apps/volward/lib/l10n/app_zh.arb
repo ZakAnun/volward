@@ -410,6 +410,15 @@
   "aiSettingsEnterOtp": "6 位验证码",
   "aiSettingsSendOtp": "发送验证码",
   "aiSettingsVerifyOtp": "验证",
+  "aiSettingsLinkSuccess": "绑定成功",
+  "aiSettingsResendOtp": "重新发送",
+  "aiSettingsResendCooldown": "{seconds}s 后可重发",
+  "@aiSettingsResendCooldown": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "aiSettingsInvalidEmail": "请输入有效邮箱",
   "aiSettingsLinkedAs": "已绑定 {email}",
   "@aiSettingsLinkedAs": {
     "placeholders": {

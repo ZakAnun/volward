@@ -631,6 +631,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsVerifyOtp => '验证';
 
   @override
+  String get aiSettingsLinkSuccess => '绑定成功';
+
+  @override
+  String get aiSettingsResendOtp => '重新发送';
+
+  @override
+  String aiSettingsResendCooldown(int seconds) {
+    return '${seconds}s 后可重发';
+  }
+
+  @override
+  String get aiSettingsInvalidEmail => '请输入有效邮箱';
+
+  @override
   String aiSettingsLinkedAs(String email) {
     return '已绑定 $email';
   }

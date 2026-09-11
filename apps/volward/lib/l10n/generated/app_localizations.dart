@@ -1171,6 +1171,30 @@ abstract class AppLocalizations {
   /// **'Verify'**
   String get aiSettingsVerifyOtp;
 
+  /// No description provided for @aiSettingsLinkSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Email linked successfully'**
+  String get aiSettingsLinkSuccess;
+
+  /// No description provided for @aiSettingsResendOtp.
+  ///
+  /// In en, this message translates to:
+  /// **'Resend code'**
+  String get aiSettingsResendOtp;
+
+  /// No description provided for @aiSettingsResendCooldown.
+  ///
+  /// In en, this message translates to:
+  /// **'Resend in {seconds}s'**
+  String aiSettingsResendCooldown(int seconds);
+
+  /// No description provided for @aiSettingsInvalidEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address'**
+  String get aiSettingsInvalidEmail;
+
   /// No description provided for @aiSettingsLinkedAs.
   ///
   /// In en, this message translates to:
