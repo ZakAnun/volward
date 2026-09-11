@@ -1207,6 +1207,72 @@ abstract class AppLocalizations {
   /// **'Login expired — please link your email again.'**
   String get aiSettingsSessionExpired;
 
+  /// No description provided for @aiErrorOtpResendTooSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many requests. Try again in 60 seconds.'**
+  String get aiErrorOtpResendTooSoon;
+
+  /// No description provided for @aiErrorOtpRequestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to send code. Check your email and try again.'**
+  String get aiErrorOtpRequestFailed;
+
+  /// No description provided for @aiErrorOtpVerifyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid or expired code. Request a new one.'**
+  String get aiErrorOtpVerifyFailed;
+
+  /// No description provided for @aiErrorDeviceRegisterFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Device registration failed. Check your connection.'**
+  String get aiErrorDeviceRegisterFailed;
+
+  /// No description provided for @aiErrorLinkAccountRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Link your email to continue.'**
+  String get aiErrorLinkAccountRequired;
+
+  /// No description provided for @aiErrorPlatformApiUnconfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Platform API is not configured.'**
+  String get aiErrorPlatformApiUnconfigured;
+
+  /// No description provided for @aiErrorDeviceNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Device not registered. Restart the app.'**
+  String get aiErrorDeviceNotFound;
+
+  /// No description provided for @aiErrorRefreshRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh too frequent. Try again shortly.'**
+  String get aiErrorRefreshRateLimited;
+
+  /// No description provided for @aiErrorCheckoutFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Checkout failed. Try again later.'**
+  String get aiErrorCheckoutFailed;
+
+  /// No description provided for @aiErrorPacksFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load packs. Check your connection.'**
+  String get aiErrorPacksFailed;
+
+  /// No description provided for @aiErrorPlatformGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Try again later.'**
+  String get aiErrorPlatformGeneric;
+
   /// No description provided for @aiPrecheckCreditsCost.
   ///
   /// In en, this message translates to:

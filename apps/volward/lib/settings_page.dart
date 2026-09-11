@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'ai/ai_settings_store.dart';
+import 'ai/platform_auth_messages.dart';
 import 'ai/platform_auth_store.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
@@ -164,7 +165,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       setState(() {
         _platformBusy = false;
-        _platformBanner = e.toString();
+        _platformBanner = platformAuthErrorMessage(l10n, e);
       });
       return;
     }
@@ -216,7 +217,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       setState(() {
         _platformBusy = false;
-        _platformBanner = e.toString();
+        _platformBanner = platformAuthErrorMessage(l10n, e);
       });
     }
   }
@@ -346,11 +347,8 @@ class _SettingsPageState extends State<SettingsPage> {
           banner = null;
         }
       } catch (e) {
-        final msg = e.toString();
-        if (msg.contains('session_expired')) {
-          banner = l10n.aiSettingsSessionExpired;
-          platformUser = null;
-        }
+        banner = platformAuthErrorMessage(l10n, e);
+        platformUser = null;
       }
     } else if (mode == AiMode.off) {
       platformUser = null;

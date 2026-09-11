@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ai/platform_ai_provider.dart';
+import '../ai/platform_auth_messages.dart';
 import '../ai/platform_auth_store.dart';
 import '../l10n/l10n.dart';
 import 'dart:convert';
@@ -79,8 +80,9 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
       });
     } catch (e) {
       if (!mounted) return;
+      final l10n = context.l10n;
       setState(() {
-        _error = e.toString();
+        _error = platformAuthErrorMessage(l10n, e);
         _loading = false;
       });
     }
@@ -120,7 +122,7 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
       _startPoll(token);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = platformAuthErrorMessage(context.l10n, e));
     }
   }
 

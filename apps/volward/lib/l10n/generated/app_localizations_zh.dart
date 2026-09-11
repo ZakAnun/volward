@@ -653,6 +653,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsSessionExpired => '登录已过期，请重新绑定邮箱';
 
   @override
+  String get aiErrorOtpResendTooSoon => '发送过于频繁，请 60 秒后再试';
+
+  @override
+  String get aiErrorOtpRequestFailed => '验证码发送失败，请检查邮箱后重试';
+
+  @override
+  String get aiErrorOtpVerifyFailed => '验证码错误或已过期，请重新获取';
+
+  @override
+  String get aiErrorDeviceRegisterFailed => '设备注册失败，请检查网络后重试';
+
+  @override
+  String get aiErrorLinkAccountRequired => '请先绑定邮箱后再继续';
+
+  @override
+  String get aiErrorPlatformApiUnconfigured => '平台服务未配置，请联系开发者';
+
+  @override
+  String get aiErrorDeviceNotFound => '设备未注册，请重启应用后重试';
+
+  @override
+  String get aiErrorRefreshRateLimited => '刷新过于频繁，请稍后再试';
+
+  @override
+  String get aiErrorCheckoutFailed => '结账失败，请稍后重试';
+
+  @override
+  String get aiErrorPacksFailed => '无法加载套餐，请检查网络';
+
+  @override
+  String get aiErrorPlatformGeneric => '操作失败，请稍后重试';
+
+  @override
   String aiPrecheckCreditsCost(int balance) {
     return '预计消耗 1 credit（余额 $balance）';
   }

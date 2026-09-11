@@ -686,6 +686,46 @@ class AppLocalizationsEn extends AppLocalizations {
       'Login expired — please link your email again.';
 
   @override
+  String get aiErrorOtpResendTooSoon =>
+      'Too many requests. Try again in 60 seconds.';
+
+  @override
+  String get aiErrorOtpRequestFailed =>
+      'Failed to send code. Check your email and try again.';
+
+  @override
+  String get aiErrorOtpVerifyFailed =>
+      'Invalid or expired code. Request a new one.';
+
+  @override
+  String get aiErrorDeviceRegisterFailed =>
+      'Device registration failed. Check your connection.';
+
+  @override
+  String get aiErrorLinkAccountRequired => 'Link your email to continue.';
+
+  @override
+  String get aiErrorPlatformApiUnconfigured =>
+      'Platform API is not configured.';
+
+  @override
+  String get aiErrorDeviceNotFound => 'Device not registered. Restart the app.';
+
+  @override
+  String get aiErrorRefreshRateLimited =>
+      'Refresh too frequent. Try again shortly.';
+
+  @override
+  String get aiErrorCheckoutFailed => 'Checkout failed. Try again later.';
+
+  @override
+  String get aiErrorPacksFailed =>
+      'Could not load packs. Check your connection.';
+
+  @override
+  String get aiErrorPlatformGeneric => 'Something went wrong. Try again later.';
+
+  @override
   String aiPrecheckCreditsCost(int balance) {
     return 'Estimated cost: 1 credit (balance $balance)';
   }

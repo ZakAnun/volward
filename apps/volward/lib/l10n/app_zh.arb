@@ -426,6 +426,17 @@
   "aiPurchasePayHint": "请在结账页使用微信支付；支付成功后余额会自动更新。",
   "aiPurchaseWaitingHint": "支付可能仍在处理中，请稍后在设置中刷新额度。",
   "aiSettingsSessionExpired": "登录已过期，请重新绑定邮箱",
+  "aiErrorOtpResendTooSoon": "发送过于频繁，请 60 秒后再试",
+  "aiErrorOtpRequestFailed": "验证码发送失败，请检查邮箱后重试",
+  "aiErrorOtpVerifyFailed": "验证码错误或已过期，请重新获取",
+  "aiErrorDeviceRegisterFailed": "设备注册失败，请检查网络后重试",
+  "aiErrorLinkAccountRequired": "请先绑定邮箱后再继续",
+  "aiErrorPlatformApiUnconfigured": "平台服务未配置，请联系开发者",
+  "aiErrorDeviceNotFound": "设备未注册，请重启应用后重试",
+  "aiErrorRefreshRateLimited": "刷新过于频繁，请稍后再试",
+  "aiErrorCheckoutFailed": "结账失败，请稍后重试",
+  "aiErrorPacksFailed": "无法加载套餐，请检查网络",
+  "aiErrorPlatformGeneric": "操作失败，请稍后重试",
   "aiPrecheckCreditsCost": "预计消耗 1 credit（余额 {balance}）",
   "@aiPrecheckCreditsCost": {
     "placeholders": {
