@@ -7,6 +7,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'jwt_utils.dart';
+
 class PlatformUser {
   const PlatformUser({
     required this.userId,
@@ -189,6 +191,55 @@ class PlatformAuthStore {
     debugUserToken = token;
     await _secure.write(key: _kCachedEmail, value: email.trim());
     return PlatformUser.fromJson(body);
+  }
+
+  Future<PlatformUser?> refreshSession() async {
+    final uuid = await _secure.read(key: _kDeviceUuid);
+    if (uuid == null || uuid.isEmpty) return null;
+
+    final res = await _http
+        .post(
+          Uri.parse('$_base/auth/refresh'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'device_uuid': uuid}),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (res.statusCode == 403) return null;
+    if (res.statusCode == 404) {
+      await ensureDeviceRegistered();
+      return null;
+    }
+    if (res.statusCode == 429) {
+      throw Exception('refresh_rate_limited');
+    }
+    if (res.statusCode != 200) {
+      throw Exception('session_expired');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final token = body['token'] as String?;
+    if (token == null || token.isEmpty) {
+      throw Exception('session_expired');
+    }
+    await _secure.write(key: _kUserToken, value: token);
+    debugUserToken = token;
+    final email = body['email'] as String? ?? '';
+    if (email.isNotEmpty) {
+      await _secure.write(key: _kCachedEmail, value: email);
+    }
+    return PlatformUser.fromJson(body);
+  }
+
+  Future<String?> ensureUserToken() async {
+    final existing = await userToken();
+    if (existing != null &&
+        existing.isNotEmpty &&
+        !isJwtExpiringSoon(existing)) {
+      return existing;
+    }
+    final user = await refreshSession();
+    if (user == null) return null;
+    return userToken();
   }
 
   Future<PlatformUser?> currentUser() async {
