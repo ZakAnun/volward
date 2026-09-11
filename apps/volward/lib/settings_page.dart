@@ -81,7 +81,9 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mode == AiMode.platform) {
         try {
           await PlatformAuthStore.instance.ensureDeviceRegistered();
-          platformUser = await PlatformAuthStore.instance.currentUser();
+          platformUser =
+              await PlatformAuthStore.instance.refreshSession() ??
+              await PlatformAuthStore.instance.currentUser();
         } catch (_) {
           platformUser = null;
         }
@@ -247,7 +249,9 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mode == AiMode.platform) {
       try {
         await PlatformAuthStore.instance.ensureDeviceRegistered();
-        platformUser = await PlatformAuthStore.instance.currentUser();
+        platformUser =
+            await PlatformAuthStore.instance.refreshSession() ??
+            await PlatformAuthStore.instance.currentUser();
         if (platformUser == null) {
           banner = null;
         }
