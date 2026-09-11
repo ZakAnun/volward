@@ -51,15 +51,53 @@ class PlatformAiProvider implements AiProvider {
     } catch (_) {}
   }
 
+  Future<String> _requireUserToken() async {
+    final token = await PlatformAuthStore.instance.ensureUserToken();
+    if (token == null || token.isEmpty) {
+      await PlatformAuthStore.instance.clearUserToken();
+      throw Exception('session_expired');
+    }
+    return token;
+  }
+
+  Future<http.Response> _authorizedRequest(
+    Future<http.Response> Function(String token) makeRequest,
+  ) async {
+    var token = await _requireUserToken();
+    var res = await makeRequest(token);
+    if (res.statusCode != 401) {
+      return res;
+    }
+
+    final refreshed = await PlatformAuthStore.instance.refreshSession();
+    if (refreshed == null) {
+      await PlatformAuthStore.instance.clearUserToken();
+      throw Exception('session_expired');
+    }
+    final newToken = await PlatformAuthStore.instance.userToken();
+    if (newToken == null || newToken.isEmpty) {
+      await PlatformAuthStore.instance.clearUserToken();
+      throw Exception('session_expired');
+    }
+    res = await makeRequest(newToken);
+    if (res.statusCode == 401) {
+      await PlatformAuthStore.instance.clearUserToken();
+      throw Exception('session_expired');
+    }
+    return res;
+  }
+
   @override
   Future<AiQuotaInfo?> queryQuota() async {
     _ensureConfigured();
-    final res = await _ensureClient()
-        .get(
-          Uri.parse('$baseUrl/ai/quota'),
-          headers: {'Authorization': 'Bearer $token'},
-        )
-        .timeout(const Duration(seconds: 30));
+    final res = await _authorizedRequest(
+      (token) => _ensureClient()
+          .get(
+            Uri.parse('$baseUrl/ai/quota'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 30)),
+    );
     await _mapErrorStatus(res.statusCode);
     if (res.statusCode != 200) {
       throw Exception('api_error:${res.statusCode}');
@@ -103,16 +141,18 @@ class PlatformAiProvider implements AiProvider {
 
     final http.Response res;
     try {
-      res = await _ensureClient()
-          .post(
-            Uri.parse('$baseUrl/ai/analyze'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-            body: jsonEncode(payload),
-          )
-          .timeout(requestTimeout);
+      res = await _authorizedRequest(
+        (token) => _ensureClient()
+            .post(
+              Uri.parse('$baseUrl/ai/analyze'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: jsonEncode(payload),
+            )
+            .timeout(requestTimeout),
+      );
     } on http.ClientException {
       if (cancelToken?.isCancelled ?? false) {
         throw const CoverageCancelledException();
@@ -151,9 +191,6 @@ class PlatformAiProvider implements AiProvider {
         throw Exception('insufficient_credits');
       case 403:
         throw Exception('link_account_required');
-      case 401:
-        await PlatformAuthStore.instance.clearUserToken();
-        throw Exception('session_expired');
     }
   }
 }
