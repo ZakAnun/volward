@@ -609,3 +609,80 @@ async fn otp_blocks_after_max_attempts() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "unauthorized");
 }
+
+#[tokio::test]
+async fn refresh_returns_token_for_linked_device() {
+    let ctx = test_ctx().await;
+    let token = register_and_link(&ctx, "d-ref", "ref@example.com", 10).await;
+    let (s, me) = get_auth(&ctx.app, "/v1/auth/me", &token).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(me["email"], "ref@example.com");
+
+    let (s2, body) = post_json(
+        &ctx.app,
+        "/v1/auth/refresh",
+        r#"{"device_uuid":"d-ref"}"#,
+    )
+    .await;
+    assert_eq!(s2, StatusCode::OK);
+    assert!(body["token"].is_string());
+    assert_eq!(body["credits"], 10);
+
+    let new_token = body["token"].as_str().unwrap();
+    let (s3, me2) = get_auth(&ctx.app, "/v1/auth/me", new_token).await;
+    assert_eq!(s3, StatusCode::OK);
+    assert_eq!(me2["email"], "ref@example.com");
+}
+
+#[tokio::test]
+async fn refresh_403_when_unlinked() {
+    let ctx = test_ctx().await;
+    let _ = post_json(
+        &ctx.app,
+        "/v1/device/register",
+        r#"{"device_uuid":"d-unlink","platform":"macos","app_version":"0.0.3"}"#,
+    )
+    .await;
+    let (s, body) = post_json(
+        &ctx.app,
+        "/v1/auth/refresh",
+        r#"{"device_uuid":"d-unlink"}"#,
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"], "link_account_required");
+}
+
+#[tokio::test]
+async fn refresh_404_when_unknown_device() {
+    let ctx = test_ctx().await;
+    let (s, body) = post_json(
+        &ctx.app,
+        "/v1/auth/refresh",
+        r#"{"device_uuid":"does-not-exist"}"#,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+}
+
+#[tokio::test]
+async fn refresh_429_within_cooldown() {
+    let ctx = test_ctx().await;
+    let _ = register_and_link(&ctx, "d-cool-ref", "coolref@example.com", 0).await;
+    let (s1, _) = post_json(
+        &ctx.app,
+        "/v1/auth/refresh",
+        r#"{"device_uuid":"d-cool-ref"}"#,
+    )
+    .await;
+    let (s2, body2) = post_json(
+        &ctx.app,
+        "/v1/auth/refresh",
+        r#"{"device_uuid":"d-cool-ref"}"#,
+    )
+    .await;
+    assert_eq!(s1, StatusCode::OK);
+    assert_eq!(s2, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body2["error"], "rate_limited");
+}

@@ -48,6 +48,7 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/device/register", post(device::handlers::register))
         .route("/v1/auth/request-otp", post(auth::handlers::request_otp))
         .route("/v1/auth/verify-otp", post(auth::handlers::verify_otp))
+        .route("/v1/auth/refresh", post(auth::handlers::refresh))
         .route("/v1/auth/me", get(auth::handlers::me))
         .route("/v1/ai/quota", get(ai::handlers::quota))
         .route("/v1/ai/analyze", post(ai::handlers::analyze))

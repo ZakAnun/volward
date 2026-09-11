@@ -130,3 +130,68 @@ pub async fn me(
         credits,
     }))
 }
+
+#[derive(Deserialize)]
+pub struct RefreshBody {
+    pub device_uuid: String,
+}
+
+const REFRESH_COOLDOWN_MS: i64 = 60_000;
+
+pub async fn refresh(
+    State(state): State<AppState>,
+    Json(body): Json<RefreshBody>,
+) -> Result<Json<VerifyOtpResponse>, AppError> {
+    let device_id = body.device_uuid.trim();
+    if device_id.is_empty() {
+        return Err(AppError::BadRequest("device_uuid_required".into()));
+    }
+
+    let now = Utc::now().timestamp_millis();
+    let row: Option<(Option<String>, Option<i64>)> = sqlx::query_as(
+        "SELECT user_id, last_refresh_at FROM devices WHERE id = ?",
+    )
+    .bind(device_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some((user_id, last_refresh_at)) = row else {
+        return Err(AppError::NotFound);
+    };
+    let Some(uid) = user_id else {
+        return Err(AppError::Forbidden("link_account_required"));
+    };
+    if let Some(last) = last_refresh_at {
+        if now - last < REFRESH_COOLDOWN_MS {
+            return Err(AppError::TooManyRequests);
+        }
+    }
+
+    let user_row: Option<(String, i64)> =
+        sqlx::query_as("SELECT email, credits FROM users WHERE id = ?")
+            .bind(&uid)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((email, credits)) = user_row else {
+        return Err(AppError::Forbidden("link_account_required"));
+    };
+
+    sqlx::query("UPDATE devices SET last_refresh_at = ? WHERE id = ?")
+        .bind(now)
+        .bind(device_id)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("UPDATE users SET last_seen_at = ? WHERE id = ?")
+        .bind(now)
+        .bind(&uid)
+        .execute(&state.pool)
+        .await?;
+
+    let token = issue_token(&state.config.jwt_secret, device_id, Some(&uid))?;
+    Ok(Json(VerifyOtpResponse {
+        token,
+        user_id: uid,
+        email,
+        credits,
+    }))
+}
