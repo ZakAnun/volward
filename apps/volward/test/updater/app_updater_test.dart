@@ -22,7 +22,7 @@ class _FakeLocal implements LocalVersionReader {
 class _FakeSource implements VersionSource {
   _FakeSource(this.release, {this.error});
 
-  final ReleaseInfo? release;
+  ReleaseInfo? release;
   final Object? error;
 
   @override
@@ -126,10 +126,10 @@ ReleaseInfo _release({String tag = 'v0.0.2', List<ReleaseAsset>? assets}) {
     body: 'Release notes line 1\nline 2',
     assets:
         assets ??
-        const [
+        [
           ReleaseAsset(
-            name: 'volward-v0.0.2-macos-arm64.zip',
-            downloadUrl: 'https://example.com/a.zip',
+            name: 'volward-v$version-macos-arm64.zip',
+            downloadUrl: 'https://example.com/$version.zip',
             sizeBytes: 3,
             sha256:
                 '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
@@ -531,6 +531,47 @@ void main() {
       expect(updater.status.phase, UpdatePhase.error);
       expect(updater.status.failureKind, UpdateFailureKind.unsupportedRuntime);
       expect(updater.showsReadyBanner, isFalse);
+    },
+  );
+
+  test('check keeps a parked download when remote matches it', () async {
+    final source = _FakeSource(_release(tag: 'v0.0.2'));
+    final updater = buildUpdater(local: '0.0.1', source: source);
+    await updater.checkAndPrefetch();
+    expect(updater.status.phase, UpdatePhase.readyToInstall);
+    expect(updater.status.release!.version, '0.0.2');
+
+    await updater.check(userInitiated: false);
+
+    expect(updater.status.phase, UpdatePhase.readyToInstall);
+    expect(updater.status.release!.version, '0.0.2');
+    expect(updater.status.downloadedFile, isNotNull);
+  });
+
+  test(
+    'checkAndPrefetch supersedes a parked download with a newer release',
+    () async {
+      final source = _FakeSource(_release(tag: 'v0.0.2'));
+      final installer = _FakeInstaller();
+      final updater = buildUpdater(
+        local: '0.0.1',
+        source: source,
+        installer: installer,
+      );
+      await updater.checkAndPrefetch();
+      final firstFile = updater.status.downloadedFile;
+      expect(updater.status.release!.version, '0.0.2');
+
+      source.release = _release(tag: 'v0.0.3');
+      await updater.checkAndPrefetch();
+
+      expect(updater.status.phase, UpdatePhase.readyToInstall);
+      expect(updater.status.release!.version, '0.0.3');
+      expect(updater.status.downloadedFile, isNotNull);
+      expect(updater.status.downloadedFile!.path, isNot(firstFile!.path));
+
+      await updater.installDownloaded();
+      expect(installer.lastRelease!.version, '0.0.3');
     },
   );
 

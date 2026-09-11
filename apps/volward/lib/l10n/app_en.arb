@@ -265,6 +265,12 @@
   "settingsUpdateReady": "A new version is downloaded and ready.",
   "updateReadyAction": "Complete update",
   "updateReadyDismissTooltip": "Dismiss",
+  "updateReadyTooltip": "Update to version {version}",
+  "@updateReadyTooltip": {
+    "placeholders": {
+      "version": {}
+    }
+  },
   "homeOverviewLive": "Live disk data",
   "homeOverviewCached": "Cached disk data",
   "homeOverviewLoading": "Reading disk…",

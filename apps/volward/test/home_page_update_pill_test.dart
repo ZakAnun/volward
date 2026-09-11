@@ -17,6 +17,7 @@ import 'package:volward/updater/update_models.dart';
 import 'package:volward/updater/url_opener.dart';
 import 'package:volward/updater/version_source.dart';
 import 'package:volward/volward_session.dart';
+import 'package:volward/widgets/storage_steward_home.dart';
 import 'package:volward/widgets/update_ready_pill.dart';
 
 class _Local implements LocalVersionReader {
@@ -270,8 +271,9 @@ void main() {
 
     expect(find.byType(AlertDialog), findsNothing);
     expect(updater.status.phase, UpdatePhase.readyToInstall);
-    expect(find.byType(UpdateReadyPill), findsOneWidget);
-    expect(find.text('Complete update'), findsOneWidget);
+    expect(find.byKey(StorageStewardHome.updateReadyKey), findsOneWidget);
+    expect(find.byKey(UpdateReadyPill.actionKey), findsOneWidget);
+    expect(find.text('Complete update'), findsNothing);
     expect(installer.calls, 0);
   });
 
@@ -298,7 +300,7 @@ void main() {
     expect(updater.status.failureKind, UpdateFailureKind.integrity);
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.textContaining('Missing SHA-256 checksum'), findsNothing);
-    expect(find.text('Complete update'), findsNothing);
+    expect(find.byKey(UpdateReadyPill.actionKey), findsNothing);
   });
 
   testWidgets('prefetch waits until cached snapshot restore finishes', (

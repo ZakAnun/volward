@@ -33,7 +33,6 @@ import 'snapshot_view_cache.dart';
 import 'widgets/home/dashboard_theme.dart';
 import 'widgets/storage_steward_home.dart';
 import 'widgets/top_toast.dart';
-import 'widgets/update_ready_pill.dart';
 
 /// Returns the path that the refresh button should target (Design §6.1).
 ///
@@ -516,6 +515,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       _s.refreshCapabilities();
       if (_startupRootGate.isCompleted) {
         unawaited(_loadStorageOverview(_homeTargetPath ?? _scanRootPath()));
+      }
+      if (widget.themeSettings.autoDownloadUpdates) {
+        unawaited(widget.updater.checkAndPrefetch());
       }
     }
   }
@@ -2170,6 +2172,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                                     onOpenItem: (item) => unawaited(
                                       _onHomeBrowse(focusPath: item.path),
                                     ),
+                                    updater: widget.updater,
                                   );
                                 },
                               );
@@ -2267,12 +2270,6 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                   if (_contentMode == _HomeContentMode.browse)
                     _buildStickyBar(context),
                 ],
-              ),
-              Positioned(
-                right: 16,
-                // Browse mode parks a ~56px sticky bar on the bottom edge.
-                bottom: _contentMode == _HomeContentMode.browse ? 72 : 16,
-                child: UpdateReadyPill(updater: widget.updater),
               ),
             ],
           ),

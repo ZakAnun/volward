@@ -836,6 +836,12 @@ abstract class AppLocalizations {
   /// **'Dismiss'**
   String get updateReadyDismissTooltip;
 
+  /// No description provided for @updateReadyTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Update to version {version}'**
+  String updateReadyTooltip(Object version);
+
   /// No description provided for @homeOverviewLive.
   ///
   /// In en, this message translates to:

@@ -265,6 +265,12 @@
   "settingsUpdateReady": "新版本已下载完成，可随时更新。",
   "updateReadyAction": "完成更新",
   "updateReadyDismissTooltip": "暂不更新",
+  "updateReadyTooltip": "可更新到版本 {version}",
+  "@updateReadyTooltip": {
+    "placeholders": {
+      "version": {}
+    }
+  },
   "homeOverviewLive": "实时磁盘数据",
   "homeOverviewCached": "缓存磁盘数据",
   "homeOverviewLoading": "正在读取磁盘…",

@@ -14,6 +14,8 @@ import 'home/dashboard_theme.dart';
 import 'home/largest_items_panel.dart';
 import 'home/skeleton_loader.dart';
 import 'ai_analysis_workspace.dart';
+import '../updater/app_updater.dart';
+import 'update_ready_pill.dart';
 import 'volward_logo.dart';
 
 const _liveChipFill = Color(0x2934C759);
@@ -121,6 +123,7 @@ class StorageStewardHome extends StatefulWidget {
     this.aiSnapshotId,
     this.aiAnalysisGateway = const ProductionAiAnalysisGateway(),
     this.onAiDeleteCompleted,
+    this.updater,
   });
 
   static const panelKey = Key('storage-overview-panel');
@@ -144,6 +147,7 @@ class StorageStewardHome extends StatefulWidget {
   static const actionsKey = Key('storage-overview-actions');
   static const settingsKey = Key('storage-overview-settings');
   static const recentFoldersKey = Key('storage-overview-recent-folders');
+  static const updateReadyKey = Key('storage-overview-update-ready');
 
   final StorageHomeSummary summary;
   final VoidCallback onBrowse;
@@ -161,6 +165,7 @@ class StorageStewardHome extends StatefulWidget {
   final String? aiSnapshotId;
   final AiAnalysisGateway aiAnalysisGateway;
   final VoidCallback? onAiDeleteCompleted;
+  final AppUpdater? updater;
 
   @override
   State<StorageStewardHome> createState() => _StorageStewardHomeState();
@@ -298,6 +303,7 @@ class _StorageStewardHomeState extends State<StorageStewardHome> {
           mainPaneOverride: _mainPaneOverride,
           interactionsLocked: interactionsLocked,
           aiActionFocusNode: _aiActionFocusNode,
+          updater: widget.updater,
         );
       },
     );
@@ -320,6 +326,7 @@ class _HeroVisual extends StatelessWidget {
     required this.mainPaneOverride,
     required this.interactionsLocked,
     required this.aiActionFocusNode,
+    this.updater,
   });
 
   final StorageHomeSummary summary;
@@ -336,6 +343,7 @@ class _HeroVisual extends StatelessWidget {
   final Widget? mainPaneOverride;
   final bool interactionsLocked;
   final FocusNode? aiActionFocusNode;
+  final AppUpdater? updater;
 
   @override
   Widget build(BuildContext context) {
@@ -388,6 +396,7 @@ class _HeroVisual extends StatelessWidget {
                                 mainPaneOverride: mainPaneOverride,
                                 interactionsLocked: interactionsLocked,
                                 aiActionFocusNode: aiActionFocusNode,
+                                updater: updater,
                               )
                             : _WideBoard(
                                 summary: summary,
@@ -401,6 +410,7 @@ class _HeroVisual extends StatelessWidget {
                                 mainPaneOverride: mainPaneOverride,
                                 interactionsLocked: interactionsLocked,
                                 aiActionFocusNode: aiActionFocusNode,
+                                updater: updater,
                               ),
                       );
                       return SingleChildScrollView(
@@ -564,6 +574,7 @@ class _WideBoard extends StatelessWidget {
     required this.mainPaneOverride,
     required this.interactionsLocked,
     required this.aiActionFocusNode,
+    this.updater,
   });
 
   final StorageHomeSummary summary;
@@ -577,6 +588,7 @@ class _WideBoard extends StatelessWidget {
   final Widget? mainPaneOverride;
   final bool interactionsLocked;
   final FocusNode? aiActionFocusNode;
+  final AppUpdater? updater;
 
   @override
   Widget build(BuildContext context) {
@@ -589,7 +601,11 @@ class _WideBoard extends StatelessWidget {
             width: _wideSidebarWidth,
             child: KeyedSubtree(
               key: StorageStewardHome.targetsKey,
-              child: _Sidebar(summary: summary, onSelectTarget: onSelectTarget),
+              child: _Sidebar(
+                summary: summary,
+                onSelectTarget: onSelectTarget,
+                updater: updater,
+              ),
             ),
           ),
           const SizedBox(width: 18),
@@ -633,6 +649,7 @@ class _CompactBoard extends StatelessWidget {
     required this.mainPaneOverride,
     required this.interactionsLocked,
     required this.aiActionFocusNode,
+    this.updater,
   });
 
   final StorageHomeSummary summary;
@@ -647,6 +664,7 @@ class _CompactBoard extends StatelessWidget {
   final Widget? mainPaneOverride;
   final bool interactionsLocked;
   final FocusNode? aiActionFocusNode;
+  final AppUpdater? updater;
 
   @override
   Widget build(BuildContext context) {
@@ -655,7 +673,11 @@ class _CompactBoard extends StatelessWidget {
       children: [
         KeyedSubtree(
           key: StorageStewardHome.targetsKey,
-          child: _Sidebar(summary: summary, onSelectTarget: onSelectTarget),
+          child: _Sidebar(
+            summary: summary,
+            onSelectTarget: onSelectTarget,
+            updater: updater,
+          ),
         ),
         const SizedBox(height: 14),
         KeyedSubtree(
@@ -685,10 +707,15 @@ class _CompactBoard extends StatelessWidget {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.summary, required this.onSelectTarget});
+  const _Sidebar({
+    required this.summary,
+    required this.onSelectTarget,
+    this.updater,
+  });
 
   final StorageHomeSummary summary;
   final ValueChanged<StorageLocationInfo>? onSelectTarget;
+  final AppUpdater? updater;
 
   @override
   Widget build(BuildContext context) {
@@ -753,8 +780,8 @@ class _Sidebar extends StatelessWidget {
                   ),
                 )
               : null;
-
-          return Padding(
+          final hasBoundedHeight = constraints.hasBoundedHeight;
+          final sidebarBody = Padding(
             padding: const EdgeInsets.all(_sidebarPadding),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -785,6 +812,25 @@ class _Sidebar extends StatelessWidget {
                 ],
               ],
             ),
+          );
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              if (hasBoundedHeight)
+                SizedBox(height: constraints.maxHeight, child: sidebarBody)
+              else
+                sidebarBody,
+              if (updater != null)
+                Positioned(
+                  left: _sidebarPadding,
+                  bottom: _sidebarPadding,
+                  child: KeyedSubtree(
+                    key: StorageStewardHome.updateReadyKey,
+                    child: UpdateReadyPill(updater: updater!),
+                  ),
+                ),
+            ],
           );
         },
       ),

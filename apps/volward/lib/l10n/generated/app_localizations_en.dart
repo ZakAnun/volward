@@ -458,6 +458,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateReadyDismissTooltip => 'Dismiss';
 
   @override
+  String updateReadyTooltip(Object version) {
+    return 'Update to version $version';
+  }
+
+  @override
   String get homeOverviewLive => 'Live disk data';
 
   @override

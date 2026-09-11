@@ -429,6 +429,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateReadyDismissTooltip => '暂不更新';
 
   @override
+  String updateReadyTooltip(Object version) {
+    return '可更新到版本 $version';
+  }
+
+  @override
   String get homeOverviewLive => '实时磁盘数据';
 
   @override

@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
@@ -119,7 +120,7 @@ void main() {
     await tester.pumpWidget(_host(updater));
     await tester.pumpAndSettle();
 
-    expect(find.text('Complete update'), findsNothing);
+    expect(find.byKey(UpdateReadyPill.actionKey), findsNothing);
   });
 
   testWidgets('appears once the download parks at readyToInstall', (
@@ -136,10 +137,40 @@ void main() {
     await tester.pump();
 
     expect(updater.status.phase, UpdatePhase.readyToInstall);
-    expect(find.text('Complete update'), findsOneWidget);
+    expect(find.byKey(UpdateReadyPill.actionKey), findsOneWidget);
+    expect(find.byIcon(Icons.system_update_alt_rounded), findsOneWidget);
+    expect(find.text('Complete update'), findsNothing);
+    expect(find.byTooltip('Update to version 0.0.2'), findsNothing);
   });
 
-  testWidgets('tapping the body installs without a confirmation dialog', (
+  testWidgets('hover hint renders inline without a Tooltip overlay', (
+    tester,
+  ) async {
+    final installer = _Installer();
+    final updater = _updater(installer: installer);
+    addTearDown(updater.dispose);
+
+    await tester.pumpWidget(_host(updater));
+    await tester.runAsync(() => updater.checkAndPrefetch());
+    await tester.pump();
+
+    expect(find.byKey(UpdateReadyPill.hoverHintKey), findsNothing);
+
+    final actionCenter = tester.getCenter(
+      find.byKey(UpdateReadyPill.actionKey),
+    );
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: actionCenter);
+    await tester.pump();
+    await gesture.moveTo(actionCenter);
+    await tester.pump();
+
+    expect(find.byKey(UpdateReadyPill.hoverHintKey), findsOneWidget);
+    expect(find.text('Update to version 0.0.2'), findsOneWidget);
+    expect(find.byTooltip('Update to version 0.0.2'), findsNothing);
+  });
+
+  testWidgets('tapping the icon installs without a confirmation dialog', (
     tester,
   ) async {
     final installer = _Installer();
@@ -161,25 +192,5 @@ void main() {
 
     expect(find.byType(AlertDialog), findsNothing);
     expect(installer.calls, 1);
-  });
-
-  testWidgets('the close affordance hides the pill but keeps the package', (
-    tester,
-  ) async {
-    final installer = _Installer();
-    final updater = _updater(installer: installer);
-    addTearDown(updater.dispose);
-
-    await tester.pumpWidget(_host(updater));
-    await tester.runAsync(() => updater.checkAndPrefetch());
-    await tester.pump();
-
-    await tester.tap(find.byKey(UpdateReadyPill.dismissKey));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Complete update'), findsNothing);
-    expect(updater.status.phase, UpdatePhase.readyToInstall);
-    expect(updater.status.downloadedFile, isNotNull);
-    expect(installer.calls, 0);
   });
 }

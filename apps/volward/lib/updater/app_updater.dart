@@ -75,6 +75,11 @@ class AppUpdater extends ChangeNotifier {
   bool get showsReadyBanner =>
       !_dismissedThisSession && _status.phase == UpdatePhase.readyToInstall;
 
+  /// Version string for the package waiting at [UpdatePhase.readyToInstall].
+  String? get readyInstallVersion => _status.phase == UpdatePhase.readyToInstall
+      ? _status.release?.version
+      : null;
+
   /// Hides the home-page pill for this session. Deliberately leaves [_status]
   /// alone: the downloaded package stays installable from the settings page.
   void dismissReadyToInstall() {
@@ -98,11 +103,22 @@ class AppUpdater extends ChangeNotifier {
     _inFlight = true;
     final done = Completer<void>();
     _inFlightDone = done;
+    final previousStatus = _status;
     try {
       _setStatus(const UpdateStatus(phase: UpdatePhase.checking));
       final local = await localVersion();
       final release = await _versionSource.fetchLatest();
-      if (!isRemoteNewer(remoteTag: release.tagName, localVersion: local)) {
+      if (!_shouldFetchRelease(
+        release,
+        localVersion: local,
+        priorStatus: previousStatus,
+      )) {
+        if (previousStatus.phase == UpdatePhase.readyToInstall &&
+            previousStatus.release != null) {
+          // Remote does not beat the parked package — keep it installable.
+          _setStatus(previousStatus);
+          return;
+        }
         _setStatus(UpdateStatus(phase: UpdatePhase.upToDate, release: release));
         return;
       }
@@ -185,6 +201,11 @@ class AppUpdater extends ChangeNotifier {
         return;
       }
 
+      final supersededDownload =
+          previousStatus.phase == UpdatePhase.readyToInstall
+          ? previousStatus.downloadedFile
+          : null;
+
       _setStatus(
         UpdateStatus(
           phase: UpdatePhase.available,
@@ -192,9 +213,16 @@ class AppUpdater extends ChangeNotifier {
           matchedAsset: verifiedAsset,
         ),
       );
+      if (supersededDownload != null) {
+        await _deleteDownloadArtifact(supersededDownload);
+      }
     } catch (error, stackTrace) {
       if (!userInitiated) {
-        _setStatus(UpdateStatus.idle);
+        if (previousStatus.phase == UpdatePhase.readyToInstall) {
+          _setStatus(previousStatus);
+        } else {
+          _setStatus(UpdateStatus.idle);
+        }
         return;
       }
       debugPrint('AppUpdater.check failed: $error\n$stackTrace');
@@ -368,6 +396,9 @@ class AppUpdater extends ChangeNotifier {
   /// Startup path: check silently, and if a newer release exists, fetch it in
   /// the background so the home page can offer a one-tap install. Never throws
   /// and never installs.
+  ///
+  /// When a package is already parked at [UpdatePhase.readyToInstall] and a
+  /// newer release appears, the stale download is discarded and replaced.
   Future<void> checkAndPrefetch() async {
     await check(userInitiated: false);
     if (_status.phase != UpdatePhase.available) return;
@@ -395,6 +426,57 @@ class AppUpdater extends ChangeNotifier {
   void _setStatus(UpdateStatus next) {
     _status = next;
     notifyListeners();
+  }
+
+  bool _shouldFetchRelease(
+    ReleaseInfo release, {
+    required String localVersion,
+    required UpdateStatus priorStatus,
+  }) {
+    final beatsLocal = isRemoteNewer(
+      remoteTag: release.tagName,
+      localVersion: localVersion,
+    );
+    final beatsParked = _remoteBeatsParked(release, priorStatus: priorStatus);
+    if (beatsParked) return true;
+    if (!beatsLocal) return false;
+    return !_alreadyParked(release, priorStatus: priorStatus);
+  }
+
+  bool _remoteBeatsParked(
+    ReleaseInfo release, {
+    required UpdateStatus priorStatus,
+  }) {
+    if (priorStatus.phase != UpdatePhase.readyToInstall) return false;
+    final parked = priorStatus.release?.version;
+    if (parked == null) return false;
+    return compareSemver(release.version, parked) > 0;
+  }
+
+  bool _alreadyParked(
+    ReleaseInfo release, {
+    required UpdateStatus priorStatus,
+  }) {
+    if (priorStatus.phase != UpdatePhase.readyToInstall) return false;
+    final parked = priorStatus.release?.version;
+    if (parked == null) return false;
+    return compareSemver(release.version, parked) <= 0;
+  }
+
+  Future<void> _deleteDownloadArtifact(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+      final parent = file.parent;
+      if (await parent.exists()) {
+        await parent.delete(recursive: true);
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppUpdater._deleteDownloadArtifact failed: $error\n$stackTrace',
+      );
+    }
   }
 }
 
