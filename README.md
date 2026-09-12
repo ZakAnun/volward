@@ -152,7 +152,7 @@ volward/
 bash scripts/setup_macos.sh
 
 cd apps/volward
-fvm use stable          # 与 .fvmrc 对齐
+bash ../../scripts/ensure_fvm_stable.sh   # 与 .fvmrc 对齐（幂等）
 bash scripts/run_macos_debug.sh
 ```
 
@@ -163,7 +163,7 @@ bash scripts/run_macos_debug.sh
 
 ```bash
 cd apps/volward
-fvm use stable
+bash ../../scripts/ensure_fvm_stable.sh
 bash scripts/run_linux_debug.sh   # 需 Linux 本机；会先 cargo build -p volward-facade
 ```
 
