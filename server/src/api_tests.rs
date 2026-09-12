@@ -664,6 +664,7 @@ async fn refresh_404_when_unknown_device() {
     .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "device_not_found");
 }
 
 #[tokio::test]

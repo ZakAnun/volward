@@ -150,6 +150,55 @@ void main() {
     expect(await PlatformAuthStore.instance.userToken(), validToken);
   });
 
+  test('401 refreshes session and retries analyze once', () async {
+    storage['volward_device_uuid'] = 'dev-uuid';
+    await PlatformAuthStore.instance.debugSetUserToken(staleToken);
+
+    var analyzeCalls = 0;
+    final aiClient = MockClient((req) async {
+      expect(req.url.path, endsWith('/ai/analyze'));
+      analyzeCalls++;
+      if (analyzeCalls == 1) {
+        return http.Response('{}', 401);
+      }
+      return http.Response(
+        '{"entries":[{"path":"/a","verdict":"keep","confidence":"high","reason":"x"}],'
+        '"credits_used":1,"credits_remaining":9,"model":"deepseek-v4-flash"}',
+        200,
+      );
+    });
+
+    final authClient = MockClient((req) async {
+      expect(req.url.path, endsWith('/auth/refresh'));
+      return http.Response(
+        jsonEncode({
+          'token': validToken,
+          'user_id': 'u1',
+          'email': 'a@b.com',
+          'credits': 5,
+        }),
+        200,
+      );
+    });
+
+    PlatformAuthStore.instance.configureForTest(
+      client: authClient,
+      baseUrl: baseUrl,
+    );
+
+    final p = PlatformAiProvider(
+      token: staleToken,
+      client: aiClient,
+      baseUrl: baseUrl,
+    );
+
+    final out = await p.analyze([
+      const AiCandidate(path: '/a', sizeBytes: 1, isDir: false),
+    ]);
+    expect(out.verdicts.single.verdict, 'keep');
+    expect(analyzeCalls, 2);
+  });
+
   test('200 parses entries and credits_used', () async {
     await PlatformAuthStore.instance.debugSetUserToken(validToken);
     final client = MockClient(

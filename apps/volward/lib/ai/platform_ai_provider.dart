@@ -69,12 +69,21 @@ class PlatformAiProvider implements AiProvider {
       return res;
     }
 
-    final refreshed = await PlatformAuthStore.instance.refreshSession();
-    if (refreshed == null) {
+    String? newToken;
+    try {
+      final refreshed = await PlatformAuthStore.instance.refreshSession();
+      if (refreshed == null) {
+        await PlatformAuthStore.instance.clearUserToken();
+        throw Exception('session_expired');
+      }
+      newToken = await PlatformAuthStore.instance.userToken();
+    } on Exception catch (e) {
+      if (e.toString().contains('refresh_rate_limited')) {
+        rethrow;
+      }
       await PlatformAuthStore.instance.clearUserToken();
       throw Exception('session_expired');
     }
-    final newToken = await PlatformAuthStore.instance.userToken();
     if (newToken == null || newToken.isEmpty) {
       await PlatformAuthStore.instance.clearUserToken();
       throw Exception('session_expired');

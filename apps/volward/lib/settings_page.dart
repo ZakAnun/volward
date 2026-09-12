@@ -78,14 +78,15 @@ class _SettingsPageState extends State<SettingsPage> {
         key = null;
       }
       PlatformUser? platformUser;
+      String? platformBanner;
       if (mode == AiMode.platform) {
         try {
-          await PlatformAuthStore.instance.ensureDeviceRegistered();
-          platformUser =
-              await PlatformAuthStore.instance.refreshSession() ??
-              await PlatformAuthStore.instance.currentUser();
-        } catch (_) {
-          platformUser = null;
+          platformUser = await PlatformAuthStore.instance.restorePlatformUser();
+        } catch (e) {
+          platformUser = await PlatformAuthStore.instance.currentUser();
+          if (mounted) {
+            platformBanner = platformAuthErrorMessage(context.l10n, e);
+          }
         }
       }
       if (!mounted) return;
@@ -94,6 +95,9 @@ class _SettingsPageState extends State<SettingsPage> {
         _aiMode = mode;
         _hasByokKey = key != null && key.isNotEmpty;
         _platformUser = platformUser;
+        if (platformBanner != null) {
+          _platformBanner = platformBanner;
+        }
         _coverageBudgetTokensController.text =
             '${budget.tokens > 0 ? budget.tokens : AiSettingsStore.defaultCoverageBudgetTokens}';
         _coverageBudgetCreditsController.text =
@@ -248,16 +252,15 @@ class _SettingsPageState extends State<SettingsPage> {
     String? banner = _platformBanner;
     if (mode == AiMode.platform) {
       try {
-        await PlatformAuthStore.instance.ensureDeviceRegistered();
-        platformUser =
-            await PlatformAuthStore.instance.refreshSession() ??
-            await PlatformAuthStore.instance.currentUser();
+        platformUser = await PlatformAuthStore.instance.restorePlatformUser();
         if (platformUser == null) {
           banner = null;
         }
       } catch (e) {
-        banner = platformAuthErrorMessage(l10n, e);
-        platformUser = null;
+        platformUser = await PlatformAuthStore.instance.currentUser();
+        banner = platformUser == null
+            ? platformAuthErrorMessage(l10n, e)
+            : null;
       }
     } else if (mode == AiMode.off) {
       platformUser = null;

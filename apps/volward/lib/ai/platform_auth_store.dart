@@ -237,9 +237,41 @@ class PlatformAuthStore {
         !isJwtExpiringSoon(existing)) {
       return existing;
     }
-    final user = await refreshSession();
-    if (user == null) return null;
-    return userToken();
+    try {
+      final user = await refreshSession();
+      if (user == null) return existing;
+      return userToken();
+    } on Exception catch (e) {
+      if (existing != null &&
+          existing.isNotEmpty &&
+          e.toString().contains('refresh_rate_limited')) {
+        return existing;
+      }
+      rethrow;
+    }
+  }
+
+  /// Refreshes when needed and returns the linked user profile for settings UI.
+  Future<PlatformUser?> restorePlatformUser() async {
+    await ensureDeviceRegistered();
+    final existing = await userToken();
+    final needsRefresh =
+        existing == null || existing.isEmpty || isJwtExpiringSoon(existing);
+
+    if (needsRefresh) {
+      try {
+        final refreshed = await refreshSession();
+        if (refreshed != null) return refreshed;
+      } on Exception catch (e) {
+        if (existing != null &&
+            existing.isNotEmpty &&
+            e.toString().contains('refresh_rate_limited')) {
+          return currentUser();
+        }
+        rethrow;
+      }
+    }
+    return currentUser();
   }
 
   Future<PlatformUser?> currentUser() async {

@@ -71,7 +71,7 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
           .whereType<Map>()
           .map((e) => _Pack.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-      final user = await PlatformAuthStore.instance.currentUser();
+      final user = await PlatformAuthStore.instance.restorePlatformUser();
       if (!mounted) return;
       setState(() {
         _packs = list;
@@ -95,7 +95,7 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
       _selectedCredits = pack.credits;
     });
     try {
-      final token = await PlatformAuthStore.instance.userToken();
+      final token = await PlatformAuthStore.instance.ensureUserToken();
       if (token == null) throw Exception('session_expired');
       const base = PlatformAuthStore.defaultBaseUrl;
       final res = await http

@@ -148,24 +148,38 @@ pub async fn refresh(
     }
 
     let now = Utc::now().timestamp_millis();
-    let row: Option<(Option<String>, Option<i64>)> = sqlx::query_as(
-        "SELECT user_id, last_refresh_at FROM devices WHERE id = ?",
+    let cooldown_before = now - REFRESH_COOLDOWN_MS;
+    let claim = sqlx::query(
+        r#"
+        UPDATE devices SET last_refresh_at = ?
+        WHERE id = ?
+          AND user_id IS NOT NULL
+          AND (last_refresh_at IS NULL OR last_refresh_at <= ?)
+        "#,
     )
+    .bind(now)
     .bind(device_id)
-    .fetch_optional(&state.pool)
+    .bind(cooldown_before)
+    .execute(&state.pool)
     .await?;
 
-    let Some((user_id, last_refresh_at)) = row else {
-        return Err(AppError::NotFound);
-    };
-    let Some(uid) = user_id else {
-        return Err(AppError::Forbidden("link_account_required"));
-    };
-    if let Some(last) = last_refresh_at {
-        if now - last < REFRESH_COOLDOWN_MS {
-            return Err(AppError::TooManyRequests);
-        }
+    if claim.rows_affected() == 0 {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT user_id FROM devices WHERE id = ?")
+                .bind(device_id)
+                .fetch_optional(&state.pool)
+                .await?;
+        return match row {
+            None => Err(AppError::NotFoundMsg("device_not_found")),
+            Some((None,)) => Err(AppError::Forbidden("link_account_required")),
+            Some(_) => Err(AppError::TooManyRequests),
+        };
     }
+
+    let uid: String = sqlx::query_scalar("SELECT user_id FROM devices WHERE id = ?")
+        .bind(device_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     let user_row: Option<(String, i64)> =
         sqlx::query_as("SELECT email, credits FROM users WHERE id = ?")
@@ -175,12 +189,6 @@ pub async fn refresh(
     let Some((email, credits)) = user_row else {
         return Err(AppError::Forbidden("link_account_required"));
     };
-
-    sqlx::query("UPDATE devices SET last_refresh_at = ? WHERE id = ?")
-        .bind(now)
-        .bind(device_id)
-        .execute(&state.pool)
-        .await?;
     sqlx::query("UPDATE users SET last_seen_at = ? WHERE id = ?")
         .bind(now)
         .bind(&uid)

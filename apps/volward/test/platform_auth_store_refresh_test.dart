@@ -177,6 +177,51 @@ void main() {
     },
   );
 
+  test('ensureUserToken keeps existing token on refresh 429', () async {
+    seedDeviceUuid();
+    const expiringToken = 'eyJhbGciOiJub25lIn0.eyJleHAiOjE.sig';
+    await PlatformAuthStore.instance.debugSetUserToken(expiringToken);
+    final client = MockClient((req) async => http.Response('{}', 429));
+    PlatformAuthStore.instance.configureForTest(
+      client: client,
+      baseUrl: baseUrl,
+    );
+
+    final token = await PlatformAuthStore.instance.ensureUserToken();
+    expect(token, expiringToken);
+  });
+
+  test(
+    'restorePlatformUser falls back to currentUser on refresh 429',
+    () async {
+      seedDeviceUuid();
+      const expiringToken = 'eyJhbGciOiJub25lIn0.eyJleHAiOjE.sig';
+      await PlatformAuthStore.instance.debugSetUserToken(expiringToken);
+      storage['volward_device_token'] = 'device-token';
+
+      final client = MockClient((req) async {
+        if (req.url.path.endsWith('/auth/refresh')) {
+          return http.Response('{}', 429);
+        }
+        if (req.url.path.endsWith('/auth/me')) {
+          return http.Response(
+            jsonEncode({'user_id': 'u1', 'email': 'a@b.com', 'credits': 3}),
+            200,
+          );
+        }
+        fail('unexpected request: ${req.url}');
+      });
+      PlatformAuthStore.instance.configureForTest(
+        client: client,
+        baseUrl: baseUrl,
+      );
+
+      final user = await PlatformAuthStore.instance.restorePlatformUser();
+      expect(user?.email, 'a@b.com');
+      expect(user?.credits, 3);
+    },
+  );
+
   test('ensureUserToken refreshes when token expiring soon', () async {
     seedDeviceUuid();
     // exp = 1 (1970) — always expiring soon
