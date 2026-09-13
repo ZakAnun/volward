@@ -119,9 +119,11 @@ Dart 通过 `VolwardNativeBridge` 调用 Rust；`VolwardSession` 统一编排扫
 | 工具 | 用途 |
 |------|------|
 | Rust stable | workspace 构建与测试 |
-| FVM + Flutter stable | `apps/volward`（见 `.fvmrc`） |
+| FVM + Flutter stable | `apps/volward`（见 `.fvmrc`，通道名 `stable`） |
 | `protoc` | `volward-facade` / index protobuf 生成 |
 | macOS：Xcode + Apple ID | Debug 签名与 TCC 联调 |
+
+**Flutter stable 说明：** 仓库与 CI 均使用 stable **通道**（非固定 patch 号）。`run_*_debug.sh` **不会**自动安装或升级 Flutter；日常 debug 前若尚未对齐，在 `apps/volward` 执行一次 `bash ../../scripts/ensure_fvm_stable.sh`（首次 `setup_macos.sh`、跑测试/format 时会自动调用）。Flutter 发布新 stable 后若 format 与 CI 不一致，可 `fvm remove stable && fvm install stable` 再 ensure。
 
 ### 仓库结构
 
@@ -152,18 +154,18 @@ volward/
 bash scripts/setup_macos.sh
 
 cd apps/volward
-bash ../../scripts/ensure_fvm_stable.sh   # 与 .fvmrc 对齐（幂等）
+bash ../../scripts/ensure_fvm_stable.sh   # debug 脚本内不含此步，见上文
 bash scripts/run_macos_debug.sh
 ```
 
-`run_macos_debug.sh` 会：校验 Debug 签名配置 → `build_rust.sh` → `fvm flutter run -d macos`。  
+`run_macos_debug.sh` 仅：校验 Debug 签名 → `build_rust.sh` → `fvm flutter run -d macos`。  
 可选 `--dart-define=VOLWARD_API_BASE=...`（默认 `https://api.volwardapp.com/v1`）。
 
 **Linux**
 
 ```bash
 cd apps/volward
-bash ../../scripts/ensure_fvm_stable.sh
+bash ../../scripts/ensure_fvm_stable.sh   # 同上，debug 脚本内不含
 bash scripts/run_linux_debug.sh   # 需 Linux 本机；会先 cargo build -p volward-facade
 ```
 
@@ -172,6 +174,7 @@ bash scripts/run_linux_debug.sh   # 需 Linux 本机；会先 cargo build -p vol
 ```bash
 # 在 Windows 的 Git Bash / MSYS2 中（脚本会拒绝 WSL/macOS 的 uname）
 cd apps/volward
+bash ../../scripts/ensure_fvm_stable.sh   # 同上，debug 脚本内不含
 bash scripts/run_windows_debug.sh
 ```
 
