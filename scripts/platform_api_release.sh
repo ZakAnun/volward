@@ -14,9 +14,48 @@ require_nonempty() {
 }
 
 if [[ -z "${PLATFORM_DEPLOY_HOST:-${DEPLOY_HOST:-}}" ]]; then
+  if [[ "${PLATFORM_DEPLOY_REQUIRED:-}" == "1" ]]; then
+    echo "error: DEPLOY_HOST is required for this release but is unset." >&2
+    exit 1
+  fi
   echo "DEPLOY_HOST is unset; skipping platform API deployment."
   exit 0
 fi
+
+assert_refresh_smoke_body() {
+  local label="$1"
+  local status="$2"
+  local body="$3"
+  if [[ "$status" != "404" ]]; then
+    echo "Platform API refresh smoke ($label) expected HTTP 404, got $status: $body" >&2
+    return 1
+  fi
+  if [[ "$body" != *'"error":"not_found"'* && "$body" != *'"error": "not_found"'* ]]; then
+    echo "Platform API refresh smoke ($label) missing not_found error: $body" >&2
+    return 1
+  fi
+  if [[ "$body" != *'device_not_found'* ]]; then
+    echo "Platform API refresh smoke ($label) missing device_not_found message: $body" >&2
+    return 1
+  fi
+  echo "Platform API refresh smoke passed ($label)."
+}
+
+verify_refresh_route() {
+  local base_url="$1"
+  local label="$2"
+  local tmp status body
+  tmp="$(mktemp)"
+  status="$(
+    curl -sS -o "$tmp" -w '%{http_code}' \
+      -X POST "${base_url%/}/v1/auth/refresh" \
+      -H 'Content-Type: application/json' \
+      -d '{"device_uuid":"volward-ci-smoke-unknown-device"}'
+  )"
+  body="$(cat "$tmp")"
+  rm -f "$tmp"
+  assert_refresh_smoke_body "$label" "$status" "$body"
+}
 
 deploy_host="${PLATFORM_DEPLOY_HOST:-${DEPLOY_HOST}}"
 deploy_port="${PLATFORM_DEPLOY_PORT:-${DEPLOY_PORT:-22}}"
@@ -134,6 +173,32 @@ if [[ "$health_body" != *'"ok":true'* ]]; then
 fi
 echo "Platform API local health check passed."
 
+"${ssh_cmd[@]}" "$remote" bash -s <<'REMOTE'
+set -euo pipefail
+tmp="$(mktemp)"
+status="$(
+  curl -sS -o "$tmp" -w '%{http_code}' \
+    -X POST 'http://127.0.0.1:8080/v1/auth/refresh' \
+    -H 'Content-Type: application/json' \
+    -d '{"device_uuid":"volward-ci-smoke-unknown-device"}'
+)"
+body="$(cat "$tmp")"
+rm -f "$tmp"
+if [[ "$status" != "404" ]]; then
+  echo "Platform API refresh smoke (local) expected HTTP 404, got $status: $body" >&2
+  exit 1
+fi
+if [[ "$body" != *'"error":"not_found"'* && "$body" != *'"error": "not_found"'* ]]; then
+  echo "Platform API refresh smoke (local) missing not_found error: $body" >&2
+  exit 1
+fi
+if [[ "$body" != *'device_not_found'* ]]; then
+  echo "Platform API refresh smoke (local) missing device_not_found message: $body" >&2
+  exit 1
+fi
+echo "Platform API refresh smoke passed (local)."
+REMOTE
+
 if [[ -n "${PLATFORM_HEALTHCHECK_URL:-}" ]]; then
   public_body="$(curl -fsS "$PLATFORM_HEALTHCHECK_URL")"
   if [[ "$public_body" != *'"ok":true'* ]]; then
@@ -141,6 +206,10 @@ if [[ -n "${PLATFORM_HEALTHCHECK_URL:-}" ]]; then
     exit 1
   fi
   echo "Platform API public health check passed: $PLATFORM_HEALTHCHECK_URL"
+fi
+
+if [[ -n "${VOLWARD_API_BASE:-}" ]]; then
+  verify_refresh_route "${VOLWARD_API_BASE%/v1}" "public"
 fi
 
 echo "Platform API deployed to ${remote} (${platform_image})"
