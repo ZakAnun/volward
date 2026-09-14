@@ -2055,7 +2055,7 @@ mod tests {
     fn load_index_from_path_accepts_pb_index() {
         use prost::Message;
 
-        use crate::pb_convert::snapshot_index_to_proto;
+        use volward_index_pb::snapshot_index_to_proto;
 
         let index = SnapshotIndex::from(&minimal_snapshot());
         let expected_id = index.snapshot_id.clone();
@@ -2175,7 +2175,7 @@ mod tests {
     fn async_load_index_from_path_accepts_pb_index() {
         use prost::Message;
 
-        use crate::pb_convert::snapshot_index_to_proto;
+        use volward_index_pb::snapshot_index_to_proto;
 
         let index = SnapshotIndex::from(&minimal_snapshot());
         let expected_id = index.snapshot_id.clone();

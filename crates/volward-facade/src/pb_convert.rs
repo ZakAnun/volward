@@ -12,11 +12,6 @@ use volward_core::model;
 
 use crate::proto;
 
-pub use volward_index_pb::{
-    decode_snapshot_index, encode_snapshot_index, snapshot_index_from_proto,
-    snapshot_index_to_proto,
-};
-
 // --- enum -> proto field number (keep in sync with proto/volward.proto) ---
 
 fn capability_pb(c: model::CapabilityLevel) -> i32 {

@@ -192,10 +192,9 @@ ensure_fvm_flutter() {
   command -v fvm >/dev/null 2>&1 || die "fvm still not on PATH after install. Open a new terminal or add FVM to PATH, then re-run."
   ok "fvm $(fvm --version 2>/dev/null | head -1 || echo present)"
 
+  bash "$ROOT_DIR/scripts/ensure_fvm_stable.sh"
   (
     cd "$APP_DIR"
-    fvm install
-    fvm use stable
     fvm flutter config --enable-macos-desktop >/dev/null 2>&1 \
       || warn "could not enable macOS desktop via flutter config (continuing)"
     fvm flutter --version

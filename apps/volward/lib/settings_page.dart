@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'ai/ai_settings_store.dart';
+import 'ai/platform_auth_messages.dart';
 import 'ai/platform_auth_store.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
 import 'l10n/l10n.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'widgets/ai_purchase_dialog.dart';
+import 'widgets/platform_link_email_section.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
@@ -47,7 +49,6 @@ class _SettingsPageState extends State<SettingsPage> {
   AiMode _aiMode = AiMode.off;
   bool _hasByokKey = false;
   PlatformUser? _platformUser;
-  bool _platformBusy = false;
   String? _platformBanner;
 
   @override
@@ -77,12 +78,15 @@ class _SettingsPageState extends State<SettingsPage> {
         key = null;
       }
       PlatformUser? platformUser;
+      String? platformBanner;
       if (mode == AiMode.platform) {
         try {
-          await PlatformAuthStore.instance.ensureDeviceRegistered();
+          platformUser = await PlatformAuthStore.instance.restorePlatformUser();
+        } catch (e) {
           platformUser = await PlatformAuthStore.instance.currentUser();
-        } catch (_) {
-          platformUser = null;
+          if (mounted) {
+            platformBanner = platformAuthErrorMessage(context.l10n, e);
+          }
         }
       }
       if (!mounted) return;
@@ -91,6 +95,9 @@ class _SettingsPageState extends State<SettingsPage> {
         _aiMode = mode;
         _hasByokKey = key != null && key.isNotEmpty;
         _platformUser = platformUser;
+        if (platformBanner != null) {
+          _platformBanner = platformBanner;
+        }
         _coverageBudgetTokensController.text =
             '${budget.tokens > 0 ? budget.tokens : AiSettingsStore.defaultCoverageBudgetTokens}';
         _coverageBudgetCreditsController.text =
@@ -124,101 +131,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     if (!mounted) return;
     showTopToast(context, message: l10n.aiSettingsCoverageBudgetSaved);
-  }
-
-  Future<void> _linkPlatformEmail() async {
-    final l10n = context.l10n;
-    final emailCtrl = TextEditingController();
-    final email = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.aiSettingsLinkEmail),
-        content: TextField(
-          controller: emailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          autofocus: true,
-          decoration: InputDecoration(hintText: l10n.aiSettingsEnterEmail),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.scanActionCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, emailCtrl.text.trim()),
-            child: Text(l10n.aiSettingsSendOtp),
-          ),
-        ],
-      ),
-    );
-    if (email == null || email.isEmpty || !mounted) return;
-
-    setState(() {
-      _platformBusy = true;
-      _platformBanner = null;
-    });
-    try {
-      await PlatformAuthStore.instance.ensureDeviceRegistered();
-      await PlatformAuthStore.instance.requestOtp(email);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _platformBusy = false;
-        _platformBanner = e.toString();
-      });
-      return;
-    }
-
-    if (!mounted) return;
-    final otpCtrl = TextEditingController();
-    final code = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.aiSettingsEnterOtp),
-        content: TextField(
-          controller: otpCtrl,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          maxLength: 6,
-          decoration: InputDecoration(hintText: l10n.aiSettingsEnterOtp),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.scanActionCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, otpCtrl.text.trim()),
-            child: Text(l10n.aiSettingsVerifyOtp),
-          ),
-        ],
-      ),
-    );
-    if (code == null || code.isEmpty || !mounted) {
-      setState(() => _platformBusy = false);
-      return;
-    }
-
-    try {
-      final user = await PlatformAuthStore.instance.verifyOtp(email, code);
-      unawaited(
-        Analytics.instance.track(AnalyticsEvents.aiAccountLinked, {
-          'provider': 'platform',
-        }),
-      );
-      if (!mounted) return;
-      setState(() {
-        _platformUser = user;
-        _platformBusy = false;
-        _platformBanner = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _platformBusy = false;
-        _platformBanner = e.toString();
-      });
-    }
   }
 
   Future<void> _openPurchase() async {
@@ -340,17 +252,15 @@ class _SettingsPageState extends State<SettingsPage> {
     String? banner = _platformBanner;
     if (mode == AiMode.platform) {
       try {
-        await PlatformAuthStore.instance.ensureDeviceRegistered();
-        platformUser = await PlatformAuthStore.instance.currentUser();
+        platformUser = await PlatformAuthStore.instance.restorePlatformUser();
         if (platformUser == null) {
           banner = null;
         }
       } catch (e) {
-        final msg = e.toString();
-        if (msg.contains('session_expired')) {
-          banner = l10n.aiSettingsSessionExpired;
-          platformUser = null;
-        }
+        platformUser = await PlatformAuthStore.instance.currentUser();
+        banner = platformUser == null
+            ? platformAuthErrorMessage(l10n, e)
+            : null;
       }
     } else if (mode == AiMode.off) {
       platformUser = null;
@@ -422,30 +332,55 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                         ),
-                      if (_platformUser == null)
-                        AppleButton(
-                          label: l10n.aiSettingsLinkEmail,
-                          onPressed: _platformBusy ? null : _linkPlatformEmail,
-                        )
-                      else ...[
-                        Text(
-                          l10n.aiSettingsLinkedAs(_platformUser!.email),
-                          style: context.vwFinePrint,
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 200),
+                        sizeCurve: Curves.easeInOut,
+                        firstCurve: Curves.easeInOut,
+                        secondCurve: Curves.easeInOut,
+                        crossFadeState: _platformUser == null
+                            ? CrossFadeState.showFirst
+                            : CrossFadeState.showSecond,
+                        firstChild: PlatformLinkEmailSection(
+                          onLinked: (user) {
+                            setState(() {
+                              _platformUser = user;
+                              _platformBanner = null;
+                            });
+                            showTopToast(
+                              context,
+                              message: l10n.aiSettingsLinkSuccess,
+                            );
+                          },
+                          onError: (msg) =>
+                              setState(() => _platformBanner = msg),
                         ),
-                        const SizedBox(height: AppleSpacing.xs),
-                        Text(
-                          l10n.aiSettingsCreditsRemaining(
-                            _platformUser!.credits,
-                          ),
-                          style: context.vwCaptionStrong,
-                        ),
-                        const SizedBox(height: AppleSpacing.xs),
-                        AppleButton(
-                          label: l10n.aiSettingsBuyCredits,
-                          variant: AppleButtonVariant.pearl,
-                          onPressed: _openPurchase,
-                        ),
-                      ],
+                        secondChild: _platformUser == null
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    l10n.aiSettingsLinkedAs(
+                                      _platformUser!.email,
+                                    ),
+                                    style: context.vwFinePrint,
+                                  ),
+                                  const SizedBox(height: AppleSpacing.xs),
+                                  Text(
+                                    l10n.aiSettingsCreditsRemaining(
+                                      _platformUser!.credits,
+                                    ),
+                                    style: context.vwCaptionStrong,
+                                  ),
+                                  const SizedBox(height: AppleSpacing.xs),
+                                  AppleButton(
+                                    label: l10n.aiSettingsBuyCredits,
+                                    variant: AppleButtonVariant.pearl,
+                                    onPressed: _openPurchase,
+                                  ),
+                                ],
+                              ),
+                      ),
                       const SizedBox(height: AppleSpacing.md),
                       Text(
                         l10n.aiSettingsCoverageBudgetCreditsLabel,

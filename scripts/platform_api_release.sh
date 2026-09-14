@@ -14,9 +14,78 @@ require_nonempty() {
 }
 
 if [[ -z "${PLATFORM_DEPLOY_HOST:-${DEPLOY_HOST:-}}" ]]; then
+  if [[ "${PLATFORM_DEPLOY_REQUIRED:-}" == "1" ]]; then
+    echo "error: DEPLOY_HOST is required for this release but is unset." >&2
+    exit 1
+  fi
   echo "DEPLOY_HOST is unset; skipping platform API deployment."
   exit 0
 fi
+
+REFRESH_SMOKE_DEVICE_UUID='volward-ci-smoke-unknown-device'
+
+# Shared curl body used locally and on the deploy host via SSH.
+read -r -d '' _REFRESH_SMOKE_CURL <<'BASH' || true
+tmp="$(mktemp)"
+REFRESH_SMOKE_STATUS="$(
+  curl -sS -o "$tmp" -w '%{http_code}' \
+    -X POST "${base_url%/}/v1/auth/refresh" \
+    -H 'Content-Type: application/json' \
+    -d "{\"device_uuid\":\"${REFRESH_SMOKE_DEVICE_UUID}\"}"
+)"
+REFRESH_SMOKE_BODY="$(cat "$tmp")"
+rm -f "$tmp"
+BASH
+
+run_refresh_smoke_curl() {
+  local base_url="$1"
+  eval "$_REFRESH_SMOKE_CURL"
+}
+
+assert_refresh_smoke_body() {
+  local label="$1"
+  local status="$2"
+  local body="$3"
+  if [[ "$status" != "404" ]]; then
+    echo "Platform API refresh smoke ($label) expected HTTP 404, got $status: $body" >&2
+    return 1
+  fi
+  if [[ "$body" != *'"error":"not_found"'* && "$body" != *'"error": "not_found"'* ]]; then
+    echo "Platform API refresh smoke ($label) missing not_found error: $body" >&2
+    return 1
+  fi
+  if [[ "$body" != *'device_not_found'* ]]; then
+    echo "Platform API refresh smoke ($label) missing device_not_found message: $body" >&2
+    return 1
+  fi
+  echo "Platform API refresh smoke passed ($label)."
+}
+
+verify_refresh_smoke_at() {
+  local base_url="$1"
+  local label="$2"
+  run_refresh_smoke_curl "$base_url"
+  assert_refresh_smoke_body "$label" "$REFRESH_SMOKE_STATUS" "$REFRESH_SMOKE_BODY"
+}
+
+verify_refresh_smoke_local() {
+  local label="$1"
+  local status body
+  {
+    IFS= read -r status
+    IFS= read -r body
+  } < <(
+    "${ssh_cmd[@]}" "$remote" bash -s <<REMOTE
+set -euo pipefail
+REFRESH_SMOKE_DEVICE_UUID='${REFRESH_SMOKE_DEVICE_UUID}'
+base_url='http://127.0.0.1:8080'
+${_REFRESH_SMOKE_CURL}
+printf '%s\n' "\$REFRESH_SMOKE_STATUS"
+printf '%s' "\$REFRESH_SMOKE_BODY"
+REMOTE
+  )
+  assert_refresh_smoke_body "$label" "$status" "$body"
+}
 
 deploy_host="${PLATFORM_DEPLOY_HOST:-${DEPLOY_HOST}}"
 deploy_port="${PLATFORM_DEPLOY_PORT:-${DEPLOY_PORT:-22}}"
@@ -32,6 +101,10 @@ require_nonempty PLATFORM_RESEND_API_KEY "${PLATFORM_RESEND_API_KEY:-}"
 require_nonempty PLATFORM_RESEND_FROM "${PLATFORM_RESEND_FROM:-}"
 require_nonempty PLATFORM_PADDLE_API_KEY "${PLATFORM_PADDLE_API_KEY:-}"
 require_nonempty PLATFORM_PADDLE_WEBHOOK_SECRET "${PLATFORM_PADDLE_WEBHOOK_SECRET:-}"
+
+if [[ "${PLATFORM_DEPLOY_REQUIRED:-}" == "1" ]]; then
+  require_nonempty VOLWARD_API_BASE "${VOLWARD_API_BASE:-}"
+fi
 
 paddle_env="${PLATFORM_PADDLE_ENV:-live}"
 case "$paddle_env" in
@@ -134,6 +207,8 @@ if [[ "$health_body" != *'"ok":true'* ]]; then
 fi
 echo "Platform API local health check passed."
 
+verify_refresh_smoke_local "local"
+
 if [[ -n "${PLATFORM_HEALTHCHECK_URL:-}" ]]; then
   public_body="$(curl -fsS "$PLATFORM_HEALTHCHECK_URL")"
   if [[ "$public_body" != *'"ok":true'* ]]; then
@@ -141,6 +216,10 @@ if [[ -n "${PLATFORM_HEALTHCHECK_URL:-}" ]]; then
     exit 1
   fi
   echo "Platform API public health check passed: $PLATFORM_HEALTHCHECK_URL"
+fi
+
+if [[ -n "${VOLWARD_API_BASE:-}" ]]; then
+  verify_refresh_smoke_at "${VOLWARD_API_BASE%/v1}" "public"
 fi
 
 echo "Platform API deployed to ${remote} (${platform_image})"

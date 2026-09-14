@@ -20,9 +20,19 @@ on:
         default: v0.0.6
 
 jobs:
+  deploy-platform-api:
+    name: Deploy Platform API
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/platform-api-release.yml
+    secrets: inherit
+    with:
+      version: ${{ github.ref_name }}
+      require_deploy: true
+
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    if: github.event_name == 'push'
+    needs: [deploy-platform-api]
+    if: github.event_name == 'push' && needs.deploy-platform-api.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -169,6 +179,12 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: [deploy-platform-api]
+    if: |
+      always() && (
+        (github.event_name == 'push' && needs.deploy-platform-api.result == 'success') ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: windows-latest
 
     steps:
@@ -331,7 +347,8 @@ jobs:
 
   build-linux:
     name: Build Linux
-    if: github.event_name == 'push'
+    needs: [deploy-platform-api]
+    if: github.event_name == 'push' && needs.deploy-platform-api.result == 'success'
     runs-on: ubuntu-22.04
 
     steps:

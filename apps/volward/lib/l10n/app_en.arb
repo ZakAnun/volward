@@ -410,6 +410,15 @@
   "aiSettingsEnterOtp": "6-digit code",
   "aiSettingsSendOtp": "Send code",
   "aiSettingsVerifyOtp": "Verify",
+  "aiSettingsLinkSuccess": "Email linked successfully",
+  "aiSettingsResendOtp": "Resend code",
+  "aiSettingsResendCooldown": "Resend in {seconds}s",
+  "@aiSettingsResendCooldown": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "aiSettingsInvalidEmail": "Enter a valid email address",
   "aiSettingsLinkedAs": "Linked as {email}",
   "@aiSettingsLinkedAs": {
     "placeholders": {
@@ -426,6 +435,17 @@
   "aiPurchasePayHint": "Pay with WeChat on the checkout page. Balance updates after payment.",
   "aiPurchaseWaitingHint": "Payment may still be processing. Wait a moment, then refresh your credits in Settings.",
   "aiSettingsSessionExpired": "Login expired — please link your email again.",
+  "aiErrorOtpResendTooSoon": "Too many requests. Try again in 60 seconds.",
+  "aiErrorOtpRequestFailed": "Failed to send code. Check your email and try again.",
+  "aiErrorOtpVerifyFailed": "Invalid or expired code. Request a new one.",
+  "aiErrorDeviceRegisterFailed": "Device registration failed. Check your connection.",
+  "aiErrorLinkAccountRequired": "Link your email to continue.",
+  "aiErrorPlatformApiUnconfigured": "Platform API is not configured.",
+  "aiErrorDeviceNotFound": "Device not registered. Restart the app.",
+  "aiErrorRefreshRateLimited": "Refresh too frequent. Try again shortly.",
+  "aiErrorCheckoutFailed": "Checkout failed. Try again later.",
+  "aiErrorPacksFailed": "Could not load packs. Check your connection.",
+  "aiErrorPlatformGeneric": "Something went wrong. Try again later.",
   "aiPrecheckCreditsCost": "Estimated cost: 1 credit (balance {balance})",
   "@aiPrecheckCreditsCost": {
     "placeholders": {

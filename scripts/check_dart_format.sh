@@ -3,6 +3,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bash "$root/scripts/ensure_fvm_stable.sh"
 cd "$root/apps/volward"
 
 if command -v fvm >/dev/null 2>&1; then

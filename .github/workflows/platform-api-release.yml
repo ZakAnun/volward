@@ -1,20 +1,38 @@
 name: Platform API Release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_call:
+    inputs:
+      version:
+        description: 'Image tag (e.g. v0.0.7)'
+        required: true
+        type: string
+      require_deploy:
+        description: 'Fail when DEPLOY_HOST is unset (release pipeline gate)'
+        required: false
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       version:
         description: 'Image tag to deploy (e.g. v0.0.6). Used for redeploy without rebuilding.'
         required: true
         type: string
+      rebuild:
+        description: 'Rebuild and push image before deploy'
+        required: false
+        type: boolean
+        default: false
+      require_deploy:
+        description: 'Fail when DEPLOY_HOST is unset'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   publish-image:
     name: Publish Platform API image
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_call' || (github.event_name == 'workflow_dispatch' && inputs.rebuild)
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -47,7 +65,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ github.ref_name }}
+            type=raw,value=${{ inputs.version }}
             type=sha,format=long
 
       - name: Build and push image
@@ -69,7 +87,7 @@ jobs:
     if: |
       always() && (
         needs.publish-image.result == 'success' ||
-        (github.event_name == 'workflow_dispatch' && needs.publish-image.result == 'skipped')
+        needs.publish-image.result == 'skipped'
       )
     permissions:
       contents: read
@@ -92,6 +110,7 @@ jobs:
       PLATFORM_GHCR_USER: ${{ vars.PLATFORM_GHCR_USER }}
       PLATFORM_HEALTHCHECK_URL: ${{ secrets.PLATFORM_HEALTHCHECK_URL }}
       VOLWARD_API_BASE: ${{ secrets.VOLWARD_API_BASE }}
+      PLATFORM_DEPLOY_REQUIRED: ${{ inputs.require_deploy && '1' || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -99,8 +118,7 @@ jobs:
       - name: Set platform image
         run: |
           owner_lc=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          version="${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}"
-          echo "PLATFORM_IMAGE=ghcr.io/${owner_lc}/volward-platform-api:${version}" >> "$GITHUB_ENV"
+          echo "PLATFORM_IMAGE=ghcr.io/${owner_lc}/volward-platform-api:${{ inputs.version }}" >> "$GITHUB_ENV"
 
       - name: Deploy platform API
         run: bash scripts/platform_api_release.sh

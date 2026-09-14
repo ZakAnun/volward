@@ -130,3 +130,76 @@ pub async fn me(
         credits,
     }))
 }
+
+#[derive(Deserialize)]
+pub struct RefreshBody {
+    pub device_uuid: String,
+}
+
+const REFRESH_COOLDOWN_MS: i64 = 60_000;
+
+pub async fn refresh(
+    State(state): State<AppState>,
+    Json(body): Json<RefreshBody>,
+) -> Result<Json<VerifyOtpResponse>, AppError> {
+    let device_id = body.device_uuid.trim();
+    if device_id.is_empty() {
+        return Err(AppError::BadRequest("device_uuid_required".into()));
+    }
+
+    let now = Utc::now().timestamp_millis();
+    let cooldown_before = now - REFRESH_COOLDOWN_MS;
+    let claim = sqlx::query(
+        r#"
+        UPDATE devices SET last_refresh_at = ?
+        WHERE id = ?
+          AND user_id IS NOT NULL
+          AND (last_refresh_at IS NULL OR last_refresh_at <= ?)
+        "#,
+    )
+    .bind(now)
+    .bind(device_id)
+    .bind(cooldown_before)
+    .execute(&state.pool)
+    .await?;
+
+    if claim.rows_affected() == 0 {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT user_id FROM devices WHERE id = ?")
+                .bind(device_id)
+                .fetch_optional(&state.pool)
+                .await?;
+        return match row {
+            None => Err(AppError::NotFoundMsg("device_not_found")),
+            Some((None,)) => Err(AppError::Forbidden("link_account_required")),
+            Some(_) => Err(AppError::TooManyRequests),
+        };
+    }
+
+    let uid: String = sqlx::query_scalar("SELECT user_id FROM devices WHERE id = ?")
+        .bind(device_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    let user_row: Option<(String, i64)> =
+        sqlx::query_as("SELECT email, credits FROM users WHERE id = ?")
+            .bind(&uid)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((email, credits)) = user_row else {
+        return Err(AppError::Forbidden("link_account_required"));
+    };
+    sqlx::query("UPDATE users SET last_seen_at = ? WHERE id = ?")
+        .bind(now)
+        .bind(&uid)
+        .execute(&state.pool)
+        .await?;
+
+    let token = issue_token(&state.config.jwt_secret, device_id, Some(&uid))?;
+    Ok(Json(VerifyOtpResponse {
+        token,
+        user_id: uid,
+        email,
+        credits,
+    }))
+}

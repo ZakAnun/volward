@@ -661,6 +661,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsVerifyOtp => 'Verify';
 
   @override
+  String get aiSettingsLinkSuccess => 'Email linked successfully';
+
+  @override
+  String get aiSettingsResendOtp => 'Resend code';
+
+  @override
+  String aiSettingsResendCooldown(int seconds) {
+    return 'Resend in ${seconds}s';
+  }
+
+  @override
+  String get aiSettingsInvalidEmail => 'Enter a valid email address';
+
+  @override
   String aiSettingsLinkedAs(String email) {
     return 'Linked as $email';
   }
@@ -684,6 +698,46 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get aiSettingsSessionExpired =>
       'Login expired — please link your email again.';
+
+  @override
+  String get aiErrorOtpResendTooSoon =>
+      'Too many requests. Try again in 60 seconds.';
+
+  @override
+  String get aiErrorOtpRequestFailed =>
+      'Failed to send code. Check your email and try again.';
+
+  @override
+  String get aiErrorOtpVerifyFailed =>
+      'Invalid or expired code. Request a new one.';
+
+  @override
+  String get aiErrorDeviceRegisterFailed =>
+      'Device registration failed. Check your connection.';
+
+  @override
+  String get aiErrorLinkAccountRequired => 'Link your email to continue.';
+
+  @override
+  String get aiErrorPlatformApiUnconfigured =>
+      'Platform API is not configured.';
+
+  @override
+  String get aiErrorDeviceNotFound => 'Device not registered. Restart the app.';
+
+  @override
+  String get aiErrorRefreshRateLimited =>
+      'Refresh too frequent. Try again shortly.';
+
+  @override
+  String get aiErrorCheckoutFailed => 'Checkout failed. Try again later.';
+
+  @override
+  String get aiErrorPacksFailed =>
+      'Could not load packs. Check your connection.';
+
+  @override
+  String get aiErrorPlatformGeneric => 'Something went wrong. Try again later.';
 
   @override
   String aiPrecheckCreditsCost(int balance) {

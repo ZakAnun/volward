@@ -151,58 +151,54 @@ void main() {
     expect(session.startIndexLoadCallsForTest, 0);
   });
 
-  test(
-    'large cache files get extended timeout beyond 8 seconds',
-    () async {
-      final temp = await Directory.systemTemp.createTemp(
-        'volward-large-restore-timeout',
-      );
-      addTearDown(() {
-        SnapshotCache.cacheDirForTest = null;
-        temp.deleteSync(recursive: true);
-      });
-      SnapshotCache.cacheDirForTest = temp;
+  test('large cache files get extended timeout beyond 8 seconds', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-large-restore-timeout',
+    );
+    addTearDown(() {
+      SnapshotCache.cacheDirForTest = null;
+      temp.deleteSync(recursive: true);
+    });
+    SnapshotCache.cacheDirForTest = temp;
 
-      const root = '/Users/test/Applications';
-      writeCachedSnapshot(
-        cacheDir: temp,
-        manifestName: 'apps',
-        snapshotName: 'apps',
-        root: root,
-        snapshotId: 'apps-scan',
-        scannedAtMs: 1700000000400,
-        sizeBytes: 1024,
-        reclaimableBytes: 0,
-      );
-      final snapshotFile = File('${temp.path}/snapshots/apps.json');
-      final handle = snapshotFile.openSync(mode: FileMode.write);
-      handle.truncateSync(91 * 1024 * 1024);
-      handle.closeSync();
+    const root = '/Users/test/Applications';
+    writeCachedSnapshot(
+      cacheDir: temp,
+      manifestName: 'apps',
+      snapshotName: 'apps',
+      root: root,
+      snapshotId: 'apps-scan',
+      scannedAtMs: 1700000000400,
+      sizeBytes: 1024,
+      reclaimableBytes: 0,
+    );
+    final snapshotFile = File('${temp.path}/snapshots/apps.json');
+    final handle = snapshotFile.openSync(mode: FileMode.write);
+    handle.truncateSync(91 * 1024 * 1024);
+    handle.closeSync();
 
-      var polls = 0;
-      final session = VolwardSession.test()
-        ..treatAsIndexApiForTest = true
-        ..setScanRoots([root])
-        ..indexLoadAsyncResultsForTest = ['ok'];
-      session.isIndexLoadingForTest = () {
-        if (session.startIndexLoadCallsForTest == 0) return false;
-        polls++;
-        if (polls == 75) {
-          session.engineIndexSnapshotForTest = snapshotForRoot(
-            'apps-loaded',
-            root,
-          );
-        }
-        return polls < 75;
-      };
+    var polls = 0;
+    final session = VolwardSession.test()
+      ..treatAsIndexApiForTest = true
+      ..setScanRoots([root])
+      ..indexLoadAsyncResultsForTest = ['ok'];
+    session.isIndexLoadingForTest = () {
+      if (session.startIndexLoadCallsForTest == 0) return false;
+      polls++;
+      if (polls == 75) {
+        session.engineIndexSnapshotForTest = snapshotForRoot(
+          'apps-loaded',
+          root,
+        );
+      }
+      return polls < 75;
+    };
 
-      final restored = await session.restoreCachedSnapshotForTest();
-      expect(restored, isTrue);
-      expect(session.lastSnapshot?.snapshotId, 'apps-loaded');
-      expect(session.startIndexLoadCallsForTest, 1);
-    },
-    timeout: const Timeout(Duration(seconds: 20)),
-  );
+    final restored = await session.restoreCachedSnapshotForTest();
+    expect(restored, isTrue);
+    expect(session.lastSnapshot?.snapshotId, 'apps-loaded');
+    expect(session.startIndexLoadCallsForTest, 1);
+  }, timeout: const Timeout(Duration(seconds: 20)));
 
   test('oversized cache timeout is not mislabeled as too-large', () async {
     final temp = await Directory.systemTemp.createTemp(

@@ -21,6 +21,8 @@ pub enum AppError {
     BadGateway,
     #[error("not found")]
     NotFound,
+    #[error("{0}")]
+    NotFoundMsg(&'static str),
     #[error("internal error: {0}")]
     Internal(String),
     #[error(transparent)]
@@ -36,7 +38,7 @@ impl AppError {
             AppError::TooManyRequests => "rate_limited",
             AppError::BadRequest(_) => "bad_request",
             AppError::BadGateway => "upstream_error",
-            AppError::NotFound => "not_found",
+            AppError::NotFound | AppError::NotFoundMsg(_) => "not_found",
             AppError::Internal(_) | AppError::Sqlx(_) => "internal_error",
         }
     }
@@ -49,7 +51,7 @@ impl AppError {
             AppError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::BadGateway => StatusCode::BAD_GATEWAY,
-            AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::NotFound | AppError::NotFoundMsg(_) => StatusCode::NOT_FOUND,
             AppError::Internal(_) | AppError::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

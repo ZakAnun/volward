@@ -5,6 +5,19 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+fvm_config_changes=()
+while IFS= read -r f; do
+  [[ -n "$f" ]] && fvm_config_changes+=("$f")
+done <<EOF
+$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -E '^apps/volward/(\.fvmrc|\.fvm/fvm_config\.json)$' || true)
+EOF
+if [[ ${#fvm_config_changes[@]} -gt 0 ]]; then
+  echo "error: do not commit FVM config changes (${fvm_config_changes[*]})." >&2
+  echo "Project Flutter SDK must stay on stable. Run: bash scripts/ensure_fvm_stable.sh" >&2
+  exit 1
+fi
+
 staged=()
 while IFS= read -r f; do
   [[ -n "$f" ]] && staged+=("$f")
