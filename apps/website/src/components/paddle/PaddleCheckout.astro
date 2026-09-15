@@ -1,0 +1,144 @@
+---
+/** Client-only Paddle.js bootstrap. Must render inside PaddleCheckoutShell. */
+---
+
+<script>
+  import {
+    PAY_PAGE_COPY,
+    parsePaddleTransactionId,
+  } from '../../lib/paddle-checkout';
+  import { paddleClientToken, paddleJsEnvironment } from '../../lib/paddle-config';
+
+  const PADDLE_JS_URL = 'https://cdn.paddle.com/paddle/v2/paddle.js';
+
+  type PaddleGlobal = {
+    Initialize: (options: {
+      token: string;
+      checkout?: { settings?: Record<string, string> };
+      eventCallback?: (event: { name?: string; data?: unknown }) => void;
+    }) => void;
+    Environment: { set: (env: 'sandbox' | 'production') => void };
+    Checkout: { open: (options: { transactionId: string }) => void };
+  };
+
+  let paddleInitPromise: Promise<PaddleGlobal> | null = null;
+
+  function shellRoot(): HTMLElement | null {
+    return document.querySelector('[data-paddle-shell]');
+  }
+
+  function setStatus(message: string, opts?: { spinning?: boolean; showRetry?: boolean }) {
+    const root = shellRoot();
+    if (!root) return;
+    const status = root.querySelector('[data-paddle-status]');
+    const spinner = root.querySelector('[data-paddle-spinner]');
+    const retry = root.querySelector('[data-paddle-retry]');
+    if (status) status.textContent = message;
+    if (spinner instanceof HTMLElement) {
+      spinner.hidden = opts?.spinning === false;
+    }
+    if (retry instanceof HTMLButtonElement) {
+      retry.hidden = opts?.showRetry !== true;
+    }
+  }
+
+  function loadPaddleScript(): Promise<PaddleGlobal> {
+    return new Promise((resolve, reject) => {
+      const existing = (window as Window & { Paddle?: PaddleGlobal }).Paddle;
+      if (existing) {
+        resolve(existing);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = PADDLE_JS_URL;
+      script.async = true;
+      script.onload = () => {
+        const paddle = (window as Window & { Paddle?: PaddleGlobal }).Paddle;
+        if (paddle) resolve(paddle);
+        else reject(new Error('Paddle global missing after script load'));
+      };
+      script.onerror = () => reject(new Error('Failed to load Paddle.js'));
+      document.head.appendChild(script);
+    });
+  }
+
+  function handlePaddleEvent(event: { name?: string; data?: unknown }) {
+    if (event.name === 'checkout.completed') {
+      setStatus(PAY_PAGE_COPY.success, { spinning: false, showRetry: false });
+    }
+    if (event.name === 'checkout.error') {
+      console.error('[paddle] checkout.error', event.data);
+      setStatus(PAY_PAGE_COPY.loadFailed, { spinning: false, showRetry: true });
+    }
+    if (event.name === 'checkout.closed') {
+      setStatus(PAY_PAGE_COPY.closed, { spinning: false, showRetry: true });
+    }
+  }
+
+  function ensurePaddleInitialized(): Promise<PaddleGlobal> {
+    if (paddleInitPromise) {
+      return paddleInitPromise;
+    }
+
+    const token = paddleClientToken();
+    if (!token) {
+      return Promise.reject(new Error('missing paddle client token'));
+    }
+
+    paddleInitPromise = (async () => {
+      const Paddle = await loadPaddleScript();
+      Paddle.Environment.set(paddleJsEnvironment());
+      Paddle.Initialize({
+        token,
+        checkout: {
+          settings: {
+            displayMode: 'overlay',
+            theme: 'light',
+            locale: 'zh',
+          },
+        },
+        eventCallback: handlePaddleEvent,
+      });
+      return Paddle;
+    })();
+
+    return paddleInitPromise;
+  }
+
+  async function openCheckout(transactionId: string) {
+    if (!paddleClientToken()) {
+      setStatus(PAY_PAGE_COPY.missingToken, { spinning: false });
+      return;
+    }
+
+    setStatus(PAY_PAGE_COPY.loading, { spinning: true, showRetry: false });
+
+    try {
+      const Paddle = await ensurePaddleInitialized();
+      Paddle.Checkout.open({ transactionId });
+      setStatus(PAY_PAGE_COPY.ready, { spinning: false, showRetry: true });
+    } catch (error) {
+      console.error('[paddle] openCheckout failed', error);
+      paddleInitPromise = null;
+      setStatus(PAY_PAGE_COPY.loadFailed, { spinning: false, showRetry: true });
+    }
+  }
+
+  function bindRetry(transactionId: string) {
+    const root = shellRoot();
+    const retry = root?.querySelector('[data-paddle-retry]');
+    if (!(retry instanceof HTMLButtonElement)) return;
+    retry.textContent = PAY_PAGE_COPY.retry;
+    retry.addEventListener('click', () => {
+      void openCheckout(transactionId);
+    });
+  }
+
+  const transactionId = parsePaddleTransactionId(window.location.search);
+  if (!transactionId) {
+    setStatus(PAY_PAGE_COPY.missingTransaction, { spinning: false });
+  } else {
+    bindRetry(transactionId);
+    void openCheckout(transactionId);
+  }
+</script>

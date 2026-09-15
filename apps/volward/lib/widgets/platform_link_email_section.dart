@@ -52,10 +52,12 @@ class _PlatformLinkEmailSectionState extends State<PlatformLinkEmailSection> {
   InputDecoration _fieldDecoration(
     BuildContext context, {
     required String hint,
+    String? counterText,
   }) {
     final v = context.volward;
     return InputDecoration(
       hintText: hint,
+      counterText: counterText,
       isDense: true,
       filled: true,
       fillColor: v.surfacePearl,
@@ -202,7 +204,11 @@ class _PlatformLinkEmailSectionState extends State<PlatformLinkEmailSection> {
           maxLength: 6,
           enabled: !_busy,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: _fieldDecoration(context, hint: l10n.aiSettingsEnterOtp),
+          decoration: _fieldDecoration(
+            context,
+            hint: l10n.aiSettingsEnterOtp,
+            counterText: '',
+          ),
         ),
         const SizedBox(height: AppleSpacing.sm),
         AppleButton(

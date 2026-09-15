@@ -6,9 +6,10 @@ interface Props {
   lang: 'en' | 'zh';
   image?: string;
   alternates?: Array<{ lang: string; href: string }>;
+  robots?: string;
 }
 
-const { title, description, canonical, lang, image = '/og/volward-share.svg', alternates = [] } = Astro.props;
+const { title, description, canonical, lang, image = '/og/volward-share.svg', alternates = [], robots = 'index,follow' } = Astro.props;
 const imageUrl = new URL(image, canonical).href;
 const ext = image.split('.').pop()?.toLowerCase() ?? '';
 const imageType = ext === 'png' ? 'image/png'
@@ -21,7 +22,7 @@ const alternateLocales = alternates.map((item) => item.lang).filter((item) => it
 
 <title>{title}</title>
 <meta name="description" content={description} />
-<meta name="robots" content="index,follow" />
+<meta name="robots" content={robots} />
 <link rel="icon" href="/branding/volward-logo.svg" type="image/svg+xml" />
 <link rel="icon" href="/branding/volward-logo.png" type="image/png" />
 <link rel="apple-touch-icon" href="/branding/volward-logo.png" />

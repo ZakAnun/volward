@@ -47,6 +47,28 @@ bash scripts/website_release.sh
 
 生成后的静态文件不会包含 GitHub token，服务器也不需要配置 GitHub token。
 
+## Paddle checkout page (`/pay/`)
+
+Build requires:
+
+- `PADDLE_CLIENT_TOKEN` — Paddle Dashboard client-side token (Secret in GHA)
+- `PADDLE_ENV` — `sandbox` or `live` (local dev; GHA reuses repo variable `PLATFORM_PADDLE_ENV`)
+
+Example:
+
+```bash
+SITE_URL=https://volwardapp.com \
+PADDLE_CLIENT_TOKEN=... \
+PADDLE_ENV=sandbox \
+pnpm build
+```
+
+Paddle Default payment link must be `https://volwardapp.com/pay/`.
+
+Website release reads `PLATFORM_PADDLE_ENV` from GitHub Variables (same key as platform-api), so both services stay on the same Paddle environment (`sandbox` or `live`).
+
+Local dev on `localhost` may fail Paddle checkout if the transaction was created for `volwardapp.com`; use a fresh `_ptxn` after pointing sandbox Default payment link at localhost, or test on the deployed domain.
+
 ## 预览
 
 ```bash

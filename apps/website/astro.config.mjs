@@ -9,6 +9,8 @@ if ((process.env.NODE_ENV === 'production' || process.env.CI) && !process.env.SI
 const siteUrl = process.env.SITE_URL ?? 'http://localhost:4321';
 const aptabaseWebKey = process.env.APTABASE_WEB_KEY ?? '';
 const aptabaseHost = process.env.APTABASE_HOST ?? 'https://analytics.volwardapp.com';
+const paddleClientToken = process.env.PADDLE_CLIENT_TOKEN ?? '';
+const paddleEnv = process.env.PADDLE_ENV ?? 'sandbox';
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
 const websiteVersion = typeof packageJson.version === 'string' ? packageJson.version : '0.0.0';
 
@@ -17,12 +19,18 @@ export default defineConfig({
   base: '/',
   output: 'static',
   trailingSlash: 'always',
-  integrations: [sitemap()],
+  integrations: [
+    sitemap({
+      filter: (page) => !page.includes('/pay/'),
+    }),
+  ],
   vite: {
     define: {
       __APTABASE_WEB_KEY__: JSON.stringify(aptabaseWebKey),
       __APTABASE_HOST__: JSON.stringify(aptabaseHost),
       __VOLWARD_WEBSITE_VERSION__: JSON.stringify(websiteVersion),
+      __PADDLE_CLIENT_TOKEN__: JSON.stringify(paddleClientToken),
+      __PADDLE_ENV__: JSON.stringify(paddleEnv),
     },
   },
 });

@@ -503,9 +503,9 @@ async fn packs_returns_list_for_device() {
 }
 
 #[tokio::test]
-async fn checkout_returns_url_for_known_pack() {
+async fn checkout_rejects_unconfigured_product_id() {
     let ctx = test_ctx().await;
-    // provider_product_id = 'FILL_ME' in seeded packs → triggers dev fallback URL
+    // Seeded packs use FILL_ME — checkout must not return a non-Paddle URL.
     let token = register_and_link(&ctx, "d-co", "co@example.com", 0).await;
     let (status, body) = post_auth(
         &ctx.app,
@@ -514,9 +514,8 @@ async fn checkout_returns_url_for_known_pack() {
         r#"{"pack_id":"starter"}"#,
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    let url = body["checkout_url"].as_str().unwrap();
-    assert!(url.contains("starter"));
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body["error"], "internal_error");
 }
 
 #[tokio::test]

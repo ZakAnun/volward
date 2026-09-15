@@ -74,7 +74,13 @@ class PlatformAuthStore {
     return value;
   }
 
+  /// Resolved platform API base URL (includes `/v1` suffix when configured).
+  String get baseUrl => _base;
+
   http.Client get _http => _client ?? http.Client();
+
+  /// Shared HTTP client for platform API calls (including billing).
+  http.Client get httpClient => _http;
 
   Future<String?> userToken() async {
     if (_debugTokenMode) return debugUserToken;

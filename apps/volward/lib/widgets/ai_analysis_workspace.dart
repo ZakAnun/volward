@@ -1016,7 +1016,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         : state.budgetCredits;
     final suggested = isTokenBudget
         ? (currentLimit + AiSettingsStore.defaultCoverageBudgetTokens ~/ 2)
-        : currentLimit + 10;
+        : currentLimit + AiSettingsStore.defaultCoverageBudgetCredits ~/ 2;
     final controller = TextEditingController(text: '$suggested');
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1560,7 +1560,22 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         ],
         if (_useFullCoverage) ...[
           const SizedBox(height: AppleSpacing.xs),
-          Text(l10n.aiCoverageFullRunHint, style: context.vwCaption),
+          Text(
+            _mode == AiMode.platform
+                ? l10n.aiCoverageFullRunPlatformHint
+                : l10n.aiCoverageFullRunHint,
+            style: context.vwCaption,
+          ),
+          if (_mode == AiMode.platform &&
+              _coverageBudgetCredits != null &&
+              (_coverageJobState == null ||
+                  _coverageJobState!.status == CoverageJobStatus.idle)) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              l10n.aiCoverageRunBudgetConfigured(_coverageBudgetCredits!),
+              style: context.vwCaptionStrong,
+            ),
+          ],
           if (_coverageHydrating) ...[
             const SizedBox(height: AppleSpacing.xs),
             Text(l10n.aiCoverageHydrating, style: context.vwCaption),

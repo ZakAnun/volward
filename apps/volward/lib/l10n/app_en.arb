@@ -400,6 +400,7 @@
   "aiSettingsByokLabel": "Bring Your Own Key (DeepSeek)",
   "aiSettingsOffLabel": "Off",
   "aiSettingsPlatformLabel": "Volward Platform",
+  "aiSettingsPlatformLoading": "Connecting platform account…",
   "aiSettingsApiKeyHint": "sk-...",
   "aiSettingsApiKeySaved": "API key saved",
   "aiSettingsApiKeyCleared": "API key cleared",
@@ -407,7 +408,7 @@
   "aiSettingsClearKey": "Clear",
   "aiSettingsLinkEmail": "Link email",
   "aiSettingsEnterEmail": "Email address",
-  "aiSettingsEnterOtp": "6-digit code",
+  "aiSettingsEnterOtp": "Enter the 6-digit code from your email",
   "aiSettingsSendOtp": "Send code",
   "aiSettingsVerifyOtp": "Verify",
   "aiSettingsLinkSuccess": "Email linked successfully",
@@ -434,6 +435,31 @@
   "aiSettingsBuyCredits": "Buy credits",
   "aiPurchasePayHint": "Pay with WeChat on the checkout page. Balance updates after payment.",
   "aiPurchaseWaitingHint": "Payment may still be processing. Wait a moment, then refresh your credits in Settings.",
+  "aiPurchasePackCredits": "{count} credits",
+  "@aiPurchasePackCredits": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "aiPurchasePriceCny": "¥{price}",
+  "@aiPurchasePriceCny": {
+    "placeholders": {
+      "price": { "type": "String" }
+    }
+  },
+  "aiPurchaseNoPacks": "No credit packs available.",
+  "aiPurchaseOpenInBrowser": "Open payment page in browser",
+  "aiPurchaseScanQrHint": "Or scan with your phone (WeChat)",
+  "aiPurchaseWaitingPayment": "Waiting for payment confirmation…",
+  "aiPurchaseSelectedSummary": "{label} · {credits} credits · ¥{price}",
+  "@aiPurchaseSelectedSummary": {
+    "placeholders": {
+      "label": { "type": "String" },
+      "credits": { "type": "int" },
+      "price": { "type": "String" }
+    }
+  },
+  "aiPurchaseBackToPacks": "Choose another pack",
   "aiSettingsSessionExpired": "Login expired — please link your email again.",
   "aiErrorOtpResendTooSoon": "Too many requests. Try again in 60 seconds.",
   "aiErrorOtpRequestFailed": "Failed to send code. Check your email and try again.",
@@ -444,6 +470,7 @@
   "aiErrorDeviceNotFound": "Device not registered. Restart the app.",
   "aiErrorRefreshRateLimited": "Refresh too frequent. Try again shortly.",
   "aiErrorCheckoutFailed": "Checkout failed. Try again later.",
+  "aiErrorCheckoutUrlInvalid": "Payment page is unavailable. Please try again later.",
   "aiErrorPacksFailed": "Could not load packs. Check your connection.",
   "aiErrorPlatformGeneric": "Something went wrong. Try again later.",
   "aiPrecheckCreditsCost": "Estimated cost: 1 credit (balance {balance})",
@@ -490,6 +517,37 @@
     }
   },
   "aiCoverageFullRunHint": "Full-coverage analysis runs in the background until every unclassified file has a verdict.",
+  "aiCoverageFullRunPlatformHint": "Full-coverage runs in the background. Each AI request uses 1 platform credit from your balance. The run budget below caps credits spent on this scan.",
+  "aiCoverageBudgetCreditsUsage": "Credits this run: {used} / {budget}",
+  "@aiCoverageBudgetCreditsUsage": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBudgetTokensUsage": "Tokens this run: {used} / {budget}",
+  "@aiCoverageBudgetTokensUsage": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageRunBudgetConfigured": "Run budget for this scan: {budget} credits",
+  "@aiCoverageRunBudgetConfigured": {
+    "placeholders": {
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoveragePause": "Pause coverage",
   "aiCoverageResume": "Resume coverage",
   "aiCoverageCompletedNotice": "This scan is fully covered by AI analysis.",
@@ -515,8 +573,19 @@
       }
     }
   },
-  "aiCoverageBudgetPaused": "Paused at budget ({used}/{budget}). Resume below or raise the limit in Settings.",
-  "@aiCoverageBudgetPaused": {
+  "aiCoverageBudgetPausedCredits": "Run credit budget reached ({used}/{budget}). Raise the limit to continue, or adjust it in Settings.",
+  "@aiCoverageBudgetPausedCredits": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBudgetPausedTokens": "Run token budget reached ({used}/{budget}). Raise the limit to continue, or adjust it in Settings.",
+  "@aiCoverageBudgetPausedTokens": {
     "placeholders": {
       "used": {
         "type": "int"
@@ -551,13 +620,24 @@
       }
     }
   },
-  "aiCoverageNotifyBudgetPaused": "Coverage paused at budget: {analyzed}/{total} analyzed.",
-  "@aiCoverageNotifyBudgetPaused": {
+  "aiCoverageNotifyBudgetPausedCredits": "Coverage paused at run budget: {used}/{budget} credits used.",
+  "@aiCoverageNotifyBudgetPausedCredits": {
     "placeholders": {
-      "analyzed": {
+      "used": {
         "type": "int"
       },
-      "total": {
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageNotifyBudgetPausedTokens": "Coverage paused at run budget: {used}/{budget} tokens used.",
+  "@aiCoverageNotifyBudgetPausedTokens": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
         "type": "int"
       }
     }
@@ -582,7 +662,9 @@
   "aiSettingsCoverageBudgetTokensLabel": "Full-coverage token budget (BYOK)",
   "aiSettingsCoverageBudgetTokensHint": "500000",
   "aiSettingsCoverageBudgetCreditsLabel": "Full-coverage credit budget (Platform)",
-  "aiSettingsCoverageBudgetCreditsHint": "20",
+  "aiSettingsCoverageBudgetCreditsHint": "50",
+  "aiSettingsCoverageBudgetCreditsDescription": "Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.",
+  "aiSettingsCoverageBudgetTokensDescription": "Maximum tokens to spend on one full-coverage run. The job pauses when this cap is reached.",
   "aiSettingsCoverageBudgetSave": "Save budget",
   "aiSettingsCoverageBudgetSaved": "Coverage budget saved",
   "aiCleanupSourceAiToolCache": "AI tool cache/temp",

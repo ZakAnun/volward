@@ -631,6 +631,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsPlatformLabel => 'Volward Platform';
 
   @override
+  String get aiSettingsPlatformLoading => 'Connecting platform account…';
+
+  @override
   String get aiSettingsApiKeyHint => 'sk-...';
 
   @override
@@ -652,7 +655,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsEnterEmail => 'Email address';
 
   @override
-  String get aiSettingsEnterOtp => '6-digit code';
+  String get aiSettingsEnterOtp => 'Enter the 6-digit code from your email';
 
   @override
   String get aiSettingsSendOtp => 'Send code';
@@ -696,6 +699,36 @@ class AppLocalizationsEn extends AppLocalizations {
       'Payment may still be processing. Wait a moment, then refresh your credits in Settings.';
 
   @override
+  String aiPurchasePackCredits(int count) {
+    return '$count credits';
+  }
+
+  @override
+  String aiPurchasePriceCny(String price) {
+    return '¥$price';
+  }
+
+  @override
+  String get aiPurchaseNoPacks => 'No credit packs available.';
+
+  @override
+  String get aiPurchaseOpenInBrowser => 'Open payment page in browser';
+
+  @override
+  String get aiPurchaseScanQrHint => 'Or scan with your phone (WeChat)';
+
+  @override
+  String get aiPurchaseWaitingPayment => 'Waiting for payment confirmation…';
+
+  @override
+  String aiPurchaseSelectedSummary(String label, int credits, String price) {
+    return '$label · $credits credits · ¥$price';
+  }
+
+  @override
+  String get aiPurchaseBackToPacks => 'Choose another pack';
+
+  @override
   String get aiSettingsSessionExpired =>
       'Login expired — please link your email again.';
 
@@ -731,6 +764,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiErrorCheckoutFailed => 'Checkout failed. Try again later.';
+
+  @override
+  String get aiErrorCheckoutUrlInvalid =>
+      'Payment page is unavailable. Please try again later.';
 
   @override
   String get aiErrorPacksFailed =>
@@ -807,6 +844,25 @@ class AppLocalizationsEn extends AppLocalizations {
       'Full-coverage analysis runs in the background until every unclassified file has a verdict.';
 
   @override
+  String get aiCoverageFullRunPlatformHint =>
+      'Full-coverage runs in the background. Each AI request uses 1 platform credit from your balance. The run budget below caps credits spent on this scan.';
+
+  @override
+  String aiCoverageBudgetCreditsUsage(int used, int budget) {
+    return 'Credits this run: $used / $budget';
+  }
+
+  @override
+  String aiCoverageBudgetTokensUsage(int used, int budget) {
+    return 'Tokens this run: $used / $budget';
+  }
+
+  @override
+  String aiCoverageRunBudgetConfigured(int budget) {
+    return 'Run budget for this scan: $budget credits';
+  }
+
+  @override
   String get aiCoveragePause => 'Pause coverage';
 
   @override
@@ -827,8 +883,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String aiCoverageBudgetPaused(int used, int budget) {
-    return 'Paused at budget ($used/$budget). Resume below or raise the limit in Settings.';
+  String aiCoverageBudgetPausedCredits(int used, int budget) {
+    return 'Run credit budget reached ($used/$budget). Raise the limit to continue, or adjust it in Settings.';
+  }
+
+  @override
+  String aiCoverageBudgetPausedTokens(int used, int budget) {
+    return 'Run token budget reached ($used/$budget). Raise the limit to continue, or adjust it in Settings.';
   }
 
   @override
@@ -861,8 +922,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String aiCoverageNotifyBudgetPaused(int analyzed, int total) {
-    return 'Coverage paused at budget: $analyzed/$total analyzed.';
+  String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
+    return 'Coverage paused at run budget: $used/$budget credits used.';
+  }
+
+  @override
+  String aiCoverageNotifyBudgetPausedTokens(int used, int budget) {
+    return 'Coverage paused at run budget: $used/$budget tokens used.';
   }
 
   @override
@@ -904,7 +970,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Full-coverage credit budget (Platform)';
 
   @override
-  String get aiSettingsCoverageBudgetCreditsHint => '20';
+  String get aiSettingsCoverageBudgetCreditsHint => '50';
+
+  @override
+  String get aiSettingsCoverageBudgetCreditsDescription =>
+      'Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.';
+
+  @override
+  String get aiSettingsCoverageBudgetTokensDescription =>
+      'Maximum tokens to spend on one full-coverage run. The job pauses when this cap is reached.';
 
   @override
   String get aiSettingsCoverageBudgetSave => 'Save budget';

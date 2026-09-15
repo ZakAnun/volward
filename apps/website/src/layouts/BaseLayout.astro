@@ -10,16 +10,17 @@ interface Props {
   lang: 'en' | 'zh';
   image?: string;
   alternates?: Array<{ lang: string; href: string }>;
+  robots?: string;
 }
 
-const { title, description, canonical, lang, image, alternates } = Astro.props;
+const { title, description, canonical, lang, image, alternates, robots } = Astro.props;
 ---
 
 <!doctype html>
 <html lang={lang}>
   <head>
     <meta charset="utf-8" />
-    <Head title={title} description={description} canonical={canonical} lang={lang} image={image} alternates={alternates} />
+    <Head title={title} description={description} canonical={canonical} lang={lang} image={image} alternates={alternates} robots={robots} />
   </head>
   <body>
     <slot />

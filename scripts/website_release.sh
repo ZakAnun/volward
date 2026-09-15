@@ -10,7 +10,10 @@ resolve_aptabase_web --require
 
 cd "$WEB_DIR"
 pnpm install --frozen-lockfile
+# Unit tests before build; pay-page-build strict mode runs after dist exists.
+WEBSITE_REQUIRE_RELEASE= pnpm test --run
 pnpm build
+WEBSITE_REQUIRE_RELEASE=1 pnpm vitest run test/pay-page-build.test.ts
 
 if [[ -n "${EXPECTED_RELEASE_TAG:-}" ]]; then
   node "$WEB_DIR/scripts/verify_release_build.mjs" "$DIST" "${EXPECTED_RELEASE_TAG}"

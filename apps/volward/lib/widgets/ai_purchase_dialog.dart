@@ -1,15 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../ai/paddle_checkout_url.dart';
 import '../ai/platform_ai_provider.dart';
 import '../ai/platform_auth_messages.dart';
 import '../ai/platform_auth_store.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../l10n/l10n.dart';
-import 'dart:convert';
 
 class AiPurchaseResult {
   const AiPurchaseResult({required this.packId, required this.credits});
@@ -17,7 +18,7 @@ class AiPurchaseResult {
   final int credits;
 }
 
-/// Shows packs → checkout QR → polls quota until balance increases.
+/// Shows packs → checkout (browser + QR) → polls quota until balance increases.
 Future<AiPurchaseResult?> showAiPurchaseDialog(BuildContext context) {
   return showDialog<AiPurchaseResult>(
     context: context,
@@ -33,13 +34,17 @@ class _AiPurchaseDialog extends StatefulWidget {
 }
 
 class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
+  static const _packCardHeight = 72.0;
+  static const _packCardSpacing = 8.0;
+  static const _expectedPackCount = 3;
+
   List<_Pack> _packs = const [];
   String? _error;
   bool _loading = true;
   String? _checkoutUrl;
-  String? _selectedPackId;
-  int? _selectedCredits;
+  _Pack? _selectedPack;
   int? _baselineCredits;
+  bool _checkoutLoading = false;
   Timer? _poll;
 
   @override
@@ -57,8 +62,9 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
   Future<void> _load() async {
     try {
       final token = await PlatformAuthStore.instance.ensureDeviceRegistered();
-      const base = PlatformAuthStore.defaultBaseUrl;
-      final res = await http
+      final base = PlatformAuthStore.instance.baseUrl;
+      final client = PlatformAuthStore.instance.httpClient;
+      final res = await client
           .get(
             Uri.parse('$base/billing/packs'),
             headers: {'Authorization': 'Bearer $token'},
@@ -71,7 +77,12 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
           .whereType<Map>()
           .map((e) => _Pack.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-      final user = await PlatformAuthStore.instance.restorePlatformUser();
+      PlatformUser? user;
+      try {
+        user = await PlatformAuthStore.instance.restorePlatformUser();
+      } catch (_) {
+        user = await PlatformAuthStore.instance.currentUser();
+      }
       if (!mounted) return;
       setState(() {
         _packs = list;
@@ -91,14 +102,14 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
   Future<void> _checkout(_Pack pack) async {
     setState(() {
       _error = null;
-      _selectedPackId = pack.id;
-      _selectedCredits = pack.credits;
+      _checkoutLoading = true;
     });
     try {
       final token = await PlatformAuthStore.instance.ensureUserToken();
       if (token == null) throw Exception('session_expired');
-      const base = PlatformAuthStore.defaultBaseUrl;
-      final res = await http
+      final base = PlatformAuthStore.instance.baseUrl;
+      final client = PlatformAuthStore.instance.httpClient;
+      final res = await client
           .post(
             Uri.parse('$base/billing/checkout'),
             headers: {
@@ -109,7 +120,8 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
           )
           .timeout(const Duration(seconds: 30));
       if (res.statusCode != 200) {
-        throw Exception('checkout_failed:${res.statusCode}');
+        final code = _parseApiErrorCode(res.body) ?? 'checkout_failed';
+        throw Exception('$code:${res.statusCode}');
       }
       final url =
           (jsonDecode(res.body) as Map<String, dynamic>)['checkout_url']
@@ -117,13 +129,52 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
       if (url == null || url.isEmpty) {
         throw Exception('checkout_failed:missing_url');
       }
+      final uri = Uri.tryParse(url);
+      if (uri == null || !isAllowedPaddleCheckoutUrl(uri)) {
+        throw Exception('checkout_url_invalid');
+      }
       if (!mounted) return;
-      setState(() => _checkoutUrl = url);
+      setState(() {
+        _checkoutUrl = url;
+        _selectedPack = pack;
+        _checkoutLoading = false;
+      });
       _startPoll(token);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = platformAuthErrorMessage(context.l10n, e));
+      setState(() {
+        _error = platformAuthErrorMessage(context.l10n, e);
+        _checkoutLoading = false;
+      });
     }
+  }
+
+  Future<void> _openCheckoutInBrowser() async {
+    final url = _checkoutUrl;
+    if (url == null) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  String? _parseApiErrorCode(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['error'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  void _backToPacks() {
+    _poll?.cancel();
+    setState(() {
+      _checkoutUrl = null;
+      _selectedPack = null;
+      _error = null;
+    });
   }
 
   void _startPoll(String token) {
@@ -138,13 +189,13 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
         final base = _baselineCredits ?? 0;
         if (q != null &&
             q.creditsRemaining > base &&
-            _selectedPackId != null &&
+            _selectedPack != null &&
             mounted) {
           t.cancel();
           Navigator.of(context).pop(
             AiPurchaseResult(
-              packId: _selectedPackId!,
-              credits: _selectedCredits ?? (q.creditsRemaining - base),
+              packId: _selectedPack!.id,
+              credits: _selectedPack!.credits,
             ),
           );
         }
@@ -158,51 +209,224 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
     });
   }
 
+  double _packListHeight({required int packCount}) {
+    final count = packCount > 0 ? packCount : _expectedPackCount;
+    return count * (_packCardHeight + _packCardSpacing);
+  }
+
+  Widget _packCardShell({
+    required ThemeData theme,
+    required Widget child,
+    VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _packCardSpacing),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: _packCardHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPackCard(
+    BuildContext context,
+    ThemeData theme,
+    AppLocalizations l10n,
+    _Pack pack,
+  ) {
+    return _packCardShell(
+      theme: theme,
+      onTap: _checkoutLoading ? null : () => _checkout(pack),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(pack.labelFor(context), style: theme.textTheme.titleSmall),
+                Text(l10n.aiPurchasePackCredits(pack.credits)),
+              ],
+            ),
+          ),
+          Text(
+            l10n.aiPurchasePriceCny((pack.priceCny / 100).toStringAsFixed(2)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPackSkeleton(ThemeData theme) {
+    final placeholder = theme.colorScheme.onSurface.withValues(alpha: 0.08);
+    return _packCardShell(
+      theme: theme,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 14,
+                  width: 96,
+                  decoration: BoxDecoration(
+                    color: placeholder,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 12,
+                  width: 64,
+                  decoration: BoxDecoration(
+                    color: placeholder,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            height: 14,
+            width: 48,
+            decoration: BoxDecoration(
+              color: placeholder,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPackListStep(
+    BuildContext context,
+    ThemeData theme,
+    AppLocalizations l10n,
+  ) {
+    final packCount = _loading ? _expectedPackCount : _packs.length;
+    final listHeight = _packListHeight(packCount: packCount);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(_error!, style: TextStyle(color: Colors.red.shade700)),
+          ),
+        SizedBox(
+          height: listHeight,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_loading)
+                    for (var i = 0; i < _expectedPackCount; i++)
+                      _buildPackSkeleton(theme)
+                  else if (_packs.isEmpty && _error == null)
+                    SizedBox(
+                      height: listHeight,
+                      child: Center(child: Text(l10n.aiPurchaseNoPacks)),
+                    )
+                  else
+                    for (final pack in _packs)
+                      _buildPackCard(context, theme, l10n, pack),
+                ],
+              ),
+              if (_loading || _checkoutLoading)
+                const CircularProgressIndicator(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final theme = Theme.of(context);
     return AlertDialog(
       title: Text(l10n.aiSettingsBuyCredits),
       content: SizedBox(
         width: 360,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_error != null)
-                    Text(_error!, style: TextStyle(color: Colors.red.shade700)),
-                  if (_checkoutUrl == null) ...[
-                    for (final pack in _packs)
-                      ListTile(
-                        title: Text(pack.label),
-                        subtitle: Text('${pack.credits} credits'),
-                        trailing: Text(
-                          '\$${(pack.priceCny / 100).toStringAsFixed(2)}',
+        child: _checkoutUrl == null
+            ? _buildPackListStep(context, theme, l10n)
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: Colors.red.shade700),
                         ),
-                        onTap: () => _checkout(pack),
                       ),
-                    if (_packs.isEmpty && _error == null)
-                      const Text('No packs available'),
-                  ] else ...[
-                    SizedBox(
-                      height: 200,
-                      width: 200,
-                      child: QrImageView(data: _checkoutUrl!),
+                    if (_selectedPack != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          l10n.aiPurchaseSelectedSummary(
+                            _selectedPack!.labelFor(context),
+                            _selectedPack!.credits,
+                            (_selectedPack!.priceCny / 100).toStringAsFixed(2),
+                          ),
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                    FilledButton(
+                      onPressed: _openCheckoutInBrowser,
+                      child: Text(l10n.aiPurchaseOpenInBrowser),
+                    ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: SizedBox(
+                        height: 160,
+                        width: 160,
+                        child: QrImageView(data: _checkoutUrl!),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () => launchUrl(Uri.parse(_checkoutUrl!)),
-                      child: const Text('Open in browser'),
+                    Text(
+                      l10n.aiPurchaseScanQrHint,
+                      style: theme.textTheme.bodySmall,
+                      textAlign: TextAlign.center,
                     ),
+                    const SizedBox(height: 8),
                     Text(
                       l10n.aiPurchasePayHint,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: theme.textTheme.bodySmall,
                     ),
-                    const Text('Waiting for payment…'),
+                    Text(
+                      l10n.aiPurchaseWaitingPayment,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    TextButton(
+                      onPressed: _backToPacks,
+                      child: Text(l10n.aiPurchaseBackToPacks),
+                    ),
                   ],
-                ],
+                ),
               ),
       ),
       actions: [
@@ -220,17 +444,26 @@ class _Pack {
     required this.id,
     required this.credits,
     required this.priceCny,
-    required this.label,
+    required this.labelEn,
+    required this.labelZh,
   });
   final String id;
   final int credits;
   final int priceCny;
-  final String label;
+  final String labelEn;
+  final String labelZh;
+
+  String labelFor(BuildContext context) {
+    final useZh = Localizations.localeOf(context).languageCode == 'zh';
+    if (useZh) return labelZh;
+    return labelEn.isNotEmpty ? labelEn : labelZh;
+  }
 
   factory _Pack.fromJson(Map<String, dynamic> j) => _Pack(
     id: j['id'] as String,
     credits: (j['credits'] as num).toInt(),
     priceCny: (j['price_cny'] as num?)?.toInt() ?? 0,
-    label: (j['label_zh'] ?? j['label_en'] ?? j['id']) as String,
+    labelEn: (j['label_en'] ?? j['id'] ?? '') as String,
+    labelZh: (j['label_zh'] ?? j['label_en'] ?? j['id']) as String,
   );
 }

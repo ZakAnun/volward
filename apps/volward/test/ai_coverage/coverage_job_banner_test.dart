@@ -64,6 +64,45 @@ void main() {
     expect(paused, isTrue);
   });
 
+  testWidgets('CoverageJobBanner shows credits usage while running', (
+    tester,
+  ) async {
+    const state = CoverageJobState(
+      snapshotId: 's1',
+      rootPath: '/',
+      planVersion: 1,
+      cursor: 0,
+      totalUnclassified: 100,
+      analyzedFiles: 10,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.running,
+      usedTokens: 0,
+      usedCredits: 3,
+      budgetTokens: 0,
+      budgetCredits: 50,
+      updatedAtMs: 1,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: CoverageJobBanner(
+            state: state,
+            verdictRows: const [],
+            onPause: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('3'), findsWidgets);
+    expect(find.textContaining('50'), findsWidgets);
+    expect(find.textContaining('Credits this run'), findsOneWidget);
+  });
+
   testWidgets('CoverageJobBanner shows raise budget when budget paused', (
     tester,
   ) async {

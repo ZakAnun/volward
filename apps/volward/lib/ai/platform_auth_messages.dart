@@ -14,6 +14,7 @@ String platformAuthErrorMessage(AppLocalizations l10n, Object error) {
     'device_not_found' => l10n.aiErrorDeviceNotFound,
     'refresh_rate_limited' => l10n.aiErrorRefreshRateLimited,
     'checkout_failed' => l10n.aiErrorCheckoutFailed,
+    'checkout_url_invalid' => l10n.aiErrorCheckoutUrlInvalid,
     'packs_failed' => l10n.aiErrorPacksFailed,
     _ => l10n.aiErrorPlatformGeneric,
   };

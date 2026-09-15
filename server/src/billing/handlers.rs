@@ -7,6 +7,7 @@ use crate::auth::middleware::{require_device, require_user};
 use crate::error::AppError;
 use crate::AppState;
 
+use super::checkout_url::validate_paddle_checkout_url;
 use super::paddle::PaddleProvider;
 use super::provider::PaymentProvider;
 
@@ -77,13 +78,11 @@ pub async fn checkout(
             );
             return Err(AppError::Internal("paddle_product_id_unconfigured".into()));
         }
-        // Sandbox fallback keeps the purchase UI locally testable.
-        return Ok(Json(CheckoutResponse {
-            checkout_url: format!(
-                "https://example.com/checkout?pack={}&user={}",
-                body.pack_id, uid
-            ),
-        }));
+        tracing::error!(
+            pack_id = %body.pack_id,
+            "sandbox checkout requested with an unconfigured product id"
+        );
+        return Err(AppError::Internal("paddle_product_id_unconfigured".into()));
     }
     let api_key = state
         .config
@@ -102,5 +101,6 @@ pub async fn checkout(
     let url = provider
         .create_checkout(&product_id, uid, &body.pack_id)
         .await?;
+    validate_paddle_checkout_url(&url)?;
     Ok(Json(CheckoutResponse { checkout_url: url }))
 }

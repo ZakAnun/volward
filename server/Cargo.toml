@@ -33,6 +33,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 hmac = "0.12"
 hex = "0.4"
 async-trait = "0.1"
+url = "2"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 

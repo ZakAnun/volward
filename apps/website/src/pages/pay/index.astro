@@ -1,0 +1,19 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PaddleCheckoutShell from '../../components/paddle/PaddleCheckoutShell.astro';
+import PaddleCheckout from '../../components/paddle/PaddleCheckout.astro';
+
+const canonical = new URL('./', Astro.site?.href ?? 'http://localhost:4321').href;
+---
+
+<BaseLayout
+  title="Volward Checkout"
+  description="Complete your Volward credit purchase securely with Paddle."
+  canonical={canonical}
+  lang="en"
+  robots="noindex, nofollow"
+>
+  <PaddleCheckoutShell>
+    <PaddleCheckout />
+  </PaddleCheckoutShell>
+</BaseLayout>
