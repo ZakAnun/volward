@@ -75,8 +75,8 @@ verify_refresh_smoke_local() {
     IFS= read -r status
     IFS= read -r body
   } < <(
-    REFRESH_SMOKE_DEVICE_UUID="${REFRESH_SMOKE_DEVICE_UUID}" \
-    "${ssh_cmd[@]}" "$remote" bash -s <<'REMOTE'
+    "${ssh_cmd[@]}" "$remote" \
+      env REFRESH_SMOKE_DEVICE_UUID="${REFRESH_SMOKE_DEVICE_UUID}" bash -s <<'REMOTE'
 set -euo pipefail
 base_url='http://127.0.0.1:8080'
 tmp="$(mktemp)"
