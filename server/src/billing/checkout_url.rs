@@ -1,5 +1,17 @@
 use crate::error::AppError;
 
+fn is_volward_pay_checkout(parsed: &url::Url, host: &str) -> bool {
+    if host != "volwardapp.com" && host != "www.volwardapp.com" {
+        return false;
+    }
+    let path = parsed.path();
+    let path_ok = path == "/pay" || path.starts_with("/pay/");
+    if !path_ok {
+        return false;
+    }
+    parsed.query_pairs().any(|(key, _)| key == "_ptxn")
+}
+
 pub fn is_allowed_paddle_checkout_url(url: &str) -> bool {
     let Ok(parsed) = url::Url::parse(url) else {
         return false;
@@ -11,6 +23,9 @@ pub fn is_allowed_paddle_checkout_url(url: &str) -> bool {
         return false;
     };
     let host = host.to_ascii_lowercase();
+    if is_volward_pay_checkout(&parsed, &host) {
+        return true;
+    }
     if host == "volwardapp.com" || host == "www.volwardapp.com" {
         return false;
     }
@@ -52,9 +67,23 @@ mod tests {
     }
 
     #[test]
-    fn rejects_volwardapp() {
+    fn accepts_volwardapp_pay_with_ptxn() {
+        assert!(is_allowed_paddle_checkout_url(
+            "https://volwardapp.com/pay?_ptxn=txn_01abc"
+        ));
+    }
+
+    #[test]
+    fn rejects_volwardapp_pri_path() {
         assert!(!is_allowed_paddle_checkout_url(
             "https://www.volwardapp.com/pri_01abc"
+        ));
+    }
+
+    #[test]
+    fn rejects_volwardapp_pay_without_ptxn() {
+        assert!(!is_allowed_paddle_checkout_url(
+            "https://volwardapp.com/pay"
         ));
     }
 
