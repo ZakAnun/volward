@@ -68,23 +68,6 @@ verify_refresh_smoke_at() {
   assert_refresh_smoke_body "$label" "$REFRESH_SMOKE_STATUS" "$REFRESH_SMOKE_BODY"
 }
 
-verify_refresh_smoke_local() {
-  local label="$1"
-  local status body
-  {
-    IFS= read -r status
-    IFS= read -r body
-  } < <(
-    "${ssh_cmd[@]}" "$remote" \
-      "status=\$(curl -sS -o /tmp/volward-smoke-body -w '%{http_code}' \
-        -X POST 'http://127.0.0.1:8080/v1/auth/refresh' \
-        -H 'Content-Type: application/json' \
-        -d '{\"device_uuid\":\"${REFRESH_SMOKE_DEVICE_UUID}\"}'); \
-      printf '%s\\n' \"\$status\"; cat /tmp/volward-smoke-body; rm -f /tmp/volward-smoke-body"
-  )
-  assert_refresh_smoke_body "$label" "$status" "$body"
-}
-
 deploy_host="${PLATFORM_DEPLOY_HOST:-${DEPLOY_HOST}}"
 deploy_port="${PLATFORM_DEPLOY_PORT:-${DEPLOY_PORT:-22}}"
 deploy_user="${PLATFORM_DEPLOY_USER:-}"
@@ -204,8 +187,6 @@ if [[ "$health_body" != *'"ok":true'* ]]; then
   exit 1
 fi
 echo "Platform API local health check passed."
-
-verify_refresh_smoke_local "local"
 
 if [[ -n "${PLATFORM_HEALTHCHECK_URL:-}" ]]; then
   public_body="$(curl -fsS "$PLATFORM_HEALTHCHECK_URL")"
