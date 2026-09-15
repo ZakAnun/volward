@@ -32,7 +32,9 @@ on:
 jobs:
   publish-image:
     name: Publish Platform API image
-    if: github.event_name == 'workflow_call' || (github.event_name == 'workflow_dispatch' && inputs.rebuild)
+    # Caller workflows (e.g. Release on tag push) inherit `push`; only skip rebuild
+    # for manual workflow_dispatch when rebuild is false.
+    if: github.event_name != 'workflow_dispatch' || inputs.rebuild
     runs-on: ubuntu-22.04
     permissions:
       contents: read
