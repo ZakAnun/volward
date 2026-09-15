@@ -25,6 +25,9 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/platform-api-release.yml
     secrets: inherit
+    permissions:
+      contents: read
+      packages: write
     with:
       version: ${{ github.ref_name }}
       require_deploy: true
