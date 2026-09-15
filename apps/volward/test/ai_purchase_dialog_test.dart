@@ -215,4 +215,24 @@ void main() {
     expect(find.text(l10n.aiPurchaseOpenInBrowser), findsOneWidget);
     expect(find.byType(QrImageView), findsOneWidget);
   });
+
+  testWidgets('shows browser button for volwardapp pay URL', (tester) async {
+    await pumpDialog(
+      tester,
+      client: mockBillingClient(
+        checkoutUrl: 'https://volwardapp.com/pay/?_ptxn=txn_01abc',
+      ),
+    );
+
+    await tester.tap(find.text('Starter'));
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text(l10n.aiPurchaseOpenInBrowser).evaluate().isNotEmpty) {
+        break;
+      }
+    }
+
+    expect(find.text(l10n.aiPurchaseOpenInBrowser), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+  });
 }

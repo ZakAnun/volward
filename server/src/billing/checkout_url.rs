@@ -74,6 +74,13 @@ mod tests {
     }
 
     #[test]
+    fn accepts_volwardapp_pay_slash_with_ptxn() {
+        assert!(is_allowed_paddle_checkout_url(
+            "https://volwardapp.com/pay/?_ptxn=txn_01abc"
+        ));
+    }
+
+    #[test]
     fn rejects_volwardapp_pri_path() {
         assert!(!is_allowed_paddle_checkout_url(
             "https://www.volwardapp.com/pri_01abc"

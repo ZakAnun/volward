@@ -4,6 +4,7 @@ export const PAY_PAGE_COPY = {
   missingToken: 'Payment is not configured. Please try again later.',
   loadFailed: 'Could not load payment service. Please try again later.',
   ready: 'Complete payment in the window above.',
+  closed: 'Checkout closed. Tap Try again to reopen.',
   success: 'Payment complete. You can close this tab and return to Volward.',
   retry: 'Try again',
 } as const;

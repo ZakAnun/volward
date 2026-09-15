@@ -21,6 +21,8 @@
     Checkout: { open: (options: { transactionId: string }) => void };
   };
 
+  let paddleInitPromise: Promise<PaddleGlobal> | null = null;
+
   function shellRoot(): HTMLElement | null {
     return document.querySelector('[data-paddle-shell]');
   }
@@ -60,16 +62,30 @@
     });
   }
 
-  async function openCheckout(transactionId: string) {
-    const token = paddleClientToken();
-    if (!token) {
-      setStatus(PAY_PAGE_COPY.missingToken, { spinning: false });
-      return;
+  function handlePaddleEvent(event: { name?: string; data?: unknown }) {
+    if (event.name === 'checkout.completed') {
+      setStatus(PAY_PAGE_COPY.success, { spinning: false, showRetry: false });
+    }
+    if (event.name === 'checkout.error') {
+      console.error('[paddle] checkout.error', event.data);
+      setStatus(PAY_PAGE_COPY.loadFailed, { spinning: false, showRetry: true });
+    }
+    if (event.name === 'checkout.closed') {
+      setStatus(PAY_PAGE_COPY.closed, { spinning: false, showRetry: true });
+    }
+  }
+
+  function ensurePaddleInitialized(): Promise<PaddleGlobal> {
+    if (paddleInitPromise) {
+      return paddleInitPromise;
     }
 
-    setStatus(PAY_PAGE_COPY.loading, { spinning: true, showRetry: false });
+    const token = paddleClientToken();
+    if (!token) {
+      return Promise.reject(new Error('missing paddle client token'));
+    }
 
-    try {
+    paddleInitPromise = (async () => {
       const Paddle = await loadPaddleScript();
       Paddle.Environment.set(paddleJsEnvironment());
       Paddle.Initialize({
@@ -81,18 +97,29 @@
             locale: 'zh',
           },
         },
-        eventCallback: (event) => {
-          if (event.name === 'checkout.completed') {
-            setStatus(PAY_PAGE_COPY.success, { spinning: false, showRetry: false });
-          }
-          if (event.name === 'checkout.error') {
-            setStatus(PAY_PAGE_COPY.loadFailed, { spinning: false, showRetry: true });
-          }
-        },
+        eventCallback: handlePaddleEvent,
       });
+      return Paddle;
+    })();
+
+    return paddleInitPromise;
+  }
+
+  async function openCheckout(transactionId: string) {
+    if (!paddleClientToken()) {
+      setStatus(PAY_PAGE_COPY.missingToken, { spinning: false });
+      return;
+    }
+
+    setStatus(PAY_PAGE_COPY.loading, { spinning: true, showRetry: false });
+
+    try {
+      const Paddle = await ensurePaddleInitialized();
       Paddle.Checkout.open({ transactionId });
       setStatus(PAY_PAGE_COPY.ready, { spinning: false, showRetry: true });
-    } catch {
+    } catch (error) {
+      console.error('[paddle] openCheckout failed', error);
+      paddleInitPromise = null;
       setStatus(PAY_PAGE_COPY.loadFailed, { spinning: false, showRetry: true });
     }
   }

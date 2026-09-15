@@ -65,6 +65,10 @@ pnpm build
 
 Paddle Default payment link must be `https://volwardapp.com/pay/`.
 
+`PADDLE_ENV` must match platform-api `PLATFORM_PADDLE_ENV` (same `sandbox` or `live` value). A mismatch creates transactions in one Paddle environment while `/pay/` initializes checkout in another.
+
+Local dev on `localhost` may fail Paddle checkout if the transaction was created for `volwardapp.com`; use a fresh `_ptxn` after pointing sandbox Default payment link at localhost, or test on the deployed domain.
+
 ## 预览
 
 ```bash

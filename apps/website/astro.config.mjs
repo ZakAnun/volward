@@ -19,7 +19,11 @@ export default defineConfig({
   base: '/',
   output: 'static',
   trailingSlash: 'always',
-  integrations: [sitemap()],
+  integrations: [
+    sitemap({
+      filter: (page) => !page.includes('/pay/'),
+    }),
+  ],
   vite: {
     define: {
       __APTABASE_WEB_KEY__: JSON.stringify(aptabaseWebKey),

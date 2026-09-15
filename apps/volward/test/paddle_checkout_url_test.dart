@@ -20,6 +20,15 @@ void main() {
     );
   });
 
+  test('accepts volwardapp.com pay link with trailing slash', () {
+    expect(
+      isAllowedPaddleCheckoutUrl(
+        Uri.parse('https://volwardapp.com/pay/?_ptxn=txn_01abc'),
+      ),
+      isTrue,
+    );
+  });
+
   test('rejects volwardapp.com pri path', () {
     expect(
       isAllowedPaddleCheckoutUrl(
