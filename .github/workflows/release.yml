@@ -562,10 +562,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: '{macos-release-*,windows-release,linux-release,linux-appimage}'
+          merge-multiple: false
 
       - name: Display structure
         run: ls -R artifacts
