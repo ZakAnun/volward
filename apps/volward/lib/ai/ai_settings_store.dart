@@ -56,7 +56,9 @@ class AiSettingsStore {
   static const _kCoverageBudgetTokens = 'ai_full_run_budget_tokens';
   static const _kCoverageBudgetCredits = 'ai_full_run_budget_credits';
   static const defaultCoverageBudgetTokens = 500000;
-  static const defaultCoverageBudgetCredits = 20;
+
+  /// Matches the starter pack credit amount in `server/migrations/005_packs.sql`.
+  static const defaultCoverageBudgetCredits = 50;
 
   /// Bumped to 2 when Platform mode shipped: paths now transit Volward servers.
   static const kCurrentPrivacyVersion = 2;

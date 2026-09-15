@@ -33,10 +33,13 @@ class CoverageJobBanner extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final l10n = context.l10n;
+    final tokens = context.volward;
     final isRunning = state.status == CoverageJobStatus.running;
     final isPaused = state.status == CoverageJobStatus.paused;
     final budgetPaused =
         isPaused && state.pauseReason == CoveragePauseReason.budget;
+    final usesCredits = state.budgetCredits > 0;
+    final usesTokens = !usesCredits && state.budgetTokens > 0;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -47,14 +50,56 @@ class CoverageJobBanner extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(AppleSpacing.md),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                l10n.aiCoverageProgress(
-                  state.analyzedFiles,
-                  state.totalUnclassified,
-                ),
-                style: context.vwBodyStrong,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.aiCoverageProgress(
+                      state.analyzedFiles,
+                      state.totalUnclassified,
+                    ),
+                    style: context.vwBodyStrong,
+                  ),
+                  if (usesCredits) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageBudgetCreditsUsage(
+                        state.usedCredits,
+                        state.budgetCredits,
+                      ),
+                      style: context.vwCaption,
+                    ),
+                  ] else if (usesTokens) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageBudgetTokensUsage(
+                        state.usedTokens,
+                        state.budgetTokens,
+                      ),
+                      style: context.vwCaption,
+                    ),
+                  ],
+                  if (budgetPaused) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      usesCredits
+                          ? l10n.aiCoverageBudgetPausedCredits(
+                              state.usedCredits,
+                              state.budgetCredits,
+                            )
+                          : l10n.aiCoverageBudgetPausedTokens(
+                              state.usedTokens,
+                              state.budgetTokens,
+                            ),
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             if (isRunning || isPaused) ...[

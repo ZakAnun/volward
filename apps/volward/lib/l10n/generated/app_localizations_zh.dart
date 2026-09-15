@@ -601,6 +601,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsPlatformLabel => 'Volward 平台';
 
   @override
+  String get aiSettingsPlatformLoading => '正在连接平台账户…';
+
+  @override
   String get aiSettingsApiKeyHint => 'sk-...';
 
   @override
@@ -622,7 +625,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsEnterEmail => '邮箱地址';
 
   @override
-  String get aiSettingsEnterOtp => '6 位验证码';
+  String get aiSettingsEnterOtp => '请输入邮件中的 6 位数字验证码';
 
   @override
   String get aiSettingsSendOtp => '发送验证码';
@@ -664,6 +667,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiPurchaseWaitingHint => '支付可能仍在处理中，请稍后在设置中刷新额度。';
 
   @override
+  String aiPurchasePackCredits(int count) {
+    return '$count 积分';
+  }
+
+  @override
+  String aiPurchasePriceCny(String price) {
+    return '¥$price';
+  }
+
+  @override
+  String get aiPurchaseNoPacks => '暂无可用积分包。';
+
+  @override
+  String get aiPurchaseOpenInBrowser => '在本机浏览器打开支付页';
+
+  @override
+  String get aiPurchaseScanQrHint => '或用手机扫码支付（微信）';
+
+  @override
+  String get aiPurchaseWaitingPayment => '正在等待支付确认…';
+
+  @override
+  String aiPurchaseSelectedSummary(String label, int credits, String price) {
+    return '$label · $credits 积分 · ¥$price';
+  }
+
+  @override
+  String get aiPurchaseBackToPacks => '重新选择套餐';
+
+  @override
   String get aiSettingsSessionExpired => '登录已过期，请重新绑定邮箱';
 
   @override
@@ -692,6 +725,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiErrorCheckoutFailed => '结账失败，请稍后重试';
+
+  @override
+  String get aiErrorCheckoutUrlInvalid => '支付页面暂不可用，请稍后再试。';
 
   @override
   String get aiErrorPacksFailed => '无法加载套餐，请检查网络';
@@ -764,6 +800,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiCoverageFullRunHint => '全量覆盖分析会在后台持续运行，直到每个未分类文件都有 AI 结论。';
 
   @override
+  String get aiCoverageFullRunPlatformHint =>
+      '全量覆盖在后台运行。每次 AI 分析请求从账户余额扣 1 积分；下方预算是本次扫描的花费上限。';
+
+  @override
+  String aiCoverageBudgetCreditsUsage(int used, int budget) {
+    return '本次积分：已用 $used / $budget';
+  }
+
+  @override
+  String aiCoverageBudgetTokensUsage(int used, int budget) {
+    return '本次 token：已用 $used / $budget';
+  }
+
+  @override
+  String aiCoverageRunBudgetConfigured(int budget) {
+    return '本次扫描预算：$budget 积分';
+  }
+
+  @override
   String get aiCoveragePause => '暂停覆盖分析';
 
   @override
@@ -783,8 +838,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String aiCoverageBudgetPaused(int used, int budget) {
-    return '已达预算上限（$used/$budget）。可继续分析，或在设置中提高上限。';
+  String aiCoverageBudgetPausedCredits(int used, int budget) {
+    return '已达本次积分预算（$used/$budget）。可提高上限并继续，或在设置中调整。';
+  }
+
+  @override
+  String aiCoverageBudgetPausedTokens(int used, int budget) {
+    return '已达本次 token 预算（$used/$budget）。可提高上限并继续，或在设置中调整。';
   }
 
   @override
@@ -817,8 +877,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String aiCoverageNotifyBudgetPaused(int analyzed, int total) {
-    return '已达预算上限，覆盖分析已暂停：$analyzed/$total 已分析。';
+  String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
+    return '已达本次积分预算，覆盖分析已暂停：已用 $used/$budget 积分。';
+  }
+
+  @override
+  String aiCoverageNotifyBudgetPausedTokens(int used, int budget) {
+    return '已达本次 token 预算，覆盖分析已暂停：已用 $used/$budget token。';
   }
 
   @override
@@ -854,7 +919,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsCoverageBudgetCreditsLabel => '全量覆盖积分预算（平台模式）';
 
   @override
-  String get aiSettingsCoverageBudgetCreditsHint => '20';
+  String get aiSettingsCoverageBudgetCreditsHint => '50';
+
+  @override
+  String get aiSettingsCoverageBudgetCreditsDescription =>
+      '单次全量覆盖最多消耗的积分，与账户余额、充值包为同一单位。每次 AI 分析请求扣 1 积分。';
+
+  @override
+  String get aiSettingsCoverageBudgetTokensDescription =>
+      '单次全量覆盖最多消耗的 token 总量上限，超出后任务会暂停。';
 
   @override
   String get aiSettingsCoverageBudgetSave => '保存预算';

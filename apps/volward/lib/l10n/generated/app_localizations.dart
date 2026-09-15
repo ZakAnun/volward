@@ -1111,6 +1111,12 @@ abstract class AppLocalizations {
   /// **'Volward Platform'**
   String get aiSettingsPlatformLabel;
 
+  /// No description provided for @aiSettingsPlatformLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting platform account…'**
+  String get aiSettingsPlatformLoading;
+
   /// No description provided for @aiSettingsApiKeyHint.
   ///
   /// In en, this message translates to:
@@ -1156,7 +1162,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiSettingsEnterOtp.
   ///
   /// In en, this message translates to:
-  /// **'6-digit code'**
+  /// **'Enter the 6-digit code from your email'**
   String get aiSettingsEnterOtp;
 
   /// No description provided for @aiSettingsSendOtp.
@@ -1225,6 +1231,54 @@ abstract class AppLocalizations {
   /// **'Payment may still be processing. Wait a moment, then refresh your credits in Settings.'**
   String get aiPurchaseWaitingHint;
 
+  /// No description provided for @aiPurchasePackCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} credits'**
+  String aiPurchasePackCredits(int count);
+
+  /// No description provided for @aiPurchasePriceCny.
+  ///
+  /// In en, this message translates to:
+  /// **'¥{price}'**
+  String aiPurchasePriceCny(String price);
+
+  /// No description provided for @aiPurchaseNoPacks.
+  ///
+  /// In en, this message translates to:
+  /// **'No credit packs available.'**
+  String get aiPurchaseNoPacks;
+
+  /// No description provided for @aiPurchaseOpenInBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Open payment page in browser'**
+  String get aiPurchaseOpenInBrowser;
+
+  /// No description provided for @aiPurchaseScanQrHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Or scan with your phone (WeChat)'**
+  String get aiPurchaseScanQrHint;
+
+  /// No description provided for @aiPurchaseWaitingPayment.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for payment confirmation…'**
+  String get aiPurchaseWaitingPayment;
+
+  /// No description provided for @aiPurchaseSelectedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} · {credits} credits · ¥{price}'**
+  String aiPurchaseSelectedSummary(String label, int credits, String price);
+
+  /// No description provided for @aiPurchaseBackToPacks.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose another pack'**
+  String get aiPurchaseBackToPacks;
+
   /// No description provided for @aiSettingsSessionExpired.
   ///
   /// In en, this message translates to:
@@ -1284,6 +1338,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Checkout failed. Try again later.'**
   String get aiErrorCheckoutFailed;
+
+  /// No description provided for @aiErrorCheckoutUrlInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment page is unavailable. Please try again later.'**
+  String get aiErrorCheckoutUrlInvalid;
 
   /// No description provided for @aiErrorPacksFailed.
   ///
@@ -1411,6 +1471,30 @@ abstract class AppLocalizations {
   /// **'Full-coverage analysis runs in the background until every unclassified file has a verdict.'**
   String get aiCoverageFullRunHint;
 
+  /// No description provided for @aiCoverageFullRunPlatformHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-coverage runs in the background. Each AI request uses 1 platform credit from your balance. The run budget below caps credits spent on this scan.'**
+  String get aiCoverageFullRunPlatformHint;
+
+  /// No description provided for @aiCoverageBudgetCreditsUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'Credits this run: {used} / {budget}'**
+  String aiCoverageBudgetCreditsUsage(int used, int budget);
+
+  /// No description provided for @aiCoverageBudgetTokensUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'Tokens this run: {used} / {budget}'**
+  String aiCoverageBudgetTokensUsage(int used, int budget);
+
+  /// No description provided for @aiCoverageRunBudgetConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Run budget for this scan: {budget} credits'**
+  String aiCoverageRunBudgetConfigured(int budget);
+
   /// No description provided for @aiCoveragePause.
   ///
   /// In en, this message translates to:
@@ -1441,11 +1525,17 @@ abstract class AppLocalizations {
   /// **'{file} per-file · {group} directory-level · {local} local pre-classified'**
   String aiCoverageSourceStats(int file, int group, int local);
 
-  /// No description provided for @aiCoverageBudgetPaused.
+  /// No description provided for @aiCoverageBudgetPausedCredits.
   ///
   /// In en, this message translates to:
-  /// **'Paused at budget ({used}/{budget}). Resume below or raise the limit in Settings.'**
-  String aiCoverageBudgetPaused(int used, int budget);
+  /// **'Run credit budget reached ({used}/{budget}). Raise the limit to continue, or adjust it in Settings.'**
+  String aiCoverageBudgetPausedCredits(int used, int budget);
+
+  /// No description provided for @aiCoverageBudgetPausedTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Run token budget reached ({used}/{budget}). Raise the limit to continue, or adjust it in Settings.'**
+  String aiCoverageBudgetPausedTokens(int used, int budget);
 
   /// No description provided for @aiCoverageLegacyResultNotice.
   ///
@@ -1495,11 +1585,17 @@ abstract class AppLocalizations {
   /// **'Coverage complete: {analyzed}/{total} files analyzed.'**
   String aiCoverageNotifyComplete(int analyzed, int total);
 
-  /// No description provided for @aiCoverageNotifyBudgetPaused.
+  /// No description provided for @aiCoverageNotifyBudgetPausedCredits.
   ///
   /// In en, this message translates to:
-  /// **'Coverage paused at budget: {analyzed}/{total} analyzed.'**
-  String aiCoverageNotifyBudgetPaused(int analyzed, int total);
+  /// **'Coverage paused at run budget: {used}/{budget} credits used.'**
+  String aiCoverageNotifyBudgetPausedCredits(int used, int budget);
+
+  /// No description provided for @aiCoverageNotifyBudgetPausedTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage paused at run budget: {used}/{budget} tokens used.'**
+  String aiCoverageNotifyBudgetPausedTokens(int used, int budget);
 
   /// No description provided for @aiCoverageNotifyFailed.
   ///
@@ -1564,8 +1660,20 @@ abstract class AppLocalizations {
   /// No description provided for @aiSettingsCoverageBudgetCreditsHint.
   ///
   /// In en, this message translates to:
-  /// **'20'**
+  /// **'50'**
   String get aiSettingsCoverageBudgetCreditsHint;
+
+  /// No description provided for @aiSettingsCoverageBudgetCreditsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.'**
+  String get aiSettingsCoverageBudgetCreditsDescription;
+
+  /// No description provided for @aiSettingsCoverageBudgetTokensDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum tokens to spend on one full-coverage run. The job pauses when this cap is reached.'**
+  String get aiSettingsCoverageBudgetTokensDescription;
 
   /// No description provided for @aiSettingsCoverageBudgetSave.
   ///

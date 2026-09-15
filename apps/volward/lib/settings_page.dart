@@ -50,6 +50,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _hasByokKey = false;
   PlatformUser? _platformUser;
   String? _platformBanner;
+  bool _platformLoading = false;
+  int _platformLoadGeneration = 0;
 
   @override
   void initState() {
@@ -70,6 +72,16 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final store = AiSettingsStore.instance;
       final mode = await store.getMode();
+      if (mounted) {
+        setState(() {
+          _aiMode = mode;
+          _platformLoading = mode == AiMode.platform && _platformUser == null;
+        });
+      }
+      if (mode == AiMode.platform && mounted) {
+        unawaited(_refreshPlatformSession(context.l10n));
+      }
+
       String? key;
       try {
         key = await store.getByokKey();
@@ -77,27 +89,11 @@ class _SettingsPageState extends State<SettingsPage> {
         // Keychain / secure storage may be unavailable in widget tests.
         key = null;
       }
-      PlatformUser? platformUser;
-      String? platformBanner;
-      if (mode == AiMode.platform) {
-        try {
-          platformUser = await PlatformAuthStore.instance.restorePlatformUser();
-        } catch (e) {
-          platformUser = await PlatformAuthStore.instance.currentUser();
-          if (mounted) {
-            platformBanner = platformAuthErrorMessage(context.l10n, e);
-          }
-        }
-      }
       if (!mounted) return;
       final budget = await store.coverageBudgetForMode(mode);
+      if (!mounted) return;
       setState(() {
-        _aiMode = mode;
         _hasByokKey = key != null && key.isNotEmpty;
-        _platformUser = platformUser;
-        if (platformBanner != null) {
-          _platformBanner = platformBanner;
-        }
         _coverageBudgetTokensController.text =
             '${budget.tokens > 0 ? budget.tokens : AiSettingsStore.defaultCoverageBudgetTokens}';
         _coverageBudgetCreditsController.text =
@@ -109,6 +105,34 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (_) {
       // Keep defaults when settings file / keychain is unavailable.
     }
+  }
+
+  Future<void> _refreshPlatformSession(AppLocalizations l10n) async {
+    final generation = ++_platformLoadGeneration;
+    if (_platformUser == null && mounted) {
+      setState(() => _platformLoading = true);
+    }
+    PlatformUser? platformUser;
+    String? banner;
+    try {
+      platformUser = await PlatformAuthStore.instance.restorePlatformUser();
+      if (platformUser == null) {
+        banner = null;
+      }
+    } catch (e) {
+      platformUser = await PlatformAuthStore.instance.currentUser();
+      banner = platformUser == null ? platformAuthErrorMessage(l10n, e) : null;
+    }
+    if (!mounted ||
+        generation != _platformLoadGeneration ||
+        _aiMode != AiMode.platform) {
+      return;
+    }
+    setState(() {
+      _platformUser = platformUser;
+      _platformBanner = banner;
+      _platformLoading = false;
+    });
   }
 
   Future<void> _saveCoverageBudget({required bool tokens}) async {
@@ -240,7 +264,26 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mode == _aiMode) return;
 
     final from = _aiMode;
-    await AiSettingsStore.instance.setMode(mode);
+    setState(() {
+      _aiMode = mode;
+      if (mode == AiMode.off) {
+        _platformUser = null;
+        _platformBanner = null;
+        _platformLoading = false;
+        ++_platformLoadGeneration;
+      } else if (mode == AiMode.byok) {
+        _platformLoading = false;
+        ++_platformLoadGeneration;
+        if (_hasByokKey && !_apiKeyController.text.startsWith('•')) {
+          _apiKeyController.text = '••••••••••••••••';
+        }
+      } else if (mode == AiMode.platform) {
+        _platformBanner = null;
+        _platformLoading = _platformUser == null;
+      }
+    });
+
+    unawaited(AiSettingsStore.instance.setMode(mode));
     unawaited(
       Analytics.instance.track(AnalyticsEvents.aiModeChanged, {
         'from': from.name,
@@ -248,36 +291,9 @@ class _SettingsPageState extends State<SettingsPage> {
       }),
     );
 
-    PlatformUser? platformUser = _platformUser;
-    String? banner = _platformBanner;
     if (mode == AiMode.platform) {
-      try {
-        platformUser = await PlatformAuthStore.instance.restorePlatformUser();
-        if (platformUser == null) {
-          banner = null;
-        }
-      } catch (e) {
-        platformUser = await PlatformAuthStore.instance.currentUser();
-        banner = platformUser == null
-            ? platformAuthErrorMessage(l10n, e)
-            : null;
-      }
-    } else if (mode == AiMode.off) {
-      platformUser = null;
-      banner = null;
+      unawaited(_refreshPlatformSession(l10n));
     }
-
-    if (!mounted) return;
-    setState(() {
-      _aiMode = mode;
-      _platformUser = platformUser;
-      _platformBanner = banner;
-      if (mode == AiMode.byok &&
-          _hasByokKey &&
-          !_apiKeyController.text.startsWith('•')) {
-        _apiKeyController.text = '••••••••••••••••';
-      }
-    });
   }
 
   @override
@@ -332,59 +348,94 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                         ),
-                      AnimatedCrossFade(
-                        duration: const Duration(milliseconds: 200),
-                        sizeCurve: Curves.easeInOut,
-                        firstCurve: Curves.easeInOut,
-                        secondCurve: Curves.easeInOut,
-                        crossFadeState: _platformUser == null
-                            ? CrossFadeState.showFirst
-                            : CrossFadeState.showSecond,
-                        firstChild: PlatformLinkEmailSection(
-                          onLinked: (user) {
-                            setState(() {
-                              _platformUser = user;
-                              _platformBanner = null;
-                            });
-                            showTopToast(
-                              context,
-                              message: l10n.aiSettingsLinkSuccess,
-                            );
-                          },
-                          onError: (msg) =>
-                              setState(() => _platformBanner = msg),
-                        ),
-                        secondChild: _platformUser == null
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text(
-                                    l10n.aiSettingsLinkedAs(
-                                      _platformUser!.email,
-                                    ),
-                                    style: context.vwFinePrint,
-                                  ),
-                                  const SizedBox(height: AppleSpacing.xs),
-                                  Text(
-                                    l10n.aiSettingsCreditsRemaining(
-                                      _platformUser!.credits,
-                                    ),
-                                    style: context.vwCaptionStrong,
-                                  ),
-                                  const SizedBox(height: AppleSpacing.xs),
-                                  AppleButton(
-                                    label: l10n.aiSettingsBuyCredits,
-                                    variant: AppleButtonVariant.pearl,
-                                    onPressed: _openPurchase,
-                                  ),
-                                ],
+                      if (_platformLoading && _platformUser == null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppleSpacing.sm,
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: v.primary,
+                                ),
                               ),
-                      ),
+                              const SizedBox(width: AppleSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  l10n.aiSettingsPlatformLoading,
+                                  style: context.vwCaption,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 200),
+                          sizeCurve: Curves.easeInOut,
+                          firstCurve: Curves.easeInOut,
+                          secondCurve: Curves.easeInOut,
+                          crossFadeState: _platformUser == null
+                              ? CrossFadeState.showFirst
+                              : CrossFadeState.showSecond,
+                          firstChild: PlatformLinkEmailSection(
+                            onLinked: (user) {
+                              setState(() {
+                                _platformUser = user;
+                                _platformBanner = null;
+                                _platformLoading = false;
+                              });
+                              showTopToast(
+                                context,
+                                message: l10n.aiSettingsLinkSuccess,
+                              );
+                            },
+                            onError: (msg) =>
+                                setState(() => _platformBanner = msg),
+                          ),
+                          secondChild: _platformUser == null
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      l10n.aiSettingsLinkedAs(
+                                        _platformUser!.email,
+                                      ),
+                                      style: context.vwFinePrint,
+                                    ),
+                                    const SizedBox(height: AppleSpacing.xs),
+                                    Text(
+                                      l10n.aiSettingsCreditsRemaining(
+                                        _platformUser!.credits,
+                                      ),
+                                      style: context.vwCaptionStrong,
+                                    ),
+                                    const SizedBox(height: AppleSpacing.xs),
+                                    AppleButton(
+                                      label: l10n.aiSettingsBuyCredits,
+                                      variant: AppleButtonVariant.pearl,
+                                      onPressed: _openPurchase,
+                                    ),
+                                  ],
+                                ),
+                        ),
                       const SizedBox(height: AppleSpacing.md),
                       Text(
                         l10n.aiSettingsCoverageBudgetCreditsLabel,
                         style: context.vwCaptionStrong,
+                      ),
+                      const SizedBox(height: AppleSpacing.xs),
+                      Text(
+                        l10n.aiSettingsCoverageBudgetCreditsDescription,
+                        style: context.vwFinePrint.copyWith(
+                          color: v.inkMuted48,
+                        ),
                       ),
                       const SizedBox(height: AppleSpacing.xs),
                       TextField(
@@ -463,6 +514,13 @@ class _SettingsPageState extends State<SettingsPage> {
                       Text(
                         l10n.aiSettingsCoverageBudgetTokensLabel,
                         style: context.vwCaptionStrong,
+                      ),
+                      const SizedBox(height: AppleSpacing.xs),
+                      Text(
+                        l10n.aiSettingsCoverageBudgetTokensDescription,
+                        style: context.vwFinePrint.copyWith(
+                          color: v.inkMuted48,
+                        ),
                       ),
                       const SizedBox(height: AppleSpacing.xs),
                       TextField(

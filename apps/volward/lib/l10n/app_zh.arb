@@ -400,6 +400,7 @@
   "aiSettingsByokLabel": "自带密钥（DeepSeek）",
   "aiSettingsOffLabel": "关闭",
   "aiSettingsPlatformLabel": "Volward 平台",
+  "aiSettingsPlatformLoading": "正在连接平台账户…",
   "aiSettingsApiKeyHint": "sk-...",
   "aiSettingsApiKeySaved": "API 密钥已保存",
   "aiSettingsApiKeyCleared": "API 密钥已清除",
@@ -407,7 +408,7 @@
   "aiSettingsClearKey": "清除",
   "aiSettingsLinkEmail": "绑定邮箱",
   "aiSettingsEnterEmail": "邮箱地址",
-  "aiSettingsEnterOtp": "6 位验证码",
+  "aiSettingsEnterOtp": "请输入邮件中的 6 位数字验证码",
   "aiSettingsSendOtp": "发送验证码",
   "aiSettingsVerifyOtp": "验证",
   "aiSettingsLinkSuccess": "绑定成功",
@@ -434,6 +435,31 @@
   "aiSettingsBuyCredits": "购买额度",
   "aiPurchasePayHint": "请在结账页使用微信支付；支付成功后余额会自动更新。",
   "aiPurchaseWaitingHint": "支付可能仍在处理中，请稍后在设置中刷新额度。",
+  "aiPurchasePackCredits": "{count} 积分",
+  "@aiPurchasePackCredits": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "aiPurchasePriceCny": "¥{price}",
+  "@aiPurchasePriceCny": {
+    "placeholders": {
+      "price": { "type": "String" }
+    }
+  },
+  "aiPurchaseNoPacks": "暂无可用积分包。",
+  "aiPurchaseOpenInBrowser": "在本机浏览器打开支付页",
+  "aiPurchaseScanQrHint": "或用手机扫码支付（微信）",
+  "aiPurchaseWaitingPayment": "正在等待支付确认…",
+  "aiPurchaseSelectedSummary": "{label} · {credits} 积分 · ¥{price}",
+  "@aiPurchaseSelectedSummary": {
+    "placeholders": {
+      "label": { "type": "String" },
+      "credits": { "type": "int" },
+      "price": { "type": "String" }
+    }
+  },
+  "aiPurchaseBackToPacks": "重新选择套餐",
   "aiSettingsSessionExpired": "登录已过期，请重新绑定邮箱",
   "aiErrorOtpResendTooSoon": "发送过于频繁，请 60 秒后再试",
   "aiErrorOtpRequestFailed": "验证码发送失败，请检查邮箱后重试",
@@ -444,6 +470,7 @@
   "aiErrorDeviceNotFound": "设备未注册，请重启应用后重试",
   "aiErrorRefreshRateLimited": "刷新过于频繁，请稍后再试",
   "aiErrorCheckoutFailed": "结账失败，请稍后重试",
+  "aiErrorCheckoutUrlInvalid": "支付页面暂不可用，请稍后再试。",
   "aiErrorPacksFailed": "无法加载套餐，请检查网络",
   "aiErrorPlatformGeneric": "操作失败，请稍后重试",
   "aiPrecheckCreditsCost": "预计消耗 1 credit（余额 {balance}）",
@@ -490,6 +517,37 @@
     }
   },
   "aiCoverageFullRunHint": "全量覆盖分析会在后台持续运行，直到每个未分类文件都有 AI 结论。",
+  "aiCoverageFullRunPlatformHint": "全量覆盖在后台运行。每次 AI 分析请求从账户余额扣 1 积分；下方预算是本次扫描的花费上限。",
+  "aiCoverageBudgetCreditsUsage": "本次积分：已用 {used} / {budget}",
+  "@aiCoverageBudgetCreditsUsage": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBudgetTokensUsage": "本次 token：已用 {used} / {budget}",
+  "@aiCoverageBudgetTokensUsage": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageRunBudgetConfigured": "本次扫描预算：{budget} 积分",
+  "@aiCoverageRunBudgetConfigured": {
+    "placeholders": {
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoveragePause": "暂停覆盖分析",
   "aiCoverageResume": "继续覆盖分析",
   "aiCoverageCompletedNotice": "本次扫描已全部完成 AI 覆盖分析。",
@@ -515,8 +573,19 @@
       }
     }
   },
-  "aiCoverageBudgetPaused": "已达预算上限（{used}/{budget}）。可继续分析，或在设置中提高上限。",
-  "@aiCoverageBudgetPaused": {
+  "aiCoverageBudgetPausedCredits": "已达本次积分预算（{used}/{budget}）。可提高上限并继续，或在设置中调整。",
+  "@aiCoverageBudgetPausedCredits": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBudgetPausedTokens": "已达本次 token 预算（{used}/{budget}）。可提高上限并继续，或在设置中调整。",
+  "@aiCoverageBudgetPausedTokens": {
     "placeholders": {
       "used": {
         "type": "int"
@@ -551,13 +620,24 @@
       }
     }
   },
-  "aiCoverageNotifyBudgetPaused": "已达预算上限，覆盖分析已暂停：{analyzed}/{total} 已分析。",
-  "@aiCoverageNotifyBudgetPaused": {
+  "aiCoverageNotifyBudgetPausedCredits": "已达本次积分预算，覆盖分析已暂停：已用 {used}/{budget} 积分。",
+  "@aiCoverageNotifyBudgetPausedCredits": {
     "placeholders": {
-      "analyzed": {
+      "used": {
         "type": "int"
       },
-      "total": {
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageNotifyBudgetPausedTokens": "已达本次 token 预算，覆盖分析已暂停：已用 {used}/{budget} token。",
+  "@aiCoverageNotifyBudgetPausedTokens": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
         "type": "int"
       }
     }
@@ -582,7 +662,9 @@
   "aiSettingsCoverageBudgetTokensLabel": "全量覆盖 token 预算（自带密钥）",
   "aiSettingsCoverageBudgetTokensHint": "500000",
   "aiSettingsCoverageBudgetCreditsLabel": "全量覆盖积分预算（平台模式）",
-  "aiSettingsCoverageBudgetCreditsHint": "20",
+  "aiSettingsCoverageBudgetCreditsHint": "50",
+  "aiSettingsCoverageBudgetCreditsDescription": "单次全量覆盖最多消耗的积分，与账户余额、充值包为同一单位。每次 AI 分析请求扣 1 积分。",
+  "aiSettingsCoverageBudgetTokensDescription": "单次全量覆盖最多消耗的 token 总量上限，超出后任务会暂停。",
   "aiSettingsCoverageBudgetSave": "保存预算",
   "aiSettingsCoverageBudgetSaved": "覆盖分析预算已保存",
   "aiCleanupSourceAiToolCache": "AI 工具缓存/临时文件",

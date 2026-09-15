@@ -17,6 +17,8 @@ pub enum AppError {
     TooManyRequests,
     #[error("{0}")]
     BadRequest(String),
+    #[error("checkout_url_invalid")]
+    CheckoutUrlInvalid,
     #[error("bad gateway")]
     BadGateway,
     #[error("not found")]
@@ -37,6 +39,7 @@ impl AppError {
             AppError::PaymentRequired => "insufficient_credits",
             AppError::TooManyRequests => "rate_limited",
             AppError::BadRequest(_) => "bad_request",
+            AppError::CheckoutUrlInvalid => "checkout_url_invalid",
             AppError::BadGateway => "upstream_error",
             AppError::NotFound | AppError::NotFoundMsg(_) => "not_found",
             AppError::Internal(_) | AppError::Sqlx(_) => "internal_error",
@@ -50,6 +53,7 @@ impl AppError {
             AppError::PaymentRequired => StatusCode::PAYMENT_REQUIRED,
             AppError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::CheckoutUrlInvalid => StatusCode::BAD_GATEWAY,
             AppError::BadGateway => StatusCode::BAD_GATEWAY,
             AppError::NotFound | AppError::NotFoundMsg(_) => StatusCode::NOT_FOUND,
             AppError::Internal(_) | AppError::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,

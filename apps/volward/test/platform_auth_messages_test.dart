@@ -80,6 +80,13 @@ void main() {
     );
   });
 
+  test('maps checkout_url_invalid', () {
+    expect(
+      platformAuthErrorMessage(l10n, Exception('checkout_url_invalid')),
+      l10n.aiErrorCheckoutUrlInvalid,
+    );
+  });
+
   test('maps packs_failed', () {
     expect(
       platformAuthErrorMessage(l10n, Exception('packs_failed:404')),

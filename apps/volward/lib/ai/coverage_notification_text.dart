@@ -22,13 +22,18 @@ AppLocalizations coverageNotifyLocalizations() {
 ({String title, String body}) coverageBudgetPausedNotification(
   AppLocalizations l10n,
   CoverageJobState state,
-) => (
-  title: l10n.aiCoverageNotifyTitle,
-  body: l10n.aiCoverageNotifyBudgetPaused(
-    state.analyzedFiles,
-    state.totalUnclassified,
-  ),
-);
+) {
+  final body = state.budgetCredits > 0
+      ? l10n.aiCoverageNotifyBudgetPausedCredits(
+          state.usedCredits,
+          state.budgetCredits,
+        )
+      : l10n.aiCoverageNotifyBudgetPausedTokens(
+          state.usedTokens,
+          state.budgetTokens,
+        );
+  return (title: l10n.aiCoverageNotifyTitle, body: body);
+}
 
 ({String title, String body}) coverageFailedNotification(
   AppLocalizations l10n,
