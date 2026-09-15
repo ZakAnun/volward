@@ -76,16 +76,18 @@ pub async fn webhook(
     }
     let tid = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
+    let paddle_env = state.config.paddle_env.as_str();
     if let Err(e) = sqlx::query(
         r#"
-        INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, provider_order_id, created_at)
-        VALUES (?, ?, NULL, 'purchase', ?, ?, ?)
+        INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, provider_order_id, paddle_env, created_at)
+        VALUES (?, ?, NULL, 'purchase', ?, ?, ?, ?)
         "#,
     )
     .bind(&tid)
     .bind(&event.user_id)
     .bind(credits.0)
     .bind(&event.provider_order_id)
+    .bind(paddle_env)
     .bind(now)
     .execute(&mut *conn)
     .await

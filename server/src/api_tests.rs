@@ -362,6 +362,49 @@ async fn billing_webhook_idempotent_purchase() {
             .unwrap();
     assert_eq!(kinds.len(), 1);
     assert_eq!(kinds[0].0, "purchase");
+    let env: (Option<String>,) =
+        sqlx::query_as("SELECT paddle_env FROM transactions WHERE user_id = ?")
+            .bind(&uid.0)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(env.0.as_deref(), Some("sandbox"));
+}
+
+#[tokio::test]
+async fn billing_webhook_records_live_purchase_env() {
+    let ctx = test_ctx_with_config(
+        Arc::new(MockUpstream {
+            mode: MockMode::OkKeep,
+        }),
+        |config| config.paddle_env = "live".into(),
+    )
+    .await;
+    let _token = register_and_link(&ctx, "d-live-bill", "live-bill@example.com", 0).await;
+    let uid: (String,) = sqlx::query_as("SELECT id FROM users WHERE email = ?")
+        .bind("live-bill@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    let body = json!({
+        "event_type": "transaction.completed",
+        "data": {
+            "id": "txn_live_1",
+            "status": "completed",
+            "custom_data": { "user_id": uid.0, "pack_id": "starter" }
+        }
+    })
+    .to_string();
+    let sig = sign_paddle("test-webhook-secret", body.as_bytes());
+    let status = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
+    assert_eq!(status, StatusCode::OK);
+    let env: (Option<String>,) =
+        sqlx::query_as("SELECT paddle_env FROM transactions WHERE provider_order_id = ?")
+            .bind("txn_live_1")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(env.0.as_deref(), Some("live"));
 }
 
 #[tokio::test]

@@ -16,6 +16,10 @@ String platformAuthErrorMessage(AppLocalizations l10n, Object error) {
     'checkout_failed' => l10n.aiErrorCheckoutFailed,
     'checkout_url_invalid' => l10n.aiErrorCheckoutUrlInvalid,
     'packs_failed' => l10n.aiErrorPacksFailed,
+    'upstream_error' => l10n.aiErrorCheckoutFailed,
+    'internal_error' => l10n.aiErrorCheckoutFailed,
+    'unauthorized' => l10n.aiSettingsSessionExpired,
+    'bad_request' => l10n.aiErrorCheckoutFailed,
     _ => l10n.aiErrorPlatformGeneric,
   };
 }

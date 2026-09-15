@@ -80,6 +80,20 @@ void main() {
     );
   });
 
+  test('maps upstream_error from checkout API', () {
+    expect(
+      platformAuthErrorMessage(l10n, Exception('upstream_error:502')),
+      l10n.aiErrorCheckoutFailed,
+    );
+  });
+
+  test('maps internal_error from checkout API', () {
+    expect(
+      platformAuthErrorMessage(l10n, Exception('internal_error:500')),
+      l10n.aiErrorCheckoutFailed,
+    );
+  });
+
   test('maps checkout_url_invalid', () {
     expect(
       platformAuthErrorMessage(l10n, Exception('checkout_url_invalid')),

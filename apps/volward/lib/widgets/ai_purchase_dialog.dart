@@ -11,6 +11,7 @@ import '../ai/platform_auth_messages.dart';
 import '../ai/platform_auth_store.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../l10n/l10n.dart';
+import '../theme/volward_tokens.dart';
 
 class AiPurchaseResult {
   const AiPurchaseResult({required this.packId, required this.credits});
@@ -152,10 +153,45 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
   Future<void> _openCheckoutInBrowser() async {
     final url = _checkoutUrl;
     if (url == null) return;
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        setState(() => _error = context.l10n.aiErrorCheckoutFailed);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = context.l10n.aiErrorCheckoutFailed);
     }
+  }
+
+  /// High-contrast QR plate: dark dialogs need a light background for scan reliability.
+  Widget _buildCheckoutQrCode(BuildContext context, String data) {
+    final theme = Theme.of(context);
+    final tokens = context.volward;
+    final isDark = theme.brightness == Brightness.dark;
+    // Dark UI: light QR plate + dark modules for camera contrast and readability.
+    final background = isDark
+        ? const Color(0xFFFAFAFC)
+        : theme.colorScheme.surface;
+    final foreground = isDark ? Colors.black : tokens.ink;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: QrImageView(
+          data: data,
+          backgroundColor: background,
+          eyeStyle: QrEyeStyle(color: foreground),
+          dataModuleStyle: QrDataModuleStyle(color: foreground),
+        ),
+      ),
+    );
   }
 
   String? _parseApiErrorCode(String body) {
@@ -403,7 +439,7 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
                       child: SizedBox(
                         height: 160,
                         width: 160,
-                        child: QrImageView(data: _checkoutUrl!),
+                        child: _buildCheckoutQrCode(context, _checkoutUrl!),
                       ),
                     ),
                     const SizedBox(height: 8),

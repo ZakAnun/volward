@@ -39,7 +39,7 @@ class PlatformAuthStore {
 
   static const defaultBaseUrl = String.fromEnvironment(
     'VOLWARD_API_BASE',
-    defaultValue: '',
+    defaultValue: 'https://api.volwardapp.com/v1',
   );
 
   final _secure = const FlutterSecureStorage(

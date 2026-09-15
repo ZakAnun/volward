@@ -26,6 +26,8 @@ enum Cmd {
         #[arg(long)]
         email: String,
     },
+    /// Platform-wide credit source totals (live vs sandbox vs topup).
+    Stats,
 }
 
 #[tokio::main]
@@ -91,9 +93,9 @@ async fn main() -> Result<()> {
             };
             println!("user_id={uid}");
             println!("credits={credits}");
-            let rows: Vec<(String, i64, Option<String>, i64)> = sqlx::query_as(
+            let rows: Vec<(String, i64, Option<String>, Option<String>, i64)> = sqlx::query_as(
                 r#"
-                SELECT kind, credits_delta, note, created_at
+                SELECT kind, credits_delta, note, paddle_env, created_at
                 FROM transactions
                 WHERE user_id = ?
                 ORDER BY created_at DESC
@@ -103,9 +105,47 @@ async fn main() -> Result<()> {
             .bind(&uid)
             .fetch_all(&pool)
             .await?;
-            for (kind, delta, note, created) in rows {
-                println!("{created}\t{kind}\t{delta}\t{}", note.unwrap_or_default());
+            for (kind, delta, note, paddle_env, created) in rows {
+                let env = paddle_env.unwrap_or_default();
+                println!(
+                    "{created}\t{kind}\t{delta}\t{env}\t{}",
+                    note.unwrap_or_default()
+                );
             }
+        }
+        Cmd::Stats => {
+            let live: (i64,) = sqlx::query_as(
+                "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions \
+                 WHERE kind = 'purchase' AND paddle_env = 'live'",
+            )
+            .fetch_one(&pool)
+            .await?;
+            let sandbox: (i64,) = sqlx::query_as(
+                "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions \
+                 WHERE kind = 'purchase' AND paddle_env = 'sandbox'",
+            )
+            .fetch_one(&pool)
+            .await?;
+            let topup: (i64,) = sqlx::query_as(
+                "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions WHERE kind = 'topup'",
+            )
+            .fetch_one(&pool)
+            .await?;
+            let usage: (i64,) = sqlx::query_as(
+                "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions WHERE kind = 'usage'",
+            )
+            .fetch_one(&pool)
+            .await?;
+            let refund: (i64,) = sqlx::query_as(
+                "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions WHERE kind = 'refund'",
+            )
+            .fetch_one(&pool)
+            .await?;
+            println!("live_purchase_credits={}", live.0);
+            println!("sandbox_purchase_credits={}", sandbox.0);
+            println!("topup_credits={}", topup.0);
+            println!("usage_credits={}", usage.0);
+            println!("refund_credits={}", refund.0);
         }
     }
     Ok(())
