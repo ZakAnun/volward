@@ -52,7 +52,7 @@ bash scripts/website_release.sh
 Build requires:
 
 - `PADDLE_CLIENT_TOKEN` — Paddle Dashboard client-side token (Secret in GHA)
-- `PADDLE_ENV` — `sandbox` or `live` (Variable in GHA)
+- `PADDLE_ENV` — `sandbox` or `live` (local dev; GHA reuses repo variable `PLATFORM_PADDLE_ENV`)
 
 Example:
 
@@ -65,7 +65,7 @@ pnpm build
 
 Paddle Default payment link must be `https://volwardapp.com/pay/`.
 
-`PADDLE_ENV` must match platform-api `PLATFORM_PADDLE_ENV` (same `sandbox` or `live` value). A mismatch creates transactions in one Paddle environment while `/pay/` initializes checkout in another.
+Website release reads `PLATFORM_PADDLE_ENV` from GitHub Variables (same key as platform-api), so both services stay on the same Paddle environment (`sandbox` or `live`).
 
 Local dev on `localhost` may fail Paddle checkout if the transaction was created for `volwardapp.com`; use a fresh `_ptxn` after pointing sandbox Default payment link at localhost, or test on the deployed domain.
 
