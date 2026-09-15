@@ -32,6 +32,8 @@ jobs:
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
       DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      PADDLE_CLIENT_TOKEN: ${{ secrets.PADDLE_CLIENT_TOKEN }}
+      PADDLE_ENV: ${{ vars.PADDLE_ENV }}
       WEBSITE_REQUIRE_RELEASE: '1'
       EXPECTED_RELEASE_TAG: ${{ inputs.expected_release_tag }}
 
@@ -44,6 +46,21 @@ jobs:
             echo "Missing repository variable: SITE_URL"
             exit 1
           fi
+          if [ -z "${PADDLE_CLIENT_TOKEN:-}" ]; then
+            echo "Missing repository secret: PADDLE_CLIENT_TOKEN"
+            exit 1
+          fi
+          if [ -z "${PADDLE_ENV:-}" ]; then
+            echo "Missing repository variable: PADDLE_ENV"
+            exit 1
+          fi
+          case "$PADDLE_ENV" in
+            sandbox|live) ;;
+            *)
+              echo "Invalid PADDLE_ENV: $PADDLE_ENV (expected sandbox or live)"
+              exit 1
+              ;;
+          esac
 
       - uses: pnpm/action-setup@v4
         with:
