@@ -76,21 +76,11 @@ verify_refresh_smoke_local() {
     IFS= read -r body
   } < <(
     "${ssh_cmd[@]}" "$remote" \
-      env REFRESH_SMOKE_DEVICE_UUID="${REFRESH_SMOKE_DEVICE_UUID}" bash -s <<'REMOTE'
-set -euo pipefail
-base_url='http://127.0.0.1:8080'
-tmp="$(mktemp)"
-REFRESH_SMOKE_STATUS="$(
-  curl -sS -o "$tmp" -w '%{http_code}' \
-    -X POST "${base_url%/}/v1/auth/refresh" \
-    -H 'Content-Type: application/json' \
-    -d "{\"device_uuid\":\"${REFRESH_SMOKE_DEVICE_UUID}\"}"
-)"
-REFRESH_SMOKE_BODY="$(cat "$tmp")"
-rm -f "$tmp"
-printf '%s\n' "$REFRESH_SMOKE_STATUS"
-printf '%s' "$REFRESH_SMOKE_BODY"
-REMOTE
+      "status=\$(curl -sS -o /tmp/volward-smoke-body -w '%{http_code}' \
+        -X POST 'http://127.0.0.1:8080/v1/auth/refresh' \
+        -H 'Content-Type: application/json' \
+        -d '{\"device_uuid\":\"${REFRESH_SMOKE_DEVICE_UUID}\"}'); \
+      printf '%s\\n' \"\$status\"; cat /tmp/volward-smoke-body; rm -f /tmp/volward-smoke-body"
   )
   assert_refresh_smoke_body "$label" "$status" "$body"
 }
