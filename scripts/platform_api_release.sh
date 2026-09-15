@@ -75,13 +75,21 @@ verify_refresh_smoke_local() {
     IFS= read -r status
     IFS= read -r body
   } < <(
-    "${ssh_cmd[@]}" "$remote" bash -s <<REMOTE
+    REFRESH_SMOKE_DEVICE_UUID="${REFRESH_SMOKE_DEVICE_UUID}" \
+    "${ssh_cmd[@]}" "$remote" bash -s <<'REMOTE'
 set -euo pipefail
-REFRESH_SMOKE_DEVICE_UUID='${REFRESH_SMOKE_DEVICE_UUID}'
 base_url='http://127.0.0.1:8080'
-${_REFRESH_SMOKE_CURL}
-printf '%s\n' "\$REFRESH_SMOKE_STATUS"
-printf '%s' "\$REFRESH_SMOKE_BODY"
+tmp="$(mktemp)"
+REFRESH_SMOKE_STATUS="$(
+  curl -sS -o "$tmp" -w '%{http_code}' \
+    -X POST "${base_url%/}/v1/auth/refresh" \
+    -H 'Content-Type: application/json' \
+    -d "{\"device_uuid\":\"${REFRESH_SMOKE_DEVICE_UUID}\"}"
+)"
+REFRESH_SMOKE_BODY="$(cat "$tmp")"
+rm -f "$tmp"
+printf '%s\n' "$REFRESH_SMOKE_STATUS"
+printf '%s' "$REFRESH_SMOKE_BODY"
 REMOTE
   )
   assert_refresh_smoke_body "$label" "$status" "$body"
