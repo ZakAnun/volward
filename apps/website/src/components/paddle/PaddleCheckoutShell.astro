@@ -1,0 +1,36 @@
+---
+import '../../styles/paddle-checkout.css';
+
+interface Props {
+  title?: string;
+  showLogo?: boolean;
+  compact?: boolean;
+}
+
+const {
+  title = 'Volward Checkout',
+  showLogo = true,
+  compact = false,
+} = Astro.props;
+---
+
+<div class="paddle-checkout-page">
+  <div class:list={['paddle-checkout-card', compact && 'compact']} data-paddle-shell>
+    {showLogo && (
+      <img
+        class="paddle-checkout-logo"
+        src="/branding/volward-wordmark.svg"
+        alt="Volward"
+        width="120"
+        height="32"
+      />
+    )}
+    <h1 class="paddle-checkout-title">{title}</h1>
+    <slot />
+    <p class="paddle-checkout-status" data-paddle-status>Opening secure checkout…</p>
+    <div class="paddle-checkout-spinner" data-paddle-spinner aria-hidden="true"></div>
+    <button type="button" class="paddle-checkout-retry" data-paddle-retry hidden>
+      Try again
+    </button>
+  </div>
+</div>

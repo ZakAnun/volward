@@ -1,0 +1,64 @@
+.paddle-checkout-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--page-bg);
+  color: var(--text, #f4f4f5);
+}
+
+.paddle-checkout-card {
+  width: min(100%, 420px);
+  padding: 28px 24px;
+  border-radius: 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--hero-surface-border);
+  text-align: center;
+}
+
+.paddle-checkout-card.compact {
+  padding: 20px 16px;
+}
+
+.paddle-checkout-logo {
+  width: 120px;
+  margin: 0 auto 16px;
+  display: block;
+}
+
+.paddle-checkout-title {
+  margin: 0 0 12px;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.paddle-checkout-status {
+  margin: 16px 0 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--hero-text-muted);
+}
+
+.paddle-checkout-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 12px auto 0;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--button-primary-bg);
+  border-radius: 50%;
+  animation: paddle-spin 0.8s linear infinite;
+}
+
+.paddle-checkout-spinner[hidden] {
+  display: none;
+}
+
+.paddle-checkout-retry {
+  margin-top: 16px;
+}
+
+@keyframes paddle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
