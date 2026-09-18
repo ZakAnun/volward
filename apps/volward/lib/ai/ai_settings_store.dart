@@ -61,6 +61,9 @@ class AiSettingsStore {
   /// Matches the starter pack credit amount in `server/migrations/005_packs.sql`.
   static const defaultCoverageBudgetCredits = 50;
 
+  /// Platform default before Phase 1 credit redesign (2026-09-04 full-coverage spec).
+  static const legacyCoverageBudgetCredits = 20;
+
   /// Bumped to 2 when Platform mode shipped: paths now transit Volward servers.
   static const kCurrentPrivacyVersion = 2;
 
@@ -139,15 +142,20 @@ class AiSettingsStore {
       _secure.write(key: _kByokKeyName, value: key);
   Future<void> clearByokKey() => _secure.delete(key: _kByokKeyName);
 
+  Future<int> _coverageBudgetCreditsFromMap(Map<String, dynamic> map) async {
+    final raw = (map[_kCoverageBudgetCredits] as num?)?.toInt();
+    if (raw == legacyCoverageBudgetCredits) {
+      map[_kCoverageBudgetCredits] = defaultCoverageBudgetCredits;
+      await _writeMap(map);
+      return defaultCoverageBudgetCredits;
+    }
+    return raw ?? defaultCoverageBudgetCredits;
+  }
+
   Future<({int tokens, int credits})> coverageBudgetForMode(AiMode mode) async {
     final map = await _readMap();
     if (mode == AiMode.platform) {
-      return (
-        tokens: 0,
-        credits:
-            (map[_kCoverageBudgetCredits] as num?)?.toInt() ??
-            defaultCoverageBudgetCredits,
-      );
+      return (tokens: 0, credits: await _coverageBudgetCreditsFromMap(map));
     }
     return (
       tokens:

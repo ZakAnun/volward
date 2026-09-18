@@ -35,7 +35,8 @@ void main() {
       final store = AiSettingsStore.instance
         ..settingsFileForTest = settingsFile;
       addTearDown(() => store.settingsFileForTest = null);
-      await store.setCoverageBudgetCredits(20);
+      // Use a non-legacy cap (legacy default 20 migrates to 50 on read).
+      await store.setCoverageBudgetCredits(15);
 
       AiCoverageCoordinator.debugPlanSummary = (_) async =>
           const CoveragePlanSummary(

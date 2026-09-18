@@ -1534,7 +1534,7 @@ FakeCoverageEngine singleRowEngine(String snapshotId) {
         snapshotId: snapshotId,
         planVersion: 1,
         nextCursor: null,
-        rows: [
+        rows: const [
           CoverageRow(
             rowIndex: 0,
             kind: CoverageRowKind.file,

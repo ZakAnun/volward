@@ -10,7 +10,6 @@ import '../ai/ai_provider.dart';
 import '../ai/ai_settings_store.dart';
 import '../ai/byok_ai_provider.dart';
 import '../ai/coverage_job_state.dart';
-import '../ai/coverage_models.dart';
 import '../ai/coverage_pause_messages.dart';
 import '../ai/coverage_ui_helpers.dart';
 import '../ai/coverage_verdict_adapter.dart';
@@ -215,7 +214,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool _coverageHydrating = false;
   bool _coverageHydrated = false;
   int? _coverageBudgetCredits;
-  CoveragePlanSummary? _coveragePlanSummary;
   int? _estimatedCoverageCredits;
   int? _runBudgetCredits;
   bool _coverageCapBelowEstimate = false;
@@ -341,7 +339,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coverageHydrating = false;
       _coverageHydrated = false;
       _coverageBudgetCredits = null;
-      _coveragePlanSummary = null;
       _estimatedCoverageCredits = null;
       _runBudgetCredits = null;
       _coverageVerdictRows = const [];
@@ -445,7 +442,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (!_isCurrent(generation)) return;
         if (mounted) {
           setState(() {
-            _coveragePlanSummary = summary;
             _estimatedCoverageCredits = summary?.estimatedPages;
             _runBudgetCredits = runBudgetCredits;
           });
