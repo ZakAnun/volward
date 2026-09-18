@@ -837,6 +837,57 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiCoverageFailedReasonGeneric => '分析请求失败';
 
   @override
+  String aiCoverageFailedBatchItemsOnly(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 项未获得结果。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchCredits(int credits, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      credits,
+      locale: localeName,
+      other: '已消耗 $credits 积分，但有 $count 项未获得结果。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsPreview(Object paths) {
+    return '受影响项：$paths';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsOverflow(int count) {
+    return '…还有 $count 项';
+  }
+
+  @override
+  String aiCoverageIncompleteGroupTitle(int count) {
+    return 'AI 响应不完整（$count 项）';
+  }
+
+  @override
+  String get aiCoverageFailedResumeTitle => '重试分析？';
+
+  @override
+  String aiCoverageFailedResumeBody(int credits, int count) {
+    return '上一批失败，已消耗 $credits 积分，$count 项未保存。重试可能再次消耗积分。';
+  }
+
+  @override
+  String aiCoverageFailedResumeBodyNoCredit(int count) {
+    return '上一批失败，$count 项未保存。重试可能再次消耗积分。';
+  }
+
+  @override
+  String get aiCoverageFailedResumeConfirm => '重试';
+
+  @override
   String get aiCoverageRaiseBudgetToEstimate => '按预估提高上限';
 
   @override

@@ -138,6 +138,8 @@ class CoverageJobController {
     _state = current.copyWith(
       status: CoverageJobStatus.running,
       pauseReason: () => null,
+      pauseDetail: () => null,
+      failedBatchPaths: const [],
     );
     await stateStore.save(_state!);
     _emit();
@@ -191,6 +193,8 @@ class CoverageJobController {
     _state = current.copyWith(
       status: CoverageJobStatus.running,
       pauseReason: () => null,
+      pauseDetail: () => null,
+      failedBatchPaths: const [],
       budgetTokens: budgetTokens > 0 ? budgetTokens : current.budgetTokens,
       budgetCredits: budgetCredits > 0 ? budgetCredits : current.budgetCredits,
     );
@@ -401,7 +405,8 @@ class CoverageJobController {
         );
       } on CoverageCancelledException {
         return null;
-      } on CoverageAnalyzeException {
+      } on CoverageAnalyzeException catch (e) {
+        await _recordFailedBatch(rows, creditsCharged: e.creditsCharged);
         await _pause(
           CoveragePauseReason.failed,
           detail: CoveragePauseDetail.parse,
@@ -413,6 +418,7 @@ class CoverageJobController {
             e.toString().contains('api_error:502') ||
             e.toString().contains('TimeoutException');
         if (!retryable || attempt == 2) {
+          await _recordFailedBatch(rows);
           await _pause(
             CoveragePauseReason.failed,
             detail: retryable
@@ -443,6 +449,23 @@ class CoverageJobController {
     final wallet = platformCreditsRemaining?.call();
     if (wallet == null) return run;
     return min(run, wallet.clamp(0, maxInFlight));
+  }
+
+  Future<void> _recordFailedBatch(
+    List<CoverageRow> rows, {
+    int creditsCharged = 0,
+  }) async {
+    if (rows.isEmpty) return;
+    final current = _state;
+    if (current == null) return;
+    _state = current.copyWith(
+      failedBatchPaths: rows.map((row) => row.path).toList(growable: false),
+      creditsChargedNoVerdict: creditsCharged > 0
+          ? current.creditsChargedNoVerdict + creditsCharged
+          : current.creditsChargedNoVerdict,
+    );
+    await stateStore.save(_state!);
+    _emit();
   }
 
   Future<void> _pause(

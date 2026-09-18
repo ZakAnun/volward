@@ -1525,6 +1525,60 @@ abstract class AppLocalizations {
   /// **'analysis request failed'**
   String get aiCoverageFailedReasonGeneric;
 
+  /// No description provided for @aiCoverageFailedBatchItemsOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{1 item did not receive results.} other{{count} items did not receive results.}}'**
+  String aiCoverageFailedBatchItemsOnly(int count);
+
+  /// No description provided for @aiCoverageFailedBatchCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'{credits, plural, one{1 credit was used but {count} items did not receive results.} other{{credits} credits were used but {count} items did not receive results.}}'**
+  String aiCoverageFailedBatchCredits(int credits, int count);
+
+  /// No description provided for @aiCoverageFailedBatchPathsPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected: {paths}'**
+  String aiCoverageFailedBatchPathsPreview(Object paths);
+
+  /// No description provided for @aiCoverageFailedBatchPathsOverflow.
+  ///
+  /// In en, this message translates to:
+  /// **'…and {count} more'**
+  String aiCoverageFailedBatchPathsOverflow(int count);
+
+  /// No description provided for @aiCoverageIncompleteGroupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete AI response ({count})'**
+  String aiCoverageIncompleteGroupTitle(int count);
+
+  /// No description provided for @aiCoverageFailedResumeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry analysis?'**
+  String get aiCoverageFailedResumeTitle;
+
+  /// No description provided for @aiCoverageFailedResumeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The last batch failed after using {credits} credit(s). {count} items were not saved. Retry may use additional credits.'**
+  String aiCoverageFailedResumeBody(int credits, int count);
+
+  /// No description provided for @aiCoverageFailedResumeBodyNoCredit.
+  ///
+  /// In en, this message translates to:
+  /// **'The last batch failed. {count} items were not saved. Retry may use additional credits.'**
+  String aiCoverageFailedResumeBodyNoCredit(int count);
+
+  /// No description provided for @aiCoverageFailedResumeConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get aiCoverageFailedResumeConfirm;
+
   /// No description provided for @aiCoverageRaiseBudgetToEstimate.
   ///
   /// In en, this message translates to:

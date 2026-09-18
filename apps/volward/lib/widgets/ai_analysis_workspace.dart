@@ -1038,6 +1038,37 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Future<void> _resumeFullCoverage() async {
+    final state = _coverageJobState;
+    if (state?.pauseReason == CoveragePauseReason.failed) {
+      final l10n = context.l10n;
+      final count = state!.failedBatchPaths.isNotEmpty
+          ? state.failedBatchPaths.length
+          : 1;
+      final resumeBody = state.creditsChargedNoVerdict > 0
+          ? l10n.aiCoverageFailedResumeBody(
+              state.creditsChargedNoVerdict,
+              count,
+            )
+          : l10n.aiCoverageFailedResumeBodyNoCredit(count);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.aiCoverageFailedResumeTitle),
+          content: Text(resumeBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.scanActionCancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.aiCoverageFailedResumeConfirm),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
     final provider = await widget.gateway.resolveProvider();
     if (provider == null) {
       if (mounted) setState(() => _hasProvider = false);

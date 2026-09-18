@@ -562,6 +562,68 @@
   "aiCoverageFailedReasonNetwork": "网络或服务器错误",
   "aiCoverageFailedReasonApi": "分析服务返回错误",
   "aiCoverageFailedReasonGeneric": "分析请求失败",
+  "aiCoverageFailedBatchItemsOnly": "{count, plural, other{{count} 项未获得结果。}}",
+  "@aiCoverageFailedBatchItemsOnly": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchCredits": "{credits, plural, other{已消耗 {credits} 积分，但有 {count} 项未获得结果。}}",
+  "@aiCoverageFailedBatchCredits": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchPathsPreview": "受影响项：{paths}",
+  "@aiCoverageFailedBatchPathsPreview": {
+    "placeholders": {
+      "paths": {}
+    }
+  },
+  "aiCoverageFailedBatchPathsOverflow": "…还有 {count} 项",
+  "@aiCoverageFailedBatchPathsOverflow": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageIncompleteGroupTitle": "AI 响应不完整（{count} 项）",
+  "@aiCoverageIncompleteGroupTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeTitle": "重试分析？",
+  "aiCoverageFailedResumeBody": "上一批失败，已消耗 {credits} 积分，{count} 项未保存。重试可能再次消耗积分。",
+  "aiCoverageFailedResumeBodyNoCredit": "上一批失败，{count} 项未保存。重试可能再次消耗积分。",
+  "@aiCoverageFailedResumeBodyNoCredit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@aiCoverageFailedResumeBody": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeConfirm": "重试",
   "aiCoverageRaiseBudgetToEstimate": "按预估提高上限",
   "aiCoverageRunCapConfigured": "本次上限：{cap} 积分",
   "@aiCoverageRunCapConfigured": {

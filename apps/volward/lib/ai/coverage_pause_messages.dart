@@ -13,3 +13,14 @@ String coverageFailedReasonCategory(
     null => l10n.aiCoverageFailedReasonGeneric,
   };
 }
+
+String formatFailedBatchPathPreview(AppLocalizations l10n, List<String> paths) {
+  const maxShown = 3;
+  if (paths.isEmpty) return '';
+  final head = paths.take(maxShown).join(', ');
+  if (paths.length <= maxShown) {
+    return l10n.aiCoverageFailedBatchPathsPreview(head);
+  }
+  return '${l10n.aiCoverageFailedBatchPathsPreview(head)} '
+      '${l10n.aiCoverageFailedBatchPathsOverflow(paths.length - maxShown)}';
+}

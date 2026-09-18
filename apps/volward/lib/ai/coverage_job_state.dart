@@ -29,6 +29,8 @@ class CoverageJobState {
     this.fingerprint,
     this.estimatedCreditsRemaining,
     this.pauseDetail,
+    this.failedBatchPaths = const [],
+    this.creditsChargedNoVerdict = 0,
   });
 
   factory CoverageJobState.fromJson(Map<String, dynamic> json) =>
@@ -62,6 +64,9 @@ class CoverageJobState {
         pauseDetail: json['pause_detail'] == null
             ? null
             : CoveragePauseDetail.values.asNameMap()[json['pause_detail']],
+        failedBatchPaths: _readStringList(json['failed_batch_paths']),
+        creditsChargedNoVerdict:
+            (json['credits_charged_no_verdict'] as num?)?.toInt() ?? 0,
       );
 
   final String snapshotId;
@@ -81,6 +86,8 @@ class CoverageJobState {
   final CoverageSnapshotFingerprint? fingerprint;
   final int? estimatedCreditsRemaining;
   final CoveragePauseDetail? pauseDetail;
+  final List<String> failedBatchPaths;
+  final int creditsChargedNoVerdict;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -95,6 +102,8 @@ class CoverageJobState {
     CoverageSnapshotFingerprint? fingerprint,
     int? Function()? estimatedCreditsRemaining,
     CoveragePauseDetail? Function()? pauseDetail,
+    List<String>? failedBatchPaths,
+    int? creditsChargedNoVerdict,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -115,6 +124,9 @@ class CoverageJobState {
         ? estimatedCreditsRemaining()
         : this.estimatedCreditsRemaining,
     pauseDetail: pauseDetail != null ? pauseDetail() : this.pauseDetail,
+    failedBatchPaths: failedBatchPaths ?? this.failedBatchPaths,
+    creditsChargedNoVerdict:
+        creditsChargedNoVerdict ?? this.creditsChargedNoVerdict,
   );
 
   Map<String, dynamic> toJson() => {
@@ -136,7 +148,15 @@ class CoverageJobState {
     if (estimatedCreditsRemaining != null)
       'estimated_credits_remaining': estimatedCreditsRemaining,
     if (pauseDetail != null) 'pause_detail': pauseDetail!.name,
+    if (failedBatchPaths.isNotEmpty) 'failed_batch_paths': failedBatchPaths,
+    if (creditsChargedNoVerdict > 0)
+      'credits_charged_no_verdict': creditsChargedNoVerdict,
   };
+}
+
+List<String> _readStringList(Object? raw) {
+  if (raw is! List) return const [];
+  return raw.whereType<String>().toList(growable: false);
 }
 
 class CoverageJobStateStore {

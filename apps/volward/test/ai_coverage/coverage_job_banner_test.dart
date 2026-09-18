@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/ai/coverage_analyze_batch.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_verdict_store.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
@@ -180,6 +181,58 @@ void main() {
 
     expect(find.text('Resume coverage'), findsNothing);
     expect(find.text('Raise limit & resume'), findsOneWidget);
+  });
+
+  testWidgets('failed pause shows batch credits and path preview', (
+    tester,
+  ) async {
+    const state = CoverageJobState(
+      snapshotId: 's1',
+      rootPath: '/',
+      planVersion: 1,
+      cursor: 0,
+      totalUnclassified: 4,
+      analyzedFiles: 0,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.paused,
+      pauseReason: CoveragePauseReason.failed,
+      pauseDetail: CoveragePauseDetail.parse,
+      usedTokens: 0,
+      usedCredits: 0,
+      budgetTokens: 0,
+      budgetCredits: 10,
+      updatedAtMs: 1,
+      failedBatchPaths: ['/cache/a', '/cache/b'],
+      creditsChargedNoVerdict: 1,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: CoverageJobBanner(
+            state: state,
+            verdictRows: const [
+              CoverageVerdict(
+                path: '/partial',
+                verdict: 'review_needed',
+                confidence: 'low',
+                reason: 'incomplete',
+                coverageSource: kIncompleteCoverageSource,
+                sizeBytes: 1,
+              ),
+            ],
+            onResume: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Affected:'), findsOneWidget);
+    expect(find.textContaining('/cache/a'), findsOneWidget);
+    expect(find.textContaining('Incomplete AI response'), findsOneWidget);
   });
 
   testWidgets('CoverageJobBanner shows raise budget when budget paused', (

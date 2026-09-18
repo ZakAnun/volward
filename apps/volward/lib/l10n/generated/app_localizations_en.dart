@@ -881,6 +881,60 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiCoverageFailedReasonGeneric => 'analysis request failed';
 
   @override
+  String aiCoverageFailedBatchItemsOnly(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items did not receive results.',
+      one: '1 item did not receive results.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchCredits(int credits, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      credits,
+      locale: localeName,
+      other:
+          '$credits credits were used but $count items did not receive results.',
+      one: '1 credit was used but $count items did not receive results.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsPreview(Object paths) {
+    return 'Affected: $paths';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsOverflow(int count) {
+    return '…and $count more';
+  }
+
+  @override
+  String aiCoverageIncompleteGroupTitle(int count) {
+    return 'Incomplete AI response ($count)';
+  }
+
+  @override
+  String get aiCoverageFailedResumeTitle => 'Retry analysis?';
+
+  @override
+  String aiCoverageFailedResumeBody(int credits, int count) {
+    return 'The last batch failed after using $credits credit(s). $count items were not saved. Retry may use additional credits.';
+  }
+
+  @override
+  String aiCoverageFailedResumeBodyNoCredit(int count) {
+    return 'The last batch failed. $count items were not saved. Retry may use additional credits.';
+  }
+
+  @override
+  String get aiCoverageFailedResumeConfirm => 'Retry';
+
+  @override
   String get aiCoverageRaiseBudgetToEstimate => 'Raise limit to match estimate';
 
   @override

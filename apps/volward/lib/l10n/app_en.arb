@@ -562,6 +562,68 @@
   "aiCoverageFailedReasonNetwork": "network or server error",
   "aiCoverageFailedReasonApi": "analysis service error",
   "aiCoverageFailedReasonGeneric": "analysis request failed",
+  "aiCoverageFailedBatchItemsOnly": "{count, plural, one{1 item did not receive results.} other{{count} items did not receive results.}}",
+  "@aiCoverageFailedBatchItemsOnly": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchCredits": "{credits, plural, one{1 credit was used but {count} items did not receive results.} other{{credits} credits were used but {count} items did not receive results.}}",
+  "@aiCoverageFailedBatchCredits": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchPathsPreview": "Affected: {paths}",
+  "@aiCoverageFailedBatchPathsPreview": {
+    "placeholders": {
+      "paths": {}
+    }
+  },
+  "aiCoverageFailedBatchPathsOverflow": "…and {count} more",
+  "@aiCoverageFailedBatchPathsOverflow": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageIncompleteGroupTitle": "Incomplete AI response ({count})",
+  "@aiCoverageIncompleteGroupTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeTitle": "Retry analysis?",
+  "aiCoverageFailedResumeBody": "The last batch failed after using {credits} credit(s). {count} items were not saved. Retry may use additional credits.",
+  "aiCoverageFailedResumeBodyNoCredit": "The last batch failed. {count} items were not saved. Retry may use additional credits.",
+  "@aiCoverageFailedResumeBodyNoCredit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@aiCoverageFailedResumeBody": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeConfirm": "Retry",
   "aiCoverageRaiseBudgetToEstimate": "Raise limit to match estimate",
   "aiCoverageRunCapConfigured": "Run cap for this scan: {cap} credits",
   "@aiCoverageRunCapConfigured": {
