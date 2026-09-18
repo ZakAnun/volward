@@ -797,6 +797,54 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String aiCoverageRemainingEstimate(int credits) {
+    return '预计还需约 $credits 积分';
+  }
+
+  @override
+  String aiCoverageAccountBalance(int credits) {
+    return '账户积分：$credits';
+  }
+
+  @override
+  String aiCoverageEstimatedCredits(int credits) {
+    return '完整分析预估：约 $credits 积分';
+  }
+
+  @override
+  String get aiCoveragePurchaseFooter => '完整分析一次通常约 30–80 积分；开始前会显示预估值。';
+
+  @override
+  String aiCoverageInsufficientForEstimate(int needed, int available) {
+    return '预计需要约 $needed 积分，当前余额 $available。';
+  }
+
+  @override
+  String aiCoverageFailedReason(Object reason) {
+    return '分析已暂停：$reason';
+  }
+
+  @override
+  String get aiCoverageFailedReasonParse => 'AI 响应解析失败';
+
+  @override
+  String get aiCoverageFailedReasonNetwork => '网络或服务器错误';
+
+  @override
+  String get aiCoverageFailedReasonApi => '分析服务返回错误';
+
+  @override
+  String get aiCoverageFailedReasonGeneric => '分析请求失败';
+
+  @override
+  String get aiCoverageRaiseBudgetToEstimate => '按预估提高上限';
+
+  @override
+  String aiCoverageRunCapConfigured(int cap) {
+    return '本次上限：$cap 积分';
+  }
+
+  @override
   String get aiCoverageFullRunHint => '全量覆盖分析会在后台持续运行，直到每个未分类文件都有 AI 结论。';
 
   @override
@@ -923,7 +971,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiSettingsCoverageBudgetCreditsDescription =>
-      '单次全量覆盖最多消耗的积分，与账户余额、充值包为同一单位。每次 AI 分析请求扣 1 积分。';
+      '单次扫描的积分花费上限（安全阀，与账户余额无关）。开始前会显示完整分析预估；若预估超过此上限，可在此调高。';
 
   @override
   String get aiSettingsCoverageBudgetTokensDescription =>

@@ -16,6 +16,7 @@ import 'ai_settings_store.dart';
 import 'coverage_desktop_notify.dart';
 import 'coverage_job_state.dart';
 import 'coverage_lifecycle.dart';
+import 'coverage_models.dart';
 import 'coverage_notification_text.dart';
 
 typedef CoverageDesktopNotify =
@@ -26,6 +27,29 @@ typedef CoverageServiceFactory =
       required VolwardSession session,
       required AiProvider provider,
     });
+
+enum StartCoverageBlockedReason { capBelowEstimate }
+
+sealed class StartFullCoverageResult {
+  const StartFullCoverageResult();
+}
+
+final class StartFullCoverageStarted extends StartFullCoverageResult {
+  const StartFullCoverageStarted();
+}
+
+final class StartFullCoverageUnavailable extends StartFullCoverageResult {
+  const StartFullCoverageUnavailable();
+}
+
+final class StartCoverageBlocked extends StartFullCoverageResult {
+  const StartCoverageBlocked(this.reason);
+  final StartCoverageBlockedReason reason;
+
+  static const reasonCapBelowEstimate = StartCoverageBlocked(
+    StartCoverageBlockedReason.capBelowEstimate,
+  );
+}
 
 /// Process-scoped owner for full-coverage jobs (Design §5.3).
 class AiCoverageCoordinator with WidgetsBindingObserver {
@@ -42,6 +66,13 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
            resolveProvider ?? AiSettingsStore.instance.resolveProvider;
 
   static final AiCoverageCoordinator instance = AiCoverageCoordinator._();
+
+  @visibleForTesting
+  static bool debugForceAvailable = false;
+
+  @visibleForTesting
+  static Future<CoveragePlanSummary?> Function(String snapshotId)?
+  debugPlanSummary;
 
   @visibleForTesting
   factory AiCoverageCoordinator.testing({
@@ -91,7 +122,8 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
 
   bool get isAttached => _session != null;
 
-  bool get isAvailable => _session?.hasAiCoverageApi ?? false;
+  bool get isAvailable =>
+      debugForceAvailable || (_session?.hasAiCoverageApi ?? false);
 
   CoverageJobState? get currentState => _service?.state;
 
@@ -125,6 +157,22 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   Future<CoverageJobState?> loadJobState(String snapshotId) =>
       CoverageJobStateStore(SnapshotCache.cacheDir()).load(snapshotId);
 
+  Future<CoveragePlanSummary?> planSummary(String snapshotId) async {
+    final override = debugPlanSummary;
+    if (override != null) {
+      return override(snapshotId);
+    }
+    final session = _session;
+    if (session == null || !_isCoverageApiReady(session)) return null;
+    final engine = session.coverageEngine;
+    if (engine == null) return null;
+    try {
+      return await engine.buildPlan(snapshotId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<AiCoverageService?> prepareService(AiProvider provider) {
     final operation = _prepareServiceTail.then(
       (_) => _prepareService(provider),
@@ -156,14 +204,40 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     return _service;
   }
 
-  Future<bool> startFullCoverage({
+  Future<StartFullCoverageResult> startFullCoverage({
     required String snapshotId,
     required AiMode mode,
     required AiProvider provider,
+    int? budgetCredits,
   }) async {
     final service = await prepareService(provider);
-    if (service == null) return false;
+    if (service == null) return const StartFullCoverageUnavailable();
     final budget = await AiSettingsStore.instance.coverageBudgetForMode(mode);
+    var budgetTokens = budget.tokens;
+    var resolvedBudgetCredits = budgetCredits ?? budget.credits;
+    if (mode == AiMode.platform) {
+      final summary = await planSummary(snapshotId);
+      final estimatedCredits = summary?.estimatedPages ?? 0;
+      final configured = await AiSettingsStore.instance.coverageBudgetForMode(
+        AiMode.platform,
+      );
+      final fromEstimate = (estimatedCredits * 1.2).ceil();
+      if (fromEstimate > configured.credits) {
+        return StartCoverageBlocked.reasonCapBelowEstimate;
+      }
+      if (budgetCredits == null) {
+        var accountBalance = 0;
+        if (provider is PlatformAiProvider) {
+          await provider.queryQuota();
+          accountBalance = provider.lastCreditsRemaining ?? 0;
+        }
+        resolvedBudgetCredits = await AiSettingsStore.instance
+            .resolveRunBudgetCredits(
+              estimatedCredits: estimatedCredits,
+              accountBalance: accountBalance,
+            );
+      }
+    }
     unawaited(
       Analytics.instance.track(AnalyticsEvents.aiCoverageStarted, {
         'snapshot_id': snapshotId,
@@ -172,10 +246,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     );
     await service.start(
       snapshotId,
-      budgetTokens: budget.tokens,
-      budgetCredits: budget.credits,
+      budgetTokens: budgetTokens,
+      budgetCredits: resolvedBudgetCredits,
     );
-    return true;
+    return const StartFullCoverageStarted();
   }
 
   Future<void> ensureJobRunning(String snapshotId) async {

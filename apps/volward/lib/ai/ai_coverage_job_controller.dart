@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:math' show min;
+
+import 'package:http/http.dart' as http;
 
 import 'cancel_token.dart';
+import 'coverage_analyze_batch.dart';
 import 'coverage_engine.dart';
 import 'coverage_job_state.dart';
 import 'coverage_models.dart';
@@ -30,6 +34,7 @@ class CoverageJobController {
     required this.analyzeBatch,
     this.batchSize = 40,
     this.maxInFlight = 4,
+    this.platformCreditsRemaining,
     CancelToken? cancelToken,
   }) : _cancelToken = cancelToken ?? CancelToken();
 
@@ -39,6 +44,9 @@ class CoverageJobController {
   final AnalyzeBatch analyzeBatch;
   final int batchSize;
   final int maxInFlight;
+
+  /// When null, wallet balance is unknown — wave sizing ignores wallet cap.
+  final int? Function()? platformCreditsRemaining;
   final CancelToken _cancelToken;
 
   CoverageJobState? _state;
@@ -297,8 +305,13 @@ class CoverageJobController {
             await _pause(CoveragePauseReason.budget);
             return;
           }
-          final waveEnd = waveStart + maxInFlight < chunks.length
-              ? waveStart + maxInFlight
+          final remaining = _remainingWaveSlots(_state!);
+          if (remaining <= 0) {
+            await _pause(CoveragePauseReason.budget);
+            return;
+          }
+          final waveEnd = waveStart + remaining < chunks.length
+              ? waveStart + remaining
               : chunks.length;
           final results = await Future.wait(
             chunks
@@ -388,9 +401,24 @@ class CoverageJobController {
         );
       } on CoverageCancelledException {
         return null;
-      } catch (_) {
-        if (attempt == 2) {
-          await _pause(CoveragePauseReason.failed);
+      } on CoverageAnalyzeException {
+        await _pause(
+          CoveragePauseReason.failed,
+          detail: CoveragePauseDetail.parse,
+        );
+        return null;
+      } catch (e) {
+        final retryable =
+            e is http.ClientException ||
+            e.toString().contains('api_error:502') ||
+            e.toString().contains('TimeoutException');
+        if (!retryable || attempt == 2) {
+          await _pause(
+            CoveragePauseReason.failed,
+            detail: retryable
+                ? CoveragePauseDetail.network
+                : CoveragePauseDetail.api,
+          );
           return null;
         }
         await Future<void>.delayed(
@@ -408,12 +436,25 @@ class CoverageJobController {
     return state.budgetCredits > 0 && state.usedCredits >= state.budgetCredits;
   }
 
-  Future<void> _pause(CoveragePauseReason reason) async {
+  int _remainingWaveSlots(CoverageJobState state) {
+    final run = state.budgetCredits > 0
+        ? (state.budgetCredits - state.usedCredits).clamp(0, maxInFlight)
+        : maxInFlight;
+    final wallet = platformCreditsRemaining?.call();
+    if (wallet == null) return run;
+    return min(run, wallet.clamp(0, maxInFlight));
+  }
+
+  Future<void> _pause(
+    CoveragePauseReason reason, {
+    CoveragePauseDetail? detail,
+  }) async {
     _pauseRequested = false;
     _pauseRequestReason = null;
     _state = _state?.copyWith(
       status: CoverageJobStatus.paused,
       pauseReason: () => reason,
+      pauseDetail: () => reason == CoveragePauseReason.failed ? detail : null,
     );
     if (_state != null) await stateStore.save(_state!);
     _emit();

@@ -202,13 +202,13 @@ void main() {
       );
       coordinator.attach(VolwardSession.test());
 
-      final started = await coordinator.startFullCoverage(
+      final result = await coordinator.startFullCoverage(
         snapshotId: 'snap-missing',
         mode: AiMode.platform,
         provider: _Provider(),
       );
 
-      expect(started, isFalse);
+      expect(result, isA<StartFullCoverageUnavailable>());
     },
   );
 

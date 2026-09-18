@@ -7,6 +7,9 @@ enum CoverageJobStatus { idle, running, paused, completed, cancelled }
 
 enum CoveragePauseReason { manual, budget, failed, appQuit }
 
+/// Category persisted when [CoveragePauseReason.failed] (design §4.4).
+enum CoveragePauseDetail { parse, network, api }
+
 class CoverageJobState {
   const CoverageJobState({
     required this.snapshotId,
@@ -24,6 +27,8 @@ class CoverageJobState {
     required this.budgetCredits,
     required this.updatedAtMs,
     this.fingerprint,
+    this.estimatedCreditsRemaining,
+    this.pauseDetail,
   });
 
   factory CoverageJobState.fromJson(Map<String, dynamic> json) =>
@@ -52,6 +57,11 @@ class CoverageJobState {
                 Map<String, dynamic>.from(json['fingerprint'] as Map),
               )
             : null,
+        estimatedCreditsRemaining: (json['estimated_credits_remaining'] as num?)
+            ?.toInt(),
+        pauseDetail: json['pause_detail'] == null
+            ? null
+            : CoveragePauseDetail.values.asNameMap()[json['pause_detail']],
       );
 
   final String snapshotId;
@@ -69,6 +79,8 @@ class CoverageJobState {
   final int budgetCredits;
   final int updatedAtMs;
   final CoverageSnapshotFingerprint? fingerprint;
+  final int? estimatedCreditsRemaining;
+  final CoveragePauseDetail? pauseDetail;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -81,6 +93,8 @@ class CoverageJobState {
     int? budgetCredits,
     int? updatedAtMs,
     CoverageSnapshotFingerprint? fingerprint,
+    int? Function()? estimatedCreditsRemaining,
+    CoveragePauseDetail? Function()? pauseDetail,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -97,6 +111,10 @@ class CoverageJobState {
     budgetCredits: budgetCredits ?? this.budgetCredits,
     updatedAtMs: updatedAtMs ?? DateTime.now().millisecondsSinceEpoch,
     fingerprint: fingerprint ?? this.fingerprint,
+    estimatedCreditsRemaining: estimatedCreditsRemaining != null
+        ? estimatedCreditsRemaining()
+        : this.estimatedCreditsRemaining,
+    pauseDetail: pauseDetail != null ? pauseDetail() : this.pauseDetail,
   );
 
   Map<String, dynamic> toJson() => {
@@ -115,6 +133,9 @@ class CoverageJobState {
     'budget_credits': budgetCredits,
     'updated_at_ms': updatedAtMs,
     if (fingerprint != null) 'fingerprint': fingerprint!.toJson(),
+    if (estimatedCreditsRemaining != null)
+      'estimated_credits_remaining': estimatedCreditsRemaining,
+    if (pauseDetail != null) 'pause_detail': pauseDetail!.name,
   };
 }
 

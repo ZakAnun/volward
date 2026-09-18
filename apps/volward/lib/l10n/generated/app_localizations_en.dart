@@ -840,6 +840,55 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiCoverageRemainingEstimate(int credits) {
+    return 'About $credits credits remaining';
+  }
+
+  @override
+  String aiCoverageAccountBalance(int credits) {
+    return 'Account balance: $credits credits';
+  }
+
+  @override
+  String aiCoverageEstimatedCredits(int credits) {
+    return 'Estimated for full analysis: ~$credits credits';
+  }
+
+  @override
+  String get aiCoveragePurchaseFooter =>
+      'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.';
+
+  @override
+  String aiCoverageInsufficientForEstimate(int needed, int available) {
+    return 'Need about $needed credits; you have $available.';
+  }
+
+  @override
+  String aiCoverageFailedReason(Object reason) {
+    return 'Analysis paused: $reason';
+  }
+
+  @override
+  String get aiCoverageFailedReasonParse => 'AI response could not be parsed';
+
+  @override
+  String get aiCoverageFailedReasonNetwork => 'network or server error';
+
+  @override
+  String get aiCoverageFailedReasonApi => 'analysis service error';
+
+  @override
+  String get aiCoverageFailedReasonGeneric => 'analysis request failed';
+
+  @override
+  String get aiCoverageRaiseBudgetToEstimate => 'Raise limit to match estimate';
+
+  @override
+  String aiCoverageRunCapConfigured(int cap) {
+    return 'Run cap for this scan: $cap credits';
+  }
+
+  @override
   String get aiCoverageFullRunHint =>
       'Full-coverage analysis runs in the background until every unclassified file has a verdict.';
 
@@ -974,7 +1023,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiSettingsCoverageBudgetCreditsDescription =>
-      'Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.';
+      'Per-scan credit spending cap (safety limit, not your account balance). Full-run estimate is shown before you start; raise this if the estimate exceeds the cap.';
 
   @override
   String get aiSettingsCoverageBudgetTokensDescription =>

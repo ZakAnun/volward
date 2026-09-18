@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
@@ -14,6 +17,7 @@ import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
+import 'package:volward/widgets/apple_widgets.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
 
 const candidatePayload = '''
@@ -473,7 +477,27 @@ const _aggregateVerdict = [
   ),
 ];
 
+const _coveragePlanSummary23 = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 1,
+  rootPath: '/tmp',
+  totalUnclassified: 920,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 920,
+  estimatedPages: 23,
+);
+
 void main() {
+  setUp(() {
+    AiCoverageCoordinator.debugForceAvailable = false;
+    AiCoverageCoordinator.debugPlanSummary = null;
+  });
+
+  tearDown(() {
+    AiCoverageCoordinator.debugForceAvailable = false;
+    AiCoverageCoordinator.debugPlanSummary = null;
+  });
   test(
     'production gateway delegates snapshot-scoped native operations',
     () async {
@@ -679,6 +703,103 @@ void main() {
       BorderSide.none,
     );
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('precheck shows estimated credits from plan summary', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary23;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Estimated for full analysis'),
+    );
+
+    expect(find.textContaining('23'), findsOneWidget);
+    expect(find.textContaining('Estimated for full analysis'), findsOneWidget);
+    expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
+    expect(find.textContaining('30–80 credits'), findsOneWidget);
+  });
+
+  testWidgets('precheck shows run cap from resolveRunBudgetCredits', (
+    tester,
+  ) async {
+    late Directory tempDir;
+    await tester.runAsync(() async {
+      tempDir = await Directory.systemTemp.createTemp('volward-ws-run-cap');
+      final settingsFile = File('${tempDir.path}/settings.json')
+        ..writeAsStringSync('{}');
+      AiSettingsStore.instance.settingsFileForTest = settingsFile;
+    });
+    addTearDown(() async {
+      AiSettingsStore.instance.settingsFileForTest = null;
+      if (tempDir.existsSync()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    const expectedRunCap = 28;
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary23;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Run cap for this scan: $expectedRunCap credits'),
+    );
+
+    expect(
+      find.textContaining('Run cap for this scan: $expectedRunCap credits'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('precheck blocks start when estimate exceeds platform balance', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary23;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 7, creditsTotal: 20),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Need about 23 credits; you have 7.'),
+    );
+
+    expect(
+      find.textContaining('Need about 23 credits; you have 7.'),
+      findsOneWidget,
+    );
+    final button = tester.widget<AppleButton>(
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+    expect(button.onPressed, isNull);
   });
 
   testWidgets('precheck shows local unknown token truncation and quota data', (

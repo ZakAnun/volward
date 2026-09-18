@@ -141,6 +141,52 @@ void main() {
     );
   });
 
+  test(
+    'resolveRunBudgetCredits uses min of estimate buffer balance and cap',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('volward-ai-budget');
+      addTearDown(() => temp.delete(recursive: true));
+
+      final settingsFile = File('${temp.path}/settings.json')
+        ..writeAsStringSync('{}');
+      final store = AiSettingsStore.instance
+        ..settingsFileForTest = settingsFile;
+      addTearDown(() => store.settingsFileForTest = null);
+
+      final budget = await store.resolveRunBudgetCredits(
+        estimatedCredits: 40,
+        accountBalance: 100,
+      );
+      expect(budget, 48);
+    },
+  );
+
+  test('resolveRunBudgetCredits respects configured cap and balance', () async {
+    final temp = await Directory.systemTemp.createTemp('volward-ai-budget-cap');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final settingsFile = File('${temp.path}/settings.json')
+      ..writeAsStringSync('{}');
+    final store = AiSettingsStore.instance..settingsFileForTest = settingsFile;
+    addTearDown(() => store.settingsFileForTest = null);
+
+    await store.setCoverageBudgetCredits(30);
+    expect(
+      await store.resolveRunBudgetCredits(
+        estimatedCredits: 40,
+        accountBalance: 100,
+      ),
+      30,
+    );
+    expect(
+      await store.resolveRunBudgetCredits(
+        estimatedCredits: 40,
+        accountBalance: 25,
+      ),
+      25,
+    );
+  });
+
   test('VolwardThemeSettings persist merges and preserves AI keys', () async {
     final temp = await Directory.systemTemp.createTemp('volward-ai-theme');
     addTearDown(() => temp.delete(recursive: true));

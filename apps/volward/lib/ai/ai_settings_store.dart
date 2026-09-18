@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' show min;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -166,6 +167,18 @@ class AiSettingsStore {
     final map = await _readMap();
     map[_kCoverageBudgetCredits] = credits;
     await _writeMap(map);
+  }
+
+  Future<int> resolveRunBudgetCredits({
+    required int estimatedCredits,
+    required int accountBalance,
+  }) async {
+    final configured = await coverageBudgetForMode(AiMode.platform);
+    final fromEstimate = (estimatedCredits * 1.2).ceil();
+    final cap = configured.credits > 0
+        ? configured.credits
+        : defaultCoverageBudgetCredits;
+    return [fromEstimate, accountBalance, cap].reduce(min);
   }
 
   Future<ByokTokenUsageTotals> getByokTokenUsageTotals() async {
