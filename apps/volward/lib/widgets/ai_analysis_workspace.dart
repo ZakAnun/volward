@@ -10,6 +10,7 @@ import '../ai/ai_provider.dart';
 import '../ai/ai_settings_store.dart';
 import '../ai/byok_ai_provider.dart';
 import '../ai/coverage_job_state.dart';
+import '../ai/coverage_pause_messages.dart';
 import '../ai/coverage_ui_helpers.dart';
 import '../ai/coverage_verdict_adapter.dart';
 import '../ai/coverage_verdict_store.dart';
@@ -213,6 +214,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool _coverageHydrating = false;
   bool _coverageHydrated = false;
   int? _coverageBudgetCredits;
+  int? _estimatedCoverageCredits;
+  int? _runBudgetCredits;
+  bool _coverageCapBelowEstimate = false;
   int _coverageVerdictPageCount = 2;
   static const _coverageVerdictPageSize = 500;
   int _coverageVerdictByteOffset = 0;
@@ -221,6 +225,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int _beginOperation() => ++_operationGeneration;
   bool _isCurrent(int generation) =>
       mounted && generation == _operationGeneration;
+
+  bool get _canStartCoverage {
+    if (_mode != AiMode.platform) return true;
+    if (_coverageCapBelowEstimate) return false;
+    if (_estimatedCoverageCredits == null || _platformCredits == null) {
+      return true;
+    }
+    return _platformCredits! >= _estimatedCoverageCredits!;
+  }
 
   AiVerdict _withCandidateMeta(AiVerdict verdict) {
     AiCandidate? candidate;
@@ -326,6 +339,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coverageHydrating = false;
       _coverageHydrated = false;
       _coverageBudgetCredits = null;
+      _estimatedCoverageCredits = null;
+      _runBudgetCredits = null;
       _coverageVerdictRows = const [];
     });
     try {
@@ -409,6 +424,27 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (!_isCurrent(generation)) return;
         if (mounted) {
           setState(() => _coverageBudgetCredits = budget.credits);
+        }
+        final summary = await AiCoverageCoordinator.instance.planSummary(
+          widget.snapshotId,
+        );
+        if (!_isCurrent(generation)) return;
+        int? runBudgetCredits;
+        if (mode == AiMode.platform &&
+            summary?.estimatedPages != null &&
+            platformCredits != null) {
+          runBudgetCredits = await AiSettingsStore.instance
+              .resolveRunBudgetCredits(
+                estimatedCredits: summary!.estimatedPages,
+                accountBalance: platformCredits,
+              );
+        }
+        if (!_isCurrent(generation)) return;
+        if (mounted) {
+          setState(() {
+            _estimatedCoverageCredits = summary?.estimatedPages;
+            _runBudgetCredits = runBudgetCredits;
+          });
         }
         await _hydrateCoverageJob();
         if (!_isCurrent(generation)) return;
@@ -814,7 +850,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _phase = _Phase.analyzing;
       }
       if (state.pauseReason == CoveragePauseReason.failed) {
-        _error = context.l10n.aiErrorUnknown;
+        _error = context.l10n.aiCoverageFailedReason(
+          coverageFailedReasonCategory(context.l10n, state.pauseDetail),
+        );
       } else if (state.status != CoverageJobStatus.paused ||
           state.pauseReason != CoveragePauseReason.failed) {
         _error = null;
@@ -963,6 +1001,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _analyzing = true;
       _phase = _Phase.analyzing;
       _error = null;
+      _coverageCapBelowEstimate = false;
       _coverageVerdictByteOffset = 0;
       _coverageVerdictRows = const [];
       _resetResultsPresentation();
@@ -972,13 +1011,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _expandedReviewPaths.clear();
       _invalidateResultGroups();
     });
-    final started = await AiCoverageCoordinator.instance.startFullCoverage(
+    final result = await AiCoverageCoordinator.instance.startFullCoverage(
       snapshotId: widget.snapshotId,
       mode: mode,
       provider: provider,
+      budgetCredits: _runBudgetCredits,
     );
     if (!mounted || !_isCurrent(generation)) return;
-    if (!started) {
+    if (result is StartCoverageBlocked &&
+        result.reason == StartCoverageBlockedReason.capBelowEstimate) {
+      setState(() {
+        _analyzing = false;
+        _phase = _Phase.precheck;
+        _error = null;
+        _coverageCapBelowEstimate = true;
+      });
+      return;
+    }
+    if (result is StartFullCoverageUnavailable) {
       setState(() {
         _analyzing = false;
         _phase = _Phase.precheck;
@@ -988,6 +1038,37 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Future<void> _resumeFullCoverage() async {
+    final state = _coverageJobState;
+    if (state?.pauseReason == CoveragePauseReason.failed) {
+      final l10n = context.l10n;
+      final count = state!.failedBatchPaths.isNotEmpty
+          ? state.failedBatchPaths.length
+          : 1;
+      final resumeBody = state.creditsChargedNoVerdict > 0
+          ? l10n.aiCoverageFailedResumeBody(
+              state.creditsChargedNoVerdict,
+              count,
+            )
+          : l10n.aiCoverageFailedResumeBodyNoCredit(count);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.aiCoverageFailedResumeTitle),
+          content: Text(resumeBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.scanActionCancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.aiCoverageFailedResumeConfirm),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
     final provider = await widget.gateway.resolveProvider();
     if (provider == null) {
       if (mounted) setState(() => _hasProvider = false);
@@ -1004,6 +1085,55 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _cancelFullCoverage() async {
     await AiCoverageCoordinator.instance.cancelCoverage(widget.snapshotId);
+  }
+
+  Future<void> _raiseConfiguredCoverageCap() async {
+    final estimated = _estimatedCoverageCredits;
+    if (estimated == null) return;
+    final currentLimit =
+        _coverageBudgetCredits ?? AiSettingsStore.defaultCoverageBudgetCredits;
+    final suggested = (estimated * 1.2).ceil();
+    if (suggested <= currentLimit) return;
+    final l10n = context.l10n;
+    final controller = TextEditingController(text: '$suggested');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aiCoverageRaiseBudgetTitle),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: l10n.aiSettingsCoverageBudgetCreditsHint,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.aiCoverageRaiseBudget),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final parsed = int.tryParse(controller.text.trim());
+    if (parsed == null || parsed <= currentLimit) {
+      if (mounted) {
+        showTopToast(context, message: l10n.aiCoverageBudgetInvalid);
+      }
+      return;
+    }
+    await AiSettingsStore.instance.setCoverageBudgetCredits(parsed);
+    if (!mounted) return;
+    setState(() {
+      _coverageBudgetCredits = parsed;
+      _coverageCapBelowEstimate = false;
+    });
   }
 
   Future<void> _raiseCoverageBudget() async {
@@ -1522,6 +1652,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final tokens = context.volward;
     final canAnalyze =
         _hasProvider &&
+        _canStartCoverage &&
         !(_mode == AiMode.platform && _platformCredits == 0) &&
         (!_useFullCoverage || (_coverageHydrated && !_coverageHydrating));
     final needsSettings =
@@ -1551,11 +1682,61 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             style: AppleTypography.caption.copyWith(color: tokens.warning),
           ),
         ],
-        if (_mode == AiMode.platform && _platformCredits != null) ...[
+        if (_mode == AiMode.platform &&
+            _platformCredits != null &&
+            !(_useFullCoverage && _estimatedCoverageCredits != null)) ...[
           const SizedBox(height: AppleSpacing.xs),
           Text(
             l10n.aiPrecheckCreditsCost(_platformCredits!),
             style: context.vwCaption,
+          ),
+        ],
+        if (_useFullCoverage &&
+            _mode == AiMode.platform &&
+            _estimatedCoverageCredits != null) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(l10n.aiCoverageEstimatedCredits(_estimatedCoverageCredits!)),
+          if (_platformCredits != null)
+            Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
+          if (_runBudgetCredits != null)
+            Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
+          Text(l10n.aiCoveragePurchaseFooter, style: context.vwCaption),
+        ],
+        if (_useFullCoverage &&
+            _platformCredits != null &&
+            _estimatedCoverageCredits != null &&
+            _platformCredits! < _estimatedCoverageCredits!) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            l10n.aiCoverageInsufficientForEstimate(
+              _estimatedCoverageCredits!,
+              _platformCredits!,
+            ),
+            style: AppleTypography.caption.copyWith(color: tokens.warning),
+          ),
+        ],
+        if (_useFullCoverage &&
+            _mode == AiMode.platform &&
+            _coverageCapBelowEstimate &&
+            _estimatedCoverageCredits != null &&
+            _coverageBudgetCredits != null) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            l10n.aiCoverageBudgetPausedCredits(
+              (_estimatedCoverageCredits! * 1.2).ceil(),
+              _coverageBudgetCredits!,
+            ),
+            style: AppleTypography.caption.copyWith(color: tokens.warning),
+          ),
+          const SizedBox(height: AppleSpacing.xs),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppleButton(
+              label: l10n.aiCoverageRaiseBudgetToEstimate,
+              icon: Icons.trending_up_outlined,
+              variant: AppleButtonVariant.pearl,
+              onPressed: () => unawaited(_raiseConfiguredCoverageCap()),
+            ),
           ),
         ],
         if (_useFullCoverage) ...[

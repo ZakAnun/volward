@@ -339,7 +339,7 @@ async fn billing_webhook_idempotent_purchase() {
         "data": {
             "id": "txn_ord_1",
             "status": "completed",
-            "custom_data": { "user_id": uid.0, "pack_id": "starter" }
+            "custom_data": { "user_id": uid.0, "pack_id": "standard" }
         }
     })
     .to_string();
@@ -391,7 +391,7 @@ async fn billing_webhook_records_live_purchase_env() {
         "data": {
             "id": "txn_live_1",
             "status": "completed",
-            "custom_data": { "user_id": uid.0, "pack_id": "starter" }
+            "custom_data": { "user_id": uid.0, "pack_id": "standard" }
         }
     })
     .to_string();
@@ -421,7 +421,7 @@ async fn billing_webhook_rejects_forged_signature() {
         "data": {
             "id": "txn_ord_forge",
             "status": "completed",
-            "custom_data": { "user_id": uid.0, "pack_id": "starter" }
+            "custom_data": { "user_id": uid.0, "pack_id": "standard" }
         }
     })
     .to_string();
@@ -450,7 +450,7 @@ async fn billing_webhook_rejects_unknown_user() {
         "data": {
             "id": "txn_ord_unknown_user",
             "status": "completed",
-            "custom_data": { "user_id": "missing-user", "pack_id": "starter" }
+            "custom_data": { "user_id": "missing-user", "pack_id": "standard" }
         }
     })
     .to_string();
@@ -521,28 +521,48 @@ async fn quota_total_sums_purchase_and_topup() {
 }
 
 #[tokio::test]
-async fn packs_returns_list_for_device() {
+async fn packs_lists_new_credit_tiers() {
     let ctx = test_ctx().await;
     // Device-only token (no user link required for browsing packs)
     let (_, reg) = post_json(
         &ctx.app,
         "/v1/device/register",
-        r#"{"device_uuid":"d-packs","platform":"macos","app_version":"0.0.3"}"#,
+        r#"{"device_uuid":"d-credit-tiers","platform":"macos","app_version":"0.0.3"}"#,
     )
     .await;
     let device_token = reg["token"].as_str().unwrap().to_string();
     let (status, body) = get_auth(&ctx.app, "/v1/billing/packs", &device_token).await;
     assert_eq!(status, StatusCode::OK);
     let packs = body.as_array().unwrap();
-    let ids: Vec<&str> = packs.iter().filter_map(|p| p["id"].as_str()).collect();
     assert_eq!(
         packs.len(),
-        3,
-        "all seeded packs must insert despite UNIQUE(provider_product_id)"
+        4,
+        "migration 011 must expose four active credit tiers"
     );
-    assert!(ids.contains(&"starter"));
-    assert!(ids.contains(&"pro"));
-    assert!(ids.contains(&"unlimited"));
+    let ids: Vec<&str> = packs.iter().filter_map(|p| p["id"].as_str()).collect();
+    assert!(ids.contains(&"trial"));
+    assert!(ids.contains(&"standard"));
+    assert!(ids.contains(&"plus"));
+    assert!(ids.contains(&"max"));
+    assert!(!ids.contains(&"starter"));
+    assert!(!ids.contains(&"pro"));
+    assert!(!ids.contains(&"unlimited"));
+
+    let standard = packs.iter().find(|p| p["id"] == "standard").unwrap();
+    assert_eq!(standard["credits"], 50);
+    assert_eq!(standard["price_cny"], 990);
+
+    let trial = packs.iter().find(|p| p["id"] == "trial").unwrap();
+    assert_eq!(trial["credits"], 30);
+    assert_eq!(trial["price_cny"], 690);
+
+    let plus = packs.iter().find(|p| p["id"] == "plus").unwrap();
+    assert_eq!(plus["credits"], 150);
+    assert_eq!(plus["price_cny"], 2490);
+
+    let max = packs.iter().find(|p| p["id"] == "max").unwrap();
+    assert_eq!(max["credits"], 400);
+    assert_eq!(max["price_cny"], 5990);
 }
 
 #[tokio::test]
@@ -554,7 +574,7 @@ async fn checkout_rejects_unconfigured_product_id() {
         &ctx.app,
         "/v1/billing/checkout",
         &token,
-        r#"{"pack_id":"starter"}"#,
+        r#"{"pack_id":"standard"}"#,
     )
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -575,7 +595,7 @@ async fn live_checkout_rejects_placeholder_product_id() {
         &ctx.app,
         "/v1/billing/checkout",
         &token,
-        r#"{"pack_id":"starter"}"#,
+        r#"{"pack_id":"standard"}"#,
     )
     .await;
 

@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_coverage_job_controller.dart';
+import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
+import 'package:volward/ai/coverage_analyze_batch.dart';
 import 'package:volward/ai/coverage_engine.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
@@ -387,6 +389,200 @@ void main() {
     expect(done.analyzedFiles, 80);
     expect(maxConcurrent, 2);
   });
+
+  test('hard parse failure records paths and does not retry', () async {
+    var attempts = 0;
+    final controller = CoverageJobController(
+      engine: singleRowEngine('s-parse'),
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      analyzeBatch: (_) async {
+        attempts++;
+        throw CoverageAnalyzeException('empty verdict list', creditsCharged: 1);
+      },
+    );
+    final state = await controller.start(
+      's-parse',
+      budgetTokens: 0,
+      budgetCredits: 10,
+    );
+    expect(state.status, CoverageJobStatus.paused);
+    expect(state.pauseReason, CoveragePauseReason.failed);
+    expect(state.pauseDetail, CoveragePauseDetail.parse);
+    expect(state.failedBatchPaths, ['/f0']);
+    expect(state.creditsChargedNoVerdict, 1);
+    expect(attempts, 1);
+  });
+
+  test(
+    'partial missing verdict completes batch with incomplete source',
+    () async {
+      final rows = List.generate(
+        2,
+        (i) => CoverageRow(
+          rowIndex: i,
+          kind: CoverageRowKind.file,
+          path: '/partial$i',
+          sizeBytes: 1,
+        ),
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 's-partial',
+          planVersion: 1,
+          rootPath: '/',
+          totalUnclassified: 2,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 2,
+          estimatedPages: 1,
+        ),
+        pages: [
+          CoveragePage(
+            snapshotId: 's-partial',
+            planVersion: 1,
+            nextCursor: null,
+            rows: rows,
+          ),
+        ],
+      );
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: createCoverageAnalyzeBatch(
+          provider: _PartialMissingProvider(),
+        ),
+      );
+      final state = await controller.start(
+        's-partial',
+        budgetTokens: 0,
+        budgetCredits: 10,
+      );
+      expect(state.status, CoverageJobStatus.completed);
+      final saved = await verdictStore.readAll('s-partial');
+      expect(saved, hasLength(2));
+      expect(
+        saved.singleWhere((v) => v.path == '/partial1').coverageSource,
+        kIncompleteCoverageSource,
+      );
+    },
+  );
+
+  test('wave stops when platform wallet remaining hits zero', () async {
+    var wallet = 1;
+    final controller = CoverageJobController(
+      engine: twoBatchEngine('s-wallet'),
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      batchSize: 40,
+      maxInFlight: 4,
+      platformCreditsRemaining: () => wallet,
+      analyzeBatch: (_) async {
+        wallet--;
+        return successBatchOutcome();
+      },
+    );
+    final state = await controller.start(
+      's-wallet',
+      budgetTokens: 0,
+      budgetCredits: 100,
+    );
+    expect(state.usedCredits, 1);
+    expect(state.status, CoverageJobStatus.paused);
+    expect(state.pauseReason, CoveragePauseReason.budget);
+  });
+
+  test('unknown platform wallet does not cap wave sizing', () async {
+    final controller = CoverageJobController(
+      engine: twoBatchEngine('s-wallet-unknown'),
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      batchSize: 40,
+      maxInFlight: 4,
+      platformCreditsRemaining: () => null,
+      analyzeBatch: (_) async => successBatchOutcome(),
+    );
+    final state = await controller.start(
+      's-wallet-unknown',
+      budgetTokens: 0,
+      budgetCredits: 100,
+    );
+    expect(state.status, CoverageJobStatus.completed);
+    expect(state.usedCredits, 2);
+  });
+
+  test(
+    'wave respects remaining credit budget and does not overshoot',
+    () async {
+      final rows = List.generate(
+        160,
+        (i) => CoverageRow(
+          rowIndex: i,
+          kind: CoverageRowKind.file,
+          path: '/f$i',
+          sizeBytes: 1,
+        ),
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 's-budget-wave',
+          planVersion: 1,
+          rootPath: '/',
+          totalUnclassified: 160,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 160,
+          estimatedPages: 4,
+        ),
+        pages: [
+          CoveragePage(
+            snapshotId: 's-budget-wave',
+            planVersion: 1,
+            nextCursor: null,
+            rows: rows,
+          ),
+        ],
+      );
+      var batchesStarted = 0;
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        batchSize: 40,
+        maxInFlight: 4,
+        analyzeBatch: (batch) async {
+          batchesStarted++;
+          return BatchOutcome(
+            usage: const BatchUsage(tokens: 1, credits: 1),
+            verdicts: batch
+                .map(
+                  (r) => CoverageVerdict(
+                    path: r.path,
+                    verdict: 'keep',
+                    confidence: 'high',
+                    reason: 'test',
+                    coverageSource: 'file',
+                    sizeBytes: r.sizeBytes,
+                  ),
+                )
+                .toList(),
+          );
+        },
+      );
+
+      final paused = await controller.start(
+        's-budget-wave',
+        budgetTokens: 0,
+        budgetCredits: 2,
+      );
+
+      expect(paused.status, CoverageJobStatus.paused);
+      expect(paused.pauseReason, CoveragePauseReason.budget);
+      expect(paused.usedCredits, 2);
+      expect(batchesStarted, 2);
+    },
+  );
 
   test(
     'wave usage accumulation pauses when budget exceeded mid-page',
@@ -1063,6 +1259,74 @@ void main() {
     ]);
   });
 
+  test(
+    'resume continues from cursor without re-analyzing committed rows',
+    () async {
+      await stateStore.save(
+        const CoverageJobState(
+          snapshotId: 's-resume-cursor',
+          rootPath: '/',
+          planVersion: 1,
+          cursor: 40,
+          totalUnclassified: 80,
+          analyzedFiles: 40,
+          preClassifiedCount: 0,
+          status: CoverageJobStatus.paused,
+          pauseReason: CoveragePauseReason.manual,
+          usedTokens: 0,
+          usedCredits: 1,
+          budgetTokens: 0,
+          budgetCredits: 10,
+          updatedAtMs: 1,
+        ),
+      );
+      final rows = List.generate(
+        80,
+        (i) => CoverageRow(
+          rowIndex: i,
+          kind: CoverageRowKind.file,
+          path: '/f$i',
+          sizeBytes: 1,
+        ),
+      );
+      final analyzedStarts = <int>[];
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 's-resume-cursor',
+          planVersion: 1,
+          rootPath: '/',
+          totalUnclassified: 80,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 80,
+          estimatedPages: 2,
+        ),
+        pages: [
+          CoveragePage(
+            snapshotId: 's-resume-cursor',
+            planVersion: 1,
+            nextCursor: null,
+            rows: rows.sublist(40),
+          ),
+        ],
+      );
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: (batch) async {
+          analyzedStarts.add(batch.first.rowIndex);
+          return successBatchOutcome(batch);
+        },
+      );
+
+      await controller.resume('s-resume-cursor');
+
+      expect(analyzedStarts, [40]);
+      expect(analyzedStarts, isNot(contains(0)));
+    },
+  );
+
   test('resume hydrates paused job from store on fresh controller', () async {
     await stateStore.save(
       const CoverageJobState(
@@ -1378,3 +1642,111 @@ void main() {
     expect(failed.pauseReason, CoveragePauseReason.failed);
   });
 }
+
+class _PartialMissingProvider implements AiProvider {
+  @override
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
+    return AnalyzeResult(
+      verdicts: [
+        AiVerdict(
+          path: candidates.first.path,
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'ok',
+        ),
+      ],
+      credits: 1,
+    );
+  }
+
+  @override
+  Future<AiQuotaInfo?> queryQuota() async => null;
+}
+
+FakeCoverageEngine singleRowEngine(String snapshotId) {
+  return FakeCoverageEngine(
+    summary: CoveragePlanSummary(
+      snapshotId: snapshotId,
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 1,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 1,
+      estimatedPages: 1,
+    ),
+    pages: [
+      CoveragePage(
+        snapshotId: snapshotId,
+        planVersion: 1,
+        nextCursor: null,
+        rows: const [
+          CoverageRow(
+            rowIndex: 0,
+            kind: CoverageRowKind.file,
+            path: '/f0',
+            sizeBytes: 1,
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+FakeCoverageEngine twoBatchEngine(String snapshotId) {
+  final rows = List.generate(
+    80,
+    (i) => CoverageRow(
+      rowIndex: i,
+      kind: CoverageRowKind.file,
+      path: '/f$i',
+      sizeBytes: 1,
+    ),
+  );
+  return FakeCoverageEngine(
+    summary: CoveragePlanSummary(
+      snapshotId: snapshotId,
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 80,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 80,
+      estimatedPages: 2,
+    ),
+    pages: [
+      CoveragePage(
+        snapshotId: snapshotId,
+        planVersion: 1,
+        nextCursor: 40,
+        rows: rows.sublist(0, 40),
+      ),
+      CoveragePage(
+        snapshotId: snapshotId,
+        planVersion: 1,
+        nextCursor: null,
+        rows: rows.sublist(40),
+      ),
+    ],
+  );
+}
+
+BatchOutcome successBatchOutcome([List<CoverageRow> rows = const []]) =>
+    BatchOutcome(
+      usage: const BatchUsage(tokens: 1, credits: 1),
+      verdicts: rows
+          .map(
+            (r) => CoverageVerdict(
+              path: r.path,
+              verdict: 'keep',
+              confidence: 'high',
+              reason: 'test',
+              coverageSource: 'file',
+              sizeBytes: r.sizeBytes,
+            ),
+          )
+          .toList(),
+    );

@@ -516,6 +516,123 @@
       }
     }
   },
+  "aiCoverageRemainingEstimate": "预计还需约 {credits} 积分",
+  "@aiCoverageRemainingEstimate": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageAccountBalance": "账户积分：{credits}",
+  "@aiCoverageAccountBalance": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedCredits": "完整分析预估：约 {credits} 积分",
+  "@aiCoverageEstimatedCredits": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoveragePurchaseFooter": "完整分析一次通常约 30–80 积分；开始前会显示预估值。",
+  "aiCoverageInsufficientForEstimate": "预计需要约 {needed} 积分，当前余额 {available}。",
+  "@aiCoverageInsufficientForEstimate": {
+    "placeholders": {
+      "needed": {
+        "type": "int"
+      },
+      "available": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedReason": "分析已暂停：{reason}",
+  "@aiCoverageFailedReason": {
+    "placeholders": {
+      "reason": {}
+    }
+  },
+  "aiCoverageFailedReasonParse": "AI 响应解析失败",
+  "aiCoverageFailedReasonNetwork": "网络或服务器错误",
+  "aiCoverageFailedReasonApi": "分析服务返回错误",
+  "aiCoverageFailedReasonGeneric": "分析请求失败",
+  "aiCoverageFailedBatchItemsOnly": "{count, plural, other{{count} 项未获得结果。}}",
+  "@aiCoverageFailedBatchItemsOnly": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchCredits": "{credits, plural, other{已消耗 {credits} 积分，但有 {count} 项未获得结果。}}",
+  "@aiCoverageFailedBatchCredits": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchPathsPreview": "受影响项：{paths}",
+  "@aiCoverageFailedBatchPathsPreview": {
+    "placeholders": {
+      "paths": {}
+    }
+  },
+  "aiCoverageFailedBatchPathsOverflow": "…还有 {count} 项",
+  "@aiCoverageFailedBatchPathsOverflow": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageIncompleteGroupTitle": "AI 响应不完整（{count} 项）",
+  "@aiCoverageIncompleteGroupTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeTitle": "重试分析？",
+  "aiCoverageFailedResumeBody": "上一批失败，已消耗 {credits} 积分，{count} 项未保存。重试可能再次消耗积分。",
+  "aiCoverageFailedResumeBodyNoCredit": "上一批失败，{count} 项未保存。重试可能再次消耗积分。",
+  "@aiCoverageFailedResumeBodyNoCredit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@aiCoverageFailedResumeBody": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeConfirm": "重试",
+  "aiCoverageRaiseBudgetToEstimate": "按预估提高上限",
+  "aiCoverageRunCapConfigured": "本次上限：{cap} 积分",
+  "@aiCoverageRunCapConfigured": {
+    "placeholders": {
+      "cap": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoverageFullRunHint": "全量覆盖分析会在后台持续运行，直到每个未分类文件都有 AI 结论。",
   "aiCoverageFullRunPlatformHint": "全量覆盖在后台运行。每次 AI 分析请求从账户余额扣 1 积分；下方预算是本次扫描的花费上限。",
   "aiCoverageBudgetCreditsUsage": "本次积分：已用 {used} / {budget}",
@@ -663,7 +780,7 @@
   "aiSettingsCoverageBudgetTokensHint": "500000",
   "aiSettingsCoverageBudgetCreditsLabel": "全量覆盖积分预算（平台模式）",
   "aiSettingsCoverageBudgetCreditsHint": "50",
-  "aiSettingsCoverageBudgetCreditsDescription": "单次全量覆盖最多消耗的积分，与账户余额、充值包为同一单位。每次 AI 分析请求扣 1 积分。",
+  "aiSettingsCoverageBudgetCreditsDescription": "单次扫描的积分花费上限（安全阀，与账户余额无关）。开始前会显示完整分析预估；若预估超过此上限，可在此调高。",
   "aiSettingsCoverageBudgetTokensDescription": "单次全量覆盖最多消耗的 token 总量上限，超出后任务会暂停。",
   "aiSettingsCoverageBudgetSave": "保存预算",
   "aiSettingsCoverageBudgetSaved": "覆盖分析预算已保存",

@@ -4,24 +4,18 @@ import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/coverage_analyze_batch.dart';
 import 'package:volward/ai/coverage_models.dart';
 
-class _FakeAiProvider implements AiProvider {
+class _FakeProvider implements AiProvider {
+  _FakeProvider({required this.verdicts, this.credits = 1});
+
+  final List<AiVerdict> verdicts;
+  final int credits;
+
   @override
   Future<AnalyzeResult> analyze(
     List<AiCandidate> candidates, {
     CancelToken? cancelToken,
   }) async {
-    return AnalyzeResult(
-      verdicts: candidates
-          .map(
-            (candidate) => AiVerdict(
-              path: candidate.path,
-              verdict: 'keep',
-              confidence: 'high',
-              reason: 'test',
-            ),
-          )
-          .toList(),
-    );
+    return AnalyzeResult(verdicts: verdicts, credits: credits);
   }
 
   @override
@@ -29,83 +23,80 @@ class _FakeAiProvider implements AiProvider {
 }
 
 void main() {
-  test('coverageRowsToCandidates maps group rows as directories', () {
-    const rows = [
-      CoverageRow(
-        rowIndex: 0,
-        kind: CoverageRowKind.group,
-        path: '/tmp/cache',
-        sizeBytes: 10,
-        memberCount: 3,
+  test('missing API verdict degrades to review_needed per row', () async {
+    final batch = createCoverageAnalyzeBatch(
+      provider: _FakeProvider(
+        verdicts: const [
+          AiVerdict(
+            path: '/a',
+            verdict: 'keep',
+            confidence: 'high',
+            reason: 'ok',
+          ),
+        ],
       ),
-      CoverageRow(
+    );
+    final rows = [
+      const CoverageRow(
+        rowIndex: 0,
+        kind: CoverageRowKind.file,
+        path: '/a',
+        sizeBytes: 1,
+      ),
+      const CoverageRow(
         rowIndex: 1,
         kind: CoverageRowKind.file,
-        path: '/a',
+        path: '/b',
         sizeBytes: 1,
       ),
     ];
-    final candidates = coverageRowsToCandidates(rows);
-    expect(candidates.first.isDir, isTrue);
-    expect(candidates.first.childCount, 3);
-    expect(candidates.last.isDir, isFalse);
+    final outcome = await batch(rows);
+    expect(outcome.verdicts, hasLength(2));
+    expect(outcome.verdicts[0].verdict, 'keep');
+    expect(outcome.verdicts[0].coverageSource, 'file');
+    expect(outcome.verdicts[1].verdict, 'review_needed');
+    expect(outcome.verdicts[1].confidence, 'low');
+    expect(outcome.verdicts[1].coverageSource, kIncompleteCoverageSource);
+    expect(outcome.verdicts[1].reason, kIncompleteVerdictReason);
   });
 
-  test('coverageRowsToCandidates forwards cleanup hints', () {
-    const rows = [
-      CoverageRow(
-        rowIndex: 0,
-        kind: CoverageRowKind.group,
-        path: '/tmp/cache',
-        sizeBytes: 10,
-        memberCount: 3,
-        cleanupSource: 'system_temp',
-        cleanupHint: 'temporary location',
-        retentionDays: 10,
-      ),
-    ];
-    final candidates = coverageRowsToCandidates(rows);
-    expect(candidates.single.cleanupSource, 'system_temp');
-    expect(candidates.single.cleanupHint, 'temporary location');
-    expect(candidates.single.retentionDays, 10);
-  });
-
-  test('coverageVerdictForRow attaches group member count for group rows', () {
-    const group = CoverageRow(
-      rowIndex: 0,
-      kind: CoverageRowKind.group,
-      path: '/tmp/cache',
-      sizeBytes: 30,
-      memberCount: 3,
-    );
-    final verdict = coverageVerdictForRow(
-      group,
-      const AiVerdict(
-        path: '/tmp/cache',
-        verdict: 'keep',
-        confidence: 'high',
-        reason: 'test',
+  test('complete API verdicts keep normal coverage source', () async {
+    final batch = createCoverageAnalyzeBatch(
+      provider: _FakeProvider(
+        verdicts: const [
+          AiVerdict(
+            path: '/a',
+            verdict: 'keep',
+            confidence: 'high',
+            reason: 'ok',
+          ),
+        ],
       ),
     );
-    expect(verdict.coverageSource, 'group:/tmp/cache');
-    expect(verdict.groupMemberCount, 3);
-  });
-
-  test('createCoverageAnalyzeBatch maps provider verdicts', () async {
-    const rows = [
-      CoverageRow(
+    final rows = [
+      const CoverageRow(
         rowIndex: 0,
         kind: CoverageRowKind.file,
         path: '/a',
         sizeBytes: 1,
       ),
     ];
-    final analyzeBatch = createCoverageAnalyzeBatch(
-      provider: _FakeAiProvider(),
-    );
-    final outcome = await analyzeBatch(rows);
-    expect(outcome.verdicts.single.path, '/a');
+    final outcome = await batch(rows);
     expect(outcome.verdicts.single.coverageSource, 'file');
-    expect(outcome.verdicts.single.verdict, 'keep');
+  });
+
+  test('empty API verdict list throws for non-empty batch', () async {
+    final batch = createCoverageAnalyzeBatch(
+      provider: _FakeProvider(verdicts: const []),
+    );
+    final rows = [
+      const CoverageRow(
+        rowIndex: 0,
+        kind: CoverageRowKind.file,
+        path: '/a',
+        sizeBytes: 1,
+      ),
+    ];
+    expect(batch(rows), throwsA(isA<CoverageAnalyzeException>()));
   });
 }

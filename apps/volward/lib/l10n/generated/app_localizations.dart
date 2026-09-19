@@ -1465,6 +1465,132 @@ abstract class AppLocalizations {
   /// **'Coverage: {analyzed} / {total} files analyzed'**
   String aiCoverageProgress(int analyzed, int total);
 
+  /// No description provided for @aiCoverageRemainingEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'About {credits} credits remaining'**
+  String aiCoverageRemainingEstimate(int credits);
+
+  /// No description provided for @aiCoverageAccountBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Account balance: {credits} credits'**
+  String aiCoverageAccountBalance(int credits);
+
+  /// No description provided for @aiCoverageEstimatedCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated for full analysis: ~{credits} credits'**
+  String aiCoverageEstimatedCredits(int credits);
+
+  /// No description provided for @aiCoveragePurchaseFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.'**
+  String get aiCoveragePurchaseFooter;
+
+  /// No description provided for @aiCoverageInsufficientForEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Need about {needed} credits; you have {available}.'**
+  String aiCoverageInsufficientForEstimate(int needed, int available);
+
+  /// No description provided for @aiCoverageFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Analysis paused: {reason}'**
+  String aiCoverageFailedReason(Object reason);
+
+  /// No description provided for @aiCoverageFailedReasonParse.
+  ///
+  /// In en, this message translates to:
+  /// **'AI response could not be parsed'**
+  String get aiCoverageFailedReasonParse;
+
+  /// No description provided for @aiCoverageFailedReasonNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'network or server error'**
+  String get aiCoverageFailedReasonNetwork;
+
+  /// No description provided for @aiCoverageFailedReasonApi.
+  ///
+  /// In en, this message translates to:
+  /// **'analysis service error'**
+  String get aiCoverageFailedReasonApi;
+
+  /// No description provided for @aiCoverageFailedReasonGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'analysis request failed'**
+  String get aiCoverageFailedReasonGeneric;
+
+  /// No description provided for @aiCoverageFailedBatchItemsOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{1 item did not receive results.} other{{count} items did not receive results.}}'**
+  String aiCoverageFailedBatchItemsOnly(int count);
+
+  /// No description provided for @aiCoverageFailedBatchCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'{credits, plural, one{1 credit was used but {count} items did not receive results.} other{{credits} credits were used but {count} items did not receive results.}}'**
+  String aiCoverageFailedBatchCredits(int credits, int count);
+
+  /// No description provided for @aiCoverageFailedBatchPathsPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected: {paths}'**
+  String aiCoverageFailedBatchPathsPreview(Object paths);
+
+  /// No description provided for @aiCoverageFailedBatchPathsOverflow.
+  ///
+  /// In en, this message translates to:
+  /// **'…and {count} more'**
+  String aiCoverageFailedBatchPathsOverflow(int count);
+
+  /// No description provided for @aiCoverageIncompleteGroupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete AI response ({count})'**
+  String aiCoverageIncompleteGroupTitle(int count);
+
+  /// No description provided for @aiCoverageFailedResumeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry analysis?'**
+  String get aiCoverageFailedResumeTitle;
+
+  /// No description provided for @aiCoverageFailedResumeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The last batch failed after using {credits} credit(s). {count} items were not saved. Retry may use additional credits.'**
+  String aiCoverageFailedResumeBody(int credits, int count);
+
+  /// No description provided for @aiCoverageFailedResumeBodyNoCredit.
+  ///
+  /// In en, this message translates to:
+  /// **'The last batch failed. {count} items were not saved. Retry may use additional credits.'**
+  String aiCoverageFailedResumeBodyNoCredit(int count);
+
+  /// No description provided for @aiCoverageFailedResumeConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get aiCoverageFailedResumeConfirm;
+
+  /// No description provided for @aiCoverageRaiseBudgetToEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Raise limit to match estimate'**
+  String get aiCoverageRaiseBudgetToEstimate;
+
+  /// No description provided for @aiCoverageRunCapConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Run cap for this scan: {cap} credits'**
+  String aiCoverageRunCapConfigured(int cap);
+
   /// No description provided for @aiCoverageFullRunHint.
   ///
   /// In en, this message translates to:
@@ -1666,7 +1792,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiSettingsCoverageBudgetCreditsDescription.
   ///
   /// In en, this message translates to:
-  /// **'Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.'**
+  /// **'Per-scan credit spending cap (safety limit, not your account balance). Full-run estimate is shown before you start; raise this if the estimate exceeds the cap.'**
   String get aiSettingsCoverageBudgetCreditsDescription;
 
   /// No description provided for @aiSettingsCoverageBudgetTokensDescription.

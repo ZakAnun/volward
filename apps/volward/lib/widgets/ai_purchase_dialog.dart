@@ -37,7 +37,7 @@ class _AiPurchaseDialog extends StatefulWidget {
 class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
   static const _packCardHeight = 72.0;
   static const _packCardSpacing = 8.0;
-  static const _expectedPackCount = 3;
+  static const _expectedPackCount = 4;
 
   List<_Pack> _packs = const [];
   String? _error;
@@ -391,6 +391,10 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
             ],
           ),
         ),
+        if (!_loading && _packs.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(l10n.aiCoveragePurchaseFooter, style: theme.textTheme.bodySmall),
+        ],
       ],
     );
   }

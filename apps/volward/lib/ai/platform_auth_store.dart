@@ -246,7 +246,7 @@ class PlatformAuthStore {
     try {
       final user = await refreshSession();
       if (user == null) return existing;
-      return userToken();
+      return await userToken();
     } on Exception catch (e) {
       if (existing != null &&
           existing.isNotEmpty &&

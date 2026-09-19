@@ -1,11 +1,23 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
+import '../ai/coverage_analyze_batch.dart';
 import '../ai/coverage_job_state.dart';
+import '../ai/coverage_pause_messages.dart';
 import '../ai/coverage_verdict_store.dart';
 import '../l10n/l10n.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'apple_widgets.dart';
+
+int _estimateRemainingCredits(CoverageJobState state) {
+  if (state.planVersion >= 2 && state.estimatedCreditsRemaining != null) {
+    return state.estimatedCreditsRemaining!;
+  }
+  final pending = max(0, state.totalUnclassified - state.analyzedFiles);
+  return (pending / 40).ceil();
+}
 
 /// Coverage job progress banner (Design §9).
 class CoverageJobBanner extends StatelessWidget {
@@ -38,6 +50,11 @@ class CoverageJobBanner extends StatelessWidget {
     final isPaused = state.status == CoverageJobStatus.paused;
     final budgetPaused =
         isPaused && state.pauseReason == CoveragePauseReason.budget;
+    final failedPaused =
+        isPaused && state.pauseReason == CoveragePauseReason.failed;
+    final incompleteCount = verdictRows
+        .where((row) => row.coverageSource == kIncompleteCoverageSource)
+        .length;
     final usesCredits = state.budgetCredits > 0;
     final usesTokens = !usesCredits && state.budgetTokens > 0;
 
@@ -63,6 +80,15 @@ class CoverageJobBanner extends StatelessWidget {
                     ),
                     style: context.vwBodyStrong,
                   ),
+                  if (isPaused) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageRemainingEstimate(
+                        _estimateRemainingCredits(state),
+                      ),
+                      style: context.vwCaption,
+                    ),
+                  ],
                   if (usesCredits) ...[
                     const SizedBox(height: AppleSpacing.xxs),
                     Text(
@@ -99,6 +125,37 @@ class CoverageJobBanner extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (failedPaused && state.failedBatchPaths.isNotEmpty) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      state.creditsChargedNoVerdict > 0
+                          ? l10n.aiCoverageFailedBatchCredits(
+                              state.creditsChargedNoVerdict,
+                              state.failedBatchPaths.length,
+                            )
+                          : l10n.aiCoverageFailedBatchItemsOnly(
+                              state.failedBatchPaths.length,
+                            ),
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
+                    ),
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      formatFailedBatchPathPreview(
+                        l10n,
+                        state.failedBatchPaths,
+                      ),
+                      style: context.vwCaption,
+                    ),
+                  ],
+                  if (incompleteCount > 0) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageIncompleteGroupTitle(incompleteCount),
+                      style: context.vwCaption,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -115,7 +172,7 @@ class CoverageJobBanner extends StatelessWidget {
                       variant: AppleButtonVariant.pearl,
                       onPressed: onPause,
                     ),
-                  if (isPaused && onResume != null)
+                  if (isPaused && onResume != null && !budgetPaused)
                     AppleButton(
                       label: l10n.aiCoverageResume,
                       icon: Icons.play_arrow_outlined,

@@ -516,6 +516,123 @@
       }
     }
   },
+  "aiCoverageRemainingEstimate": "About {credits} credits remaining",
+  "@aiCoverageRemainingEstimate": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageAccountBalance": "Account balance: {credits} credits",
+  "@aiCoverageAccountBalance": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedCredits": "Estimated for full analysis: ~{credits} credits",
+  "@aiCoverageEstimatedCredits": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoveragePurchaseFooter": "Full analysis typically uses about 30–80 credits. You will see an estimate before starting.",
+  "aiCoverageInsufficientForEstimate": "Need about {needed} credits; you have {available}.",
+  "@aiCoverageInsufficientForEstimate": {
+    "placeholders": {
+      "needed": {
+        "type": "int"
+      },
+      "available": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedReason": "Analysis paused: {reason}",
+  "@aiCoverageFailedReason": {
+    "placeholders": {
+      "reason": {}
+    }
+  },
+  "aiCoverageFailedReasonParse": "AI response could not be parsed",
+  "aiCoverageFailedReasonNetwork": "network or server error",
+  "aiCoverageFailedReasonApi": "analysis service error",
+  "aiCoverageFailedReasonGeneric": "analysis request failed",
+  "aiCoverageFailedBatchItemsOnly": "{count, plural, one{1 item did not receive results.} other{{count} items did not receive results.}}",
+  "@aiCoverageFailedBatchItemsOnly": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchCredits": "{credits, plural, one{1 credit was used but {count} items did not receive results.} other{{credits} credits were used but {count} items did not receive results.}}",
+  "@aiCoverageFailedBatchCredits": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedBatchPathsPreview": "Affected: {paths}",
+  "@aiCoverageFailedBatchPathsPreview": {
+    "placeholders": {
+      "paths": {}
+    }
+  },
+  "aiCoverageFailedBatchPathsOverflow": "…and {count} more",
+  "@aiCoverageFailedBatchPathsOverflow": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageIncompleteGroupTitle": "Incomplete AI response ({count})",
+  "@aiCoverageIncompleteGroupTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeTitle": "Retry analysis?",
+  "aiCoverageFailedResumeBody": "The last batch failed after using {credits} credit(s). {count} items were not saved. Retry may use additional credits.",
+  "aiCoverageFailedResumeBodyNoCredit": "The last batch failed. {count} items were not saved. Retry may use additional credits.",
+  "@aiCoverageFailedResumeBodyNoCredit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@aiCoverageFailedResumeBody": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageFailedResumeConfirm": "Retry",
+  "aiCoverageRaiseBudgetToEstimate": "Raise limit to match estimate",
+  "aiCoverageRunCapConfigured": "Run cap for this scan: {cap} credits",
+  "@aiCoverageRunCapConfigured": {
+    "placeholders": {
+      "cap": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoverageFullRunHint": "Full-coverage analysis runs in the background until every unclassified file has a verdict.",
   "aiCoverageFullRunPlatformHint": "Full-coverage runs in the background. Each AI request uses 1 platform credit from your balance. The run budget below caps credits spent on this scan.",
   "aiCoverageBudgetCreditsUsage": "Credits this run: {used} / {budget}",
@@ -663,7 +780,7 @@
   "aiSettingsCoverageBudgetTokensHint": "500000",
   "aiSettingsCoverageBudgetCreditsLabel": "Full-coverage credit budget (Platform)",
   "aiSettingsCoverageBudgetCreditsHint": "50",
-  "aiSettingsCoverageBudgetCreditsDescription": "Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.",
+  "aiSettingsCoverageBudgetCreditsDescription": "Per-scan credit spending cap (safety limit, not your account balance). Full-run estimate is shown before you start; raise this if the estimate exceeds the cap.",
   "aiSettingsCoverageBudgetTokensDescription": "Maximum tokens to spend on one full-coverage run. The job pauses when this cap is reached.",
   "aiSettingsCoverageBudgetSave": "Save budget",
   "aiSettingsCoverageBudgetSaved": "Coverage budget saved",
