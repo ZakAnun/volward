@@ -1,6 +1,7 @@
 pub mod ai_analysis;
 pub mod ai_candidates;
 pub mod ai_coverage;
+pub mod coverage_funnel;
 pub mod os_knowledge;
 pub mod classify;
 pub mod capability;
@@ -41,6 +42,9 @@ pub use ai_candidates::{
 pub use ai_coverage::{
     build_ai_coverage_plan, coverage_group_member_paths, AiCoveragePlan, AiCoverageRow,
     AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION,
+};
+pub use coverage_funnel::{
+    coverage_local_exclusion_prefixes, path_under_longest_prefix,
 };
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;

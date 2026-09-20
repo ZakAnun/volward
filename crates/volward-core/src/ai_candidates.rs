@@ -557,15 +557,7 @@ pub fn resolve_unclassified_for_ai(
 pub fn indexed_local_exclusion_prefixes(
     index: &crate::index::SnapshotIndex,
 ) -> Vec<String> {
-    ["BuildArtifact", "Cache", "Temp"]
-        .into_iter()
-        .flat_map(|category| {
-            index
-                .entries_with_category(category)
-                .into_iter()
-                .map(|entry| entry.path)
-        })
-        .collect()
+    crate::coverage_funnel::coverage_local_exclusion_prefixes(index)
 }
 
 pub(crate) fn ai_cleanup_hint_for_path(path: &str) -> Option<AiCleanupHint> {
