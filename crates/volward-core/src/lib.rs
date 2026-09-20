@@ -44,7 +44,8 @@ pub use ai_coverage::{
     AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION,
 };
 pub use coverage_funnel::{
-    coverage_local_exclusion_prefixes, path_under_longest_prefix,
+    coverage_local_exclusion_prefixes, path_under_longest_prefix, CoverageFileResolution,
+    CoverageFunnelContext, resolve_unclassified_for_coverage,
 };
 pub use os_knowledge::{Confidence, KnownSafeEntry, OsKnowledgeBase};
 pub use classify::Classifier;

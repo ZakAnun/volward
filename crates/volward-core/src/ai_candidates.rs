@@ -434,7 +434,7 @@ fn path_under_indexed_prefix(path: &str, prefixes: &[String]) -> bool {
     })
 }
 
-fn pre_classified_from_kb(path: &str, size_bytes: u64, kb: &OsKnowledgeBase) -> Option<PreClassifiedEntry> {
+pub(crate) fn pre_classified_from_kb(path: &str, size_bytes: u64, kb: &OsKnowledgeBase) -> Option<PreClassifiedEntry> {
     let known = kb.classify_path(path)?;
     Some(PreClassifiedEntry {
         path: path.to_string(),
@@ -451,7 +451,7 @@ fn pre_classified_from_kb(path: &str, size_bytes: u64, kb: &OsKnowledgeBase) -> 
     })
 }
 
-fn pre_classified_from_hint(path: &str, size_bytes: u64, hint: AiCleanupHint) -> Option<PreClassifiedEntry> {
+pub(crate) fn pre_classified_from_hint(path: &str, size_bytes: u64, hint: AiCleanupHint) -> Option<PreClassifiedEntry> {
     if !hint_source_skips_ai(hint.source) {
         return None;
     }
@@ -471,7 +471,7 @@ fn pre_classified_from_hint(path: &str, size_bytes: u64, hint: AiCleanupHint) ->
     })
 }
 
-fn pre_classified_from_heuristics(path: &str, size_bytes: u64) -> Option<PreClassifiedEntry> {
+pub(crate) fn pre_classified_from_heuristics(path: &str, size_bytes: u64) -> Option<PreClassifiedEntry> {
     if path_matches_generic_cache_or_temp(path) {
         return Some(PreClassifiedEntry {
             path: path.to_string(),
@@ -497,7 +497,7 @@ fn pre_classified_from_heuristics(path: &str, size_bytes: u64) -> Option<PreClas
     None
 }
 
-fn pre_classified_under_index_prefix(
+pub(crate) fn pre_classified_under_index_prefix(
     path: &str,
     size_bytes: u64,
     prefixes: &[String],
@@ -533,24 +533,9 @@ pub fn resolve_unclassified_for_ai(
     kb: &OsKnowledgeBase,
     indexed_local_prefixes: &[String],
 ) -> UnclassifiedAiRouting {
-    if let Some(entry) = pre_classified_from_kb(path, size_bytes, kb) {
-        return UnclassifiedAiRouting::Local(entry);
-    }
-    if let Some(entry) = pre_classified_under_index_prefix(path, size_bytes, indexed_local_prefixes, kb) {
-        return UnclassifiedAiRouting::Local(entry);
-    }
-    if let Some(hint) = ai_cleanup_hint_for_path(path) {
-        if let Some(entry) = pre_classified_from_hint(path, size_bytes, hint) {
-            return UnclassifiedAiRouting::Local(entry);
-        }
-        return UnclassifiedAiRouting::SendToAi {
-            cleanup_hint: Some(hint),
-        };
-    }
-    if let Some(entry) = pre_classified_from_heuristics(path, size_bytes) {
-        return UnclassifiedAiRouting::Local(entry);
-    }
-    UnclassifiedAiRouting::SendToAi { cleanup_hint: None }
+    let ctx = crate::coverage_funnel::CoverageFunnelContext::with_exclusion_prefixes(indexed_local_prefixes);
+    crate::coverage_funnel::resolve_unclassified_for_coverage(path, size_bytes, kb, &ctx)
+        .into_ai_routing(path, size_bytes)
 }
 
 /// Prefix paths from indexed Cache / Temp / BuildArtifact entries (scan Tier-1).

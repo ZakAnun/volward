@@ -1,6 +1,13 @@
 //! Pre-AI coverage funnel helpers (Phase 2). See `docs/superpowers/specs/2026-09-20-ai-coverage-phase2-tree-design.md`.
 
+use crate::ai_candidates::{
+    ai_cleanup_hint_for_path, hint_source_skips_ai, pre_classified_from_heuristics,
+    pre_classified_from_hint, pre_classified_from_kb, pre_classified_under_index_prefix,
+    AiCleanupHint, PreClassifiedEntry,
+};
 use crate::index::SnapshotIndex;
+use crate::model::EntryCategory;
+use crate::os_knowledge::OsKnowledgeBase;
 
 const EXCLUSION_DIR_NAMES: &[&str] = &[
     "node_modules",
@@ -106,6 +113,157 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+#[derive(Clone)]
+pub enum CoverageFileResolution {
+    LocalSafe(PreClassifiedEntry),
+    LocalKeep {
+        reason: String,
+        confidence: &'static str,
+    },
+    TailCandidate {
+        cleanup_hint: Option<AiCleanupHint>,
+    },
+    TreeCandidate,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CoverageFunnelContext {
+    pub exclusion_prefixes: Vec<String>,
+    pub protected_prefixes: Vec<String>,
+    pub personal_prefixes: Vec<String>,
+    pub project_ancestor: Option<String>,
+}
+
+impl CoverageFunnelContext {
+    pub fn with_exclusion_prefixes(prefixes: &[String]) -> Self {
+        Self {
+            exclusion_prefixes: prefixes.to_vec(),
+            ..Default::default()
+        }
+    }
+}
+
+impl CoverageFileResolution {
+    pub fn into_ai_routing(self, path: &str, size_bytes: u64) -> crate::UnclassifiedAiRouting {
+        use crate::UnclassifiedAiRouting;
+        match self {
+            CoverageFileResolution::LocalSafe(entry) => UnclassifiedAiRouting::Local(entry),
+            CoverageFileResolution::LocalKeep { reason, confidence } => {
+                UnclassifiedAiRouting::Local(PreClassifiedEntry {
+                    path: path.to_string(),
+                    size_bytes,
+                    is_dir: false,
+                    category: EntryCategory::Unknown,
+                    confidence: confidence.to_string(),
+                    reason,
+                    deletable: false,
+                })
+            }
+            CoverageFileResolution::TailCandidate { cleanup_hint } => {
+                UnclassifiedAiRouting::SendToAi { cleanup_hint }
+            }
+            CoverageFileResolution::TreeCandidate => UnclassifiedAiRouting::SendToAi {
+                cleanup_hint: None,
+            },
+        }
+    }
+}
+
+/// Single gate for whether an unclassified file should reach tree/tail AI (Phase 2 funnel).
+pub fn resolve_unclassified_for_coverage(
+    path: &str,
+    size_bytes: u64,
+    kb: &OsKnowledgeBase,
+    ctx: &CoverageFunnelContext,
+) -> CoverageFileResolution {
+    if let Some(known) = kb.classify_path(path) {
+        if known.deletable {
+            if let Some(entry) = pre_classified_from_kb(path, size_bytes, kb) {
+                return CoverageFileResolution::LocalSafe(entry);
+            }
+        } else {
+            return CoverageFileResolution::LocalKeep {
+                reason: known.reason,
+                confidence: if known.confidence == crate::Confidence::High {
+                    "high"
+                } else {
+                    "medium"
+                },
+            };
+        }
+    }
+    if let Some(entry) =
+        pre_classified_under_index_prefix(path, size_bytes, &ctx.exclusion_prefixes, kb)
+    {
+        return CoverageFileResolution::LocalSafe(entry);
+    }
+    if let Some(hint) = ai_cleanup_hint_for_path(path) {
+        if hint_source_skips_ai(hint.source) {
+            if let Some(entry) = pre_classified_from_hint(path, size_bytes, hint) {
+                return CoverageFileResolution::LocalSafe(entry);
+            }
+        } else if hint.source == "ai_generated_output" {
+            return CoverageFileResolution::TailCandidate {
+                cleanup_hint: Some(hint),
+            };
+        }
+    }
+    if let Some(entry) = pre_classified_from_heuristics(path, size_bytes) {
+        return CoverageFileResolution::LocalSafe(entry);
+    }
+    if path_under_any_prefix(path, &ctx.protected_prefixes) {
+        return CoverageFileResolution::LocalKeep {
+            reason: "Protected system path prefix.".to_string(),
+            confidence: "high",
+        };
+    }
+    if path_under_any_prefix(path, &ctx.personal_prefixes) {
+        return CoverageFileResolution::LocalKeep {
+            reason: "Personal folder (Documents/Desktop) excluded from AI.".to_string(),
+            confidence: "medium",
+        };
+    }
+    if ctx.project_ancestor.is_some() {
+        if is_likely_source_file(path) {
+            return CoverageFileResolution::LocalKeep {
+                reason: "Source file under detected project root.".to_string(),
+                confidence: "high",
+            };
+        }
+        if let Some(hint) = ai_cleanup_hint_for_path(path) {
+            if hint.source == "ai_generated_output" {
+                return CoverageFileResolution::TailCandidate {
+                    cleanup_hint: Some(hint),
+                };
+            }
+        }
+        return CoverageFileResolution::LocalKeep {
+            reason: "File under detected project root.".to_string(),
+            confidence: "high",
+        };
+    }
+    if let Some(hint) = ai_cleanup_hint_for_path(path) {
+        return CoverageFileResolution::TailCandidate {
+            cleanup_hint: Some(hint),
+        };
+    }
+    CoverageFileResolution::TreeCandidate
+}
+
+fn path_under_any_prefix(path: &str, prefixes: &[String]) -> bool {
+    path_under_longest_prefix(path, prefixes).is_some()
+}
+
+fn is_likely_source_file(path: &str) -> bool {
+    const SOURCE_EXTS: &[&str] = &[
+        ".rs", ".dart", ".swift", ".go", ".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".kt", ".k",
+        ".c", ".cpp", ".cc", ".h", ".hpp", ".m", ".mm", ".rb", ".php", ".cs", ".scala", ".vue",
+        ".svelte",
+    ];
+    let lower = path.to_ascii_lowercase();
+    SOURCE_EXTS.iter().any(|ext| lower.ends_with(ext))
+}
+
 fn path_is_at_or_under(path: &str, root: &str) -> bool {
     if root.is_empty() {
         return false;
@@ -177,6 +335,35 @@ mod tests {
                 panic!("sibling should be local via exclusion prefix")
             }
         }
+    }
+
+    #[test]
+    fn ai_generated_output_routes_to_tail_not_tree() {
+        let kb =
+            crate::os_knowledge::OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let path = "/Users/x/project/llm-output/note.md";
+        let resolution = resolve_unclassified_for_coverage(path, 5, &kb, &CoverageFunnelContext::default());
+        assert!(matches!(
+            resolution,
+            CoverageFileResolution::TailCandidate { .. }
+        ));
+    }
+
+    #[test]
+    fn personal_prefix_keeps_without_ai() {
+        let kb =
+            crate::os_knowledge::OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let mut ctx = CoverageFunnelContext::default();
+        ctx.personal_prefixes.push("/Users/x/Documents".to_string());
+        let resolution = resolve_unclassified_for_coverage(
+            "/Users/x/Documents/notes.txt",
+            10,
+            &kb,
+            &ctx,
+        );
+        assert!(matches!(resolution, CoverageFileResolution::LocalKeep { .. }));
     }
 
     #[test]
