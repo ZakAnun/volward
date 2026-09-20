@@ -14,6 +14,7 @@ import 'byok_ai_provider.dart';
 import 'platform_ai_provider.dart';
 import 'ai_settings_store.dart';
 import 'coverage_desktop_notify.dart';
+import 'coverage_client_logic.dart';
 import 'coverage_job_state.dart';
 import 'coverage_lifecycle.dart';
 import 'coverage_models.dart';
@@ -265,7 +266,7 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
         state.status == CoverageJobStatus.running ||
         (state.status == CoverageJobStatus.paused &&
             state.pauseReason == CoveragePauseReason.appQuit);
-    if (!shouldResume) return;
+    if (!shouldResume || coverageJobNeedsClientLogicUpgrade(state)) return;
     final provider = await _resolveProvider();
     if (provider == null) return;
     final service = await prepareService(provider);
@@ -377,7 +378,7 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
           state.status == CoverageJobStatus.running ||
           (state.status == CoverageJobStatus.paused &&
               state.pauseReason == CoveragePauseReason.appQuit);
-      if (!shouldResume) continue;
+      if (!shouldResume || coverageJobNeedsClientLogicUpgrade(state)) continue;
       resumable.add(state);
     }
     if (resumable.isEmpty) return;

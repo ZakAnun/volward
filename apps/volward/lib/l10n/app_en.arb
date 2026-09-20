@@ -624,6 +624,14 @@
     }
   },
   "aiCoverageFailedResumeConfirm": "Retry",
+  "aiCoverageLegacyJobHint": "This job was paused under older analysis logic. Resume applies new rules (incomplete API responses are saved as review needed).",
+  "aiCoverageLegacyResumeTitle": "Apply updated analysis logic?",
+  "aiCoverageLegacyResumeBody": "Saved progress is from an older client. Resume continues from the cursor with new batch rules; verdicts already on disk are kept.",
+  "aiCoverageLegacyResumeConfirm": "Continue",
+  "aiCoverageRestartFull": "Restart full coverage",
+  "aiCoverageRestartFullTitle": "Restart full coverage?",
+  "aiCoverageRestartFullBody": "Clears coverage progress and saved verdicts for this snapshot and starts over. This may use credits or tokens again.",
+  "aiCoverageRestartFullConfirm": "Restart",
   "aiCoverageRaiseBudgetToEstimate": "Raise limit to match estimate",
   "aiCoverageRunCapConfigured": "Run cap for this scan: {cap} credits",
   "@aiCoverageRunCapConfigured": {

@@ -152,6 +152,40 @@ void main() {
     },
   );
 
+  test('auto resume skips jobs saved under legacy client logic', () async {
+    final service = _RecordingService(cacheDir);
+    final provider = _Provider();
+    await CoverageJobStateStore(cacheDir).save(
+      const CoverageJobState(
+        snapshotId: 'snap-legacy',
+        rootPath: '/',
+        planVersion: 1,
+        cursor: 4,
+        totalUnclassified: 10,
+        analyzedFiles: 4,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.appQuit,
+        usedTokens: 0,
+        usedCredits: 1,
+        budgetTokens: 100,
+        budgetCredits: 1,
+        updatedAtMs: 1,
+        clientLogicVersion: 1,
+      ),
+    );
+    coordinator = AiCoverageCoordinator.testing(
+      serviceFactory: ({required session, required provider}) => service,
+      isCoverageApiReady: (_) => true,
+      resolveProvider: () async => provider,
+    );
+
+    coordinator.attach(VolwardSession.test());
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(service.resumeCalls, 0);
+  });
+
   test('auto resume calls resume, while explicit start stays fresh', () async {
     final service = _RecordingService(cacheDir);
     final provider = _Provider();

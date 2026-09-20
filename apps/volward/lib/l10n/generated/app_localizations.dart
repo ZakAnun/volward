@@ -1579,6 +1579,54 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get aiCoverageFailedResumeConfirm;
 
+  /// No description provided for @aiCoverageLegacyJobHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This job was paused under older analysis logic. Resume applies new rules (incomplete API responses are saved as review needed).'**
+  String get aiCoverageLegacyJobHint;
+
+  /// No description provided for @aiCoverageLegacyResumeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply updated analysis logic?'**
+  String get aiCoverageLegacyResumeTitle;
+
+  /// No description provided for @aiCoverageLegacyResumeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved progress is from an older client. Resume continues from the cursor with new batch rules; verdicts already on disk are kept.'**
+  String get aiCoverageLegacyResumeBody;
+
+  /// No description provided for @aiCoverageLegacyResumeConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get aiCoverageLegacyResumeConfirm;
+
+  /// No description provided for @aiCoverageRestartFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart full coverage'**
+  String get aiCoverageRestartFull;
+
+  /// No description provided for @aiCoverageRestartFullTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart full coverage?'**
+  String get aiCoverageRestartFullTitle;
+
+  /// No description provided for @aiCoverageRestartFullBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Clears coverage progress and saved verdicts for this snapshot and starts over. This may use credits or tokens again.'**
+  String get aiCoverageRestartFullBody;
+
+  /// No description provided for @aiCoverageRestartFullConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get aiCoverageRestartFullConfirm;
+
   /// No description provided for @aiCoverageRaiseBudgetToEstimate.
   ///
   /// In en, this message translates to:

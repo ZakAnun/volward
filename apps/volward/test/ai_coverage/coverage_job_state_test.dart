@@ -61,29 +61,57 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  test('legacy job json without failure fields uses defaults', () async {
-    final dir = await Directory.systemTemp.createTemp('coverage-job-legacy');
+  test('client_logic_version round trips', () async {
+    final dir = await Directory.systemTemp.createTemp('coverage-job-clv');
     final store = CoverageJobStateStore(dir);
     const state = CoverageJobState(
-      snapshotId: 's-legacy',
+      snapshotId: 's-clv',
       rootPath: '/',
       planVersion: 1,
-      cursor: 40,
-      totalUnclassified: 80,
-      analyzedFiles: 40,
+      cursor: 0,
+      totalUnclassified: 1,
+      analyzedFiles: 0,
       preClassifiedCount: 0,
-      status: CoverageJobStatus.paused,
-      pauseReason: CoveragePauseReason.manual,
+      status: CoverageJobStatus.running,
       usedTokens: 0,
-      usedCredits: 1,
+      usedCredits: 0,
       budgetTokens: 0,
       budgetCredits: 50,
       updatedAtMs: 1,
+      clientLogicVersion: 2,
     );
     await store.save(state);
+    final loaded = await store.load('s-clv');
+    expect(loaded!.clientLogicVersion, 2);
+    await dir.delete(recursive: true);
+  });
+
+  test('legacy job json without failure fields uses defaults', () async {
+    final dir = await Directory.systemTemp.createTemp('coverage-job-legacy');
+    final store = CoverageJobStateStore(dir);
+    final file = File('${dir.path}/ai_coverage_job_s-legacy.json');
+    await file.writeAsString('''
+{
+  "snapshot_id": "s-legacy",
+  "root_path": "/",
+  "plan_version": 1,
+  "cursor": 40,
+  "total_unclassified": 80,
+  "analyzed_files": 40,
+  "pre_classified_count": 0,
+  "status": "paused",
+  "pause_reason": "manual",
+  "used_tokens": 0,
+  "used_credits": 1,
+  "budget_tokens": 0,
+  "budget_credits": 50,
+  "updated_at_ms": 1
+}
+''');
     final loaded = await store.load('s-legacy');
     expect(loaded!.failedBatchPaths, isEmpty);
     expect(loaded.creditsChargedNoVerdict, 0);
+    expect(loaded.clientLogicVersion, 1);
     await dir.delete(recursive: true);
   });
 }

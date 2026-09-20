@@ -888,6 +888,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiCoverageFailedResumeConfirm => '重试';
 
   @override
+  String get aiCoverageLegacyJobHint => '此任务在旧版分析逻辑下暂停；继续将应用新规则（不完整响应会保存为待复核）。';
+
+  @override
+  String get aiCoverageLegacyResumeTitle => '应用新版分析逻辑？';
+
+  @override
+  String get aiCoverageLegacyResumeBody =>
+      '本地保存的进度来自旧版客户端。继续覆盖分析将从未完成处接着跑，并使用新版批处理规则；已落盘的结果仍会保留。';
+
+  @override
+  String get aiCoverageLegacyResumeConfirm => '继续';
+
+  @override
+  String get aiCoverageRestartFull => '重新全量分析';
+
+  @override
+  String get aiCoverageRestartFullTitle => '重新全量分析？';
+
+  @override
+  String get aiCoverageRestartFullBody =>
+      '将清除本快照的覆盖分析进度与已保存 verdict，并从头开始；会再次消耗积分或 token。';
+
+  @override
+  String get aiCoverageRestartFullConfirm => '重新开始';
+
+  @override
   String get aiCoverageRaiseBudgetToEstimate => '按预估提高上限';
 
   @override

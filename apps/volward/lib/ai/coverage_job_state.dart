@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'coverage_client_logic.dart';
 import 'coverage_models.dart';
 
 enum CoverageJobStatus { idle, running, paused, completed, cancelled }
@@ -31,43 +32,45 @@ class CoverageJobState {
     this.pauseDetail,
     this.failedBatchPaths = const [],
     this.creditsChargedNoVerdict = 0,
+    this.clientLogicVersion = kCoverageClientLogicVersion,
   });
 
-  factory CoverageJobState.fromJson(Map<String, dynamic> json) =>
-      CoverageJobState(
-        snapshotId: json['snapshot_id'] as String,
-        rootPath: json['root_path'] as String,
-        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
-        cursor: (json['cursor'] as num?)?.toInt() ?? 0,
-        totalUnclassified: (json['total_unclassified'] as num?)?.toInt() ?? 0,
-        analyzedFiles: (json['analyzed_files'] as num?)?.toInt() ?? 0,
-        preClassifiedCount:
-            (json['pre_classified_count'] as num?)?.toInt() ?? 0,
-        status:
-            CoverageJobStatus.values.asNameMap()[json['status']] ??
-            CoverageJobStatus.idle,
-        pauseReason: json['pause_reason'] == null
-            ? null
-            : CoveragePauseReason.values.asNameMap()[json['pause_reason']],
-        usedTokens: (json['used_tokens'] as num?)?.toInt() ?? 0,
-        usedCredits: (json['used_credits'] as num?)?.toInt() ?? 0,
-        budgetTokens: (json['budget_tokens'] as num?)?.toInt() ?? 0,
-        budgetCredits: (json['budget_credits'] as num?)?.toInt() ?? 0,
-        updatedAtMs: (json['updated_at_ms'] as num?)?.toInt() ?? 0,
-        fingerprint: json['fingerprint'] is Map
-            ? CoverageSnapshotFingerprint.fromJson(
-                Map<String, dynamic>.from(json['fingerprint'] as Map),
-              )
-            : null,
-        estimatedCreditsRemaining: (json['estimated_credits_remaining'] as num?)
-            ?.toInt(),
-        pauseDetail: json['pause_detail'] == null
-            ? null
-            : CoveragePauseDetail.values.asNameMap()[json['pause_detail']],
-        failedBatchPaths: _readStringList(json['failed_batch_paths']),
-        creditsChargedNoVerdict:
-            (json['credits_charged_no_verdict'] as num?)?.toInt() ?? 0,
-      );
+  factory CoverageJobState.fromJson(
+    Map<String, dynamic> json,
+  ) => CoverageJobState(
+    snapshotId: json['snapshot_id'] as String,
+    rootPath: json['root_path'] as String,
+    planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+    cursor: (json['cursor'] as num?)?.toInt() ?? 0,
+    totalUnclassified: (json['total_unclassified'] as num?)?.toInt() ?? 0,
+    analyzedFiles: (json['analyzed_files'] as num?)?.toInt() ?? 0,
+    preClassifiedCount: (json['pre_classified_count'] as num?)?.toInt() ?? 0,
+    status:
+        CoverageJobStatus.values.asNameMap()[json['status']] ??
+        CoverageJobStatus.idle,
+    pauseReason: json['pause_reason'] == null
+        ? null
+        : CoveragePauseReason.values.asNameMap()[json['pause_reason']],
+    usedTokens: (json['used_tokens'] as num?)?.toInt() ?? 0,
+    usedCredits: (json['used_credits'] as num?)?.toInt() ?? 0,
+    budgetTokens: (json['budget_tokens'] as num?)?.toInt() ?? 0,
+    budgetCredits: (json['budget_credits'] as num?)?.toInt() ?? 0,
+    updatedAtMs: (json['updated_at_ms'] as num?)?.toInt() ?? 0,
+    fingerprint: json['fingerprint'] is Map
+        ? CoverageSnapshotFingerprint.fromJson(
+            Map<String, dynamic>.from(json['fingerprint'] as Map),
+          )
+        : null,
+    estimatedCreditsRemaining: (json['estimated_credits_remaining'] as num?)
+        ?.toInt(),
+    pauseDetail: json['pause_detail'] == null
+        ? null
+        : CoveragePauseDetail.values.asNameMap()[json['pause_detail']],
+    failedBatchPaths: _readStringList(json['failed_batch_paths']),
+    creditsChargedNoVerdict:
+        (json['credits_charged_no_verdict'] as num?)?.toInt() ?? 0,
+    clientLogicVersion: (json['client_logic_version'] as num?)?.toInt() ?? 1,
+  );
 
   final String snapshotId;
   final String rootPath;
@@ -88,6 +91,7 @@ class CoverageJobState {
   final CoveragePauseDetail? pauseDetail;
   final List<String> failedBatchPaths;
   final int creditsChargedNoVerdict;
+  final int clientLogicVersion;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -104,6 +108,7 @@ class CoverageJobState {
     CoveragePauseDetail? Function()? pauseDetail,
     List<String>? failedBatchPaths,
     int? creditsChargedNoVerdict,
+    int? clientLogicVersion,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -127,6 +132,7 @@ class CoverageJobState {
     failedBatchPaths: failedBatchPaths ?? this.failedBatchPaths,
     creditsChargedNoVerdict:
         creditsChargedNoVerdict ?? this.creditsChargedNoVerdict,
+    clientLogicVersion: clientLogicVersion ?? this.clientLogicVersion,
   );
 
   Map<String, dynamic> toJson() => {
@@ -151,6 +157,7 @@ class CoverageJobState {
     if (failedBatchPaths.isNotEmpty) 'failed_batch_paths': failedBatchPaths,
     if (creditsChargedNoVerdict > 0)
       'credits_charged_no_verdict': creditsChargedNoVerdict,
+    'client_logic_version': clientLogicVersion,
   };
 }
 

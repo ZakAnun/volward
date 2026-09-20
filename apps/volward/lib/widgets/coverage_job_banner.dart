@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../ai/coverage_analyze_batch.dart';
+import '../ai/coverage_client_logic.dart';
 import '../ai/coverage_job_state.dart';
 import '../ai/coverage_pause_messages.dart';
 import '../ai/coverage_verdict_store.dart';
@@ -29,6 +30,7 @@ class CoverageJobBanner extends StatelessWidget {
     this.onResume,
     this.onCancel,
     this.onRaiseBudget,
+    this.onRestart,
   });
 
   final CoverageJobState state;
@@ -37,6 +39,7 @@ class CoverageJobBanner extends StatelessWidget {
   final VoidCallback? onResume;
   final VoidCallback? onCancel;
   final VoidCallback? onRaiseBudget;
+  final VoidCallback? onRestart;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +55,7 @@ class CoverageJobBanner extends StatelessWidget {
         isPaused && state.pauseReason == CoveragePauseReason.budget;
     final failedPaused =
         isPaused && state.pauseReason == CoveragePauseReason.failed;
+    final legacyLogic = coverageJobNeedsClientLogicUpgrade(state);
     final incompleteCount = verdictRows
         .where((row) => row.coverageSource == kIncompleteCoverageSource)
         .length;
@@ -156,6 +160,15 @@ class CoverageJobBanner extends StatelessWidget {
                       style: context.vwCaption,
                     ),
                   ],
+                  if (legacyLogic) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageLegacyJobHint,
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -185,6 +198,13 @@ class CoverageJobBanner extends StatelessWidget {
                       icon: Icons.trending_up_outlined,
                       variant: AppleButtonVariant.pearl,
                       onPressed: onRaiseBudget,
+                    ),
+                  if (legacyLogic && isPaused && onRestart != null)
+                    AppleButton(
+                      label: l10n.aiCoverageRestartFull,
+                      icon: Icons.refresh_outlined,
+                      variant: AppleButtonVariant.pearl,
+                      onPressed: onRestart,
                     ),
                 ],
               ),

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'cancel_token.dart';
 import 'coverage_analyze_batch.dart';
+import 'coverage_client_logic.dart';
 import 'coverage_engine.dart';
 import 'coverage_job_state.dart';
 import 'coverage_models.dart';
@@ -88,6 +89,7 @@ class CoverageJobController {
       budgetTokens: budgetTokens,
       budgetCredits: budgetCredits,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      clientLogicVersion: kCoverageClientLogicVersion,
     );
     await stateStore.save(_state!);
     _emit();
@@ -140,6 +142,7 @@ class CoverageJobController {
       pauseReason: () => null,
       pauseDetail: () => null,
       failedBatchPaths: const [],
+      clientLogicVersion: kCoverageClientLogicVersion,
     );
     await stateStore.save(_state!);
     _emit();
@@ -197,6 +200,7 @@ class CoverageJobController {
       failedBatchPaths: const [],
       budgetTokens: budgetTokens > 0 ? budgetTokens : current.budgetTokens,
       budgetCredits: budgetCredits > 0 ? budgetCredits : current.budgetCredits,
+      clientLogicVersion: kCoverageClientLogicVersion,
     );
     await stateStore.save(_state!);
     _emit();
@@ -272,6 +276,7 @@ class CoverageJobController {
         budgetCredits: guard.budgetCredits,
         fingerprint: plan.fingerprint ?? guard.fingerprint,
         updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        clientLogicVersion: guard.clientLogicVersion,
       );
       await stateStore.save(_state!);
       _emit();

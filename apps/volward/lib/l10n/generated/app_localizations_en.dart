@@ -935,6 +935,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiCoverageFailedResumeConfirm => 'Retry';
 
   @override
+  String get aiCoverageLegacyJobHint =>
+      'This job was paused under older analysis logic. Resume applies new rules (incomplete API responses are saved as review needed).';
+
+  @override
+  String get aiCoverageLegacyResumeTitle => 'Apply updated analysis logic?';
+
+  @override
+  String get aiCoverageLegacyResumeBody =>
+      'Saved progress is from an older client. Resume continues from the cursor with new batch rules; verdicts already on disk are kept.';
+
+  @override
+  String get aiCoverageLegacyResumeConfirm => 'Continue';
+
+  @override
+  String get aiCoverageRestartFull => 'Restart full coverage';
+
+  @override
+  String get aiCoverageRestartFullTitle => 'Restart full coverage?';
+
+  @override
+  String get aiCoverageRestartFullBody =>
+      'Clears coverage progress and saved verdicts for this snapshot and starts over. This may use credits or tokens again.';
+
+  @override
+  String get aiCoverageRestartFullConfirm => 'Restart';
+
+  @override
   String get aiCoverageRaiseBudgetToEstimate => 'Raise limit to match estimate';
 
   @override

@@ -33,8 +33,9 @@ pub use duplicates::*;
 pub use large_files::*;
 pub use similar_photos::*;
 pub use ai_candidates::{
-    ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, AiCandidate,
-    AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry, AI_AGGREGATE_DELETE_TARGET_PREFIX,
+    ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, hint_source_skips_ai,
+    indexed_local_exclusion_prefixes, resolve_unclassified_for_ai, AiCandidate, AiCandidateBuilder,
+    AiCandidateSet, PreClassifiedEntry, UnclassifiedAiRouting, AI_AGGREGATE_DELETE_TARGET_PREFIX,
     DEFAULT_CANDIDATE_CAP, DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
 };
 pub use ai_coverage::{

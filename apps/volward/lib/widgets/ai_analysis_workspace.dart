@@ -9,6 +9,7 @@ import '../ai/ai_coverage_coordinator.dart';
 import '../ai/ai_provider.dart';
 import '../ai/ai_settings_store.dart';
 import '../ai/byok_ai_provider.dart';
+import '../ai/coverage_client_logic.dart';
 import '../ai/coverage_job_state.dart';
 import '../ai/coverage_pause_messages.dart';
 import '../ai/coverage_ui_helpers.dart';
@@ -1039,6 +1040,27 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _resumeFullCoverage() async {
     final state = _coverageJobState;
+    if (state != null && coverageJobNeedsClientLogicUpgrade(state)) {
+      final l10n = context.l10n;
+      final legacyOk = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.aiCoverageLegacyResumeTitle),
+          content: Text(l10n.aiCoverageLegacyResumeBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.scanActionCancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.aiCoverageLegacyResumeConfirm),
+            ),
+          ],
+        ),
+      );
+      if (legacyOk != true || !mounted) return;
+    }
     if (state?.pauseReason == CoveragePauseReason.failed) {
       final l10n = context.l10n;
       final count = state!.failedBatchPaths.isNotEmpty
@@ -1085,6 +1107,31 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _cancelFullCoverage() async {
     await AiCoverageCoordinator.instance.cancelCoverage(widget.snapshotId);
+  }
+
+  Future<void> _restartFullCoverage() async {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aiCoverageRestartFullTitle),
+        content: Text(l10n.aiCoverageRestartFullBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.aiCoverageRestartFullConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await AiCoverageCoordinator.instance.cancelCoverage(widget.snapshotId);
+    if (!mounted) return;
+    await _startFullCoverageAnalysis();
   }
 
   Future<void> _raiseConfiguredCoverageCap() async {
@@ -1232,6 +1279,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           state.status == CoverageJobStatus.paused &&
               state.pauseReason == CoveragePauseReason.budget
           ? () => unawaited(_raiseCoverageBudget())
+          : null,
+      onRestart: coverageJobNeedsClientLogicUpgrade(state)
+          ? () => unawaited(_restartFullCoverage())
           : null,
     );
   }

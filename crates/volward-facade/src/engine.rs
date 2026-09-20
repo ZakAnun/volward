@@ -1053,8 +1053,9 @@ impl VolwardEngine {
     pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
         use std::collections::HashSet;
         use volward_core::{
-            compute_result_cache_key, AiAnalysisResult, AiCandidateBuilder, OsKnowledgeBase,
-            PreClassifiedEntry, DEFAULT_CANDIDATE_CAP, DEFAULT_PRECLASSIFIED_CAP,
+            compute_result_cache_key, indexed_local_exclusion_prefixes, AiAnalysisResult,
+            AiCandidateBuilder, OsKnowledgeBase, PreClassifiedEntry, DEFAULT_CANDIDATE_CAP,
+            DEFAULT_PRECLASSIFIED_CAP,
         };
 
         let kb = OsKnowledgeBase::for_current_platform();
@@ -1083,6 +1084,7 @@ impl VolwardEngine {
                             )
                         })
                         .collect::<Vec<_>>(),
+                    indexed_local_exclusion_prefixes(index),
                 )
             })
         } else {
@@ -1098,12 +1100,14 @@ impl VolwardEngine {
             classified,
             files,
             build_artifacts,
+            indexed_prefixes,
         )) = index_inputs
         {
             if index_snap_id != snapshot_id {
                 return format!("error:snapshot_id mismatch: got {index_snap_id}");
             }
-            let mut builder = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb);
+            let mut builder =
+                AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb, &indexed_prefixes);
             for (path, size_bytes, is_dir, deletable) in build_artifacts {
                 builder.push_pre_classified(PreClassifiedEntry {
                     is_dir,
@@ -1468,7 +1472,8 @@ fn resolve_index_ai_aggregate_paths(
     let kb = OsKnowledgeBase::for_current_platform();
     let classified = index.classified_paths();
     let files = index.unclassified_files();
-    let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb)
+    let indexed_prefixes = volward_core::indexed_local_exclusion_prefixes(index);
+    let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb, &indexed_prefixes)
         .annotate_ai_cleanup_patterns()
         .aggregate_by_dir(20)
         .cap_top_n(DEFAULT_CANDIDATE_CAP)
