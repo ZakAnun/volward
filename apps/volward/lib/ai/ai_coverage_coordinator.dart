@@ -168,6 +168,9 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     final engine = session.coverageEngine;
     if (engine == null) return null;
     try {
+      if (session.hasAiTreeCoverageApi) {
+        return await engine.buildTreePlan(snapshotId);
+      }
       return await engine.buildPlan(snapshotId);
     } catch (_) {
       return null;
@@ -218,7 +221,7 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     var resolvedBudgetCredits = budgetCredits ?? budget.credits;
     if (mode == AiMode.platform) {
       final summary = await planSummary(snapshotId);
-      final estimatedCredits = summary?.estimatedPages ?? 0;
+      final estimatedCredits = coveragePrecheckEstimatedCredits(summary) ?? 0;
       final configured = await AiSettingsStore.instance.coverageBudgetForMode(
         AiMode.platform,
       );

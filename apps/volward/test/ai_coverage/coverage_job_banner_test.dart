@@ -121,6 +121,31 @@ void main() {
     expect(find.textContaining('Credits this run'), findsOneWidget);
   });
 
+  testWidgets('paused v3 banner uses tree and tail credit estimates', (
+    tester,
+  ) async {
+    const state = CoverageJobState(
+      snapshotId: 's1',
+      rootPath: '/',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 200,
+      analyzedFiles: 80,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.paused,
+      pauseReason: CoveragePauseReason.manual,
+      usedTokens: 0,
+      usedCredits: 2,
+      budgetTokens: 0,
+      budgetCredits: 50,
+      updatedAtMs: 1,
+      estimatedTreeCredits: 12,
+      estimatedTailCredits: 5,
+    );
+    await pumpBanner(tester, state);
+    expect(find.textContaining('17'), findsWidgets);
+  });
+
   testWidgets('paused banner shows remaining credit estimate', (tester) async {
     const state = CoverageJobState(
       snapshotId: 's1',

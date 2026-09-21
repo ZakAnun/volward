@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 
 import '../ai/coverage_analyze_batch.dart';
@@ -12,13 +10,8 @@ import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'apple_widgets.dart';
 
-int _estimateRemainingCredits(CoverageJobState state) {
-  if (state.planVersion >= 2 && state.estimatedCreditsRemaining != null) {
-    return state.estimatedCreditsRemaining!;
-  }
-  final pending = max(0, state.totalUnclassified - state.analyzedFiles);
-  return (pending / 40).ceil();
-}
+int _estimateRemainingCredits(CoverageJobState state) =>
+    coverageJobEstimatedRemainingCredits(state);
 
 /// Coverage job progress banner (Design §9).
 class CoverageJobBanner extends StatelessWidget {

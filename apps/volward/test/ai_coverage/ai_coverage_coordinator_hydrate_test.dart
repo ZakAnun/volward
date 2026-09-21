@@ -9,6 +9,7 @@ import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/coverage_engine.dart';
+import 'package:volward/ai/coverage_client_logic.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/coverage_verdict_store.dart';
@@ -152,6 +153,40 @@ void main() {
     },
   );
 
+  test('auto resume skips v2 plan jobs at current client logic', () async {
+    final service = _RecordingService(cacheDir);
+    final provider = _Provider();
+    await CoverageJobStateStore(cacheDir).save(
+      const CoverageJobState(
+        snapshotId: 'snap-v2-plan',
+        rootPath: '/',
+        planVersion: 2,
+        cursor: 4,
+        totalUnclassified: 10,
+        analyzedFiles: 4,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.appQuit,
+        usedTokens: 0,
+        usedCredits: 1,
+        budgetTokens: 100,
+        budgetCredits: 1,
+        updatedAtMs: 1,
+        clientLogicVersion: kCoverageClientLogicVersion,
+      ),
+    );
+    coordinator = AiCoverageCoordinator.testing(
+      serviceFactory: ({required session, required provider}) => service,
+      isCoverageApiReady: (_) => true,
+      resolveProvider: () async => provider,
+    );
+
+    coordinator.attach(VolwardSession.test());
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(service.resumeCalls, 0);
+  });
+
   test('auto resume skips jobs saved under legacy client logic', () async {
     final service = _RecordingService(cacheDir);
     final provider = _Provider();
@@ -193,7 +228,7 @@ void main() {
       const CoverageJobState(
         snapshotId: 'snap-resume',
         rootPath: '/',
-        planVersion: 1,
+        planVersion: 3,
         cursor: 4,
         totalUnclassified: 10,
         analyzedFiles: 4,
@@ -205,6 +240,7 @@ void main() {
         budgetTokens: 100,
         budgetCredits: 1,
         updatedAtMs: 1,
+        clientLogicVersion: kCoverageClientLogicVersion,
       ),
     );
     coordinator = AiCoverageCoordinator.testing(
