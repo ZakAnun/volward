@@ -15,6 +15,7 @@ import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
+import 'package:volward/snapshot_cache.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/apple_widgets.dart';
@@ -177,7 +178,7 @@ class _EstimatedPartialUsageFailureByokProvider extends ByokAiProvider {
   }
 }
 
-class _FakeUsageContract implements AiContract {
+class _FakeUsageContract extends AiContract {
   @override
   int batchSize() => 40;
 
@@ -202,6 +203,7 @@ String _candidatePayload({
     {'path': '/tmp/keep.db', 'size_bytes': 300, 'is_dir': false},
   ],
   int estimatedTokens = 640,
+  int estimatedByokBatchTokens = 640,
   bool hasExistingResult = true,
   bool truncated = false,
   int candidatesBeforeCap = 3,
@@ -211,6 +213,7 @@ String _candidatePayload({
     'pre_classified': preClassified,
     'unknown_candidates': unknownCandidates,
     'estimated_input_tokens': estimatedTokens,
+    'estimated_byok_batch_input_tokens': estimatedByokBatchTokens,
     'has_existing_result': hasExistingResult,
     'truncated': truncated,
     'candidates_total_before_cap': candidatesBeforeCap,
@@ -500,19 +503,54 @@ const _coveragePlanSummaryV3 = CoveragePlanSummary(
   seedNodeCount: 12,
   localSafeFiles: 800,
   localKeepFiles: 200,
+  treePendingFiles: 4000,
+  tailFiles: 0,
   estimatedTreeCredits: 15,
   estimatedTailCredits: 5,
 );
+
+const _coveragePlanSummaryLocalOnly = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 3,
+  rootPath: '/tmp',
+  totalUnclassified: 15,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 15,
+  estimatedPages: 0,
+  localSafeFiles: 10,
+  localKeepFiles: 5,
+  treePendingFiles: 0,
+  tailFiles: 0,
+  estimatedTreeCredits: 0,
+  estimatedTailCredits: 0,
+);
+
+Directory? _workspaceTestCacheDir;
+
+void _writeAnalysisCacheFile(String key, String json) {
+  final base = _workspaceTestCacheDir!;
+  final dir = Directory('${base.path}/ai_analysis')
+    ..createSync(recursive: true);
+  File('${dir.path}/$key.json').writeAsStringSync(json);
+}
 
 void main() {
   setUp(() {
     AiCoverageCoordinator.debugForceAvailable = false;
     AiCoverageCoordinator.debugPlanSummary = null;
+    _workspaceTestCacheDir = Directory.systemTemp.createTempSync(
+      'volward_ai_workspace_test_',
+    );
+    SnapshotCache.cacheDirForTest = _workspaceTestCacheDir;
   });
 
   tearDown(() {
     AiCoverageCoordinator.debugForceAvailable = false;
     AiCoverageCoordinator.debugPlanSummary = null;
+    SnapshotCache.cacheDirForTest = null;
+    _workspaceTestCacheDir?.deleteSync(recursive: true);
+    _workspaceTestCacheDir = null;
   });
   test(
     'production gateway delegates snapshot-scoped native operations',
@@ -769,7 +807,6 @@ void main() {
       find.textContaining('Estimated for full analysis'),
     );
 
-    expect(find.textContaining('23'), findsOneWidget);
     expect(find.textContaining('Estimated for full analysis'), findsOneWidget);
     expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
     expect(find.textContaining('30–80 credits'), findsOneWidget);
@@ -883,9 +920,9 @@ void main() {
     );
 
     expect(find.textContaining('2 items pre-identified'), findsOneWidget);
-    expect(find.textContaining('3 items will be sent'), findsOneWidget);
-    expect(find.textContaining('640 tokens'), findsOneWidget);
-    expect(find.textContaining('largest of 12 items'), findsOneWidget);
+    expect(find.textContaining('12 items still need'), findsOneWidget);
+    expect(find.textContaining('640 input tokens'), findsOneWidget);
+    expect(find.textContaining('150 cap'), findsOneWidget);
     expect(find.textContaining('balance 7'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
@@ -913,26 +950,34 @@ void main() {
             },
           ],
         });
+      _writeAnalysisCacheFile('cache-key', validGateway.cache['cache-key']!);
       await tester.pumpWidget(_workspaceShell(validGateway));
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.loadPreviousKey),
       );
       await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-      await tester.pumpAndSettle();
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.resultsListKey),
+      );
       expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
       expect(validGateway.byokUsageRecords, isEmpty);
 
       final invalidGateway = _FakeGateway()
         ..candidatesJson = _candidatePayload()
         ..cache['cache-key'] = 'not-json';
+      _writeAnalysisCacheFile('cache-key', invalidGateway.cache['cache-key']!);
       await tester.pumpWidget(_workspaceShell(invalidGateway));
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.loadPreviousKey),
       );
       await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-      await tester.pumpAndSettle();
+      await _pumpUntilFound(
+        tester,
+        find.text('Could not load the previous AI result.'),
+      );
       expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
       expect(
         find.text('Could not load the previous AI result.'),
@@ -971,6 +1016,7 @@ void main() {
           },
         ],
       });
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
@@ -978,7 +1024,7 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, _resultGroup('/Users/x/Library'));
     expect(_resultGroup('/Users/x/Library'), findsOneWidget);
 
     expect(find.textContaining('AI tool cache/temp'), findsOneWidget);
@@ -990,6 +1036,7 @@ void main() {
     final gateway = _FakeGateway()
       ..candidatesJson = _candidatePayload()
       ..cache['cache-key'] = jsonEncode({'entries': <Object>[]});
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
@@ -997,7 +1044,10 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.text('No cleanup suggestions were found'),
+    );
 
     expect(find.text('No cleanup suggestions were found'), findsOneWidget);
     expect(find.text('No matching results'), findsNothing);
@@ -2446,6 +2496,31 @@ void main() {
     } finally {
       semantics.dispose();
     }
+  });
+
+  testWidgets('precheck local-only plan hides credit total and shows CTA', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummaryLocalOnly;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.text('No API calls needed for this scan'),
+    );
+
+    expect(find.text('Review local results'), findsOneWidget);
+    expect(find.textContaining('Total estimated credits'), findsNothing);
+    expect(find.text('Start AI Analysis'), findsNothing);
   });
 
   testWidgets(

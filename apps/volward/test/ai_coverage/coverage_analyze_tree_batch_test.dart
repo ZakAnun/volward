@@ -5,17 +5,16 @@ import 'package:volward/ai/coverage_analyze_tree_batch.dart';
 import 'package:volward/ai/coverage_models.dart';
 
 class _FakeTreeProvider implements TreeAiProvider {
-  _FakeTreeProvider({required this.verdicts, this.credits = 1});
+  _FakeTreeProvider({required this.verdicts});
 
   final List<AiVerdict> verdicts;
-  final int credits;
 
   @override
   Future<AnalyzeResult> analyzeTreeNodes(
     List<CoverageTreeNode> nodes, {
     CancelToken? cancelToken,
   }) async {
-    return AnalyzeResult(verdicts: verdicts, credits: credits);
+    return AnalyzeResult(verdicts: verdicts, credits: 1);
   }
 }
 

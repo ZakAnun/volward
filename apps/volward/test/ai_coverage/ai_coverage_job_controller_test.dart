@@ -31,14 +31,14 @@ void main() {
     () async {
       const parentPath = '/root/storage';
       const childPath = '/root/storage/nested';
-      final parentNode = CoverageTreeNode(
+      const parentNode = CoverageTreeNode(
         path: parentPath,
         sizeBytes: 500,
         fileCount: 10,
         subdirCount: 1,
         role: 'storage_like',
       );
-      final childNode = CoverageTreeNode(
+      const childNode = CoverageTreeNode(
         path: childPath,
         sizeBytes: 100,
         fileCount: 2,
@@ -59,7 +59,7 @@ void main() {
         ),
         pages: const [],
         treePagesByCursor: {
-          0: CoverageTreePage(
+          0: const CoverageTreePage(
             snapshotId: 'v3-tree',
             planVersion: 3,
             nextCursor: null,
@@ -87,6 +87,7 @@ void main() {
         verdictStore: verdictStore,
         stateStore: stateStore,
         analyzeBatch: (_) async => throw StateError('tail unused'),
+        preferTreeCoveragePlan: true,
         analyzeTreeBatch: (nodes) async {
           treeBatches++;
           final node = nodes.single;

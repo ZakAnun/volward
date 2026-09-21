@@ -222,6 +222,23 @@ void main() {
   });
 
   test('auto resume calls resume, while explicit start stays fresh', () async {
+    AiCoverageCoordinator.debugTreatSnapshotReady = true;
+    addTearDown(() => AiCoverageCoordinator.debugTreatSnapshotReady = false);
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        const CoveragePlanSummary(
+          snapshotId: 'snap-resume',
+          planVersion: 3,
+          rootPath: '/',
+          totalUnclassified: 10,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          estimatedTreeCredits: 1,
+          estimatedTailCredits: 0,
+        );
+    addTearDown(() => AiCoverageCoordinator.debugPlanSummary = null);
+
     final service = _RecordingService(cacheDir);
     final provider = _Provider();
     await CoverageJobStateStore(cacheDir).save(

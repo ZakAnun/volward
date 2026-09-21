@@ -5,17 +5,16 @@ import 'package:volward/ai/coverage_analyze_batch.dart';
 import 'package:volward/ai/coverage_models.dart';
 
 class _FakeProvider implements AiProvider {
-  _FakeProvider({required this.verdicts, this.credits = 1});
+  _FakeProvider({required this.verdicts});
 
   final List<AiVerdict> verdicts;
-  final int credits;
 
   @override
   Future<AnalyzeResult> analyze(
     List<AiCandidate> candidates, {
     CancelToken? cancelToken,
   }) async {
-    return AnalyzeResult(verdicts: verdicts, credits: credits);
+    return AnalyzeResult(verdicts: verdicts, credits: 1);
   }
 
   @override

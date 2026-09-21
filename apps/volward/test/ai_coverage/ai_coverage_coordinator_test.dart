@@ -71,6 +71,70 @@ void main() {
     },
   );
 
+  test('startFullCoverage unavailable when plan summary is missing', () async {
+    AiCoverageCoordinator.debugRequirePlanSummary = true;
+    addTearDown(() => AiCoverageCoordinator.debugRequirePlanSummary = false);
+    AiCoverageCoordinator.debugPlanSummary = (_) async => null;
+
+    final service = _RecordingStartService();
+    final provider = _Provider();
+    final coordinator = AiCoverageCoordinator.testing(
+      serviceFactory: ({required session, required provider}) => service,
+      isCoverageApiReady: (_) => true,
+      resolveProvider: () async => provider,
+    );
+    coordinator.attach(VolwardSession.test());
+
+    final result = await coordinator.startFullCoverage(
+      snapshotId: 'snap-missing-plan',
+      mode: AiMode.byok,
+      provider: provider,
+    );
+
+    expect(result, isA<StartFullCoverageUnavailable>());
+    expect(service.startCalls, 0);
+  });
+
+  test(
+    'startFullCoverage skips job when plan requires zero API calls',
+    () async {
+      AiCoverageCoordinator.debugPlanSummary = (_) async =>
+          const CoveragePlanSummary(
+            snapshotId: 'snap-local',
+            planVersion: 3,
+            rootPath: '/',
+            totalUnclassified: 100,
+            preClassifiedCount: 0,
+            groupRows: 0,
+            fileRows: 0,
+            estimatedPages: 0,
+            localSafeFiles: 50,
+            localKeepFiles: 50,
+            estimatedTreeCredits: 0,
+            estimatedTailCredits: 0,
+          );
+      addTearDown(() => AiCoverageCoordinator.debugPlanSummary = null);
+
+      final service = _RecordingStartService();
+      final provider = _Provider();
+      final coordinator = AiCoverageCoordinator.testing(
+        serviceFactory: ({required session, required provider}) => service,
+        isCoverageApiReady: (_) => true,
+        resolveProvider: () async => provider,
+      );
+      coordinator.attach(VolwardSession.test());
+
+      final result = await coordinator.startFullCoverage(
+        snapshotId: 'snap-local',
+        mode: AiMode.byok,
+        provider: provider,
+      );
+
+      expect(result, isA<StartFullCoverageLocalOnly>());
+      expect(service.startCalls, 0);
+    },
+  );
+
   test('coordinator emits desktop notify on completion', () async {
     final notifications = <String>[];
     final coordinator = AiCoverageCoordinator.testing(

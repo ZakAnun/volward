@@ -95,4 +95,63 @@ void main() {
       isFalse,
     );
   });
+
+  test('coveragePlanMinApiCalls sums v3 tree and tail credits', () {
+    const summary = CoveragePlanSummary(
+      snapshotId: 's',
+      planVersion: 3,
+      rootPath: '/',
+      totalUnclassified: 100,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 0,
+      estimatedPages: 0,
+      estimatedTreeCredits: 3,
+      estimatedTailCredits: 2,
+    );
+    expect(coveragePlanMinApiCalls(summary), 5);
+  });
+
+  test(
+    'coverageJobEstimatedRemainingApiCalls subtracts used credits for v3',
+    () {
+      const state = CoverageJobState(
+        snapshotId: 's',
+        rootPath: '/',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 200,
+        analyzedFiles: 0,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        usedTokens: 0,
+        usedCredits: 2,
+        budgetTokens: 0,
+        budgetCredits: 50,
+        updatedAtMs: 1,
+        estimatedTreeCredits: 3,
+        estimatedTailCredits: 2,
+      );
+      expect(coverageJobEstimatedRemainingApiCalls(state), 3);
+    },
+  );
+
+  test(
+    'coveragePlanRequiresApi is false when tree and tail credits are zero',
+    () {
+      const summary = CoveragePlanSummary(
+        snapshotId: 's',
+        planVersion: 3,
+        rootPath: '/',
+        totalUnclassified: 10,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 0,
+        estimatedPages: 0,
+        estimatedTreeCredits: 0,
+        estimatedTailCredits: 0,
+      );
+      expect(coveragePlanRequiresApi(summary), isFalse);
+    },
+  );
 }
