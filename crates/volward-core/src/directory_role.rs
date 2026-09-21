@@ -5,7 +5,8 @@ use crate::index::SnapshotIndex;
 /// Bit on [`crate::index::DirectoryRecord::pruned_child_flags`] when walk pruned a VCS child (`.git`, etc.).
 pub const PRUNED_VCS: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DirectoryRole {
     Unknown,
     StorageLike,
