@@ -56,6 +56,7 @@ fn directory_record_from_proto(rec: proto::IndexDirectoryRecord) -> DirectoryRec
         category_mask: rec.category_mask,
         deletable_category_mask: rec.deletable_category_mask,
         deletable_file_count: rec.deletable_file_count,
+        pruned_child_flags: 0,
     }
 }
 

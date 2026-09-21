@@ -108,6 +108,8 @@ pub struct DirectoryRecord {
     pub category_mask: u64,
     pub deletable_category_mask: u64,
     pub deletable_file_count: u64,
+    #[serde(default)]
+    pub pruned_child_flags: u32,
 }
 
 /// Internal entry record — all string fields interned to u32 IDs.
@@ -755,6 +757,14 @@ impl SnapshotIndex {
             .collect()
     }
 
+    /// Scan-time prune flags for direct children skipped during walk (e.g. VCS dirs).
+    pub fn directory_pruned_child_flags(&self, path: &str) -> u32 {
+        self.resolve_path_id(path)
+            .and_then(|path_id| self.directory_by_id.get(&path_id))
+            .map(|r| r.pruned_child_flags)
+            .unwrap_or(0)
+    }
+
     pub fn directory_record(&self, path: &str) -> Option<SnapshotDirectoryRecord> {
         let path_id = self.resolve_path_id(path)?;
         self.directory_by_id
@@ -1089,6 +1099,7 @@ impl SnapshotIndexBuilder {
                 category_mask: 0,
                 deletable_category_mask: 0,
                 deletable_file_count: 0,
+                pruned_child_flags: 0,
             },
         );
         let mut children_by_id = HashMap::new();
@@ -1228,6 +1239,7 @@ impl SnapshotIndexBuilder {
                         category_mask: record.category_mask,
                         deletable_category_mask: record.deletable_category_mask,
                         deletable_file_count: record.deletable_file_count,
+                        pruned_child_flags: record.pruned_child_flags,
                     },
                 );
             }
@@ -1358,6 +1370,7 @@ impl SnapshotIndexBuilder {
                 category_mask: 0,
                 deletable_category_mask: 0,
                 deletable_file_count: 0,
+                pruned_child_flags: 0,
             },
         );
         self.children_by_id.entry(path_id).or_default();
@@ -1664,6 +1677,7 @@ fn walk_tree(
             category_mask,
             deletable_category_mask,
             deletable_file_count,
+            pruned_child_flags: 0,
         },
     );
     (category_mask, deletable_category_mask, deletable_file_count)
