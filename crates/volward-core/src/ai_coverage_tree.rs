@@ -42,6 +42,40 @@ pub struct AiTreePlan {
     pub estimated_tail_credits: u64,
 }
 
+impl AiTreePlan {
+    pub fn tree_page(&self, cursor: u64, page_size: usize) -> (Vec<AiTreeNode>, Option<u64>) {
+        if page_size == 0 || self.seed_nodes.is_empty() {
+            return (Vec::new(), None);
+        }
+        let start = (cursor as usize).min(self.seed_nodes.len());
+        let end = (start + page_size).min(self.seed_nodes.len());
+        let next = if end < self.seed_nodes.len() {
+            Some(end as u64)
+        } else {
+            None
+        };
+        (self.seed_nodes[start..end].to_vec(), next)
+    }
+
+    pub fn tail_page(
+        &self,
+        cursor: u64,
+        page_size: usize,
+    ) -> (Vec<(String, u64)>, Option<u64>) {
+        if page_size == 0 || self.tail_file_paths.is_empty() {
+            return (Vec::new(), None);
+        }
+        let start = (cursor as usize).min(self.tail_file_paths.len());
+        let end = (start + page_size).min(self.tail_file_paths.len());
+        let next = if end < self.tail_file_paths.len() {
+            Some(end as u64)
+        } else {
+            None
+        };
+        (self.tail_file_paths[start..end].to_vec(), next)
+    }
+}
+
 pub fn build_ai_tree_plan(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,

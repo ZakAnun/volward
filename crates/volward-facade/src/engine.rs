@@ -20,11 +20,13 @@ use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
-    ai_aggregate_path_from_delete_target, build_ai_coverage_plan, compute_coverage_funnel_stats,
-    coverage_group_member_paths, AiCandidateBuilder, AiCoveragePlan, AnalysisOptions, Capability,
-    CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
-    CleanupCandidateAnalyzer, DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink,
-    OsKnowledgeBase, SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
+    ai_aggregate_path_from_delete_target, build_ai_coverage_plan, build_ai_tree_plan,
+    compute_coverage_funnel_stats, coverage_group_member_paths, AiCandidateBuilder,
+    AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
+    CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
+    DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink, OsKnowledgeBase,
+    SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, AI_COVERAGE_TREE_PLAN_VERSION,
+    DEFAULT_CANDIDATE_CAP,
 };
 
 use volward_index_pb::{decode_snapshot_index, schedule_json_index_migration};
@@ -77,6 +79,7 @@ pub struct VolwardEngine {
     ai_candidates_json: Arc<Mutex<Option<String>>>,
     ai_candidates_generation: Arc<std::sync::atomic::AtomicU64>,
     ai_coverage_plan: Arc<Mutex<Option<AiCoveragePlan>>>,
+    ai_tree_coverage_plan: Arc<Mutex<Option<AiTreePlan>>>,
     capability_registry: Arc<Mutex<CapabilityRegistry>>,
     /// Async capability jobs keyed by job id; clone-safe interior mutability.
     capability_jobs: CapabilityJobStore,
@@ -128,6 +131,7 @@ impl VolwardEngine {
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ai_coverage_plan: Arc::new(Mutex::new(None)),
+            ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(capability_registry)),
             capability_jobs: CapabilityJobStore::new(),
         }
@@ -1291,6 +1295,7 @@ impl VolwardEngine {
             ai_candidates_json: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ai_coverage_plan: Arc::new(Mutex::new(None)),
+            ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
             capability_jobs: CapabilityJobStore::new(),
         };
@@ -1375,6 +1380,111 @@ impl VolwardEngine {
             return "error:coverage plan mismatch".to_string();
         }
         let (rows, next_cursor) = plan.page(cursor, page_size);
+        let out_snapshot_id = plan.snapshot_id.clone();
+        serde_json::json!({
+            "snapshot_id": out_snapshot_id,
+            "plan_version": plan.plan_version,
+            "next_cursor": next_cursor,
+            "rows": rows,
+        })
+        .to_string()
+    }
+
+    pub fn build_ai_tree_plan_json(&self, snapshot_id: &str) -> String {
+        let kb = volward_core::os_knowledge::OsKnowledgeBase::for_current_platform();
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        let protected = self.platform.protected_prefixes();
+        let plan = build_ai_tree_plan(&index, &kb, protected, &[]);
+        let snapshot_id = plan.snapshot_id.clone();
+        let root_path = plan.root_path.clone();
+        let root_size_bytes = index.summary().root_size_bytes;
+        let scanned_at_ms = index.scanned_at_ms;
+        let seed_node_count = plan.seed_nodes.len() as u64;
+        let tail_file_count = plan.tail_file_paths.len() as u64;
+        let funnel = plan.funnel_stats.clone();
+        let estimated_tree_credits = plan.estimated_tree_credits;
+        let estimated_tail_credits = plan.estimated_tail_credits;
+        if let Ok(mut slot) = self.ai_tree_coverage_plan.lock() {
+            *slot = Some(plan);
+        }
+        serde_json::json!({
+            "snapshot_id": snapshot_id,
+            "plan_version": AI_COVERAGE_TREE_PLAN_VERSION,
+            "root_path": root_path,
+            "root_size_bytes": root_size_bytes,
+            "scanned_at_ms": scanned_at_ms,
+            "seed_node_count": seed_node_count,
+            "tail_file_count": tail_file_count,
+            "local_safe_files": funnel.local_safe_files,
+            "local_keep_files": funnel.local_keep_files,
+            "tail_files": funnel.tail_files,
+            "tree_pending_files": funnel.tree_pending_files,
+            "estimated_tree_credits": estimated_tree_credits,
+            "estimated_tail_credits": estimated_tail_credits,
+        })
+        .to_string()
+    }
+
+    pub fn next_ai_tree_coverage_page_json(
+        &self,
+        snapshot_id: &str,
+        plan_version: u64,
+        cursor: u64,
+        page_size: u32,
+    ) -> String {
+        let page_size = page_size.max(1) as usize;
+        let guard = match self.ai_tree_coverage_plan.lock() {
+            Ok(guard) => guard,
+            Err(_) => return "error:lock".to_string(),
+        };
+        let Some(plan) = guard.as_ref() else {
+            return "error:tree coverage plan not built".to_string();
+        };
+        if plan.snapshot_id != snapshot_id || plan.plan_version != plan_version {
+            return "error:tree coverage plan mismatch".to_string();
+        }
+        let (nodes, next_cursor) = plan.tree_page(cursor, page_size);
+        let out_snapshot_id = plan.snapshot_id.clone();
+        serde_json::json!({
+            "snapshot_id": out_snapshot_id,
+            "plan_version": plan.plan_version,
+            "next_cursor": next_cursor,
+            "nodes": nodes,
+        })
+        .to_string()
+    }
+
+    pub fn next_ai_tail_coverage_page_json(
+        &self,
+        snapshot_id: &str,
+        plan_version: u64,
+        cursor: u64,
+        page_size: u32,
+    ) -> String {
+        let page_size = page_size.max(1) as usize;
+        let guard = match self.ai_tree_coverage_plan.lock() {
+            Ok(guard) => guard,
+            Err(_) => return "error:lock".to_string(),
+        };
+        let Some(plan) = guard.as_ref() else {
+            return "error:tree coverage plan not built".to_string();
+        };
+        if plan.snapshot_id != snapshot_id || plan.plan_version != plan_version {
+            return "error:tree coverage plan mismatch".to_string();
+        }
+        let (tail_slice, next_cursor) = plan.tail_page(cursor, page_size);
+        let rows: Vec<serde_json::Value> = tail_slice
+            .into_iter()
+            .map(|(path, size_bytes)| {
+                serde_json::json!({
+                    "path": path,
+                    "size_bytes": size_bytes,
+                })
+            })
+            .collect();
         let out_snapshot_id = plan.snapshot_id.clone();
         serde_json::json!({
             "snapshot_id": out_snapshot_id,
@@ -2546,5 +2656,69 @@ mod tests {
         assert!(parsed["local_keep_files"].as_u64().unwrap_or(0) >= 1);
         assert!(parsed["tail_files"].as_u64().unwrap_or(0) >= 1);
         assert!(parsed["tree_pending_files"].as_u64().unwrap_or(0) >= 1);
+    }
+
+    #[test]
+    fn coverage_tree_plan_builds_and_pages() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+        use volward_core::AI_COVERAGE_TREE_PLAN_VERSION;
+
+        let engine = VolwardEngine::new();
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/proj/src");
+        builder.ensure_dir("/root/proj/llm-output");
+        builder.ensure_dir("/root/unknown_storage");
+        builder.record_file_size("/root/proj/Cargo.toml", 10);
+        builder.record_file_size("/root/proj/src/main.rs", 200);
+        builder.record_file_size("/root/proj/llm-output/out.md", 50);
+        builder.record_file_size("/root/unknown_storage/misc.dat", 500);
+        let index = builder.finish(
+            "tree-coverage-snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let summary = engine.build_ai_tree_plan_json("tree-coverage-snap");
+        let parsed: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(
+            parsed["plan_version"].as_u64(),
+            Some(AI_COVERAGE_TREE_PLAN_VERSION)
+        );
+        assert_eq!(parsed["seed_node_count"].as_u64(), Some(1));
+        assert_eq!(parsed["tail_file_count"].as_u64(), Some(1));
+        assert_eq!(parsed["estimated_tree_credits"].as_u64(), Some(1));
+        assert_eq!(parsed["estimated_tail_credits"].as_u64(), Some(1));
+
+        let tree_page = engine.next_ai_tree_coverage_page_json(
+            "tree-coverage-snap",
+            AI_COVERAGE_TREE_PLAN_VERSION,
+            0,
+            1,
+        );
+        let tree_parsed: serde_json::Value = serde_json::from_str(&tree_page).unwrap();
+        assert_eq!(tree_parsed["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(tree_parsed["next_cursor"], serde_json::Value::Null);
+        assert_eq!(
+            tree_parsed["nodes"][0]["path"].as_str(),
+            Some("/root/unknown_storage")
+        );
+
+        let tail_page = engine.next_ai_tail_coverage_page_json(
+            "tree-coverage-snap",
+            AI_COVERAGE_TREE_PLAN_VERSION,
+            0,
+            1,
+        );
+        let tail_parsed: serde_json::Value = serde_json::from_str(&tail_page).unwrap();
+        assert_eq!(tail_parsed["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(tail_parsed["next_cursor"], serde_json::Value::Null);
+        assert_eq!(
+            tail_parsed["rows"][0]["path"].as_str(),
+            Some("/root/proj/llm-output/out.md")
+        );
     }
 }
