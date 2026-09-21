@@ -864,6 +864,37 @@
   },
   "aiCoverageNotifyFailed": "Coverage paused due to an error. Open AI results to retry.",
   "aiCoverageBudgetInvalid": "Enter a budget higher than the current limit.",
+  "aiCoverageJobBillingModeMismatchTitle": "Coverage run uses a different billing mode",
+  "aiCoverageJobBillingModeMismatchPlatform": "This run was started with a BYOK token limit ({budget} tokens, {used} used). You are in Platform mode, which bills credits. Restart full coverage to start a Platform run, or switch back to BYOK to resume this job.",
+  "@aiCoverageJobBillingModeMismatchPlatform": {
+    "placeholders": {
+      "budget": {
+        "type": "int"
+      },
+      "used": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageJobBillingModeMismatchByok": "This run uses Platform credits ({used}/{budget}). You are in BYOK mode now. Restart full coverage to apply your token budget, or switch back to Platform to resume.",
+  "@aiCoverageJobBillingModeMismatchByok": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageJobBillingModeMismatchBanner": "Billing mode changed since this run started. Restart full coverage for {mode}, or switch AI mode to match this job.",
+  "@aiCoverageJobBillingModeMismatchBanner": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
   "aiCoverageHydrating": "Loading coverage job status…",
   "aiCandidatesBootstrapLoading": "Loading candidate list…",
   "aiCoverageUnavailable": "Full-coverage analysis is unavailable right now. Try again after the scan finishes loading.",

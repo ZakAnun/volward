@@ -26,6 +26,8 @@ class CoverageJobBanner extends StatelessWidget {
     this.onCancel,
     this.onRaiseBudget,
     this.onRestart,
+    this.billingModeMismatch = false,
+    this.billingModeMismatchMessage,
   });
 
   final CoverageJobState state;
@@ -37,6 +39,8 @@ class CoverageJobBanner extends StatelessWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onRaiseBudget;
   final VoidCallback? onRestart;
+  final bool billingModeMismatch;
+  final String? billingModeMismatchMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +100,16 @@ class CoverageJobBanner extends StatelessWidget {
                   if (copy.pausedNoticeLine case final notice?) ...[
                     const SizedBox(height: AppleSpacing.xxs),
                     Text(notice, style: context.vwCaption),
+                  ],
+                  if (billingModeMismatch &&
+                      billingModeMismatchMessage != null) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      billingModeMismatchMessage!,
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
+                    ),
                   ],
                   if (copy.funnelLine case final funnel?) ...[
                     const SizedBox(height: AppleSpacing.xxs),
@@ -215,14 +229,18 @@ class CoverageJobBanner extends StatelessWidget {
                       variant: AppleButtonVariant.pearl,
                       onPressed: onResume,
                     ),
-                  if (budgetPaused && onRaiseBudget != null)
+                  if (budgetPaused &&
+                      onRaiseBudget != null &&
+                      !billingModeMismatch)
                     AppleButton(
                       label: l10n.aiCoverageRaiseBudget,
                       icon: Icons.trending_up_outlined,
                       variant: AppleButtonVariant.pearl,
                       onPressed: onRaiseBudget,
                     ),
-                  if (legacyLogic && isPaused && onRestart != null)
+                  if (isPaused &&
+                      onRestart != null &&
+                      (legacyLogic || billingModeMismatch))
                     AppleButton(
                       label: l10n.aiCoverageRestartFull,
                       icon: Icons.refresh_outlined,

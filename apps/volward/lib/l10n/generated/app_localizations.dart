@@ -1902,6 +1902,30 @@ abstract class AppLocalizations {
   /// **'Enter a budget higher than the current limit.'**
   String get aiCoverageBudgetInvalid;
 
+  /// No description provided for @aiCoverageJobBillingModeMismatchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage run uses a different billing mode'**
+  String get aiCoverageJobBillingModeMismatchTitle;
+
+  /// No description provided for @aiCoverageJobBillingModeMismatchPlatform.
+  ///
+  /// In en, this message translates to:
+  /// **'This run was started with a BYOK token limit ({budget} tokens, {used} used). You are in Platform mode, which bills credits. Restart full coverage to start a Platform run, or switch back to BYOK to resume this job.'**
+  String aiCoverageJobBillingModeMismatchPlatform(int budget, int used);
+
+  /// No description provided for @aiCoverageJobBillingModeMismatchByok.
+  ///
+  /// In en, this message translates to:
+  /// **'This run uses Platform credits ({used}/{budget}). You are in BYOK mode now. Restart full coverage to apply your token budget, or switch back to Platform to resume.'**
+  String aiCoverageJobBillingModeMismatchByok(int used, int budget);
+
+  /// No description provided for @aiCoverageJobBillingModeMismatchBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Billing mode changed since this run started. Restart full coverage for {mode}, or switch AI mode to match this job.'**
+  String aiCoverageJobBillingModeMismatchBanner(String mode);
+
   /// No description provided for @aiCoverageHydrating.
   ///
   /// In en, this message translates to:

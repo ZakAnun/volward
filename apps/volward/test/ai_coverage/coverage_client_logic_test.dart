@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/coverage_client_logic.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
@@ -152,6 +153,49 @@ void main() {
         estimatedTailCredits: 0,
       );
       expect(coveragePlanRequiresApi(summary), isFalse);
+    },
+  );
+
+  test(
+    'coverageJobBillingMatchesMode detects BYOK token job on Platform UI',
+    () {
+      const tokenJob = CoverageJobState(
+        snapshotId: 's',
+        rootPath: '/',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 10,
+        analyzedFiles: 5,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        usedTokens: 100,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 0,
+      );
+      expect(coverageJobBillingMatchesMode(AiMode.platform, tokenJob), isFalse);
+      expect(coverageJobBillingMatchesMode(AiMode.byok, tokenJob), isTrue);
+    },
+  );
+
+  test(
+    'coverageSuggestedTokenBudgetRaise prefers Settings over stale job cap',
+    () {
+      expect(
+        coverageSuggestedTokenBudgetRaise(
+          jobBudgetTokens: 50,
+          settingsBudgetTokens: 500000,
+        ),
+        500000,
+      );
+      expect(
+        coverageSuggestedTokenBudgetRaise(
+          jobBudgetTokens: 600000,
+          settingsBudgetTokens: 500000,
+        ),
+        600000 + AiSettingsStore.defaultCoverageBudgetTokens ~/ 2,
+      );
     },
   );
 }

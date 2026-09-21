@@ -2167,17 +2167,85 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     });
   }
 
+  bool _coverageJobBillingModeMismatch(CoverageJobState job) =>
+      !coverageJobBillingMatchesMode(_mode, job);
+
+  String? _coverageJobBillingModeMismatchBannerMessage(CoverageJobState job) {
+    if (!_coverageJobBillingModeMismatch(job)) return null;
+    final l10n = context.l10n;
+    final targetMode = switch (coverageJobBillingKind(job)) {
+      CoverageJobBillingKind.tokens => l10n.aiSettingsByokLabel,
+      CoverageJobBillingKind.credits => l10n.aiSettingsPlatformLabel,
+      CoverageJobBillingKind.unset => l10n.aiSettingsOffLabel,
+    };
+    return l10n.aiCoverageJobBillingModeMismatchBanner(targetMode);
+  }
+
+  Future<void> _showCoverageBillingModeMismatchDialog(
+    CoverageJobState job,
+  ) async {
+    final l10n = context.l10n;
+    final body = switch (coverageJobBillingKind(job)) {
+      CoverageJobBillingKind.tokens =>
+        l10n.aiCoverageJobBillingModeMismatchPlatform(
+          job.budgetTokens,
+          job.usedTokens,
+        ),
+      CoverageJobBillingKind.credits =>
+        l10n.aiCoverageJobBillingModeMismatchByok(
+          job.usedCredits,
+          job.budgetCredits,
+        ),
+      CoverageJobBillingKind.unset =>
+        l10n.aiCoverageJobBillingModeMismatchBanner(l10n.aiSettingsOffLabel),
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aiCoverageJobBillingModeMismatchTitle),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.scanActionCancel),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              unawaited(_restartFullCoverage());
+            },
+            child: Text(l10n.aiCoverageRestartFull),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _raiseCoverageBudget() async {
     final state = _coverageJobState;
     if (state == null) return;
+    if (_coverageJobBillingModeMismatch(state)) {
+      await _showCoverageBillingModeMismatchDialog(state);
+      return;
+    }
     final l10n = context.l10n;
     final isTokenBudget = state.budgetTokens > 0;
     final currentLimit = isTokenBudget
         ? state.budgetTokens
         : state.budgetCredits;
+    final settings = await AiSettingsStore.instance.coverageBudgetForMode(
+      isTokenBudget ? AiMode.byok : AiMode.platform,
+    );
+    if (!mounted) return;
     final suggested = isTokenBudget
-        ? (currentLimit + AiSettingsStore.defaultCoverageBudgetTokens ~/ 2)
-        : currentLimit + AiSettingsStore.defaultCoverageBudgetCredits ~/ 2;
+        ? coverageSuggestedTokenBudgetRaise(
+            jobBudgetTokens: currentLimit,
+            settingsBudgetTokens: settings.tokens,
+          )
+        : coverageSuggestedCreditBudgetRaise(
+            jobBudgetCredits: currentLimit,
+            settingsBudgetCredits: settings.credits,
+          );
     final controller = TextEditingController(text: '$suggested');
     final confirmed = await showDialog<bool>(
       context: context,
@@ -2239,15 +2307,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final state = widget.debugCoverageJobState ?? _coverageJobState;
     if (!_coverageJobStateShowsBanner(state)) return null;
     final job = state!;
+    final billingMismatch = _coverageJobBillingModeMismatch(job);
     return CoverageJobBanner(
       state: job,
       verdictRows: _coverageVerdictRows,
       planSummary: _coveragePlanSummary,
       showPausedBeforeProgressNotice: _phase == _Phase.results,
+      billingModeMismatch: billingMismatch,
+      billingModeMismatchMessage: billingMismatch
+          ? _coverageJobBillingModeMismatchBannerMessage(job)
+          : null,
       onPause: job.status == CoverageJobStatus.running
           ? () => unawaited(AiCoverageCoordinator.instance.pauseCoverage())
           : null,
-      onResume: job.status == CoverageJobStatus.paused
+      onResume: job.status == CoverageJobStatus.paused && !billingMismatch
           ? () => unawaited(_resumeFullCoverage())
           : null,
       onCancel:
@@ -2260,7 +2333,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               job.pauseReason == CoveragePauseReason.budget
           ? () => unawaited(_raiseCoverageBudget())
           : null,
-      onRestart: coverageJobNeedsClientLogicUpgrade(job)
+      onRestart: coverageJobNeedsClientLogicUpgrade(job) || billingMismatch
           ? () => unawaited(_restartFullCoverage())
           : null,
     );

@@ -1157,6 +1157,25 @@ class AppLocalizationsEn extends AppLocalizations {
       'Enter a budget higher than the current limit.';
 
   @override
+  String get aiCoverageJobBillingModeMismatchTitle =>
+      'Coverage run uses a different billing mode';
+
+  @override
+  String aiCoverageJobBillingModeMismatchPlatform(int budget, int used) {
+    return 'This run was started with a BYOK token limit ($budget tokens, $used used). You are in Platform mode, which bills credits. Restart full coverage to start a Platform run, or switch back to BYOK to resume this job.';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchByok(int used, int budget) {
+    return 'This run uses Platform credits ($used/$budget). You are in BYOK mode now. Restart full coverage to apply your token budget, or switch back to Platform to resume.';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchBanner(String mode) {
+    return 'Billing mode changed since this run started. Restart full coverage for $mode, or switch AI mode to match this job.';
+  }
+
+  @override
   String get aiCoverageHydrating => 'Loading coverage job status…';
 
   @override

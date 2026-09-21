@@ -864,6 +864,37 @@
   },
   "aiCoverageNotifyFailed": "覆盖分析因错误暂停，请打开 AI 结果页重试。",
   "aiCoverageBudgetInvalid": "请输入高于当前上限的预算值。",
+  "aiCoverageJobBillingModeMismatchTitle": "本次任务与当前 AI 模式计费方式不一致",
+  "aiCoverageJobBillingModeMismatchPlatform": "本次任务在 BYOK 下启动，Token 上限为 {budget}（已用 {used}）。当前为平台模式，按 credits 计费。请「重新开始全量覆盖」以平台模式运行，或切回 BYOK 以继续本任务。",
+  "@aiCoverageJobBillingModeMismatchPlatform": {
+    "placeholders": {
+      "budget": {
+        "type": "int"
+      },
+      "used": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageJobBillingModeMismatchByok": "本次任务按平台 credits 计费（{used}/{budget}）。当前为 BYOK 模式。请「重新开始全量覆盖」以应用 Token 预算，或切回平台模式以继续本任务。",
+  "@aiCoverageJobBillingModeMismatchByok": {
+    "placeholders": {
+      "used": {
+        "type": "int"
+      },
+      "budget": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageJobBillingModeMismatchBanner": "AI 模式已切换，与本任务的计费方式不一致。请为{mode}重新开始全量覆盖，或切回匹配的 AI 模式。",
+  "@aiCoverageJobBillingModeMismatchBanner": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
   "aiCoverageHydrating": "正在加载覆盖分析任务状态…",
   "aiCandidatesBootstrapLoading": "正在加载候选列表…",
   "aiCoverageUnavailable": "当前无法启动全量覆盖分析，请等待扫描加载完成后再试。",

@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'ai_settings_store.dart';
 import 'coverage_job_state.dart';
 import 'coverage_models.dart';
 
@@ -91,3 +92,45 @@ bool coverageJobUsesCreditBilling(CoverageJobState state) =>
 
 int coverageJobEstimatedRemainingCredits(CoverageJobState state) =>
     coverageJobEstimatedRemainingApiCalls(state);
+
+/// How this persisted job enforces spend limits (from [startFullCoverage] snapshot).
+enum CoverageJobBillingKind { credits, tokens, unset }
+
+CoverageJobBillingKind coverageJobBillingKind(CoverageJobState state) {
+  if (state.budgetCredits > 0) return CoverageJobBillingKind.credits;
+  if (state.budgetTokens > 0) return CoverageJobBillingKind.tokens;
+  return CoverageJobBillingKind.unset;
+}
+
+/// False when the user changed AI mode since the job started (e.g. BYOK token job + Platform UI).
+bool coverageJobBillingMatchesMode(AiMode mode, CoverageJobState state) {
+  return switch (coverageJobBillingKind(state)) {
+    CoverageJobBillingKind.unset => true,
+    CoverageJobBillingKind.credits => mode == AiMode.platform,
+    CoverageJobBillingKind.tokens => mode == AiMode.byok,
+  };
+}
+
+/// Next token cap when raising budget: prefer Settings when the job snapshot is stale.
+int coverageSuggestedTokenBudgetRaise({
+  required int jobBudgetTokens,
+  required int settingsBudgetTokens,
+  int increment = AiSettingsStore.defaultCoverageBudgetTokens ~/ 2,
+}) {
+  if (settingsBudgetTokens > jobBudgetTokens) {
+    return settingsBudgetTokens;
+  }
+  return jobBudgetTokens + increment;
+}
+
+/// Next credit cap when raising budget (Platform).
+int coverageSuggestedCreditBudgetRaise({
+  required int jobBudgetCredits,
+  required int settingsBudgetCredits,
+  int increment = AiSettingsStore.defaultCoverageBudgetCredits ~/ 2,
+}) {
+  if (settingsBudgetCredits > jobBudgetCredits) {
+    return settingsBudgetCredits;
+  }
+  return jobBudgetCredits + increment;
+}

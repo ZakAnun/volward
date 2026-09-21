@@ -1104,6 +1104,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiCoverageBudgetInvalid => '请输入高于当前上限的预算值。';
 
   @override
+  String get aiCoverageJobBillingModeMismatchTitle => '本次任务与当前 AI 模式计费方式不一致';
+
+  @override
+  String aiCoverageJobBillingModeMismatchPlatform(int budget, int used) {
+    return '本次任务在 BYOK 下启动，Token 上限为 $budget（已用 $used）。当前为平台模式，按 credits 计费。请「重新开始全量覆盖」以平台模式运行，或切回 BYOK 以继续本任务。';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchByok(int used, int budget) {
+    return '本次任务按平台 credits 计费（$used/$budget）。当前为 BYOK 模式。请「重新开始全量覆盖」以应用 Token 预算，或切回平台模式以继续本任务。';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchBanner(String mode) {
+    return 'AI 模式已切换，与本任务的计费方式不一致。请为$mode重新开始全量覆盖，或切回匹配的 AI 模式。';
+  }
+
+  @override
   String get aiCoverageHydrating => '正在加载覆盖分析任务状态…';
 
   @override
