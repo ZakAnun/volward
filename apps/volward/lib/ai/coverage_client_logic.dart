@@ -4,7 +4,8 @@ import 'coverage_job_state.dart';
 ///
 /// v1 (implicit): missing path in API response could hard-fail the batch.
 /// v2: synthesize `review_needed` for missing paths; persist failed-batch context.
-const kCoverageClientLogicVersion = 2;
+/// v3: tree-plan BFS queue cursors and local resolution progress in job state.
+const kCoverageClientLogicVersion = 3;
 
 bool coverageJobIsActive(CoverageJobState state) =>
     state.status == CoverageJobStatus.running ||

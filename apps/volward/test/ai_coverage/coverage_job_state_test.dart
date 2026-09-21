@@ -78,11 +78,11 @@ void main() {
       budgetTokens: 0,
       budgetCredits: 50,
       updatedAtMs: 1,
-      clientLogicVersion: 2,
+      clientLogicVersion: 3,
     );
     await store.save(state);
     final loaded = await store.load('s-clv');
-    expect(loaded!.clientLogicVersion, 2);
+    expect(loaded!.clientLogicVersion, 3);
     await dir.delete(recursive: true);
   });
 
@@ -113,5 +113,63 @@ void main() {
     expect(loaded.creditsChargedNoVerdict, 0);
     expect(loaded.clientLogicVersion, 1);
     await dir.delete(recursive: true);
+  });
+
+  test('v3 tree plan fields round trip through json', () {
+    const state = CoverageJobState(
+      snapshotId: 's-v3',
+      rootPath: '/Users/x',
+      planVersion: 3,
+      cursor: 10,
+      totalUnclassified: 100,
+      analyzedFiles: 10,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.running,
+      usedTokens: 0,
+      usedCredits: 5,
+      budgetTokens: 0,
+      budgetCredits: 50,
+      updatedAtMs: 2,
+      clientLogicVersion: 3,
+      treeQueueCursor: 7,
+      tailQueueCursor: 3,
+      localResolvedFiles: 12,
+      treeNodesCompleted: 4,
+      estimatedTreeCredits: 20,
+      estimatedTailCredits: 8,
+    );
+    final restored = CoverageJobState.fromJson(state.toJson());
+    expect(restored.treeQueueCursor, 7);
+    expect(restored.tailQueueCursor, 3);
+    expect(restored.localResolvedFiles, 12);
+    expect(restored.treeNodesCompleted, 4);
+    expect(restored.estimatedTreeCredits, 20);
+    expect(restored.estimatedTailCredits, 8);
+    expect(restored.clientLogicVersion, 3);
+  });
+
+  test('v2 job json without tree plan fields uses defaults', () {
+    final loaded = CoverageJobState.fromJson({
+      'snapshot_id': 's-v2',
+      'root_path': '/',
+      'plan_version': 2,
+      'cursor': 0,
+      'total_unclassified': 10,
+      'analyzed_files': 0,
+      'pre_classified_count': 0,
+      'status': 'running',
+      'used_tokens': 0,
+      'used_credits': 0,
+      'budget_tokens': 0,
+      'budget_credits': 50,
+      'updated_at_ms': 1,
+      'client_logic_version': 2,
+    });
+    expect(loaded.treeQueueCursor, 0);
+    expect(loaded.tailQueueCursor, 0);
+    expect(loaded.localResolvedFiles, 0);
+    expect(loaded.treeNodesCompleted, 0);
+    expect(loaded.estimatedTreeCredits, isNull);
+    expect(loaded.estimatedTailCredits, isNull);
   });
 }

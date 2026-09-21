@@ -33,6 +33,12 @@ class CoverageJobState {
     this.failedBatchPaths = const [],
     this.creditsChargedNoVerdict = 0,
     this.clientLogicVersion = kCoverageClientLogicVersion,
+    this.treeQueueCursor = 0,
+    this.tailQueueCursor = 0,
+    this.localResolvedFiles = 0,
+    this.treeNodesCompleted = 0,
+    this.estimatedTreeCredits,
+    this.estimatedTailCredits,
   });
 
   factory CoverageJobState.fromJson(
@@ -70,6 +76,12 @@ class CoverageJobState {
     creditsChargedNoVerdict:
         (json['credits_charged_no_verdict'] as num?)?.toInt() ?? 0,
     clientLogicVersion: (json['client_logic_version'] as num?)?.toInt() ?? 1,
+    treeQueueCursor: (json['tree_queue_cursor'] as num?)?.toInt() ?? 0,
+    tailQueueCursor: (json['tail_queue_cursor'] as num?)?.toInt() ?? 0,
+    localResolvedFiles: (json['local_resolved_files'] as num?)?.toInt() ?? 0,
+    treeNodesCompleted: (json['tree_nodes_completed'] as num?)?.toInt() ?? 0,
+    estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
+    estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
   );
 
   final String snapshotId;
@@ -92,6 +104,12 @@ class CoverageJobState {
   final List<String> failedBatchPaths;
   final int creditsChargedNoVerdict;
   final int clientLogicVersion;
+  final int treeQueueCursor;
+  final int tailQueueCursor;
+  final int localResolvedFiles;
+  final int treeNodesCompleted;
+  final int? estimatedTreeCredits;
+  final int? estimatedTailCredits;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -109,6 +127,12 @@ class CoverageJobState {
     List<String>? failedBatchPaths,
     int? creditsChargedNoVerdict,
     int? clientLogicVersion,
+    int? treeQueueCursor,
+    int? tailQueueCursor,
+    int? localResolvedFiles,
+    int? treeNodesCompleted,
+    int? Function()? estimatedTreeCredits,
+    int? Function()? estimatedTailCredits,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -133,6 +157,16 @@ class CoverageJobState {
     creditsChargedNoVerdict:
         creditsChargedNoVerdict ?? this.creditsChargedNoVerdict,
     clientLogicVersion: clientLogicVersion ?? this.clientLogicVersion,
+    treeQueueCursor: treeQueueCursor ?? this.treeQueueCursor,
+    tailQueueCursor: tailQueueCursor ?? this.tailQueueCursor,
+    localResolvedFiles: localResolvedFiles ?? this.localResolvedFiles,
+    treeNodesCompleted: treeNodesCompleted ?? this.treeNodesCompleted,
+    estimatedTreeCredits: estimatedTreeCredits != null
+        ? estimatedTreeCredits()
+        : this.estimatedTreeCredits,
+    estimatedTailCredits: estimatedTailCredits != null
+        ? estimatedTailCredits()
+        : this.estimatedTailCredits,
   );
 
   Map<String, dynamic> toJson() => {
@@ -158,6 +192,14 @@ class CoverageJobState {
     if (creditsChargedNoVerdict > 0)
       'credits_charged_no_verdict': creditsChargedNoVerdict,
     'client_logic_version': clientLogicVersion,
+    if (treeQueueCursor != 0) 'tree_queue_cursor': treeQueueCursor,
+    if (tailQueueCursor != 0) 'tail_queue_cursor': tailQueueCursor,
+    if (localResolvedFiles != 0) 'local_resolved_files': localResolvedFiles,
+    if (treeNodesCompleted != 0) 'tree_nodes_completed': treeNodesCompleted,
+    if (estimatedTreeCredits != null)
+      'estimated_tree_credits': estimatedTreeCredits,
+    if (estimatedTailCredits != null)
+      'estimated_tail_credits': estimatedTailCredits,
   };
 }
 
