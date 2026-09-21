@@ -68,6 +68,15 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
+  Future<void> _reloadCoverageBudgetFields() async {
+    final budgets = await AiSettingsStore.instance.loadCoverageBudgetSettings();
+    if (!mounted) return;
+    setState(() {
+      _coverageBudgetTokensController.text = '${budgets.tokens}';
+      _coverageBudgetCreditsController.text = '${budgets.credits}';
+    });
+  }
+
   Future<void> _loadAiSettings() async {
     try {
       final store = AiSettingsStore.instance;
@@ -90,14 +99,10 @@ class _SettingsPageState extends State<SettingsPage> {
         key = null;
       }
       if (!mounted) return;
-      final budget = await store.coverageBudgetForMode(mode);
+      await _reloadCoverageBudgetFields();
       if (!mounted) return;
       setState(() {
         _hasByokKey = key != null && key.isNotEmpty;
-        _coverageBudgetTokensController.text =
-            '${budget.tokens > 0 ? budget.tokens : AiSettingsStore.defaultCoverageBudgetTokens}';
-        _coverageBudgetCreditsController.text =
-            '${budget.credits > 0 ? budget.credits : AiSettingsStore.defaultCoverageBudgetCredits}';
         if (_hasByokKey) {
           _apiKeyController.text = '••••••••••••••••';
         }
@@ -153,6 +158,8 @@ class _SettingsPageState extends State<SettingsPage> {
     } else {
       await store.setCoverageBudgetCredits(parsed);
     }
+    if (!mounted) return;
+    await _reloadCoverageBudgetFields();
     if (!mounted) return;
     showTopToast(context, message: l10n.aiSettingsCoverageBudgetSaved);
   }
@@ -294,6 +301,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mode == AiMode.platform) {
       unawaited(_refreshPlatformSession(l10n));
     }
+    unawaited(_reloadCoverageBudgetFields());
   }
 
   @override

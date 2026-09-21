@@ -152,17 +152,35 @@ class AiSettingsStore {
     return raw ?? defaultCoverageBudgetCredits;
   }
 
-  Future<({int tokens, int credits})> coverageBudgetForMode(AiMode mode) async {
-    final map = await _readMap();
-    if (mode == AiMode.platform) {
-      return (tokens: 0, credits: await _coverageBudgetCreditsFromMap(map));
+  /// Reads both persisted caps for Settings UI (independent of current [AiMode]).
+  Future<({int tokens, int credits})> loadCoverageBudgetSettings() async {
+    var map = await _readMap();
+    final rawTokens = (map[_kCoverageBudgetTokens] as num?)?.toInt();
+    if (rawTokens != null && rawTokens > 0 && rawTokens < 1000) {
+      map[_kCoverageBudgetTokens] = defaultCoverageBudgetTokens;
+      await _writeMap(map);
     }
     return (
-      tokens:
-          (map[_kCoverageBudgetTokens] as num?)?.toInt() ??
-          defaultCoverageBudgetTokens,
-      credits: 0,
+      tokens: _coverageBudgetTokensFromMap(map),
+      credits: await _coverageBudgetCreditsFromMap(map),
     );
+  }
+
+  int _coverageBudgetTokensFromMap(Map<String, dynamic> map) {
+    final raw = (map[_kCoverageBudgetTokens] as num?)?.toInt();
+    if (raw == null) return defaultCoverageBudgetTokens;
+    if (raw > 0 && raw < 1000) {
+      return defaultCoverageBudgetTokens;
+    }
+    return raw;
+  }
+
+  Future<({int tokens, int credits})> coverageBudgetForMode(AiMode mode) async {
+    final budgets = await loadCoverageBudgetSettings();
+    if (mode == AiMode.platform) {
+      return (tokens: 0, credits: budgets.credits);
+    }
+    return (tokens: budgets.tokens, credits: 0);
   }
 
   Future<void> setCoverageBudgetTokens(int tokens) async {

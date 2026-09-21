@@ -180,6 +180,54 @@ void main() {
     expect(saved['ai_full_run_budget_credits'], 50);
   });
 
+  test(
+    'loadCoverageBudgetSettings returns tokens and credits independently',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-ai-budget-both',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      final settingsFile = File('${temp.path}/settings.json')
+        ..writeAsStringSync(
+          jsonEncode({
+            'ai_full_run_budget_tokens': 600000,
+            'ai_full_run_budget_credits': 30,
+          }),
+        );
+      final store = AiSettingsStore.instance
+        ..settingsFileForTest = settingsFile;
+      addTearDown(() => store.settingsFileForTest = null);
+
+      final budgets = await store.loadCoverageBudgetSettings();
+      expect(budgets.tokens, 600000);
+      expect(budgets.credits, 30);
+    },
+  );
+
+  test(
+    'token budget below 1000 migrates to default (confused with credits)',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-ai-budget-token-migrate',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      final settingsFile = File('${temp.path}/settings.json')
+        ..writeAsStringSync(jsonEncode({'ai_full_run_budget_tokens': 50}));
+      final store = AiSettingsStore.instance
+        ..settingsFileForTest = settingsFile;
+      addTearDown(() => store.settingsFileForTest = null);
+
+      final budgets = await store.loadCoverageBudgetSettings();
+      expect(budgets.tokens, AiSettingsStore.defaultCoverageBudgetTokens);
+
+      final saved =
+          jsonDecode(settingsFile.readAsStringSync()) as Map<String, dynamic>;
+      expect(saved['ai_full_run_budget_tokens'], 500000);
+    },
+  );
+
   test('custom coverage budget credits are not migrated', () async {
     final temp = await Directory.systemTemp.createTemp(
       'volward-ai-budget-custom',
