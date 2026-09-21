@@ -609,6 +609,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   CoveragePlanSummary? _coveragePlanSummary;
   bool _coveragePlanSummaryLoadInFlight = false;
   bool _coveragePlanSummaryBannerLoadAttempted = false;
+
+  /// True after the user starts, resumes, or opens full-coverage results this visit.
+  bool _coverageUserEngagedFullRun = false;
   int? _runBudgetCredits;
   bool _coverageCapBelowEstimate = false;
   int _coverageVerdictPageCount = 2;
@@ -1030,6 +1033,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coveragePlanSummary = null;
       _runBudgetCredits = null;
       _coverageVerdictRows = const [];
+      _coverageUserEngagedFullRun = false;
+      _coveragePlanSummaryBannerLoadAttempted = false;
     });
     try {
       final mode = await widget.gateway.getMode();
@@ -1145,15 +1150,22 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!preserveInteractivePhase && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_isCurrent(generation) || !mounted) return;
-          if (_useFullCoverage) {
-            unawaited(_syncActiveCoverageJobAfterPrecheck(generation));
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!_isCurrent(generation) || !mounted) return;
-              unawaited(
-                _hydrateCoveragePrecheck(generation, mode, platformCredits),
-              );
+          final fullCoverageReady = AiCoverageCoordinator.instance.isAvailable;
+          if (fullCoverageReady && !_useFullCoverage) {
+            setState(() {
+              _useFullCoverage = true;
+              _coverageHydrated = false;
             });
           }
+          if (!fullCoverageReady && !_useFullCoverage) return;
+          unawaited(_syncActiveCoverageJobAfterPrecheck(generation));
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_isCurrent(generation) || !mounted) return;
+            if (!AiCoverageCoordinator.instance.isAvailable) return;
+            unawaited(
+              _hydrateCoveragePrecheck(generation, mode, platformCredits),
+            );
+          });
         });
       }
     } catch (error) {
@@ -1507,7 +1519,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   /// Reads persisted job state only (no resume, no verdict hydration).
   Future<void> _syncActiveCoverageJobAfterPrecheck(int generation) async {
-    if (!_useFullCoverage) return;
+    if (!AiCoverageCoordinator.instance.isAvailable) return;
     final state = await AiCoverageCoordinator.instance.loadJobState(
       widget.snapshotId,
     );
@@ -1521,25 +1533,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
     setState(() => _coverageJobState = state);
     _scheduleCoveragePlanSummaryForBannerIfNeeded();
-
-    final openResults =
-        state.status == CoverageJobStatus.paused ||
-        (state.status == CoverageJobStatus.running && state.analyzedFiles > 0);
-    if (!openResults || _phase != _Phase.precheck) return;
-
-    unawaited(_ensureCoveragePlanSummaryLoaded());
-
-    setState(() {
-      _phase = _Phase.results;
-      _analyzing = state.status == CoverageJobStatus.running;
-    });
-    try {
-      await _refreshVerdictsFromCoverageStore(incremental: false);
-    } finally {
-      if (mounted && _resultsLayoutPending && _verdicts.isEmpty) {
-        setState(() => _resultsLayoutPending = false);
-      }
-    }
   }
 
   Future<void> _ensureCoveragePlanSummaryLoaded() async {
@@ -1594,6 +1587,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _openLocalOnlyResults() async {
     setState(() {
+      _coverageUserEngagedFullRun = true;
       _phase = _Phase.results;
       _analyzing = false;
       _error = null;
@@ -1685,18 +1679,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _applyCoverageJobState(CoverageJobState state) async {
     if (state.snapshotId != widget.snapshotId) return;
-    // Stay on precheck only while no coverage job progress; otherwise show results
-    // (e.g. job resumed/paused in background while user still sees precheck).
-    if (_phase == _Phase.precheck && !_analyzing) {
-      final idleOnPrecheck =
-          state.status != CoverageJobStatus.running &&
-          state.status != CoverageJobStatus.paused &&
-          state.analyzedFiles == 0;
-      if (idleOnPrecheck) {
-        if (!mounted) return;
-        setState(() => _coverageJobState = state);
-        return;
-      }
+    // Persisted jobs surface on precheck as the banner only until the user
+    // explicitly starts or resumes full coverage this visit.
+    if (_phase == _Phase.precheck &&
+        !_analyzing &&
+        !_coverageUserEngagedFullRun) {
+      if (!mounted) return;
+      setState(() => _coverageJobState = state);
+      _scheduleCoveragePlanSummaryForBannerIfNeeded();
+      return;
     }
     final incremental = _coverageVerdictByteOffset > 0 && _verdicts.isNotEmpty;
     final terminal =
@@ -1979,6 +1970,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final mode = await widget.gateway.getMode();
     if (!_isCurrent(generation)) return;
     setState(() {
+      _coverageUserEngagedFullRun = true;
       _analyzing = true;
       _phase = _Phase.analyzing;
       _error = null;
@@ -2081,6 +2073,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (mounted) setState(() => _hasProvider = false);
       return;
     }
+    setState(() => _coverageUserEngagedFullRun = true);
     await AiCoverageCoordinator.instance.prepareService(provider);
     final resumed = await AiCoverageCoordinator.instance.tryResumeCoverage(
       widget.snapshotId,
@@ -2230,6 +2223,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (mounted) setState(() => _hasProvider = false);
       return;
     }
+    if (mounted) setState(() => _coverageUserEngagedFullRun = true);
     await AiCoverageCoordinator.instance.prepareService(provider);
     final raised = await AiCoverageCoordinator.instance.tryRaiseBudgetAndResume(
       snapshotId: widget.snapshotId,

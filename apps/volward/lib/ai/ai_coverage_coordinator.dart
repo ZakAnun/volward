@@ -87,6 +87,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   static bool debugRequirePlanSummary = false;
 
   @visibleForTesting
+  static Future<CoverageJobState?> Function(String snapshotId)?
+  debugLoadJobState;
+
+  @visibleForTesting
   factory AiCoverageCoordinator.testing({
     CoverageDesktopNotify? desktopNotify,
     CoverageServiceFactory? serviceFactory,
@@ -168,8 +172,11 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     }
   }
 
-  Future<CoverageJobState?> loadJobState(String snapshotId) =>
-      CoverageJobStateStore(SnapshotCache.cacheDir()).load(snapshotId);
+  Future<CoverageJobState?> loadJobState(String snapshotId) {
+    final override = debugLoadJobState;
+    if (override != null) return override(snapshotId);
+    return CoverageJobStateStore(SnapshotCache.cacheDir()).load(snapshotId);
+  }
 
   Future<CoveragePlanSummary?> planSummary(String snapshotId) async {
     final override = debugPlanSummary;

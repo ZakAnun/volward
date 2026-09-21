@@ -548,6 +548,7 @@ void main() {
   tearDown(() {
     AiCoverageCoordinator.debugForceAvailable = false;
     AiCoverageCoordinator.debugPlanSummary = null;
+    AiCoverageCoordinator.debugLoadJobState = null;
     SnapshotCache.cacheDirForTest = null;
     _workspaceTestCacheDir?.deleteSync(recursive: true);
     _workspaceTestCacheDir = null;
@@ -2521,6 +2522,71 @@ void main() {
     expect(find.text('Review local results'), findsOneWidget);
     expect(find.textContaining('Total estimated credits'), findsNothing);
     expect(find.text('Start AI Analysis'), findsNothing);
+  });
+
+  testWidgets(
+    'paused coverage job on precheck does not auto-open results layout',
+    (tester) async {
+      const persistedJob = CoverageJobState(
+        snapshotId: 'snapshot-1',
+        rootPath: '/Users/liminglin/Downloads',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 54496,
+        analyzedFiles: 45738,
+        preClassifiedCount: 200,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.budget,
+        usedTokens: 1221,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      );
+
+      AiCoverageCoordinator.debugForceAvailable = true;
+      AiCoverageCoordinator.debugPlanSummary = (_) async =>
+          _coveragePlanSummaryV3;
+
+      final gateway = _FakeGateway()
+        ..provider = _ResultProvider(const [])
+        ..candidatesJson = _candidatePayload(hasExistingResult: false);
+
+      await tester.pumpWidget(
+        _workspaceShell(gateway, coverageJobState: persistedJob),
+      );
+      await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+
+      expect(find.text('Raise limit & resume'), findsOneWidget);
+      expect(find.byKey(AiAnalysisWorkspace.decisionSummaryKey), findsNothing);
+    },
+  );
+
+  test('loadJobState hydrates persisted paused job for snapshot', () async {
+    const persistedJob = CoverageJobState(
+      snapshotId: 'snapshot-1',
+      rootPath: '/Users/liminglin/Downloads',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 100,
+      analyzedFiles: 80,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.paused,
+      pauseReason: CoveragePauseReason.budget,
+      usedTokens: 10,
+      usedCredits: 0,
+      budgetTokens: 50,
+      budgetCredits: 0,
+      updatedAtMs: 1,
+    );
+    await CoverageJobStateStore(_workspaceTestCacheDir!).save(persistedJob);
+
+    final loaded = await AiCoverageCoordinator.instance.loadJobState(
+      'snapshot-1',
+    );
+
+    expect(loaded?.status, CoverageJobStatus.paused);
+    expect(loaded?.analyzedFiles, 80);
   });
 
   testWidgets(
