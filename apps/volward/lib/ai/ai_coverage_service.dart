@@ -76,6 +76,7 @@ class AiCoverageService {
       snapshotId,
       budgetTokens: budgetTokens,
       budgetCredits: budgetCredits,
+      detachRun: true,
     );
   }
 
@@ -86,7 +87,7 @@ class AiCoverageService {
 
   Future<CoverageJobState> resume(String snapshotId) async {
     await _refreshPlatformWallet();
-    return controller.resume(snapshotId);
+    return controller.resume(snapshotId, detachRun: true);
   }
 
   Future<CoverageJobState> raiseBudgetAndResume({
@@ -99,6 +100,7 @@ class AiCoverageService {
       snapshotId: snapshotId,
       budgetTokens: budgetTokens,
       budgetCredits: budgetCredits,
+      detachRun: true,
     );
   }
 

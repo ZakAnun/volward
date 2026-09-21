@@ -107,6 +107,7 @@ class CoverageJobController {
     String snapshotId, {
     required int budgetTokens,
     required int budgetCredits,
+    bool detachRun = false,
   }) async {
     if (_running) {
       if (_state?.snapshotId == snapshotId) {
@@ -136,7 +137,7 @@ class CoverageJobController {
     );
     await stateStore.save(_state!);
     _emit();
-    await _run();
+    await _runJobLoop(detachRun: detachRun);
     return _state!;
   }
 
@@ -168,7 +169,10 @@ class CoverageJobController {
     await waitUntilIdle();
   }
 
-  Future<CoverageJobState> resume(String snapshotId) async {
+  Future<CoverageJobState> resume(
+    String snapshotId, {
+    bool detachRun = false,
+  }) async {
     if (_running) {
       if (_state?.snapshotId == snapshotId) {
         return _state!;
@@ -190,7 +194,7 @@ class CoverageJobController {
     );
     await stateStore.save(_state!);
     _emit();
-    await _run();
+    await _runJobLoop(detachRun: detachRun);
     return _state!;
   }
 
@@ -226,6 +230,7 @@ class CoverageJobController {
     required String snapshotId,
     required int budgetTokens,
     required int budgetCredits,
+    bool detachRun = false,
   }) async {
     if (_running) {
       if (_state?.snapshotId == snapshotId) {
@@ -249,8 +254,16 @@ class CoverageJobController {
     );
     await stateStore.save(_state!);
     _emit();
-    await _run();
+    await _runJobLoop(detachRun: detachRun);
     return _state!;
+  }
+
+  Future<void> _runJobLoop({required bool detachRun}) async {
+    if (detachRun) {
+      unawaited(_run());
+    } else {
+      await _run();
+    }
   }
 
   Future<CoverageJobState?> _ensureLoaded(String snapshotId) async {

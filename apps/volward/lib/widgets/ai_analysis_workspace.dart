@@ -608,6 +608,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int? _estimatedCoverageCredits;
   CoveragePlanSummary? _coveragePlanSummary;
   bool _coveragePlanSummaryLoadInFlight = false;
+  bool _coveragePlanSummaryBannerLoadAttempted = false;
   int? _runBudgetCredits;
   bool _coverageCapBelowEstimate = false;
   int _coverageVerdictPageCount = 2;
@@ -1519,6 +1520,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (!active) return;
 
     setState(() => _coverageJobState = state);
+    _scheduleCoveragePlanSummaryForBannerIfNeeded();
 
     final openResults =
         state.status == CoverageJobStatus.paused ||
@@ -1552,17 +1554,32 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     });
   }
 
-  void _maybeLoadCoveragePlanSummaryForBanner() {
+  bool _coverageJobStateShowsBanner(CoverageJobState? state) {
+    if (widget.debugCoverageJobState == null && !_useFullCoverage) {
+      return false;
+    }
+    if (state == null || state.snapshotId != widget.snapshotId) return false;
+    return state.status != CoverageJobStatus.idle &&
+        state.status != CoverageJobStatus.cancelled &&
+        state.status != CoverageJobStatus.completed;
+  }
+
+  void _scheduleCoveragePlanSummaryForBannerIfNeeded() {
     if (!_useFullCoverage || _coveragePlanSummary != null) return;
-    if (_coveragePlanSummaryLoadInFlight) return;
+    if (_coveragePlanSummaryLoadInFlight ||
+        _coveragePlanSummaryBannerLoadAttempted) {
+      return;
+    }
+    final state = widget.debugCoverageJobState ?? _coverageJobState;
+    if (!_coverageJobStateShowsBanner(state)) return;
     _coveragePlanSummaryLoadInFlight = true;
     unawaited(() async {
       try {
         await _ensureCoveragePlanSummaryLoaded();
       } finally {
-        if (mounted) {
-          setState(() => _coveragePlanSummaryLoadInFlight = false);
-        }
+        _coveragePlanSummaryLoadInFlight = false;
+        _coveragePlanSummaryBannerLoadAttempted = true;
+        if (mounted) setState(() {});
       }
     }());
   }
@@ -1619,16 +1636,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _runBudgetCredits = runBudgetCredits;
       _coverageHydrating = false;
     });
-  }
-
-  Future<void> _hydrateCoverageJob() async {
-    if (!_useFullCoverage) return;
-    await AiCoverageCoordinator.instance.ensureJobRunning(widget.snapshotId);
-    final state = await AiCoverageCoordinator.instance.loadJobState(
-      widget.snapshotId,
-    );
-    if (state == null || !mounted) return;
-    await _applyCoverageJobState(state);
   }
 
   void _maybeLoadMoreCoverageVerdicts() {
@@ -1735,6 +1742,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _error = null;
       }
     });
+    _scheduleCoveragePlanSummaryForBannerIfNeeded();
   }
 
   Future<List<CoverageVerdict>>
@@ -1984,7 +1992,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _expandedReviewPaths.clear();
       _invalidateResultGroups();
     });
-    await _hydrateCoverageJob();
     if (!_isCurrent(generation) || !mounted) return;
     final result = await AiCoverageCoordinator.instance.startFullCoverage(
       snapshotId: widget.snapshotId,
@@ -2108,7 +2115,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
     if (confirmed != true || !mounted) return;
     await AiCoverageCoordinator.instance.cancelCoverage(widget.snapshotId);
+    AiCoverageCoordinator.instance.invalidatePlanSummaryCache();
     if (!mounted) return;
+    setState(() {
+      _coveragePlanSummary = null;
+      _coveragePlanSummaryBannerLoadAttempted = false;
+      _coverageJobState = null;
+    });
     await _startFullCoverageAnalysis();
   }
 
@@ -2230,38 +2243,30 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget? _buildCoverageBanner() {
     final state = widget.debugCoverageJobState ?? _coverageJobState;
-    if (widget.debugCoverageJobState == null && !_useFullCoverage) {
-      return null;
-    }
-    if (state == null || state.snapshotId != widget.snapshotId) return null;
-    if (state.status == CoverageJobStatus.idle ||
-        state.status == CoverageJobStatus.cancelled ||
-        state.status == CoverageJobStatus.completed) {
-      return null;
-    }
-    _maybeLoadCoveragePlanSummaryForBanner();
+    if (!_coverageJobStateShowsBanner(state)) return null;
+    final job = state!;
     return CoverageJobBanner(
-      state: state,
+      state: job,
       verdictRows: _coverageVerdictRows,
       planSummary: _coveragePlanSummary,
       showPausedBeforeProgressNotice: _phase == _Phase.results,
-      onPause: state.status == CoverageJobStatus.running
+      onPause: job.status == CoverageJobStatus.running
           ? () => unawaited(AiCoverageCoordinator.instance.pauseCoverage())
           : null,
-      onResume: state.status == CoverageJobStatus.paused
+      onResume: job.status == CoverageJobStatus.paused
           ? () => unawaited(_resumeFullCoverage())
           : null,
       onCancel:
-          (state.status == CoverageJobStatus.running ||
-              state.status == CoverageJobStatus.paused)
+          (job.status == CoverageJobStatus.running ||
+              job.status == CoverageJobStatus.paused)
           ? () => unawaited(_cancelFullCoverage())
           : null,
       onRaiseBudget:
-          state.status == CoverageJobStatus.paused &&
-              state.pauseReason == CoveragePauseReason.budget
+          job.status == CoverageJobStatus.paused &&
+              job.pauseReason == CoveragePauseReason.budget
           ? () => unawaited(_raiseCoverageBudget())
           : null,
-      onRestart: coverageJobNeedsClientLogicUpgrade(state)
+      onRestart: coverageJobNeedsClientLogicUpgrade(job)
           ? () => unawaited(_restartFullCoverage())
           : null,
     );
