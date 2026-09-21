@@ -1036,8 +1036,68 @@ abstract class AppLocalizations {
   /// No description provided for @aiPreCheckUnknownTitle.
   ///
   /// In en, this message translates to:
-  /// **'{count} items will be sent for AI analysis (~{tokens} tokens)'**
-  String aiPreCheckUnknownTitle(int count, int tokens);
+  /// **'{count} items still need AI (BYOK ~{tokens} input tokens per API call, up to {batchSize} items each; {cap} items max per analysis)'**
+  String aiPreCheckUnknownTitle(int count, int tokens, int batchSize, int cap);
+
+  /// No description provided for @aiPreCheckCoverageEstimatePending.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimating full coverage cost…'**
+  String get aiPreCheckCoverageEstimatePending;
+
+  /// No description provided for @aiPreCheckAiScope.
+  ///
+  /// In en, this message translates to:
+  /// **'{tree} files need directory AI, {tail} loose files in tail queue'**
+  String aiPreCheckAiScope(int tree, int tail);
+
+  /// No description provided for @aiPreCheckAiScopeV2.
+  ///
+  /// In en, this message translates to:
+  /// **'Directory AI scope: ~{treePending} files · tail queue: {tail} files · about {apiCalls} API calls (minimum)'**
+  String aiPreCheckAiScopeV2(int treePending, int tail, int apiCalls);
+
+  /// No description provided for @aiPreCheckLocalOnlyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No API calls needed for this scan'**
+  String get aiPreCheckLocalOnlyTitle;
+
+  /// No description provided for @aiPreCheckLocalOnlyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Local rules already cover the directory and tail queues. Review local results without starting full coverage.'**
+  String get aiPreCheckLocalOnlyBody;
+
+  /// No description provided for @aiStartLocalOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Review local results'**
+  String get aiStartLocalOnly;
+
+  /// No description provided for @aiPreCheckFullCoverageEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'~{credits} credits minimum ({calls} API calls from plan; tree BFS may add more)'**
+  String aiPreCheckFullCoverageEstimate(int credits, int calls);
+
+  /// No description provided for @aiPreCheckTreeCreditsMayGrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Directory tree analysis may use more credits than this plan minimum.'**
+  String get aiPreCheckTreeCreditsMayGrow;
+
+  /// No description provided for @aiPreCheckSelectAllShown.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all shown'**
+  String get aiPreCheckSelectAllShown;
+
+  /// No description provided for @aiPreCheckClearSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear selection'**
+  String get aiPreCheckClearSelection;
 
   /// No description provided for @aiStartAnalysis.
   ///
@@ -1060,7 +1120,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiDeleteSelected.
   ///
   /// In en, this message translates to:
-  /// **'Delete {count} Selected Items'**
+  /// **'Move {count} Selected to Trash'**
   String aiDeleteSelected(int count);
 
   /// No description provided for @aiVerdictSafe.
@@ -1456,14 +1516,43 @@ abstract class AppLocalizations {
   /// No description provided for @aiTruncatedNotice.
   ///
   /// In en, this message translates to:
-  /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
-  String aiTruncatedNotice(int shown, int total);
+  /// **'Including the {shown} largest of {total} items ({cap} cap) — the rest are skipped.'**
+  String aiTruncatedNotice(int shown, int total, int cap);
 
   /// No description provided for @aiCoverageProgress.
   ///
   /// In en, this message translates to:
-  /// **'Coverage: {analyzed} / {total} files analyzed'**
+  /// **'Coverage: {analyzed} / {total} unclassified files resolved'**
   String aiCoverageProgress(int analyzed, int total);
+
+  /// No description provided for @aiCoverageFunnelBreakdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Local {localSafe} safe · {localKeep} keep · ~{treePending} via directory AI · {tail} tail files'**
+  String aiCoverageFunnelBreakdown(
+    int localSafe,
+    int localKeep,
+    int treePending,
+    int tail,
+  );
+
+  /// No description provided for @aiCoverageApiCallsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'API calls this run: {used} used · at least {min} planned ({remaining} left at plan minimum)'**
+  String aiCoverageApiCallsEstimate(int used, int min, int remaining);
+
+  /// No description provided for @aiCoverageRemainingApiCalls.
+  ///
+  /// In en, this message translates to:
+  /// **'About {remaining} API calls left (plan minimum; directory drill-down may add more)'**
+  String aiCoverageRemainingApiCalls(int remaining);
+
+  /// No description provided for @aiCoveragePausedBeforeProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Local previews below are ready. Resume to flush local verdicts and run directory/tail AI on the rest.'**
+  String get aiCoveragePausedBeforeProgress;
 
   /// No description provided for @aiCoverageRemainingEstimate.
   ///
@@ -1512,6 +1601,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.'**
   String get aiCoveragePurchaseFooter;
+
+  /// No description provided for @aiCoveragePurchaseFooterConditional.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.'**
+  String get aiCoveragePurchaseFooterConditional;
 
   /// No description provided for @aiCoverageInsufficientForEstimate.
   ///
@@ -1720,7 +1815,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiCoverageSourceStats.
   ///
   /// In en, this message translates to:
-  /// **'{file} per-file · {group} directory-level · {local} local pre-classified'**
+  /// **'Verdict sources: {file} file AI · {group} directory AI · {local} local'**
   String aiCoverageSourceStats(int file, int group, int local);
 
   /// No description provided for @aiCoverageBudgetPausedCredits.
@@ -1812,6 +1907,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading coverage job status…'**
   String get aiCoverageHydrating;
+
+  /// No description provided for @aiCandidatesBootstrapLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading candidate list…'**
+  String get aiCandidatesBootstrapLoading;
 
   /// No description provided for @aiCoverageUnavailable.
   ///
@@ -1954,7 +2055,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiWorkspacePhaseDeleting.
   ///
   /// In en, this message translates to:
-  /// **'Deleting'**
+  /// **'Moving to Trash'**
   String get aiWorkspacePhaseDeleting;
 
   /// No description provided for @aiWorkspacePhaseRecovery.
@@ -1992,6 +2093,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{bytes} reclaimable · {review} need review'**
   String aiResultsDecisionSummary(String bytes, int review);
+
+  /// No description provided for @aiResultsLocalPreviewHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe and keep counts below include local rules from the latest scan, not only finished AI coverage.'**
+  String get aiResultsLocalPreviewHint;
 
   /// No description provided for @aiResultsMetricAnalyzed.
   ///

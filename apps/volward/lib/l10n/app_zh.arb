@@ -349,7 +349,7 @@
       }
     }
   },
-  "aiPreCheckUnknownTitle": "{count} 项将发送给 AI 分析（约 {tokens} tokens）",
+  "aiPreCheckUnknownTitle": "仍有 {count} 项需 AI 分析（BYOK 每次请求最多 {batchSize} 条、约 {tokens} input tokens；单次分析上限 {cap} 条）",
   "@aiPreCheckUnknownTitle": {
     "placeholders": {
       "count": {
@@ -357,13 +357,48 @@
       },
       "tokens": {
         "type": "int"
+      },
+      "batchSize": {
+        "type": "int"
+      },
+      "cap": {
+        "type": "int"
       }
     }
   },
+  "aiPreCheckCoverageEstimatePending": "正在估算全量覆盖分析成本…",
+  "aiPreCheckAiScope": "目录 AI 待分析 {tree} 个文件，零散 tail 队列 {tail} 个",
+  "@aiPreCheckAiScope": {
+    "placeholders": {
+      "tree": {"type": "int"},
+      "tail": {"type": "int"}
+    }
+  },
+  "aiPreCheckAiScopeV2": "目录 AI 范围约 {treePending} 个文件 · tail 队列 {tail} 个 · 至少约 {apiCalls} 次 API",
+  "@aiPreCheckAiScopeV2": {
+    "placeholders": {
+      "treePending": {"type": "int"},
+      "tail": {"type": "int"},
+      "apiCalls": {"type": "int"}
+    }
+  },
+  "aiPreCheckLocalOnlyTitle": "本次扫描无需 API",
+  "aiPreCheckLocalOnlyBody": "本地规则已覆盖目录与 tail 队列，可直接查看本地结论，无需启动全量覆盖。",
+  "aiStartLocalOnly": "查看本地结论",
+  "aiPreCheckFullCoverageEstimate": "至少约 {credits} credits（plan 估算 {calls} 次 API；目录 BFS 可能更多）",
+  "@aiPreCheckFullCoverageEstimate": {
+    "placeholders": {
+      "credits": {"type": "int"},
+      "calls": {"type": "int"}
+    }
+  },
+  "aiPreCheckTreeCreditsMayGrow": "目录树展开后，实际 credits 可能高于上述 plan 下限。",
+  "aiPreCheckSelectAllShown": "全选当前列表",
+  "aiPreCheckClearSelection": "清除选择",
   "aiStartAnalysis": "开始 AI 分析",
   "aiNoApiKey": "未配置 API Key — 请在设置中配置",
   "aiContractUnavailable": "当前原生库版本过旧，请更新 Volward 后再使用 AI 分析。",
-  "aiDeleteSelected": "删除选中的 {count} 项",
+  "aiDeleteSelected": "将选中的 {count} 项移到废纸篓",
   "@aiDeleteSelected": {
     "placeholders": {
       "count": {
@@ -494,7 +529,7 @@
   "aiErrorUnknown": "未知错误",
   "aiErrorNativeUnavailable": "无法加载 AI 候选项（原生接口不可用）。",
   "aiErrorInvalidPayload": "候选项数据格式无效。",
-  "aiTruncatedNotice": "共 {total} 项，已显示其中最大的 {shown} 项，其余已跳过以控制请求体积。",
+  "aiTruncatedNotice": "共 {total} 项，仅纳入最大的 {shown} 项（上限 {cap} 条），其余已跳过。",
   "@aiTruncatedNotice": {
     "placeholders": {
       "shown": {
@@ -502,10 +537,13 @@
       },
       "total": {
         "type": "int"
+      },
+      "cap": {
+        "type": "int"
       }
     }
   },
-  "aiCoverageProgress": "覆盖率：已分析 {analyzed} / {total} 个文件",
+  "aiCoverageProgress": "覆盖进度：未分类文件已处理 {analyzed} / {total}",
   "@aiCoverageProgress": {
     "placeholders": {
       "analyzed": {
@@ -516,6 +554,30 @@
       }
     }
   },
+  "aiCoverageFunnelBreakdown": "含本地可删 {localSafe} · 保留 {localKeep} · 目录 AI 约 {treePending} · tail {tail}",
+  "@aiCoverageFunnelBreakdown": {
+    "placeholders": {
+      "localSafe": {"type": "int"},
+      "localKeep": {"type": "int"},
+      "treePending": {"type": "int"},
+      "tail": {"type": "int"}
+    }
+  },
+  "aiCoverageApiCallsEstimate": "本次 API：已用 {used} · plan 至少 {min} 次（按 plan 下限还剩 {remaining}）",
+  "@aiCoverageApiCallsEstimate": {
+    "placeholders": {
+      "used": {"type": "int"},
+      "min": {"type": "int"},
+      "remaining": {"type": "int"}
+    }
+  },
+  "aiCoverageRemainingApiCalls": "按 plan 下限约剩 {remaining} 次 API（目录下钻可能增加）",
+  "@aiCoverageRemainingApiCalls": {
+    "placeholders": {
+      "remaining": {"type": "int"}
+    }
+  },
+  "aiCoveragePausedBeforeProgress": "下方为本地预判结果。继续覆盖将写入本地裁决并对待处理目录/零散文件发起 AI。",
   "aiCoverageRemainingEstimate": "预计还需约 {credits} 积分",
   "@aiCoverageRemainingEstimate": {
     "placeholders": {
@@ -573,6 +635,7 @@
     }
   },
   "aiCoveragePurchaseFooter": "完整分析一次通常约 30–80 积分；开始前会显示预估值。",
+  "aiCoveragePurchaseFooterConditional": "以上已显示 API 预估。整盘/用户目录全量扫描常见约 30–80 积分。",
   "aiCoverageInsufficientForEstimate": "预计需要约 {needed} 积分，当前余额 {available}。",
   "@aiCoverageInsufficientForEstimate": {
     "placeholders": {
@@ -716,7 +779,7 @@
       }
     }
   },
-  "aiCoverageSourceStats": "逐文件 {file} · 目录级 {group} · 本地预分类 {local}",
+  "aiCoverageSourceStats": "裁决来源：文件 AI {file} · 目录 AI {group} · 本地 {local}",
   "@aiCoverageSourceStats": {
     "placeholders": {
       "file": {
@@ -802,6 +865,7 @@
   "aiCoverageNotifyFailed": "覆盖分析因错误暂停，请打开 AI 结果页重试。",
   "aiCoverageBudgetInvalid": "请输入高于当前上限的预算值。",
   "aiCoverageHydrating": "正在加载覆盖分析任务状态…",
+  "aiCandidatesBootstrapLoading": "正在加载候选列表…",
   "aiCoverageUnavailable": "当前无法启动全量覆盖分析，请等待扫描加载完成后再试。",
   "aiCoverageBusyOtherSnapshot": "另一个扫描正在运行全量覆盖分析，请等待其完成或先暂停后再试。",
   "aiCoveragePlatformBudgetWarning": "平台余额（{available}）低于全量运行预算（{budget}），分析可能提前暂停。",
@@ -842,7 +906,7 @@
   "aiWorkspacePhasePrivacy": "隐私确认",
   "aiWorkspacePhaseAnalyzing": "正在分析",
   "aiWorkspacePhaseReview": "确认建议",
-  "aiWorkspacePhaseDeleting": "正在删除",
+  "aiWorkspacePhaseDeleting": "正在移到废纸篓",
   "aiWorkspacePhaseRecovery": "恢复",
   "aiWorkspaceLoadPrevious": "加载上次结果",
   "aiWorkspaceAnalyzeAgain": "重新分析",
@@ -863,6 +927,7 @@
       "review": {"type": "int"}
     }
   },
+  "aiResultsLocalPreviewHint": "下列 Safe/Keep 含最新扫描的本地规则结论，不限于已完成的 AI 覆盖任务。",
   "aiResultsMetricAnalyzed": "已分析",
   "aiResultsMetricSafe": "安全可移除",
   "aiResultsMetricReview": "需要确认",

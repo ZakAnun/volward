@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../ai/coverage_analyze_batch.dart';
+import '../ai/coverage_banner_copy.dart';
 import '../ai/coverage_client_logic.dart';
 import '../ai/coverage_job_state.dart';
+import '../ai/coverage_models.dart';
 import '../ai/coverage_pause_messages.dart';
+import '../ai/coverage_ui_helpers.dart';
 import '../ai/coverage_verdict_store.dart';
 import '../l10n/l10n.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'apple_widgets.dart';
-
-int _estimateRemainingCredits(CoverageJobState state) =>
-    coverageJobEstimatedRemainingCredits(state);
 
 /// Coverage job progress banner (Design §9).
 class CoverageJobBanner extends StatelessWidget {
@@ -19,6 +19,8 @@ class CoverageJobBanner extends StatelessWidget {
     super.key,
     required this.state,
     required this.verdictRows,
+    this.planSummary,
+    this.showPausedBeforeProgressNotice = false,
     this.onPause,
     this.onResume,
     this.onCancel,
@@ -28,6 +30,8 @@ class CoverageJobBanner extends StatelessWidget {
 
   final CoverageJobState state;
   final List<CoverageVerdict> verdictRows;
+  final CoveragePlanSummary? planSummary;
+  final bool showPausedBeforeProgressNotice;
   final VoidCallback? onPause;
   final VoidCallback? onResume;
   final VoidCallback? onCancel;
@@ -55,6 +59,24 @@ class CoverageJobBanner extends StatelessWidget {
     final usesCredits = state.budgetCredits > 0;
     final usesTokens = !usesCredits && state.budgetTokens > 0;
 
+    final sourceStats = computeCoverageSourceStats(
+      verdicts: verdictRows,
+      preClassifiedCount: state.preClassifiedCount,
+    );
+    final copy = buildCoverageBannerCopy(
+      state: state,
+      plan: planSummary,
+      l10n: l10n,
+      showPausedBeforeProgressNotice: showPausedBeforeProgressNotice,
+      sourceStats: sourceStats.isEmpty
+          ? null
+          : CoverageSourceStatsInput(
+              fileVerdicts: sourceStats.fileVerdicts,
+              groupVerdicts: sourceStats.groupVerdicts,
+              localPreClassified: sourceStats.localPreClassified,
+            ),
+    );
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
@@ -70,19 +92,23 @@ class CoverageJobBanner extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    l10n.aiCoverageProgress(
-                      state.analyzedFiles,
-                      state.totalUnclassified,
-                    ),
-                    style: context.vwBodyStrong,
-                  ),
-                  if (isPaused) ...[
+                  Text(copy.progressLine, style: context.vwBodyStrong),
+                  if (copy.pausedNoticeLine case final notice?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(notice, style: context.vwCaption),
+                  ],
+                  if (copy.funnelLine case final funnel?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(funnel, style: context.vwCaption),
+                  ],
+                  if (copy.apiCallsLine case final apiLine?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(apiLine, style: context.vwCaption),
+                  ],
+                  if (copy.showCreditRemaining) ...[
                     const SizedBox(height: AppleSpacing.xxs),
                     Text(
-                      l10n.aiCoverageRemainingEstimate(
-                        _estimateRemainingCredits(state),
-                      ),
+                      l10n.aiCoverageRemainingApiCalls(copy.remainingApiCalls),
                       style: context.vwCaption,
                     ),
                   ],
@@ -104,6 +130,10 @@ class CoverageJobBanner extends StatelessWidget {
                       ),
                       style: context.vwCaption,
                     ),
+                  ],
+                  if (copy.sourceStatsLine case final statsLine?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(statsLine, style: context.vwCaption),
                   ],
                   if (budgetPaused) ...[
                     const SizedBox(height: AppleSpacing.xxs),

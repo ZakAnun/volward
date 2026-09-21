@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,8 +21,11 @@ import '../ai/coverage_verdict_store.dart';
 import '../ai/platform_ai_provider.dart';
 import '../analytics/analytics.dart';
 import '../analytics/analytics_events.dart';
+import '../volward_session.dart';
 import '../ai/ai_result_groups.dart';
+import '../ai/ai_token_estimate.dart';
 import '../l10n/l10n.dart';
+import '../proto/ai_payload_pb_decoder.dart';
 import '../snapshot_cache.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
@@ -35,12 +40,17 @@ class _AiCandidatesBootstrap {
     required this.sizeByPath,
     required this.deleteTargetsByPath,
     required this.estimatedTokens,
+    required this.estimatedByokBatchTokens,
     required this.hasExistingResult,
     required this.truncated,
     required this.candidatesBeforeCap,
     required this.selected,
     required this.resultCacheKey,
     required this.rootPath,
+    this.preClassifiedTotal,
+    this.unknownTotal,
+    this.unknownCandidatesSpillPath,
+    this.sizeByPathSpillPath,
   });
 
   final List<Map<String, dynamic>> preClassified;
@@ -48,12 +58,146 @@ class _AiCandidatesBootstrap {
   final Map<String, int> sizeByPath;
   final Map<String, String> deleteTargetsByPath;
   final int estimatedTokens;
+  final int estimatedByokBatchTokens;
   final bool hasExistingResult;
   final bool truncated;
   final int candidatesBeforeCap;
   final Set<String> selected;
   final String resultCacheKey;
   final String rootPath;
+  final int? preClassifiedTotal;
+  final int? unknownTotal;
+  final String? unknownCandidatesSpillPath;
+  final String? sizeByPathSpillPath;
+}
+
+const _candidateHeavyListThreshold = 256;
+const _candidateSpillPreviewCap = 32;
+
+_AiCandidatesBootstrap _parseAiCandidatesFromSpillFile(String spillPath) {
+  final file = File(spillPath);
+  try {
+    if (spillPath.endsWith('.pb')) {
+      final map = decodeAiCandidatesPb(file.readAsBytesSync());
+      if (map == null) {
+        throw const FormatException('invalid candidates pb');
+      }
+      return _compactCandidatesBootstrap(
+        _bootstrapFromCandidatesMap(map),
+        sourcePath: spillPath,
+      );
+    }
+    final raw = file.readAsStringSync();
+    return _compactCandidatesBootstrap(
+      _parseAiCandidatesPayload(raw),
+      sourcePath: spillPath,
+    );
+  } finally {
+    if (file.existsSync()) {
+      file.deleteSync();
+    }
+  }
+}
+
+_AiCandidatesBootstrap _parseAndCompactCandidatesRaw(String raw) {
+  return _compactCandidatesBootstrap(
+    _parseAiCandidatesPayload(raw),
+    sourcePath:
+        '${Directory.systemTemp.path}/volward-candidates-${DateTime.now().microsecondsSinceEpoch}',
+  );
+}
+
+_AiCandidatesBootstrap _compactCandidatesBootstrap(
+  _AiCandidatesBootstrap full, {
+  required String sourcePath,
+}) {
+  final preTotal = full.preClassified.length;
+  var preClassified = full.preClassified;
+  if (preClassified.length > _candidateSpillPreviewCap) {
+    preClassified = preClassified
+        .take(_candidateSpillPreviewCap)
+        .toList(growable: false);
+  }
+
+  final unknownTotal = full.candidatesBeforeCap > full.unknown.length
+      ? full.candidatesBeforeCap
+      : full.unknown.length;
+  var unknown = full.unknown;
+  String? unknownSpill;
+  var deleteTargetsByPath = full.deleteTargetsByPath;
+  if (unknown.length > _candidateHeavyListThreshold) {
+    unknownSpill = '$sourcePath.unknown.json';
+    File(unknownSpill).writeAsStringSync(
+      jsonEncode(unknown.map((candidate) => candidate.toJson()).toList()),
+    );
+    unknown = const [];
+    deleteTargetsByPath = const {};
+  }
+
+  var sizeByPath = full.sizeByPath;
+  String? sizeSpill;
+  if (sizeByPath.length > _candidateHeavyListThreshold) {
+    sizeSpill = '$sourcePath.sizes.json';
+    File(sizeSpill).writeAsStringSync(jsonEncode(sizeByPath));
+    sizeByPath = Map.fromEntries(
+      preClassified
+          .map((entry) {
+            final path = entry['path'] as String? ?? '';
+            return MapEntry(path, _asInt(entry['size_bytes']));
+          })
+          .where((entry) => entry.key.isNotEmpty),
+    );
+  }
+
+  final selected = _selectedPathsFromPreClassifiedMaps(preClassified);
+
+  return _AiCandidatesBootstrap(
+    preClassified: preClassified,
+    unknown: unknown,
+    sizeByPath: sizeByPath,
+    deleteTargetsByPath: deleteTargetsByPath,
+    estimatedTokens: full.estimatedTokens,
+    estimatedByokBatchTokens: full.estimatedByokBatchTokens,
+    hasExistingResult: full.hasExistingResult,
+    truncated: full.truncated,
+    candidatesBeforeCap: full.candidatesBeforeCap,
+    selected: selected,
+    resultCacheKey: full.resultCacheKey,
+    rootPath: full.rootPath,
+    preClassifiedTotal: preTotal,
+    unknownTotal: unknownTotal,
+    unknownCandidatesSpillPath: unknownSpill,
+    sizeByPathSpillPath: sizeSpill,
+  );
+}
+
+List<AiCandidate> _readUnknownCandidatesFromSpill(String spillPath) {
+  final file = File(spillPath);
+  try {
+    final decoded = jsonDecode(file.readAsStringSync());
+    if (decoded is! List) return const [];
+    return decoded
+        .whereType<Map>()
+        .map((raw) => AiCandidate.fromJson(Map<String, dynamic>.from(raw)))
+        .toList(growable: false);
+  } finally {
+    if (file.existsSync()) {
+      file.deleteSync();
+    }
+  }
+}
+
+Map<String, int> _readSizeByPathSpill(String spillPath) {
+  final file = File(spillPath);
+  try {
+    final decoded = jsonDecode(file.readAsStringSync());
+    if (decoded is! Map) return const {};
+    return decoded.map((key, value) => MapEntry('$key', _asInt(value)));
+  } finally {
+    if (file.existsSync()) {
+      file.deleteSync();
+    }
+  }
 }
 
 enum _ReviewDecision { pending, include, keep }
@@ -66,6 +210,18 @@ int _asInt(Object? value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse('$value') ?? 0;
+}
+
+Set<String> _selectedPathsFromPreClassifiedMaps(
+  Iterable<Map<String, dynamic>> preClassified,
+) {
+  final selected = <String>{};
+  for (final entry in preClassified) {
+    if (entry['confidence'] != 'high' || entry['deletable'] != true) continue;
+    final path = entry['path'] as String?;
+    if (path != null && path.isNotEmpty) selected.add(path);
+  }
+  return selected;
 }
 
 bool coveragePlanSummaryShowsV3PrecheckBreakdown(CoveragePlanSummary? summary) {
@@ -86,12 +242,7 @@ int? coveragePrecheckEstimatedCredits(CoveragePlanSummary? summary) {
   return summary.estimatedPages;
 }
 
-_AiCandidatesBootstrap _parseAiCandidatesPayload(String raw) {
-  final decoded = jsonDecode(raw);
-  if (decoded is! Map) {
-    throw const FormatException('ai candidates payload is not an object');
-  }
-  final map = Map<String, dynamic>.from(decoded);
+_AiCandidatesBootstrap _bootstrapFromCandidatesMap(Map<String, dynamic> map) {
   final sizeByPath = <String, int>{};
   final deleteTargetsByPath = <String, String>{};
   final preClassified = <Map<String, dynamic>>[];
@@ -125,26 +276,233 @@ _AiCandidatesBootstrap _parseAiCandidatesPayload(String raw) {
     }
   }
 
-  final selected = <String>{};
-  for (final entry in preClassified) {
-    if (entry['confidence'] == 'high' && entry['deletable'] == true) {
-      final path = entry['path'] as String?;
-      if (path != null) selected.add(path);
-    }
-  }
+  final selected = _selectedPathsFromPreClassifiedMaps(preClassified);
+
+  final estimatedTotal = _asInt(map['estimated_input_tokens']);
+  final estimatedBatchRaw = _asInt(map['estimated_byok_batch_input_tokens']);
+  final estimatedByokBatch = estimatedBatchRaw > 0
+      ? estimatedBatchRaw
+      : (unknown.isNotEmpty
+            ? estimateByokBatchInputTokens(unknown, kByokAnalyzeBatchSize)
+            : estimatedTotal);
 
   return _AiCandidatesBootstrap(
     preClassified: preClassified,
     unknown: unknown,
     sizeByPath: sizeByPath,
     deleteTargetsByPath: deleteTargetsByPath,
-    estimatedTokens: _asInt(map['estimated_input_tokens']),
+    estimatedTokens: estimatedTotal > 0
+        ? estimatedTotal
+        : (unknown.isNotEmpty
+              ? estimateByokTotalInputTokens(unknown, kByokAnalyzeBatchSize)
+              : 0),
+    estimatedByokBatchTokens: estimatedByokBatch,
     hasExistingResult: map['has_existing_result'] == true,
     truncated: map['truncated'] == true,
     candidatesBeforeCap: _asInt(map['candidates_total_before_cap']),
     selected: selected,
     resultCacheKey: map['result_cache_key']?.toString() ?? '',
     rootPath: map['root_path']?.toString() ?? '',
+  );
+}
+
+_AiCandidatesBootstrap _parseAiCandidatesPayload(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! Map) {
+    throw const FormatException('ai candidates payload is not an object');
+  }
+  return _bootstrapFromCandidatesMap(Map<String, dynamic>.from(decoded));
+}
+
+class _LoadedAnalysisParseResult {
+  const _LoadedAnalysisParseResult({
+    required this.loadedRootPath,
+    required this.entryMaps,
+    required this.resultSizes,
+  });
+
+  final String loadedRootPath;
+  final List<Map<String, dynamic>> entryMaps;
+  final Map<String, int> resultSizes;
+}
+
+String? _readAnalysisJsonFromCacheRoot(String cacheRoot, List<String> keys) {
+  final base = '$cacheRoot/ai_analysis';
+  for (final key in keys) {
+    if (key.isEmpty) continue;
+    final pbFile = File('$base/$key.pb');
+    if (pbFile.existsSync()) {
+      final map = decodeAiAnalysisResultPb(pbFile.readAsBytesSync());
+      if (map != null) {
+        return jsonEncode({
+          'root_path': map['root_path'],
+          'entries': map['entries'],
+        });
+      }
+    }
+    final jsonFile = File('$base/$key.json');
+    if (jsonFile.existsSync()) {
+      return jsonFile.readAsStringSync();
+    }
+  }
+  return null;
+}
+
+bool _savedAnalysisFileExists(String key) {
+  if (key.isEmpty) return false;
+  final base = '${SnapshotCache.cacheDir().path}/ai_analysis';
+  return File('$base/$key.pb').existsSync() ||
+      File('$base/$key.json').existsSync();
+}
+
+_LoadedAnalysisParseResult _parseLoadedAnalysisJsonString(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! Map) {
+    throw const FormatException('expected object');
+  }
+  final map = Map<String, dynamic>.from(decoded);
+  final loadedRootPath = map['root_path']?.toString() ?? '';
+  final entriesRaw = map['entries'];
+  if (entriesRaw is! List) {
+    throw const FormatException('missing entries');
+  }
+  final entryMaps = <Map<String, dynamic>>[];
+  final resultSizes = <String, int>{};
+  for (final rawEntry in entriesRaw) {
+    if (rawEntry is! Map) continue;
+    final entry = Map<String, dynamic>.from(rawEntry);
+    final path = entry['path'] as String?;
+    if (path == null || path.isEmpty) continue;
+    resultSizes[path] = _asInt(entry['size_bytes']);
+    entryMaps.add(entry);
+  }
+  return _LoadedAnalysisParseResult(
+    loadedRootPath: loadedRootPath,
+    entryMaps: entryMaps,
+    resultSizes: resultSizes,
+  );
+}
+
+class _CandidateCleanupMeta {
+  const _CandidateCleanupMeta({
+    this.cleanupSource,
+    this.cleanupHint,
+    this.retentionDays,
+  });
+
+  final String? cleanupSource;
+  final String? cleanupHint;
+  final int? retentionDays;
+}
+
+class _LoadedVerdictsBuildInput {
+  const _LoadedVerdictsBuildInput({
+    required this.entryMaps,
+    required this.candidateMetaByPath,
+  });
+
+  final List<Map<String, dynamic>> entryMaps;
+  final Map<String, _CandidateCleanupMeta> candidateMetaByPath;
+}
+
+List<AiVerdict> _buildLoadedVerdicts(_LoadedVerdictsBuildInput input) {
+  return input.entryMaps
+      .map((entry) {
+        final path = entry['path'] as String? ?? '';
+        final meta = input.candidateMetaByPath[path];
+        return AiVerdict(
+          path: path,
+          verdict: entry['verdict']?.toString() ?? '',
+          confidence: entry['confidence']?.toString() ?? '',
+          reason: entry['reason']?.toString() ?? '',
+          cleanupSource:
+              entry['cleanup_source'] as String? ?? meta?.cleanupSource,
+          cleanupHint: entry['cleanup_hint'] as String? ?? meta?.cleanupHint,
+          retentionDays: switch (entry['retention_days']) {
+            int value => value,
+            num value => value.toInt(),
+            _ => meta?.retentionDays,
+          },
+        );
+      })
+      .toList(growable: false);
+}
+
+class _ResultsPresentationPrepInput {
+  const _ResultsPresentationPrepInput({
+    required this.verdicts,
+    required this.sizeByPath,
+    required this.rootPath,
+    required this.directoryPaths,
+    required this.maxAutoExpandedRows,
+    required this.preClassified,
+  });
+
+  final List<AiVerdict> verdicts;
+  final Map<String, int> sizeByPath;
+  final String rootPath;
+  final List<String> directoryPaths;
+  final int maxAutoExpandedRows;
+  final List<Map<String, dynamic>> preClassified;
+}
+
+class _ResultsPresentationPrepOutput {
+  const _ResultsPresentationPrepOutput({
+    required this.normalizedGroups,
+    required this.expandedGroupPaths,
+    required this.selectedPaths,
+  });
+
+  final List<AiResultGroup> normalizedGroups;
+  final Set<String> expandedGroupPaths;
+  final Set<String> selectedPaths;
+}
+
+Set<String> _selectedPathsForVerdictsIsolate(
+  List<AiVerdict> verdicts,
+  List<Map<String, dynamic>> preClassified,
+) {
+  final aiPaths = verdicts.map((verdict) => verdict.path).toSet();
+  final selected = <String>{};
+  for (final entry in preClassified) {
+    if (entry['deletable'] != true || entry['confidence'] != 'high') continue;
+    final path = entry['path'] as String?;
+    if (path == null || path.isEmpty || aiPaths.contains(path)) continue;
+    selected.add(path);
+  }
+  for (final verdict in verdicts) {
+    if (verdict.verdict == 'safe_to_remove') {
+      selected.add(verdict.path);
+    }
+  }
+  return selected;
+}
+
+_ResultsPresentationPrepOutput _prepareResultsPresentationIsolate(
+  _ResultsPresentationPrepInput input,
+) {
+  final groups = groupAiResults(
+    input.verdicts,
+    input.sizeByPath,
+    rootPath: input.rootPath,
+    directoryPaths: input.directoryPaths.toSet(),
+  );
+  var rowBudget = input.maxAutoExpandedRows;
+  final expanded = <String>{};
+  for (final group in groups) {
+    if (group.items.length >= 3) continue;
+    final rowCost = group.items.length + 1;
+    if (rowBudget < rowCost) break;
+    expanded.add(group.path);
+    rowBudget -= rowCost;
+  }
+  return _ResultsPresentationPrepOutput(
+    normalizedGroups: groups,
+    expandedGroupPaths: expanded,
+    selectedPaths: _selectedPathsForVerdictsIsolate(
+      input.verdicts,
+      input.preClassified,
+    ),
   );
 }
 
@@ -173,6 +531,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const decisionSummaryKey = Key('ai-analysis-decision-summary');
   static const searchToggleKey = Key('ai-analysis-search-toggle');
   static const deleteKey = Key('ai-analysis-delete');
+  static const precheckDeleteKey = Key('ai-analysis-precheck-delete');
   static const headerKey = Key('ai-analysis-header');
   static const selectedSummaryKey = Key('ai-analysis-selected-summary');
   static const pendingReviewKey = Key('ai-analysis-pending-review');
@@ -194,12 +553,24 @@ class AiAnalysisWorkspace extends StatefulWidget {
 }
 
 class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
+  static const _preClassifiedPrecheckPreviewCap = 32;
+  static const _maxDefaultExpandedResultRows = 96;
+  static const _coverageVerdictRefreshMinInterval = Duration(milliseconds: 350);
+  static const _heavyResultsLayoutThreshold = 200;
+
   _Phase _phase = _Phase.loading;
   String? _error;
   List<Map<String, dynamic>> _preClassified = [];
+  int? _preClassifiedTotalCount;
+  int? _unknownTotalCount;
+  String? _unknownCandidatesSpillPath;
+  String? _sizeByPathSpillPath;
   List<AiCandidate> _unknown = [];
+  Map<String, AiCandidate> _unknownByPath = {};
   int _estimatedTokens = 0;
+  int _estimatedByokBatchTokens = 0;
   bool _hasExistingResult = false;
+  bool _candidatesBootstrapPending = false;
   bool _truncated = false;
   int _candidatesBeforeCap = 0;
   String _resultCacheKey = '';
@@ -236,12 +607,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int? _coverageBudgetCredits;
   int? _estimatedCoverageCredits;
   CoveragePlanSummary? _coveragePlanSummary;
+  bool _coveragePlanSummaryLoadInFlight = false;
   int? _runBudgetCredits;
   bool _coverageCapBelowEstimate = false;
   int _coverageVerdictPageCount = 2;
   static const _coverageVerdictPageSize = 500;
   int _coverageVerdictByteOffset = 0;
   List<CoverageVerdict> _coverageVerdictRows = const [];
+  List<_ResultListRow>? _resultRowsCache;
+  DateTime? _lastCoverageVerdictRefreshAt;
+  Timer? _coverageJobStateCoalesceTimer;
+  CoverageJobState? _pendingCoverageJobState;
+  bool _coverageVerdictPageLoadInFlight = false;
+  bool _resultsLayoutPending = false;
+  int _resultsLayoutGeneration = 0;
 
   int _beginOperation() => ++_operationGeneration;
   bool _isCurrent(int generation) =>
@@ -259,14 +638,276 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool get _showsCoverageV3PrecheckBreakdown =>
       coveragePlanSummaryShowsV3PrecheckBreakdown(_coveragePlanSummary);
 
-  AiVerdict _withCandidateMeta(AiVerdict verdict) {
-    AiCandidate? candidate;
-    for (final item in _unknown) {
-      if (item.path == verdict.path) {
-        candidate = item;
-        break;
+  bool get _coveragePlanIsLocalOnly {
+    final summary = _coveragePlanSummary;
+    if (summary == null || summary.planVersion < 3) return false;
+    return !coveragePlanRequiresApi(summary);
+  }
+
+  int? get _coveragePlanMinApiCalls {
+    final summary = _coveragePlanSummary;
+    if (summary == null) return null;
+    return coveragePlanMinApiCalls(summary);
+  }
+
+  void _rebuildUnknownByPath() {
+    _unknownByPath = {for (final item in _unknown) item.path: item};
+  }
+
+  int get _displayPreClassifiedCount =>
+      _preClassifiedTotalCount ?? _preClassified.length;
+
+  int get _displayUnknownCount => _unknownTotalCount ?? _unknown.length;
+
+  int get _precheckSelectedDeletableCount => _selected.length;
+
+  void _selectAllPrecheckDeletableShown({required bool selected}) {
+    setState(() {
+      for (final entry in _preClassified.take(
+        _preClassifiedPrecheckPreviewCap,
+      )) {
+        if (entry['deletable'] != true) continue;
+        final path = entry['path'] as String?;
+        if (path == null || path.isEmpty) continue;
+        if (selected) {
+          _selected.add(path);
+        } else {
+          _selected.remove(path);
+        }
+      }
+    });
+  }
+
+  List<Widget> _buildPrecheckAiEstimateLines(BuildContext context) {
+    final l10n = context.l10n;
+    final tokens = context.volward;
+    if (_useFullCoverage) {
+      if (_coverageHydrating && _estimatedCoverageCredits == null) {
+        return [
+          Text(
+            l10n.aiPreCheckCoverageEstimatePending,
+            style: context.vwCaption,
+          ),
+        ];
+      }
+      final summary = _coveragePlanSummary;
+      if (summary != null && summary.planVersion >= 3) {
+        final treePending = summary.treePendingFiles ?? 0;
+        final tailFiles = summary.tailFiles ?? summary.tailFileCount ?? 0;
+        final minCalls = coveragePlanMinApiCalls(summary);
+        final credits = _estimatedCoverageCredits ?? minCalls;
+        if (_showsCoverageV3PrecheckBreakdown) {
+          return [
+            Text(
+              l10n.aiPreCheckAiScopeV2(treePending, tailFiles, minCalls),
+              style: context.vwCaption,
+            ),
+            if (treePending > 0) ...[
+              const SizedBox(height: AppleSpacing.xxs),
+              Text(
+                l10n.aiPreCheckTreeCreditsMayGrow,
+                style: context.vwFinePrint.copyWith(color: tokens.inkMuted80),
+              ),
+            ],
+          ];
+        }
+        return [
+          Text(
+            l10n.aiPreCheckAiScopeV2(treePending, tailFiles, minCalls),
+            style: context.vwCaption,
+          ),
+          if (minCalls > 0)
+            Text(
+              l10n.aiPreCheckFullCoverageEstimate(credits, minCalls),
+              style: context.vwCaptionStrong,
+            ),
+          if (treePending > 0) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              l10n.aiPreCheckTreeCreditsMayGrow,
+              style: context.vwFinePrint.copyWith(color: tokens.inkMuted80),
+            ),
+          ],
+        ];
       }
     }
+    final batchCount = _truncated
+        ? _unknown.length.clamp(0, kDefaultAiCandidateCap)
+        : (_unknown.isNotEmpty
+              ? _unknown.length
+              : _displayUnknownCount.clamp(0, kDefaultAiCandidateCap));
+    final batchTokens = _estimatedByokBatchTokens > 0
+        ? _estimatedByokBatchTokens
+        : (_unknown.isNotEmpty
+              ? estimateByokBatchInputTokens(_unknown, kByokAnalyzeBatchSize)
+              : _estimatedTokens);
+    return [
+      Text(
+        l10n.aiPreCheckUnknownTitle(
+          _displayUnknownCount,
+          batchTokens,
+          kByokAnalyzeBatchSize,
+          kDefaultAiCandidateCap,
+        ),
+        style: context.vwCaption,
+      ),
+      if (_truncated && !_useFullCoverage)
+        Text(
+          l10n.aiTruncatedNotice(
+            batchCount,
+            _candidatesBeforeCap,
+            kDefaultAiCandidateCap,
+          ),
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+    ];
+  }
+
+  void _deleteCandidateSpillFiles() {
+    for (final path in [_unknownCandidatesSpillPath, _sizeByPathSpillPath]) {
+      if (path == null || path.isEmpty) continue;
+      try {
+        final file = File(path);
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _ensureUnknownCandidatesLoaded() async {
+    final unknownSpill = _unknownCandidatesSpillPath;
+    final sizeSpill = _sizeByPathSpillPath;
+    if (unknownSpill == null && sizeSpill == null) return;
+    final unknown = unknownSpill == null
+        ? _unknown
+        : await compute(_readUnknownCandidatesFromSpill, unknownSpill);
+    final extraSizes = sizeSpill == null
+        ? const <String, int>{}
+        : await compute(_readSizeByPathSpill, sizeSpill);
+    if (!mounted) return;
+    setState(() {
+      if (unknownSpill != null) {
+        _unknown = unknown;
+        _rebuildUnknownByPath();
+        _deleteTargetsByPath.clear();
+        for (final candidate in unknown) {
+          final deleteTarget = candidate.deleteTarget;
+          if (deleteTarget != null && deleteTarget.isNotEmpty) {
+            _deleteTargetsByPath[candidate.path] = deleteTarget;
+          }
+          _sizeByPath[candidate.path] = candidate.sizeBytes;
+        }
+        _unknownCandidatesSpillPath = null;
+      }
+      if (sizeSpill != null) {
+        _sizeByPath.addAll(extraSizes);
+        _sizeByPathSpillPath = null;
+      }
+    });
+  }
+
+  Map<String, _CandidateCleanupMeta> _candidateCleanupMetaByPath() {
+    return {
+      for (final entry in _unknownByPath.entries)
+        entry.key: _CandidateCleanupMeta(
+          cleanupSource: entry.value.cleanupSource,
+          cleanupHint: entry.value.cleanupHint,
+          retentionDays: entry.value.retentionDays,
+        ),
+    };
+  }
+
+  List<String> _directoryPathsForGrouping() {
+    return [
+      ..._unknown.where((candidate) => candidate.isDir).map((c) => c.path),
+      ..._preClassified
+          .where((entry) => entry['is_dir'] == true)
+          .map((entry) => entry['path']?.toString() ?? '')
+          .where((path) => path.isNotEmpty),
+    ];
+  }
+
+  Future<void> _applyHeavyResultsPresentation({
+    required List<AiVerdict> verdicts,
+    required bool preserveUiState,
+    Map<String, _ReviewDecision>? savedReview,
+    Set<String>? savedSelected,
+    Set<String>? savedExpandedGroups,
+    Set<String>? savedExpandedReviews,
+    void Function()? resetPresentation,
+  }) async {
+    final layoutGeneration = ++_resultsLayoutGeneration;
+    if (mounted) {
+      setState(() => _resultsLayoutPending = true);
+    }
+    final prep = await compute(
+      _prepareResultsPresentationIsolate,
+      _ResultsPresentationPrepInput(
+        verdicts: verdicts,
+        sizeByPath: Map<String, int>.from(_sizeByPath),
+        rootPath: _rootPath,
+        directoryPaths: _directoryPathsForGrouping(),
+        maxAutoExpandedRows: _maxDefaultExpandedResultRows,
+        preClassified: List<Map<String, dynamic>>.from(_preClassified),
+      ),
+    );
+    if (!mounted || layoutGeneration != _resultsLayoutGeneration) return;
+    setState(() {
+      _verdicts = verdicts;
+      _normalizedGroupsCache = prep.normalizedGroups;
+      _visibleGroupsCache = null;
+      _resultRowsCache = null;
+      _resultsLayoutPending = false;
+      if (preserveUiState && savedReview != null) {
+        _reviewDecisions
+          ..clear()
+          ..addAll(savedReview);
+        for (final verdict in verdicts) {
+          if (verdict.verdict == 'review_needed' &&
+              !_reviewDecisions.containsKey(verdict.path)) {
+            _reviewDecisions[verdict.path] = _ReviewDecision.pending;
+          }
+        }
+      } else {
+        resetPresentation?.call();
+        _reviewDecisions
+          ..clear()
+          ..addEntries(
+            verdicts
+                .where((verdict) => verdict.verdict == 'review_needed')
+                .map(
+                  (verdict) => MapEntry(verdict.path, _ReviewDecision.pending),
+                ),
+          );
+      }
+      if (preserveUiState && savedSelected != null) {
+        _selected
+          ..clear()
+          ..addAll(savedSelected);
+      } else {
+        _selected
+          ..clear()
+          ..addAll(prep.selectedPaths);
+      }
+      if (preserveUiState && savedExpandedGroups != null) {
+        _expandedGroupPaths
+          ..clear()
+          ..addAll(savedExpandedGroups);
+      } else {
+        _expandedGroupPaths
+          ..clear()
+          ..addAll(prep.expandedGroupPaths);
+      }
+      if (preserveUiState && savedExpandedReviews != null) {
+        _expandedReviewPaths
+          ..clear()
+          ..addAll(savedExpandedReviews);
+      }
+      _hasExistingResult = verdicts.isNotEmpty;
+    });
+  }
+
+  AiVerdict _withCandidateMeta(AiVerdict verdict) {
+    final candidate = _unknownByPath[verdict.path];
     if (candidate == null) return verdict;
     return AiVerdict(
       path: verdict.path,
@@ -290,6 +931,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   void dispose() {
     AiCoverageCoordinator.instance.removeJobStateListener(_onCoverageJobState);
+    _coverageJobStateCoalesceTimer?.cancel();
+    _deleteCandidateSpillFiles();
     _operationGeneration++;
     _resultsScrollController.dispose();
     _resultsSearchController.dispose();
@@ -314,10 +957,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void _invalidateResultGroups() {
     _normalizedGroupsCache = null;
     _visibleGroupsCache = null;
+    _resultRowsCache = null;
+  }
+
+  List<_ResultListRow> _cachedResultRows() {
+    final cached = _resultRowsCache;
+    if (cached != null) return cached;
+    final rows = _resultRows(_visibleResultGroups(_normalizedResultGroups()));
+    _resultRowsCache = rows;
+    return rows;
   }
 
   void _invalidateVisibleGroups() {
     _visibleGroupsCache = null;
+    _resultRowsCache = null;
   }
 
   @override
@@ -344,12 +997,21 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _expandedGroupPaths.clear();
       _expandedReviewPaths.clear();
       _preClassified = [];
+      _preClassifiedTotalCount = null;
+      _unknownTotalCount = null;
+      _deleteCandidateSpillFiles();
+      _unknownCandidatesSpillPath = null;
+      _sizeByPathSpillPath = null;
       _unknown = [];
+      _unknownByPath = {};
       _verdicts = [];
+      _lastCoverageVerdictRefreshAt = null;
       _analyzing = false;
       _deleting = false;
       _estimatedTokens = 0;
+      _estimatedByokBatchTokens = 0;
       _hasExistingResult = false;
+      _candidatesBootstrapPending = false;
       _truncated = false;
       _candidatesBeforeCap = 0;
       _resultCacheKey = '';
@@ -390,6 +1052,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       }
       if (!mounted) return;
       final l10n = context.l10n;
+      final savedAnalysisOnDisk = _savedAnalysisFileExists(widget.snapshotId);
+      setState(() {
+        _phase = _Phase.precheck;
+        _candidatesBootstrapPending = true;
+        _useFullCoverage = AiCoverageCoordinator.instance.isAvailable;
+        _coverageHydrating = false;
+        _coverageHydrated = !_useFullCoverage;
+        if (savedAnalysisOnDisk) {
+          _hasExistingResult = true;
+        }
+      });
       final raw = await widget.gateway.buildCandidates(widget.snapshotId);
       if (!_isCurrent(generation)) return;
       if (raw == null || raw.isEmpty) {
@@ -413,14 +1086,31 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         return;
       }
 
-      final parsed = await compute(_parseAiCandidatesPayload, raw);
+      final _AiCandidatesBootstrap parsed;
+      if (raw.startsWith('spill:')) {
+        parsed = await compute(
+          _parseAiCandidatesFromSpillFile,
+          raw.substring('spill:'.length),
+        );
+      } else {
+        parsed = await compute(_parseAndCompactCandidatesRaw, raw);
+      }
       if (!_isCurrent(generation)) return;
+      final preserveInteractivePhase =
+          _phase == _Phase.results ||
+          _phase == _Phase.deleting ||
+          _phase == _Phase.analyzing;
       setState(() {
         _mode = mode;
         _platformCredits = platformCredits;
         _hasProvider = provider != null;
         _preClassified = parsed.preClassified;
+        _preClassifiedTotalCount = parsed.preClassifiedTotal;
         _unknown = parsed.unknown;
+        _unknownTotalCount = parsed.unknownTotal;
+        _unknownCandidatesSpillPath = parsed.unknownCandidatesSpillPath;
+        _sizeByPathSpillPath = parsed.sizeByPathSpillPath;
+        _rebuildUnknownByPath();
         _sizeByPath
           ..clear()
           ..addAll(parsed.sizeByPath);
@@ -428,59 +1118,42 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ..clear()
           ..addAll(parsed.deleteTargetsByPath);
         _estimatedTokens = parsed.estimatedTokens;
-        _hasExistingResult = parsed.hasExistingResult;
+        _estimatedByokBatchTokens = parsed.estimatedByokBatchTokens;
+        _hasExistingResult =
+            parsed.hasExistingResult ||
+            _hasExistingResult ||
+            _verdicts.isNotEmpty;
         _truncated = parsed.truncated;
         _candidatesBeforeCap = parsed.candidatesBeforeCap;
         _resultCacheKey = parsed.resultCacheKey;
-        _rootPath = parsed.rootPath;
+        _rootPath = parsed.rootPath.isNotEmpty ? parsed.rootPath : _rootPath;
+        if (preserveInteractivePhase && _verdicts.isNotEmpty) {
+          _verdicts = _verdicts.map(_withCandidateMeta).toList(growable: false);
+        }
         _invalidateResultGroups();
-        _selected
-          ..clear()
-          ..addAll(parsed.selected);
-        _phase = _Phase.precheck;
+        if (!preserveInteractivePhase) {
+          _selected
+            ..clear()
+            ..addAll(parsed.selected);
+        }
+        _phase = preserveInteractivePhase ? _phase : _Phase.precheck;
+        _candidatesBootstrapPending = false;
         _useFullCoverage = AiCoverageCoordinator.instance.isAvailable;
-        _coverageHydrating = _useFullCoverage;
         _coverageHydrated = !_useFullCoverage;
       });
-      if (_useFullCoverage) {
-        final budget = await AiSettingsStore.instance.coverageBudgetForMode(
-          mode,
-        );
-        if (!_isCurrent(generation)) return;
-        if (mounted) {
-          setState(() => _coverageBudgetCredits = budget.credits);
-        }
-        final summary = await AiCoverageCoordinator.instance.planSummary(
-          widget.snapshotId,
-        );
-        if (!_isCurrent(generation)) return;
-        final estimatedCredits = coveragePrecheckEstimatedCredits(summary);
-        int? runBudgetCredits;
-        if (mode == AiMode.platform &&
-            estimatedCredits != null &&
-            platformCredits != null) {
-          runBudgetCredits = await AiSettingsStore.instance
-              .resolveRunBudgetCredits(
-                estimatedCredits: estimatedCredits,
-                accountBalance: platformCredits,
+      if (!preserveInteractivePhase && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_isCurrent(generation) || !mounted) return;
+          if (_useFullCoverage) {
+            unawaited(_syncActiveCoverageJobAfterPrecheck(generation));
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!_isCurrent(generation) || !mounted) return;
+              unawaited(
+                _hydrateCoveragePrecheck(generation, mode, platformCredits),
               );
-        }
-        if (!_isCurrent(generation)) return;
-        if (mounted) {
-          setState(() {
-            _coveragePlanSummary = summary;
-            _estimatedCoverageCredits = estimatedCredits;
-            _runBudgetCredits = runBudgetCredits;
-          });
-        }
-        await _hydrateCoverageJob();
-        if (!_isCurrent(generation)) return;
-        if (mounted) {
-          setState(() {
-            _coverageHydrating = false;
-            _coverageHydrated = true;
-          });
-        }
+            });
+          }
+        });
       }
     } catch (error) {
       if (!_isCurrent(generation)) return;
@@ -528,15 +1201,28 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _loadPreviousResult() async {
     final generation = _beginOperation();
     final l10n = context.l10n;
+    setState(() => _error = null);
     final key = _resultCacheKey.isNotEmpty
         ? _resultCacheKey
         : widget.snapshotId;
-    var raw = widget.gateway.loadResult(key);
-    if ((raw == null || raw.isEmpty || raw.startsWith('error:')) &&
-        key != widget.snapshotId) {
-      raw = widget.gateway.loadResult(widget.snapshotId);
-    }
+    final raw = await _loadSavedAnalysisRaw(
+      cacheKey: key,
+      snapshotId: widget.snapshotId,
+    );
     return _applyLoadedResult(raw, l10n.aiLoadPreviousFailed, generation);
+  }
+
+  Future<String?> _loadSavedAnalysisRaw({
+    required String cacheKey,
+    required String snapshotId,
+  }) async {
+    final keys = <String>{
+      if (cacheKey.isNotEmpty) cacheKey,
+      if (snapshotId.isNotEmpty) snapshotId,
+    }.toList(growable: false);
+    if (keys.isEmpty) return null;
+    final cacheRoot = SnapshotCache.cacheDir().path;
+    return Isolate.run(() => _readAnalysisJsonFromCacheRoot(cacheRoot, keys));
   }
 
   Future<bool> _applyLoadedResult(
@@ -553,43 +1239,44 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       return false;
     }
     try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) throw const FormatException('expected object');
-      final map = Map<String, dynamic>.from(decoded);
-      final loadedRootPath = map['root_path']?.toString() ?? '';
-      final entriesRaw = map['entries'];
-      if (entriesRaw is! List) throw const FormatException('missing entries');
-      final verdicts = <AiVerdict>[];
-      final resultSizes = <String, int>{};
-      for (final rawEntry in entriesRaw) {
-        if (rawEntry is! Map) continue;
-        final entry = Map<String, dynamic>.from(rawEntry);
-        final path = entry['path'] as String?;
-        if (path == null || path.isEmpty) continue;
-        resultSizes[path] = _asInt(entry['size_bytes']);
-        verdicts.add(
-          _withCandidateMeta(
-            AiVerdict(
-              path: path,
-              verdict: entry['verdict']?.toString() ?? '',
-              confidence: entry['confidence']?.toString() ?? '',
-              reason: entry['reason']?.toString() ?? '',
-              cleanupSource: entry['cleanup_source'] as String?,
-              cleanupHint: entry['cleanup_hint'] as String?,
-              retentionDays: entry['retention_days'] as int?,
-            ),
-          ),
-        );
-      }
+      final parsed = await compute(_parseLoadedAnalysisJsonString, raw);
       if (!_isCurrent(generation)) return false;
+      final loadedRootPath = parsed.loadedRootPath;
+      final resultSizes = parsed.resultSizes;
+      _sizeByPath.addAll(resultSizes);
+      if (loadedRootPath.isNotEmpty) _rootPath = loadedRootPath;
+      final verdicts = await compute(
+        _buildLoadedVerdicts,
+        _LoadedVerdictsBuildInput(
+          entryMaps: parsed.entryMaps,
+          candidateMetaByPath: _candidateCleanupMetaByPath(),
+        ),
+      );
+      if (!_isCurrent(generation)) return false;
+      if (verdicts.length >= _heavyResultsLayoutThreshold) {
+        setState(() {
+          _resetResultsPresentation();
+          _selected.clear();
+          _reviewDecisions.clear();
+          _expandedGroupPaths.clear();
+          _expandedReviewPaths.clear();
+          _error = null;
+          _phase = _Phase.results;
+        });
+        await _applyHeavyResultsPresentation(
+          verdicts: verdicts,
+          preserveUiState: false,
+          resetPresentation: _resetResultsPresentation,
+        );
+        if (!_isCurrent(generation)) return false;
+        return true;
+      }
       setState(() {
         _resetResultsPresentation();
         _selected.clear();
         _reviewDecisions.clear();
         _expandedGroupPaths.clear();
         _expandedReviewPaths.clear();
-        _sizeByPath.addAll(resultSizes);
-        if (loadedRootPath.isNotEmpty) _rootPath = loadedRootPath;
         _verdicts = verdicts;
         _invalidateResultGroups();
         for (final verdict in verdicts) {
@@ -616,7 +1303,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _startAnalysis() async {
     if (!_hasProvider || _analyzing) return;
-    if (_useFullCoverage && (_coverageHydrating || !_coverageHydrated)) return;
+    if (_useFullCoverage && !_coverageHydrated) return;
+    await _ensureUnknownCandidatesLoaded();
+    if (!mounted) return;
     if (_useFullCoverage) {
       return _startFullCoverageAnalysis();
     }
@@ -648,7 +1337,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     unawaited(
       Analytics.instance.track(AnalyticsEvents.aiAnalysisStarted, {
         'provider': providerLabel,
-        'candidate_count': _unknown.length,
+        'candidate_count': _displayUnknownCount,
       }),
     );
     try {
@@ -815,6 +1504,123 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
   }
 
+  /// Reads persisted job state only (no resume, no verdict hydration).
+  Future<void> _syncActiveCoverageJobAfterPrecheck(int generation) async {
+    if (!_useFullCoverage) return;
+    final state = await AiCoverageCoordinator.instance.loadJobState(
+      widget.snapshotId,
+    );
+    if (!_isCurrent(generation) || !mounted || state == null) return;
+    if (state.snapshotId != widget.snapshotId) return;
+
+    final active =
+        state.status == CoverageJobStatus.running ||
+        state.status == CoverageJobStatus.paused;
+    if (!active) return;
+
+    setState(() => _coverageJobState = state);
+
+    final openResults =
+        state.status == CoverageJobStatus.paused ||
+        (state.status == CoverageJobStatus.running && state.analyzedFiles > 0);
+    if (!openResults || _phase != _Phase.precheck) return;
+
+    unawaited(_ensureCoveragePlanSummaryLoaded());
+
+    setState(() {
+      _phase = _Phase.results;
+      _analyzing = state.status == CoverageJobStatus.running;
+    });
+    try {
+      await _refreshVerdictsFromCoverageStore(incremental: false);
+    } finally {
+      if (mounted && _resultsLayoutPending && _verdicts.isEmpty) {
+        setState(() => _resultsLayoutPending = false);
+      }
+    }
+  }
+
+  Future<void> _ensureCoveragePlanSummaryLoaded() async {
+    if (!_useFullCoverage || _coveragePlanSummary != null) return;
+    final summary = await AiCoverageCoordinator.instance.planSummary(
+      widget.snapshotId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _coveragePlanSummary = summary;
+      _estimatedCoverageCredits = coveragePrecheckEstimatedCredits(summary);
+    });
+  }
+
+  void _maybeLoadCoveragePlanSummaryForBanner() {
+    if (!_useFullCoverage || _coveragePlanSummary != null) return;
+    if (_coveragePlanSummaryLoadInFlight) return;
+    _coveragePlanSummaryLoadInFlight = true;
+    unawaited(() async {
+      try {
+        await _ensureCoveragePlanSummaryLoaded();
+      } finally {
+        if (mounted) {
+          setState(() => _coveragePlanSummaryLoadInFlight = false);
+        }
+      }
+    }());
+  }
+
+  bool _shouldShowResultsLocalPreviewHint() {
+    if (!_useFullCoverage) return false;
+    final job = widget.debugCoverageJobState ?? _coverageJobState;
+    if (job == null) return true;
+    if (job.status == CoverageJobStatus.paused) return true;
+    return job.analyzedFiles == 0 && job.status == CoverageJobStatus.running;
+  }
+
+  Future<void> _openLocalOnlyResults() async {
+    setState(() {
+      _phase = _Phase.results;
+      _analyzing = false;
+      _error = null;
+    });
+    await _refreshVerdictsFromCoverageStore(incremental: false);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _hydrateCoveragePrecheck(
+    int generation,
+    AiMode mode,
+    int? platformCredits,
+  ) async {
+    if (!AiCoverageCoordinator.instance.isAvailable) return;
+    final budget = await AiSettingsStore.instance.coverageBudgetForMode(mode);
+    if (!_isCurrent(generation) || !mounted) return;
+    setState(() {
+      _coverageBudgetCredits = budget.credits;
+      _coverageHydrated = true;
+      _coverageHydrating = true;
+    });
+    final summary = await AiCoverageCoordinator.instance.planSummary(
+      widget.snapshotId,
+    );
+    if (!_isCurrent(generation) || !mounted) return;
+    final estimatedCredits = coveragePrecheckEstimatedCredits(summary);
+    int? runBudgetCredits;
+    if (mode == AiMode.platform &&
+        estimatedCredits != null &&
+        platformCredits != null) {
+      runBudgetCredits = await AiSettingsStore.instance.resolveRunBudgetCredits(
+        estimatedCredits: estimatedCredits,
+        accountBalance: platformCredits,
+      );
+    }
+    if (!_isCurrent(generation) || !mounted) return;
+    setState(() {
+      _coveragePlanSummary = summary;
+      _estimatedCoverageCredits = estimatedCredits;
+      _runBudgetCredits = runBudgetCredits;
+      _coverageHydrating = false;
+    });
+  }
+
   Future<void> _hydrateCoverageJob() async {
     if (!_useFullCoverage) return;
     await AiCoverageCoordinator.instance.ensureJobRunning(widget.snapshotId);
@@ -838,36 +1644,76 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Future<void> _loadNextCoverageVerdictPage() async {
-    final nextPageCount = _coverageVerdictPageCount + 1;
-    final store = CoverageVerdictStore(SnapshotCache.cacheDir());
-    final rows = await store.readPages(
-      widget.snapshotId,
-      pageCount: nextPageCount,
-      pageSize: _coverageVerdictPageSize,
-    );
-    if (!mounted || rows.length <= _coverageVerdictRows.length) return;
-    setState(() => _coverageVerdictPageCount = nextPageCount);
-    _applyCoverageVerdictRows(rows, preserveUiState: true);
+    if (_coverageVerdictPageLoadInFlight) return;
+    _coverageVerdictPageLoadInFlight = true;
+    try {
+      final nextPageCount = _coverageVerdictPageCount + 1;
+      final store = CoverageVerdictStore(SnapshotCache.cacheDir());
+      final rows = await store.readPages(
+        widget.snapshotId,
+        pageCount: nextPageCount,
+        pageSize: _coverageVerdictPageSize,
+      );
+      if (!mounted || rows.length <= _coverageVerdictRows.length) return;
+      setState(() => _coverageVerdictPageCount = nextPageCount);
+      _applyCoverageVerdictRows(rows, preserveUiState: true);
+    } finally {
+      _coverageVerdictPageLoadInFlight = false;
+    }
   }
 
   void _onCoverageJobState(CoverageJobState state) {
     if (state.snapshotId != widget.snapshotId || !mounted) return;
-    unawaited(_applyCoverageJobState(state));
+    _pendingCoverageJobState = state;
+    _coverageJobStateCoalesceTimer ??= Timer(
+      const Duration(milliseconds: 150),
+      () {
+        _coverageJobStateCoalesceTimer = null;
+        final pending = _pendingCoverageJobState;
+        if (pending == null || !mounted) return;
+        unawaited(_applyCoverageJobState(pending));
+      },
+    );
   }
 
   Future<void> _applyCoverageJobState(CoverageJobState state) async {
     if (state.snapshotId != widget.snapshotId) return;
+    // Stay on precheck only while no coverage job progress; otherwise show results
+    // (e.g. job resumed/paused in background while user still sees precheck).
+    if (_phase == _Phase.precheck && !_analyzing) {
+      final idleOnPrecheck =
+          state.status != CoverageJobStatus.running &&
+          state.status != CoverageJobStatus.paused &&
+          state.analyzedFiles == 0;
+      if (idleOnPrecheck) {
+        if (!mounted) return;
+        setState(() => _coverageJobState = state);
+        return;
+      }
+    }
     final incremental = _coverageVerdictByteOffset > 0 && _verdicts.isNotEmpty;
-    if (state.analyzedFiles > 0 ||
-        state.status == CoverageJobStatus.completed) {
-      await _refreshVerdictsFromCoverageStore(incremental: incremental);
+    final terminal =
+        state.status == CoverageJobStatus.completed ||
+        state.status == CoverageJobStatus.paused;
+    final shouldRefreshVerdicts =
+        state.analyzedFiles > 0 || state.status == CoverageJobStatus.completed;
+    if (shouldRefreshVerdicts) {
+      final now = DateTime.now();
+      final dueByTime =
+          _lastCoverageVerdictRefreshAt == null ||
+          now.difference(_lastCoverageVerdictRefreshAt!) >=
+              _coverageVerdictRefreshMinInterval;
+      if (terminal || dueByTime) {
+        await _refreshVerdictsFromCoverageStore(incremental: incremental);
+        _lastCoverageVerdictRefreshAt = now;
+      }
     }
     if (!mounted) return;
     final showResults =
         _verdicts.isNotEmpty ||
         state.status == CoverageJobStatus.paused ||
         state.status == CoverageJobStatus.completed ||
-        state.analyzedFiles < state.totalUnclassified;
+        (state.status == CoverageJobStatus.running && state.analyzedFiles > 0);
     setState(() {
       _coverageJobState = state;
       _analyzing = state.status == CoverageJobStatus.running;
@@ -878,7 +1724,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       }
       if (state.pauseReason == CoveragePauseReason.failed) {
         _error = context.l10n.aiCoverageFailedReason(
-          coverageFailedReasonCategory(context.l10n, state.pauseDetail),
+          coverageFailedReasonCategory(
+            context.l10n,
+            state.pauseDetail,
+            pauseMessage: state.pauseMessage,
+          ),
         );
       } else if (state.status != CoverageJobStatus.paused ||
           state.pauseReason != CoveragePauseReason.failed) {
@@ -887,31 +1737,85 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     });
   }
 
+  Future<List<CoverageVerdict>>
+  _fetchAllLocalCoverageVerdictsFromEngine() async {
+    final session = VolwardSession.instance;
+    final engine = session?.treeCoverageEngine ?? session?.coverageEngine;
+    if (engine == null) return const [];
+    final rows = <CoverageVerdict>[];
+    var cursor = 0;
+    while (true) {
+      final page = await engine.fetchLocalVerdictsPage(
+        widget.snapshotId,
+        cursor: cursor,
+        limit: 5000,
+      );
+      if (page.verdicts.isEmpty) break;
+      rows.addAll(page.verdicts);
+      final next = page.nextCursor;
+      if (next == null) break;
+      cursor = next;
+    }
+    return rows;
+  }
+
   Future<void> _refreshVerdictsFromCoverageStore({
     bool incremental = false,
   }) async {
-    final store = CoverageVerdictStore(SnapshotCache.cacheDir());
-    List<CoverageVerdict> coverageVerdicts;
-    if (incremental) {
-      final chunk = await store.readAppendedSince(
-        widget.snapshotId,
-        _coverageVerdictByteOffset,
+    try {
+      final store = CoverageVerdictStore(SnapshotCache.cacheDir());
+      List<CoverageVerdict> coverageVerdicts;
+      if (incremental) {
+        final chunk = await store.readAppendedSince(
+          widget.snapshotId,
+          _coverageVerdictByteOffset,
+        );
+        _coverageVerdictByteOffset = chunk.fileLength;
+        if (chunk.appended.isEmpty) return;
+        coverageVerdicts = _mergeCoverageVerdictRows(chunk.appended);
+      } else {
+        coverageVerdicts = await store.readPages(
+          widget.snapshotId,
+          pageCount: _coverageVerdictPageCount,
+          pageSize: _coverageVerdictPageSize,
+        );
+        _coverageVerdictByteOffset = await store.fileByteLength(
+          widget.snapshotId,
+        );
+        if (coverageVerdicts.isEmpty) {
+          final localExpected =
+              (_coveragePlanSummary?.localSafeFiles ?? 0) +
+              (_coveragePlanSummary?.localKeepFiles ?? 0);
+          final job = _coverageJobState;
+          final jobExpectsLocal =
+              job != null &&
+              job.snapshotId == widget.snapshotId &&
+              (job.localResolvedFiles > 0 || job.analyzedFiles > 0);
+          if (localExpected > 0 ||
+              jobExpectsLocal ||
+              _displayPreClassifiedCount > 0) {
+            final nativeLocal =
+                await _fetchAllLocalCoverageVerdictsFromEngine();
+            if (nativeLocal.isNotEmpty) {
+              coverageVerdicts = nativeLocal;
+              await store.appendAll(widget.snapshotId, nativeLocal);
+              _coverageVerdictByteOffset = await store.fileByteLength(
+                widget.snapshotId,
+              );
+            }
+          }
+        }
+      }
+      if (!mounted) return;
+      await _applyCoverageVerdictRowsAsync(
+        coverageVerdicts,
+        preserveUiState: incremental,
       );
-      _coverageVerdictByteOffset = chunk.fileLength;
-      if (chunk.appended.isEmpty) return;
-      coverageVerdicts = _mergeCoverageVerdictRows(chunk.appended);
-    } else {
-      coverageVerdicts = await store.readPages(
-        widget.snapshotId,
-        pageCount: _coverageVerdictPageCount,
-        pageSize: _coverageVerdictPageSize,
-      );
-      _coverageVerdictByteOffset = await store.fileByteLength(
-        widget.snapshotId,
-      );
+    } finally {
+      if (mounted && _resultsLayoutPending && _verdicts.isEmpty) {
+        setState(() => _resultsLayoutPending = false);
+      }
     }
-    if (!mounted) return;
-    _applyCoverageVerdictRows(coverageVerdicts, preserveUiState: incremental);
   }
 
   List<CoverageVerdict> _mergeCoverageVerdictRows(
@@ -921,8 +1825,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     for (final row in appended) {
       byPath[row.path] = row;
     }
-    final merged = byPath.values.toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
+    final merged = byPath.values.toList();
+    if (merged.length < _heavyResultsLayoutThreshold) {
+      merged.sort((a, b) => a.path.compareTo(b.path));
+    }
     return merged;
   }
 
@@ -930,6 +1836,18 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     List<CoverageVerdict> coverageVerdicts, {
     bool preserveUiState = false,
   }) {
+    unawaited(
+      _applyCoverageVerdictRowsAsync(
+        coverageVerdicts,
+        preserveUiState: preserveUiState,
+      ),
+    );
+  }
+
+  Future<void> _applyCoverageVerdictRowsAsync(
+    List<CoverageVerdict> coverageVerdicts, {
+    bool preserveUiState = false,
+  }) async {
     final savedReview = preserveUiState
         ? Map<String, _ReviewDecision>.from(_reviewDecisions)
         : null;
@@ -955,6 +1873,31 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _sizeByPath[verdict.path] = verdict.sizeBytes;
       }
     }
+    if (verdicts.length >= _heavyResultsLayoutThreshold) {
+      if (mounted) {
+        setState(() {
+          _coverageVerdictRows = coverageVerdicts;
+          if (preserveUiState && savedPresentation != null) {
+            _resultsQuery = savedPresentation.query;
+            _resultFilterMode = savedPresentation.filter;
+            _resultSortMode = savedPresentation.sort;
+          } else {
+            _resetResultsPresentation();
+          }
+        });
+      }
+      await _applyHeavyResultsPresentation(
+        verdicts: verdicts,
+        preserveUiState: preserveUiState,
+        savedReview: savedReview,
+        savedSelected: savedSelected,
+        savedExpandedGroups: savedExpandedGroups,
+        savedExpandedReviews: savedExpandedReviews,
+        resetPresentation: _resetResultsPresentation,
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _coverageVerdictRows = coverageVerdicts;
       if (preserveUiState && savedPresentation != null) {
@@ -1009,11 +1952,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ..addAll(savedExpandedReviews);
       }
       _hasExistingResult = verdicts.isNotEmpty;
+      _resultsLayoutPending = false;
     });
   }
 
   Future<void> _startFullCoverageAnalysis() async {
     final generation = _beginOperation();
+    await _ensureUnknownCandidatesLoaded();
+    if (!mounted) return;
     if (!await _ensurePrivacyAccepted(generation)) return;
     if (!_isCurrent(generation)) return;
     final provider = await widget.gateway.resolveProvider();
@@ -1038,6 +1984,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _expandedReviewPaths.clear();
       _invalidateResultGroups();
     });
+    await _hydrateCoverageJob();
+    if (!_isCurrent(generation) || !mounted) return;
     final result = await AiCoverageCoordinator.instance.startFullCoverage(
       snapshotId: widget.snapshotId,
       mode: mode,
@@ -1061,6 +2009,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _phase = _Phase.precheck;
         _error = context.l10n.aiCoverageUnavailable;
       });
+      return;
+    }
+    if (result is StartFullCoverageLocalOnly) {
+      await _openLocalOnlyResults();
     }
   }
 
@@ -1287,9 +2239,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         state.status == CoverageJobStatus.completed) {
       return null;
     }
+    _maybeLoadCoveragePlanSummaryForBanner();
     return CoverageJobBanner(
       state: state,
       verdictRows: _coverageVerdictRows,
+      planSummary: _coveragePlanSummary,
+      showPausedBeforeProgressNotice: _phase == _Phase.results,
       onPause: state.status == CoverageJobStatus.running
           ? () => unawaited(AiCoverageCoordinator.instance.pauseCoverage())
           : null,
@@ -1419,6 +2374,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (_deleting) return;
     final targets = _deleteTargets();
     if (targets.isEmpty) return;
+    final returnToPrecheck =
+        _phase == _Phase.precheck && _verdicts.isEmpty && !_analyzing;
+    final selectedPaths = Set<String>.from(_selected);
     final generation = _beginOperation();
     final l10n = context.l10n;
     setState(() {
@@ -1501,7 +2459,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       );
       if (failedCount > 0) {
         setState(() {
-          _phase = _Phase.results;
+          _phase = returnToPrecheck ? _Phase.precheck : _Phase.results;
           _partialDeleteFailedCount = failedCount;
           _partialDeleteFreedBytes = freedAfter;
           _retryTargets = failedTargets;
@@ -1514,17 +2472,36 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       }
       completed = true;
       _retryTargets = [];
+      if (returnToPrecheck) {
+        setState(() {
+          _preClassified.removeWhere(
+            (entry) => selectedPaths.contains(entry['path']?.toString() ?? ''),
+          );
+          _selected.removeWhere(selectedPaths.contains);
+          if (_preClassifiedTotalCount != null) {
+            _preClassifiedTotalCount =
+                (_preClassifiedTotalCount! - selectedPaths.length).clamp(
+                  0,
+                  1 << 30,
+                );
+          }
+          for (final path in selectedPaths) {
+            _sizeByPath.remove(path);
+            _deleteTargetsByPath.remove(path);
+          }
+        });
+      }
     } catch (error) {
       if (!_isCurrent(generation)) return;
       setState(() {
-        _phase = _Phase.results;
+        _phase = returnToPrecheck ? _Phase.precheck : _Phase.results;
         _error = l10n.deleteFailed(error.toString());
       });
     } finally {
       if (_isCurrent(generation)) {
         setState(() {
           _deleting = false;
-          _phase = _Phase.results;
+          _phase = returnToPrecheck ? _Phase.precheck : _Phase.results;
         });
         widget.onDeletingChanged(false);
       }
@@ -1603,10 +2580,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Set<String> _defaultExpandedGroupPaths() {
-    return _normalizedResultGroups()
-        .where((group) => group.items.length < 3)
-        .map((group) => group.path)
-        .toSet();
+    var rowBudget = _maxDefaultExpandedResultRows;
+    final expanded = <String>{};
+    for (final group in _normalizedResultGroups()) {
+      if (group.items.length >= 3) continue;
+      final rowCost = group.items.length + 1;
+      if (rowBudget < rowCost) break;
+      expanded.add(group.path);
+      rowBudget -= rowCost;
+    }
+    return expanded;
   }
 
   int get _selectedBytes =>
@@ -1675,14 +2658,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         candidateCount: 0,
       ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
-      _Phase.analyzing =>
-        _useFullCoverage && _verdicts.isNotEmpty
-            ? _buildResults()
-            : _buildProgressBody(
-                label: context.l10n.aiWorkspacePhaseAnalyzing,
-                candidateCount:
-                    _coverageJobState?.totalUnclassified ?? _unknown.length,
-              ),
+      _Phase.analyzing => _buildAnalyzingBody(),
       _Phase.results || _Phase.deleting => _buildResults(),
       _Phase.error => _buildError(),
     };
@@ -1695,6 +2671,46 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       AiMode.byok => l10n.aiSettingsByokLabel,
       AiMode.off => l10n.aiSettingsOffLabel,
     };
+  }
+
+  Widget _buildAnalyzingBody() {
+    if (_useFullCoverage && _verdicts.isNotEmpty) {
+      return _buildResults();
+    }
+    final l10n = context.l10n;
+    final job = _coverageJobState;
+    final useCoverageProgress =
+        _useFullCoverage && job != null && job.snapshotId == widget.snapshotId;
+    final subtitle = useCoverageProgress
+        ? l10n.aiCoverageProgress(job.analyzedFiles, job.totalUnclassified)
+        : '${l10n.scanProgressItems(job?.totalUnclassified ?? _unknown.length)} · ${_modeLabel()}';
+    return ListView(
+      padding: const EdgeInsets.all(AppleSpacing.lg),
+      children: [
+        if (_buildCoverageBanner() case final banner?) ...[
+          banner,
+          const SizedBox(height: AppleSpacing.lg),
+        ],
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: AppleSpacing.md),
+              Text(l10n.aiWorkspacePhaseAnalyzing, style: context.vwBodyStrong),
+              const SizedBox(height: AppleSpacing.xs),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: context.vwCaption.copyWith(
+                  color: context.volward.inkMuted80,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildProgressBody({
@@ -1728,9 +2744,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final tokens = context.volward;
     final canAnalyze =
         _hasProvider &&
+        !_candidatesBootstrapPending &&
         _canStartCoverage &&
         !(_mode == AiMode.platform && _platformCredits == 0) &&
-        (!_useFullCoverage || (_coverageHydrated && !_coverageHydrating));
+        (!_useFullCoverage || _coverageHydrated) &&
+        !_coveragePlanIsLocalOnly;
     final needsSettings =
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
@@ -1742,22 +2760,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
       children: [
+        if (_buildCoverageBanner() case final banner?) ...[
+          banner,
+          const SizedBox(height: AppleSpacing.md),
+        ],
         Text(
-          l10n.aiPreCheckSafeTitle(_preClassified.length),
+          l10n.aiPreCheckSafeTitle(_displayPreClassifiedCount),
           style: context.vwBodyStrong,
         ),
         const SizedBox(height: AppleSpacing.xs),
-        Text(
-          l10n.aiPreCheckUnknownTitle(_unknown.length, _estimatedTokens),
-          style: context.vwCaption,
-        ),
-        if (_truncated && !_useFullCoverage) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Text(
-            l10n.aiTruncatedNotice(_unknown.length, _candidatesBeforeCap),
-            style: AppleTypography.caption.copyWith(color: tokens.warning),
-          ),
-        ],
+        ..._buildPrecheckAiEstimateLines(context),
         if (_mode == AiMode.platform &&
             _platformCredits != null &&
             !(_useFullCoverage && _estimatedCoverageCredits != null)) ...[
@@ -1777,24 +2789,30 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                   _coveragePlanSummary!.localKeepFiles!,
             ),
           ),
-          Text(
-            l10n.aiCoverageEstimatedTreeRounds(
-              _coveragePlanSummary!.estimatedTreeCredits!,
+          if ((_coveragePlanMinApiCalls ?? 0) > 0) ...[
+            Text(
+              l10n.aiCoverageEstimatedTreeRounds(
+                _coveragePlanSummary!.estimatedTreeCredits!,
+              ),
             ),
-          ),
-          Text(
-            l10n.aiCoverageEstimatedTailRounds(
-              _coveragePlanSummary!.estimatedTailCredits!,
+            Text(
+              l10n.aiCoverageEstimatedTailRounds(
+                _coveragePlanSummary!.estimatedTailCredits!,
+              ),
             ),
-          ),
-          Text(
-            l10n.aiCoverageEstimatedCreditsTotal(_estimatedCoverageCredits!),
-          ),
+            Text(
+              l10n.aiCoverageEstimatedCreditsTotal(_estimatedCoverageCredits!),
+            ),
+          ],
           if (_platformCredits != null)
             Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
           if (_runBudgetCredits != null)
             Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
-          Text(l10n.aiCoveragePurchaseFooter, style: context.vwCaption),
+          if ((_coveragePlanMinApiCalls ?? 0) >= 10)
+            Text(
+              l10n.aiCoveragePurchaseFooterConditional,
+              style: context.vwCaption,
+            ),
         ] else if (_useFullCoverage &&
             _mode == AiMode.platform &&
             _estimatedCoverageCredits != null) ...[
@@ -1804,7 +2822,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
           if (_runBudgetCredits != null)
             Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
-          Text(l10n.aiCoveragePurchaseFooter, style: context.vwCaption),
+          if ((_coveragePlanMinApiCalls ?? _estimatedCoverageCredits!) >= 10)
+            Text(
+              l10n.aiCoveragePurchaseFooterConditional,
+              style: context.vwCaption,
+            ),
         ],
         if (_useFullCoverage &&
             _platformCredits != null &&
@@ -1865,6 +2887,25 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             const SizedBox(height: AppleSpacing.xs),
             Text(l10n.aiCoverageHydrating, style: context.vwCaption),
           ],
+          if (_candidatesBootstrapPending) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: AppleSpacing.xs),
+                Expanded(
+                  child: Text(
+                    l10n.aiCandidatesBootstrapLoading,
+                    style: context.vwCaption,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (_mode == AiMode.platform &&
               _platformCredits != null &&
               _coverageBudgetCredits != null &&
@@ -1916,11 +2957,74 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (_preClassified.isNotEmpty) ...[
           const SizedBox(height: AppleSpacing.lg),
           Text(
-            l10n.aiPreCheckSafeSelectable(_preClassified.length),
+            l10n.aiPreCheckSafeSelectable(_displayPreClassifiedCount),
             style: context.vwCaptionStrong,
           ),
-          const SizedBox(height: AppleSpacing.xs),
-          ..._preClassified.map(_preClassifiedTile),
+          const SizedBox(height: AppleSpacing.xxs),
+          Wrap(
+            spacing: AppleSpacing.sm,
+            runSpacing: AppleSpacing.xxs,
+            children: [
+              TextButton(
+                onPressed: () =>
+                    _selectAllPrecheckDeletableShown(selected: true),
+                child: Text(l10n.aiPreCheckSelectAllShown),
+              ),
+              if (_selected.isNotEmpty)
+                TextButton(
+                  onPressed: () =>
+                      _selectAllPrecheckDeletableShown(selected: false),
+                  child: Text(l10n.aiPreCheckClearSelection),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppleSpacing.xxs),
+          ..._preClassified
+              .take(_preClassifiedPrecheckPreviewCap)
+              .map(_preClassifiedTile),
+          if (_displayPreClassifiedCount >
+              _preClassifiedPrecheckPreviewCap) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              l10n.aiCoverageFailedBatchPathsOverflow(
+                _displayPreClassifiedCount - _preClassifiedPrecheckPreviewCap,
+              ),
+              style: context.vwFinePrint,
+            ),
+          ],
+          if (_precheckSelectedDeletableCount > 0) ...[
+            const SizedBox(height: AppleSpacing.md),
+            Text(
+              l10n.aiResultsSelectedForCleanup(
+                _precheckSelectedDeletableCount,
+                _formatBytes(_selectedBytes),
+              ),
+              style: context.vwCaptionStrong,
+            ),
+            const SizedBox(height: AppleSpacing.xs),
+            AppleButton(
+              key: AiAnalysisWorkspace.precheckDeleteKey,
+              label: l10n.aiDeleteSelected(_precheckSelectedDeletableCount),
+              icon: Icons.delete_outline,
+              expanded: true,
+              onPressed: _deleting ? null : _deleteSelected,
+            ),
+          ],
+        ],
+        if (_useFullCoverage &&
+            _coverageHydrated &&
+            _coveragePlanIsLocalOnly) ...[
+          const SizedBox(height: AppleSpacing.md),
+          Text(l10n.aiPreCheckLocalOnlyTitle, style: context.vwBodyStrong),
+          const SizedBox(height: AppleSpacing.xxs),
+          Text(l10n.aiPreCheckLocalOnlyBody, style: context.vwCaption),
+          const SizedBox(height: AppleSpacing.sm),
+          AppleButton(
+            label: l10n.aiStartLocalOnly,
+            icon: Icons.checklist_outlined,
+            expanded: true,
+            onPressed: () => unawaited(_openLocalOnlyResults()),
+          ),
         ],
         const SizedBox(height: AppleSpacing.lg),
         Column(
@@ -1936,17 +3040,18 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               ),
               const SizedBox(height: AppleSpacing.xs),
             ],
-            AppleButton(
-              key: _hasExistingResult
-                  ? AiAnalysisWorkspace.analyzeAgainKey
-                  : null,
-              label: _hasExistingResult
-                  ? l10n.aiWorkspaceAnalyzeAgain
-                  : l10n.aiStartAnalysis,
-              icon: Icons.auto_awesome_outlined,
-              expanded: true,
-              onPressed: canAnalyze ? _startAnalysis : null,
-            ),
+            if (!_coveragePlanIsLocalOnly)
+              AppleButton(
+                key: _hasExistingResult
+                    ? AiAnalysisWorkspace.analyzeAgainKey
+                    : null,
+                label: _hasExistingResult
+                    ? l10n.aiWorkspaceAnalyzeAgain
+                    : l10n.aiStartAnalysis,
+                icon: Icons.auto_awesome_outlined,
+                expanded: true,
+                onPressed: canAnalyze ? _startAnalysis : null,
+              ),
           ],
         ),
       ],
@@ -2166,6 +3271,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!_expandedGroupPaths.add(path)) {
         _expandedGroupPaths.remove(path);
       }
+      _resultRowsCache = null;
     });
   }
 
@@ -2288,65 +3394,92 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget _buildResultStreamRow(_ResultListRow row) {
-    return switch (row) {
-      _ResultListGroupRow(:final visibleGroup) => _ResultGroupRow(
-        key: row.key,
-        group: visibleGroup.group,
-        expanded: _expandedGroupPaths.contains(visibleGroup.group.path),
-        selectionValue: _safeGroupSelectionValue(visibleGroup.items),
-        onSelectionChanged:
-            visibleGroup.items
-                .where((item) => item.verdict == 'safe_to_remove')
-                .isEmpty
-            ? null
-            : (value) => _toggleSafeGroup(visibleGroup.items, value == true),
-        onTap: () => _toggleGroupExpanded(visibleGroup.group.path),
-        summaryLabel: _groupSummaryLabel(visibleGroup),
-        metadataLabels: _groupMetadataLabels(visibleGroup),
-      ),
-      _ResultListItemRow(:final item) => _ResultRow(
-        key: row.key,
-        item: item,
-        sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
-        selected: _selected.contains(item.path),
-        reviewDecision: _reviewDecisions[item.path] ?? _ReviewDecision.pending,
-        onChanged: item.verdict == 'safe_to_remove'
-            ? (value) => _toggle(item.path, value)
-            : null,
-        onTap: switch (item.verdict) {
-          'safe_to_remove' => () => _toggle(
-            item.path,
-            !_selected.contains(item.path),
-          ),
-          'review_needed' => () => _toggleReviewExpanded(item.path),
-          _ => null,
-        },
-        expanded:
-            item.verdict == 'review_needed' &&
-            _expandedReviewPaths.contains(item.path),
-        onDecisionChanged: item.verdict == 'review_needed'
-            ? (decision) => _confirmReviewDecision(item.path, decision)
-            : null,
-        cleanupMeta: _cleanupMetaLabel(item),
-        cleanupSource: _cleanupSourceLabel(item),
-        retentionHint: _retentionHintLabel(item),
-        reviewStatusLabel: _reviewStatusLabel(
-          _reviewDecisions[item.path] ?? _ReviewDecision.pending,
+    return RepaintBoundary(
+      child: switch (row) {
+        _ResultListGroupRow(:final visibleGroup) => _ResultGroupRow(
+          key: row.key,
+          group: visibleGroup.group,
+          expanded: _expandedGroupPaths.contains(visibleGroup.group.path),
+          selectionValue: _safeGroupSelectionValue(visibleGroup.items),
+          onSelectionChanged:
+              visibleGroup.items
+                  .where((item) => item.verdict == 'safe_to_remove')
+                  .isEmpty
+              ? null
+              : (value) => _toggleSafeGroup(visibleGroup.items, value == true),
+          onTap: () => _toggleGroupExpanded(visibleGroup.group.path),
+          summaryLabel: _groupSummaryLabel(visibleGroup),
+          metadataLabels: _groupMetadataLabels(visibleGroup),
         ),
-      ),
-    };
+        _ResultListItemRow(:final item) => _ResultRow(
+          key: row.key,
+          item: item,
+          sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
+          selected: _selected.contains(item.path),
+          reviewDecision:
+              _reviewDecisions[item.path] ?? _ReviewDecision.pending,
+          onChanged: item.verdict == 'safe_to_remove'
+              ? (value) => _toggle(item.path, value)
+              : null,
+          onTap: switch (item.verdict) {
+            'safe_to_remove' => () => _toggle(
+              item.path,
+              !_selected.contains(item.path),
+            ),
+            'review_needed' => () => _toggleReviewExpanded(item.path),
+            _ => null,
+          },
+          expanded:
+              item.verdict == 'review_needed' &&
+              _expandedReviewPaths.contains(item.path),
+          onDecisionChanged: item.verdict == 'review_needed'
+              ? (decision) => _confirmReviewDecision(item.path, decision)
+              : null,
+          cleanupMeta: _cleanupMetaLabel(item),
+          cleanupSource: _cleanupSourceLabel(item),
+          retentionHint: _retentionHintLabel(item),
+          reviewStatusLabel: _reviewStatusLabel(
+            _reviewDecisions[item.path] ?? _ReviewDecision.pending,
+          ),
+        ),
+      },
+    );
   }
 
   Widget _buildResults() {
+    if (_resultsLayoutPending && _verdicts.isEmpty) {
+      final job = _coverageJobState;
+      final loadingLabel =
+          job != null &&
+              job.status == CoverageJobStatus.running &&
+              _useFullCoverage
+          ? context.l10n.aiCoverageProgress(
+              job.analyzedFiles,
+              job.totalUnclassified,
+            )
+          : context.l10n.aiWorkspacePhaseReview;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: AppleSpacing.sm),
+            Text(loadingLabel, style: context.vwCaption),
+          ],
+        ),
+      );
+    }
     final normalizedGroups = _normalizedResultGroups();
     final summary = _overallResultSummaryFor(normalizedGroups);
-    final rows = _resultRows(_visibleResultGroups(normalizedGroups));
+    final rows = _cachedResultRows();
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 720;
         final horizontalPadding = wide ? AppleSpacing.lg : AppleSpacing.md;
         return Column(
           children: [
+            if (_resultsLayoutPending)
+              const LinearProgressIndicator(minHeight: 2),
             Expanded(
               child: CustomScrollView(
                 controller: _resultsScrollController,
@@ -2378,6 +3511,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                             key: AiAnalysisWorkspace.decisionSummaryKey,
                             style: context.vwBodyStrong,
                           ),
+                          if (_shouldShowResultsLocalPreviewHint()) ...[
+                            const SizedBox(height: AppleSpacing.xxs),
+                            Text(
+                              context.l10n.aiResultsLocalPreviewHint,
+                              style: context.vwCaption,
+                            ),
+                          ],
                           if (normalizedGroups.isNotEmpty) ...[
                             const SizedBox(height: AppleSpacing.sm),
                             _buildResultsToolbar(wide: wide),
@@ -2419,8 +3559,40 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  String? _coverageResultsEmptyJobHint(CoverageJobState? job) {
+    if (job == null || job.snapshotId != widget.snapshotId) return null;
+    final l10n = context.l10n;
+    if (job.status == CoverageJobStatus.paused &&
+        job.pauseReason == CoveragePauseReason.failed) {
+      return coverageFailedReasonCategory(
+        l10n,
+        job.pauseDetail,
+        pauseMessage: job.pauseMessage,
+      );
+    }
+    if (job.status == CoverageJobStatus.running) {
+      return l10n.aiCoverageProgress(job.analyzedFiles, job.totalUnclassified);
+    }
+    if (job.status == CoverageJobStatus.completed &&
+        job.totalUnclassified == 0) {
+      return '当前扫描快照里没有「未分类」文件，Full Coverage 没有可写入的结果。';
+    }
+    if (job.status == CoverageJobStatus.completed &&
+        job.analyzedFiles == 0 &&
+        job.totalUnclassified > 0) {
+      return '分析已结束，但 verdict 文件为空。请 Restart full coverage；若仍失败，请确认已用最新 native 库重启应用。';
+    }
+    if (job.status == CoverageJobStatus.completed &&
+        job.analyzedFiles < job.totalUnclassified) {
+      return l10n.aiCoverageProgress(job.analyzedFiles, job.totalUnclassified);
+    }
+    return null;
+  }
+
   Widget _buildResultsEmptyState({required bool filtered}) {
     final l10n = context.l10n;
+    final job = _coverageJobState;
+    final jobHint = _coverageResultsEmptyJobHint(job);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppleSpacing.lg),
@@ -2439,6 +3611,23 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               filtered ? l10n.aiResultsNoMatches : l10n.aiResultsEmpty,
               style: context.vwCaptionStrong,
             ),
+            if (_error != null && _error!.trim().isNotEmpty) ...[
+              const SizedBox(height: AppleSpacing.xs),
+              Text(
+                _error!,
+                style: context.vwCaption.copyWith(
+                  color: context.volward.danger,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ] else if (jobHint != null) ...[
+              const SizedBox(height: AppleSpacing.xs),
+              Text(
+                jobHint,
+                style: context.vwCaption,
+                textAlign: TextAlign.center,
+              ),
+            ],
             if (filtered) ...[
               const SizedBox(height: AppleSpacing.xs),
               AppleButton(

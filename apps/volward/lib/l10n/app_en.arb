@@ -349,7 +349,7 @@
       }
     }
   },
-  "aiPreCheckUnknownTitle": "{count} items will be sent for AI analysis (~{tokens} tokens)",
+  "aiPreCheckUnknownTitle": "{count} items still need AI (BYOK ~{tokens} input tokens per API call, up to {batchSize} items each; {cap} items max per analysis)",
   "@aiPreCheckUnknownTitle": {
     "placeholders": {
       "count": {
@@ -357,13 +357,48 @@
       },
       "tokens": {
         "type": "int"
+      },
+      "batchSize": {
+        "type": "int"
+      },
+      "cap": {
+        "type": "int"
       }
     }
   },
+  "aiPreCheckCoverageEstimatePending": "Estimating full coverage cost…",
+  "aiPreCheckAiScope": "{tree} files need directory AI, {tail} loose files in tail queue",
+  "@aiPreCheckAiScope": {
+    "placeholders": {
+      "tree": {"type": "int"},
+      "tail": {"type": "int"}
+    }
+  },
+  "aiPreCheckAiScopeV2": "Directory AI scope: ~{treePending} files · tail queue: {tail} files · about {apiCalls} API calls (minimum)",
+  "@aiPreCheckAiScopeV2": {
+    "placeholders": {
+      "treePending": {"type": "int"},
+      "tail": {"type": "int"},
+      "apiCalls": {"type": "int"}
+    }
+  },
+  "aiPreCheckLocalOnlyTitle": "No API calls needed for this scan",
+  "aiPreCheckLocalOnlyBody": "Local rules already cover the directory and tail queues. Review local results without starting full coverage.",
+  "aiStartLocalOnly": "Review local results",
+  "aiPreCheckFullCoverageEstimate": "~{credits} credits minimum ({calls} API calls from plan; tree BFS may add more)",
+  "@aiPreCheckFullCoverageEstimate": {
+    "placeholders": {
+      "credits": {"type": "int"},
+      "calls": {"type": "int"}
+    }
+  },
+  "aiPreCheckTreeCreditsMayGrow": "Directory tree analysis may use more credits than this plan minimum.",
+  "aiPreCheckSelectAllShown": "Select all shown",
+  "aiPreCheckClearSelection": "Clear selection",
   "aiStartAnalysis": "Start AI Analysis",
   "aiNoApiKey": "No API Key — configure in Settings",
   "aiContractUnavailable": "The installed native library is out of date. Please update Volward to use AI analysis.",
-  "aiDeleteSelected": "Delete {count} Selected Items",
+  "aiDeleteSelected": "Move {count} Selected to Trash",
   "@aiDeleteSelected": {
     "placeholders": {
       "count": {
@@ -494,7 +529,7 @@
   "aiErrorUnknown": "Unknown error",
   "aiErrorNativeUnavailable": "Failed to load AI candidates (native API unavailable).",
   "aiErrorInvalidPayload": "Invalid candidates payload.",
-  "aiTruncatedNotice": "Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.",
+  "aiTruncatedNotice": "Including the {shown} largest of {total} items ({cap} cap) — the rest are skipped.",
   "@aiTruncatedNotice": {
     "placeholders": {
       "shown": {
@@ -502,10 +537,13 @@
       },
       "total": {
         "type": "int"
+      },
+      "cap": {
+        "type": "int"
       }
     }
   },
-  "aiCoverageProgress": "Coverage: {analyzed} / {total} files analyzed",
+  "aiCoverageProgress": "Coverage: {analyzed} / {total} unclassified files resolved",
   "@aiCoverageProgress": {
     "placeholders": {
       "analyzed": {
@@ -516,6 +554,30 @@
       }
     }
   },
+  "aiCoverageFunnelBreakdown": "Local {localSafe} safe · {localKeep} keep · ~{treePending} via directory AI · {tail} tail files",
+  "@aiCoverageFunnelBreakdown": {
+    "placeholders": {
+      "localSafe": {"type": "int"},
+      "localKeep": {"type": "int"},
+      "treePending": {"type": "int"},
+      "tail": {"type": "int"}
+    }
+  },
+  "aiCoverageApiCallsEstimate": "API calls this run: {used} used · at least {min} planned ({remaining} left at plan minimum)",
+  "@aiCoverageApiCallsEstimate": {
+    "placeholders": {
+      "used": {"type": "int"},
+      "min": {"type": "int"},
+      "remaining": {"type": "int"}
+    }
+  },
+  "aiCoverageRemainingApiCalls": "About {remaining} API calls left (plan minimum; directory drill-down may add more)",
+  "@aiCoverageRemainingApiCalls": {
+    "placeholders": {
+      "remaining": {"type": "int"}
+    }
+  },
+  "aiCoveragePausedBeforeProgress": "Local previews below are ready. Resume to flush local verdicts and run directory/tail AI on the rest.",
   "aiCoverageRemainingEstimate": "About {credits} credits remaining",
   "@aiCoverageRemainingEstimate": {
     "placeholders": {
@@ -573,6 +635,7 @@
     }
   },
   "aiCoveragePurchaseFooter": "Full analysis typically uses about 30–80 credits. You will see an estimate before starting.",
+  "aiCoveragePurchaseFooterConditional": "Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.",
   "aiCoverageInsufficientForEstimate": "Need about {needed} credits; you have {available}.",
   "@aiCoverageInsufficientForEstimate": {
     "placeholders": {
@@ -716,7 +779,7 @@
       }
     }
   },
-  "aiCoverageSourceStats": "{file} per-file · {group} directory-level · {local} local pre-classified",
+  "aiCoverageSourceStats": "Verdict sources: {file} file AI · {group} directory AI · {local} local",
   "@aiCoverageSourceStats": {
     "placeholders": {
       "file": {
@@ -802,6 +865,7 @@
   "aiCoverageNotifyFailed": "Coverage paused due to an error. Open AI results to retry.",
   "aiCoverageBudgetInvalid": "Enter a budget higher than the current limit.",
   "aiCoverageHydrating": "Loading coverage job status…",
+  "aiCandidatesBootstrapLoading": "Loading candidate list…",
   "aiCoverageUnavailable": "Full-coverage analysis is unavailable right now. Try again after the scan finishes loading.",
   "aiCoverageBusyOtherSnapshot": "Another scan is running full-coverage analysis. Wait for it to finish or pause it first.",
   "aiCoveragePlatformBudgetWarning": "Platform balance ({available}) is below the full-run budget ({budget}). Analysis may pause early.",
@@ -842,7 +906,7 @@
   "aiWorkspacePhasePrivacy": "Privacy",
   "aiWorkspacePhaseAnalyzing": "Analyzing",
   "aiWorkspacePhaseReview": "Review",
-  "aiWorkspacePhaseDeleting": "Deleting",
+  "aiWorkspacePhaseDeleting": "Moving to Trash",
   "aiWorkspacePhaseRecovery": "Recovery",
   "aiWorkspaceLoadPrevious": "Load Previous Result",
   "aiWorkspaceAnalyzeAgain": "Analyze Again",
@@ -863,6 +927,7 @@
       "review": {"type": "int"}
     }
   },
+  "aiResultsLocalPreviewHint": "Safe and keep counts below include local rules from the latest scan, not only finished AI coverage.",
   "aiResultsMetricAnalyzed": "Analyzed",
   "aiResultsMetricSafe": "Safe to remove",
   "aiResultsMetricReview": "Needs review",
