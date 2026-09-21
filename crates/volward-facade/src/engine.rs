@@ -20,9 +20,9 @@ use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
-    ai_aggregate_path_from_delete_target, build_ai_coverage_plan, build_ai_tree_plan,
-    collect_local_coverage_verdicts, compute_coverage_funnel_stats,
-    coverage_group_member_paths, expand_tree_drill_children,
+    ai_aggregate_path_from_delete_target, apply_dir_verdict, build_ai_coverage_plan,
+    build_ai_tree_plan, collect_local_coverage_verdicts, compute_coverage_funnel_stats,
+    coverage_group_member_paths, expand_tree_drill_children, DirectoryRole,
     AiCandidateBuilder,
     AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
     CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
@@ -1550,6 +1550,27 @@ impl VolwardEngine {
         serde_json::json!({ "nodes": nodes }).to_string()
     }
 
+    pub fn apply_ai_dir_verdict_json(
+        &self,
+        snapshot_id: &str,
+        dir_path: &str,
+        verdict: &str,
+        confidence: &str,
+        role_snake_case: &str,
+    ) -> String {
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        if index.snapshot_id != snapshot_id {
+            return "error:snapshot mismatch".to_string();
+        }
+        let role: DirectoryRole = serde_json::from_str(&format!("\"{role_snake_case}\""))
+            .unwrap_or(DirectoryRole::Unknown);
+        let verdicts = apply_dir_verdict(&index, dir_path, verdict, confidence, role);
+        serde_json::json!({ "verdicts": verdicts }).to_string()
+    }
+
     pub fn resolve_ai_coverage_group_json(&self, snapshot_id: &str, group_path: &str) -> String {
         let kb = volward_core::os_knowledge::OsKnowledgeBase::for_current_platform();
         let index = match self.index_for_ai(snapshot_id) {
@@ -2823,5 +2844,38 @@ mod tests {
             tail_parsed["rows"][0]["path"].as_str(),
             Some("/root/proj/llm-output/out.md")
         );
+    }
+
+    #[test]
+    fn apply_dir_verdict_json_propagates_under_storage_dir() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let engine = VolwardEngine::new();
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/storage");
+        builder.record_file_size("/root/storage/a.dat", 100);
+        builder.record_file_size("/root/other/outside.dat", 10);
+        let index = builder.finish(
+            "apply-dir-snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let raw = engine.apply_ai_dir_verdict_json(
+            "apply-dir-snap",
+            "/root/storage",
+            "safe_to_remove",
+            "high",
+            "storage_like",
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let verdicts = parsed["verdicts"].as_array().unwrap();
+        assert_eq!(verdicts.len(), 1);
+        assert_eq!(verdicts[0]["path"].as_str(), Some("/root/storage/a.dat"));
+        assert_eq!(verdicts[0]["verdict"].as_str(), Some("safe_to_remove"));
     }
 }

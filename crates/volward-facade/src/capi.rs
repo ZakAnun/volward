@@ -504,6 +504,32 @@ pub unsafe extern "C" fn volward_ai_expand_tree_node_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_apply_dir_verdict_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    dir_path: *const c_char,
+    verdict: *const c_char,
+    confidence: *const c_char,
+    role_snake_case: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    let dir_path = cstr_to_string(dir_path).unwrap_or_default();
+    let verdict = cstr_to_string(verdict).unwrap_or_default();
+    let confidence = cstr_to_string(confidence).unwrap_or_default();
+    let role_snake_case = cstr_to_string(role_snake_case).unwrap_or_default();
+    to_c_string(e.apply_ai_dir_verdict_json(
+        &snapshot_id,
+        &dir_path,
+        &verdict,
+        &confidence,
+        &role_snake_case,
+    ))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_ai_resolve_coverage_group_json(
     engine: *mut VolwardEngine,
     snapshot_id: *const c_char,

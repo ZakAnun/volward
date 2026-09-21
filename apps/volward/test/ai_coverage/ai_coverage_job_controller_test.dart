@@ -26,6 +26,117 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test(
+    'v3 tree BFS drill_down then keep propagates with two API credits',
+    () async {
+      const parentPath = '/root/storage';
+      const childPath = '/root/storage/nested';
+      final parentNode = CoverageTreeNode(
+        path: parentPath,
+        sizeBytes: 500,
+        fileCount: 10,
+        subdirCount: 1,
+        role: 'storage_like',
+      );
+      final childNode = CoverageTreeNode(
+        path: childPath,
+        sizeBytes: 100,
+        fileCount: 2,
+        subdirCount: 0,
+        role: 'unknown',
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 'v3-tree',
+          planVersion: 3,
+          rootPath: '/root',
+          totalUnclassified: 3,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          seedNodeCount: 1,
+        ),
+        pages: const [],
+        treePagesByCursor: {
+          0: CoverageTreePage(
+            snapshotId: 'v3-tree',
+            planVersion: 3,
+            nextCursor: null,
+            nodes: [parentNode],
+          ),
+        },
+        expandNodes: [childNode],
+        applyDirVerdictHandler: (_, verdict, __, ___) async {
+          if (verdict != 'keep') return const [];
+          return const [
+            CoverageVerdict(
+              path: '/root/storage/nested/a.dat',
+              verdict: 'keep',
+              confidence: 'high',
+              reason: 'propagated',
+              coverageSource: 'dir_propagate:$childPath',
+              sizeBytes: 10,
+            ),
+          ];
+        },
+      );
+      var treeBatches = 0;
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: (_) async => throw StateError('tail unused'),
+        analyzeTreeBatch: (nodes) async {
+          treeBatches++;
+          final node = nodes.single;
+          if (node.path == parentPath) {
+            return BatchOutcome(
+              usage: const BatchUsage(tokens: 1, credits: 1),
+              verdicts: [
+                CoverageVerdict(
+                  path: parentPath,
+                  verdict: 'drill_down',
+                  confidence: 'high',
+                  reason: 'need children',
+                  coverageSource: 'dir:$parentPath',
+                  sizeBytes: parentNode.sizeBytes,
+                ),
+              ],
+            );
+          }
+          expect(node.path, childPath);
+          return BatchOutcome(
+            usage: const BatchUsage(tokens: 1, credits: 1),
+            verdicts: [
+              CoverageVerdict(
+                path: childPath,
+                verdict: 'keep',
+                confidence: 'high',
+                reason: 'archive',
+                coverageSource: 'dir:$childPath',
+                sizeBytes: childNode.sizeBytes,
+              ),
+            ],
+          );
+        },
+      );
+
+      final done = await controller.start(
+        'v3-tree',
+        budgetTokens: 100000,
+        budgetCredits: 10,
+      );
+
+      expect(done.status, CoverageJobStatus.completed);
+      expect(done.usedCredits, 2);
+      expect(treeBatches, 2);
+      expect(done.treeNodesCompleted, 2);
+      final saved = await verdictStore.readAll('v3-tree');
+      expect(saved.any((v) => v.path == '/root/storage/nested/a.dat'), isTrue);
+    },
+  );
+
   test('v3 start flushes local verdicts in chunks of 1000', () async {
     final localVerdicts = List.generate(
       2500,

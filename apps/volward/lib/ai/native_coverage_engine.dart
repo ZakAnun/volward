@@ -4,6 +4,7 @@ import '../bridge/native_bridge.dart';
 import 'coverage_engine.dart';
 import 'coverage_models.dart';
 import 'coverage_native_responses.dart';
+import 'coverage_verdict_store.dart';
 
 /// FFI-backed [CoverageEngine] that delegates to Rust coverage plan APIs.
 class NativeCoverageEngine implements CoverageEngine {
@@ -133,6 +134,28 @@ class NativeCoverageEngine implements CoverageEngine {
       'expand tree node',
     );
     return parseCoverageTreeExpandNodes(raw);
+  }
+
+  @override
+  Future<List<CoverageVerdict>> applyDirVerdict(
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+  ) async {
+    final raw = _requireJson(
+      bridge.applyAiDirVerdictJson(
+        engine,
+        snapshotId,
+        dirPath,
+        verdict,
+        confidence,
+        roleSnakeCase,
+      ),
+      'apply dir verdict',
+    );
+    return parseApplyDirVerdictResponse(raw);
   }
 
   @override

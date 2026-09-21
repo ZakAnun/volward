@@ -71,6 +71,18 @@ List<CoverageTreeNode> parseCoverageTreeExpandNodes(String raw) {
       .toList(growable: false);
 }
 
+List<CoverageVerdict> parseApplyDirVerdictResponse(String raw) {
+  final map = decodeCoverageObjectJson(raw);
+  final verdicts = map['verdicts'];
+  if (verdicts is! List) return const [];
+  return verdicts
+      .whereType<Map>()
+      .map(
+        (entry) => CoverageVerdict.fromJson(Map<String, dynamic>.from(entry)),
+      )
+      .toList(growable: false);
+}
+
 List<Map<String, dynamic>> parseCoverageGroupMembers(String raw) {
   final map = decodeCoverageObjectJson(raw);
   final members = map['members'];

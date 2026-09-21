@@ -28,6 +28,14 @@ abstract interface class CoverageEngine {
     String dirPath,
   );
 
+  Future<List<CoverageVerdict>> applyDirVerdict(
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+  );
+
   Future<List<Map<String, dynamic>>> resolveGroupMembers(
     String snapshotId,
     String groupPath,
@@ -73,6 +81,8 @@ class FakeCoverageEngine implements CoverageEngine {
     this.groupMembers = const [],
     this.onBuildPlan,
     this.localVerdictFetcher,
+    this.applyDirVerdictHandler,
+    this.treePagesByCursor = const {},
   });
 
   final CoveragePlanSummary summary;
@@ -84,6 +94,14 @@ class FakeCoverageEngine implements CoverageEngine {
   final List<Map<String, dynamic>> groupMembers;
   final void Function()? onBuildPlan;
   final List<CoverageVerdict> Function(int cursor)? localVerdictFetcher;
+  final Future<List<CoverageVerdict>> Function(
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+  )?
+  applyDirVerdictHandler;
+  final Map<int, CoverageTreePage> treePagesByCursor;
 
   @override
   Future<CoveragePlanSummary> buildPlan(String snapshotId) async {
@@ -120,7 +138,9 @@ class FakeCoverageEngine implements CoverageEngine {
     int cursor, {
     int? pageSize,
   }) async {
-    if (treePages.isNotEmpty) return treePages.first;
+    final byCursor = treePagesByCursor[cursor];
+    if (byCursor != null) return byCursor;
+    if (treePages.isNotEmpty && cursor == 0) return treePages.first;
     return CoverageTreePage(
       snapshotId: snapshotId,
       planVersion: planVersion,
@@ -150,6 +170,25 @@ class FakeCoverageEngine implements CoverageEngine {
     String snapshotId,
     String dirPath,
   ) async => expandNodes;
+
+  @override
+  Future<List<CoverageVerdict>> applyDirVerdict(
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+  ) async {
+    if (applyDirVerdictHandler != null) {
+      return applyDirVerdictHandler!(
+        dirPath,
+        verdict,
+        confidence,
+        roleSnakeCase,
+      );
+    }
+    return const [];
+  }
 
   @override
   Future<List<Map<String, dynamic>>> resolveGroupMembers(
