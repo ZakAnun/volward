@@ -409,6 +409,20 @@ pub unsafe extern "C" fn volward_ai_build_coverage_plan_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_list_local_coverage_verdicts_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    cursor: u64,
+    limit: u32,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.list_local_coverage_verdicts_json(&snapshot_id, cursor, limit))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_ai_next_coverage_page_json(
     engine: *mut VolwardEngine,
     snapshot_id: *const c_char,

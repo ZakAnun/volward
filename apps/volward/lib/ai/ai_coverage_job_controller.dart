@@ -27,6 +27,33 @@ class BatchOutcome {
 
 typedef AnalyzeBatch = Future<BatchOutcome> Function(List<CoverageRow> rows);
 
+typedef FetchLocalVerdictPage =
+    Future<({List<CoverageVerdict> verdicts, int? nextCursor})> Function(
+      int cursor,
+    );
+
+Future<void> flushLocalVerdictsInChunks({
+  required CoverageVerdictStore verdictStore,
+  required String snapshotId,
+  required FetchLocalVerdictPage fetchPage,
+  int chunkSize = 1000,
+}) async {
+  var cursor = 0;
+  while (true) {
+    final page = await fetchPage(cursor);
+    if (page.verdicts.isEmpty) break;
+    for (var i = 0; i < page.verdicts.length; i += chunkSize) {
+      final end = i + chunkSize < page.verdicts.length
+          ? i + chunkSize
+          : page.verdicts.length;
+      await verdictStore.appendAll(snapshotId, page.verdicts.sublist(i, end));
+    }
+    final next = page.nextCursor;
+    if (next == null) break;
+    cursor = next;
+  }
+}
+
 class CoverageJobController {
   CoverageJobController({
     required this.engine,
@@ -242,7 +269,10 @@ class CoverageJobController {
       if (guard == null) return;
       final snapshotId = guard.snapshotId;
 
-      final plan = await engine.buildPlan(snapshotId);
+      var plan = await engine.buildPlan(snapshotId);
+      if (plan.isTreePlan) {
+        plan = await engine.buildTreePlan(snapshotId);
+      }
       if (plan.snapshotId != snapshotId) {
         await _pause(CoveragePauseReason.failed);
         return;
@@ -280,6 +310,27 @@ class CoverageJobController {
       );
       await stateStore.save(_state!);
       _emit();
+
+      if (plan.planVersion >= 3 && guard.localResolvedFiles == 0) {
+        await flushLocalVerdictsInChunks(
+          verdictStore: verdictStore,
+          snapshotId: snapshotId,
+          fetchPage: (cursor) async {
+            final page = await engine.fetchLocalVerdictsPage(
+              snapshotId,
+              cursor: cursor,
+            );
+            return (verdicts: page.verdicts, nextCursor: page.nextCursor);
+          },
+        );
+        final localResolved =
+            (plan.localSafeFiles ?? 0) + (plan.localKeepFiles ?? 0);
+        if (localResolved > 0 && _state != null) {
+          _state = _state!.copyWith(localResolvedFiles: localResolved);
+          await stateStore.save(_state!);
+          _emit();
+        }
+      }
 
       while (!_pauseRequested && _state != null) {
         final state = _state!;

@@ -49,7 +49,8 @@ pub use classify::Classifier;
 pub use cleanup_candidates::*;
 pub use coverage_funnel::{
     build_coverage_funnel_context, build_funnel_context_for_files,
-    compute_coverage_funnel_stats, coverage_funnel_context_for_path,
+    collect_local_coverage_verdicts, compute_coverage_funnel_stats,
+    coverage_funnel_context_for_path,
     coverage_local_exclusion_prefixes, deepest_project_ancestor_for_path,
     path_under_longest_prefix, resolve_unclassified_for_coverage, CoverageFileResolution,
     CoverageFunnelContext, CoverageFunnelContextMap, CoverageFunnelStats,

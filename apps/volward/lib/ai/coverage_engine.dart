@@ -1,4 +1,6 @@
 import 'coverage_models.dart';
+import 'coverage_native_responses.dart';
+import 'coverage_verdict_store.dart';
 
 abstract interface class CoverageEngine {
   Future<CoveragePlanSummary> buildPlan(String snapshotId);
@@ -30,6 +32,34 @@ abstract interface class CoverageEngine {
     String snapshotId,
     String groupPath,
   );
+
+  Future<LocalCoverageVerdictPage> fetchLocalVerdictsPage(
+    String snapshotId, {
+    int cursor = 0,
+    int limit = 5000,
+  });
+}
+
+Future<List<CoverageVerdict>> fetchAllLocalVerdicts(
+  CoverageEngine engine, {
+  required String snapshotId,
+  int pageLimit = 5000,
+}) async {
+  final all = <CoverageVerdict>[];
+  var cursor = 0;
+  while (true) {
+    final page = await engine.fetchLocalVerdictsPage(
+      snapshotId,
+      cursor: cursor,
+      limit: pageLimit,
+    );
+    if (page.verdicts.isEmpty) break;
+    all.addAll(page.verdicts);
+    final next = page.nextCursor;
+    if (next == null) break;
+    cursor = next;
+  }
+  return all;
 }
 
 class FakeCoverageEngine implements CoverageEngine {
@@ -42,6 +72,7 @@ class FakeCoverageEngine implements CoverageEngine {
     this.expandNodes = const [],
     this.groupMembers = const [],
     this.onBuildPlan,
+    this.localVerdictFetcher,
   });
 
   final CoveragePlanSummary summary;
@@ -52,6 +83,7 @@ class FakeCoverageEngine implements CoverageEngine {
   final List<CoverageTreeNode> expandNodes;
   final List<Map<String, dynamic>> groupMembers;
   final void Function()? onBuildPlan;
+  final List<CoverageVerdict> Function(int cursor)? localVerdictFetcher;
 
   @override
   Future<CoveragePlanSummary> buildPlan(String snapshotId) async {
@@ -124,4 +156,23 @@ class FakeCoverageEngine implements CoverageEngine {
     String snapshotId,
     String groupPath,
   ) async => groupMembers;
+
+  @override
+  Future<LocalCoverageVerdictPage> fetchLocalVerdictsPage(
+    String snapshotId, {
+    int cursor = 0,
+    int limit = 5000,
+  }) async {
+    if (localVerdictFetcher == null) {
+      return const LocalCoverageVerdictPage(verdicts: []);
+    }
+    final verdicts = localVerdictFetcher!(cursor);
+    if (verdicts.isEmpty) {
+      return const LocalCoverageVerdictPage(verdicts: []);
+    }
+    final nextCursor = verdicts.length >= limit
+        ? cursor + verdicts.length
+        : null;
+    return LocalCoverageVerdictPage(verdicts: verdicts, nextCursor: nextCursor);
+  }
 }

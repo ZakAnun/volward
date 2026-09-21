@@ -136,6 +136,24 @@ class NativeCoverageEngine implements CoverageEngine {
   }
 
   @override
+  Future<LocalCoverageVerdictPage> fetchLocalVerdictsPage(
+    String snapshotId, {
+    int cursor = 0,
+    int limit = 5000,
+  }) async {
+    final raw = _requireJson(
+      bridge.listLocalCoverageVerdictsJson(
+        engine,
+        snapshotId,
+        cursor,
+        limit: limit,
+      ),
+      'list local coverage verdicts',
+    );
+    return parseLocalCoverageVerdictPage(raw);
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> resolveGroupMembers(
     String snapshotId,
     String groupPath,

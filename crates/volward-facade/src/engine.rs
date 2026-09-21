@@ -21,7 +21,8 @@ use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, build_ai_coverage_plan, build_ai_tree_plan,
-    compute_coverage_funnel_stats, coverage_group_member_paths, expand_tree_drill_children,
+    collect_local_coverage_verdicts, compute_coverage_funnel_stats,
+    coverage_group_member_paths, expand_tree_drill_children,
     AiCandidateBuilder,
     AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
     CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
@@ -1362,6 +1363,45 @@ impl VolwardEngine {
         .to_string()
     }
 
+    pub fn list_local_coverage_verdicts_json(
+        &self,
+        snapshot_id: &str,
+        cursor: u64,
+        limit: u32,
+    ) -> String {
+        let kb = OsKnowledgeBase::for_current_platform();
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        let limit = limit.max(1) as usize;
+        let all = collect_local_coverage_verdicts(
+            &index,
+            &kb,
+            self.platform.protected_prefixes(),
+            &[],
+        );
+        let start = cursor as usize;
+        if start >= all.len() {
+            return serde_json::json!({
+                "verdicts": [],
+                "next_cursor": serde_json::Value::Null,
+            })
+            .to_string();
+        }
+        let end = (start + limit).min(all.len());
+        let next_cursor = if end < all.len() {
+            serde_json::json!(end as u64)
+        } else {
+            serde_json::Value::Null
+        };
+        serde_json::json!({
+            "verdicts": &all[start..end],
+            "next_cursor": next_cursor,
+        })
+        .to_string()
+    }
+
     pub fn next_ai_coverage_page_json(
         &self,
         snapshot_id: &str,
@@ -2623,6 +2663,54 @@ mod tests {
             summary.contains("error:no index or snapshot loaded"),
             "{summary}"
         );
+    }
+
+    #[test]
+    fn local_coverage_verdicts_json_pages() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::{EntryCategory, RiskLevel, ScanStats, SourceType, StorageEntry};
+
+        fn classified(path: &str) -> StorageEntry {
+            StorageEntry {
+                id: format!("id:{path}"),
+                display_name: path.rsplit('/').next().unwrap_or(path).to_string(),
+                path_or_uri: path.to_string(),
+                size_bytes: 1,
+                category: EntryCategory::Cache,
+                risk_level: RiskLevel::Low,
+                source_type: SourceType::File,
+                deletable: true,
+                reason: "test".to_string(),
+                modified_at_ms: None,
+            }
+        }
+
+        let engine = VolwardEngine::new();
+        let mut builder = SnapshotIndexBuilder::new("/Users/x");
+        builder.insert_entry(classified(
+            "/Users/x/Library/Caches/myapp/anchor.bin",
+        ));
+        builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
+        builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
+        builder.record_file_size("/Users/x/loose.dat", 5);
+        let index = builder.finish(
+            "local-verdicts-snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let page1 = engine.list_local_coverage_verdicts_json("local-verdicts-snap", 0, 1);
+        let parsed1: serde_json::Value = serde_json::from_str(&page1).unwrap();
+        assert_eq!(parsed1["verdicts"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed1["next_cursor"].as_u64(), Some(1));
+
+        let page2 = engine.list_local_coverage_verdicts_json("local-verdicts-snap", 1, 100);
+        let parsed2: serde_json::Value = serde_json::from_str(&page2).unwrap();
+        assert!(parsed2["verdicts"].as_array().unwrap().len() >= 1);
+        assert!(parsed2["next_cursor"].is_null());
     }
 
     #[test]

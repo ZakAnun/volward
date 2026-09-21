@@ -7,6 +7,7 @@ use crate::ai_candidates::{
     pre_classified_from_hint, pre_classified_from_kb, pre_classified_under_index_prefix,
     AiCleanupHint, PreClassifiedEntry,
 };
+use crate::ai_coverage_propagate::CoverageLocalVerdict;
 use crate::directory_role::collect_project_anchor_paths;
 use crate::index::SnapshotIndex;
 use crate::model::EntryCategory;
@@ -374,6 +375,79 @@ pub fn compute_coverage_funnel_stats(
     stats
 }
 
+fn local_coverage_source(path: &str, kb: &OsKnowledgeBase) -> String {
+    if kb.classify_path(path).is_some() {
+        "local:kb".to_string()
+    } else {
+        "local:funnel".to_string()
+    }
+}
+
+fn local_verdict_from_safe(entry: PreClassifiedEntry, kb: &OsKnowledgeBase) -> CoverageLocalVerdict {
+    CoverageLocalVerdict {
+        path: entry.path.clone(),
+        size_bytes: entry.size_bytes,
+        verdict: "safe_to_remove".to_string(),
+        confidence: entry.confidence,
+        reason: entry.reason,
+        coverage_source: local_coverage_source(&entry.path, kb),
+    }
+}
+
+fn local_verdict_from_keep(
+    path: String,
+    size_bytes: u64,
+    reason: String,
+    confidence: &str,
+    kb: &OsKnowledgeBase,
+) -> CoverageLocalVerdict {
+    CoverageLocalVerdict {
+        path: path.clone(),
+        size_bytes,
+        verdict: "keep".to_string(),
+        confidence: confidence.to_string(),
+        reason,
+        coverage_source: local_coverage_source(&path, kb),
+    }
+}
+
+/// Collect funnel-resolved local verdicts for all unclassified files (single pass).
+pub fn collect_local_coverage_verdicts(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+) -> Vec<CoverageLocalVerdict> {
+    let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
+    let classified = index.classified_paths();
+    let mut out = Vec::new();
+    for (path, size_bytes) in index.unclassified_files() {
+        if classified.contains(&path) {
+            continue;
+        }
+        let project_ancestor = funnel_map.get(&path).cloned().flatten();
+        let ctx = coverage_funnel_context_for_path(
+            project_ancestor,
+            index,
+            protected_prefixes,
+            personal_prefixes,
+        );
+        match resolve_unclassified_for_coverage(&path, size_bytes, kb, &ctx) {
+            CoverageFileResolution::LocalSafe(entry) => {
+                out.push(local_verdict_from_safe(entry, kb));
+            }
+            CoverageFileResolution::LocalKeep { reason, confidence } => {
+                out.push(local_verdict_from_keep(
+                    path, size_bytes, reason, confidence, kb,
+                ));
+            }
+            CoverageFileResolution::TailCandidate { .. } | CoverageFileResolution::TreeCandidate => {}
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
+}
+
 /// Build per-file [`CoverageFunnelContext`] using shared index-level prefix lists.
 pub fn coverage_funnel_context_for_path(
     project_ancestor: Option<String>,
@@ -524,6 +598,28 @@ mod tests {
                 panic!("sibling should be local via exclusion prefix")
             }
         }
+    }
+
+    #[test]
+    fn collect_local_coverage_verdicts_only_local_buckets() {
+        let mut builder = SnapshotIndexBuilder::new("/Users/x");
+        builder.insert_entry(classified_entry(
+            "/Users/x/Library/Caches/myapp/anchor.bin",
+            1,
+            EntryCategory::Cache,
+        ));
+        builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
+        builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
+        builder.record_file_size("/Users/x/loose.dat", 5);
+        let index = finish(builder);
+        let kb = test_kb();
+        let stats = compute_coverage_funnel_stats(&index, &kb, &[], &[]);
+        let verdicts = collect_local_coverage_verdicts(&index, &kb, &[], &[]);
+        let local_count = stats.local_safe_files + stats.local_keep_files;
+        assert_eq!(verdicts.len() as u64, local_count, "{stats:?}");
+        assert!(verdicts.iter().all(|v| {
+            v.verdict == "safe_to_remove" || v.verdict == "keep"
+        }));
     }
 
     #[test]

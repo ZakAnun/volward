@@ -26,6 +26,66 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test('v3 start flushes local verdicts in chunks of 1000', () async {
+    final localVerdicts = List.generate(
+      2500,
+      (i) => CoverageVerdict(
+        path: '/local/$i',
+        verdict: i.isEven ? 'safe_to_remove' : 'keep',
+        confidence: 'high',
+        reason: 'funnel',
+        coverageSource: 'local:funnel',
+        sizeBytes: 1,
+      ),
+    );
+    var appendAllCalls = 0;
+    final trackingStore = _AppendCountingVerdictStore(
+      verdictStore,
+      onAppend: () => appendAllCalls++,
+    );
+    final engine = FakeCoverageEngine(
+      summary: const CoveragePlanSummary(
+        snapshotId: 'v3-local',
+        planVersion: 3,
+        rootPath: '/',
+        totalUnclassified: 0,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 0,
+        estimatedPages: 0,
+        seedNodeCount: 1,
+        localSafeFiles: 2000,
+        localKeepFiles: 500,
+      ),
+      pages: const [
+        CoveragePage(
+          snapshotId: 'v3-local',
+          planVersion: 3,
+          nextCursor: null,
+          rows: [],
+        ),
+      ],
+      localVerdictFetcher: (cursor) => cursor == 0 ? localVerdicts : const [],
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: trackingStore,
+      stateStore: stateStore,
+      analyzeBatch: (batch) async => successBatchOutcome(batch),
+    );
+
+    final done = await controller.start(
+      'v3-local',
+      budgetTokens: 100000,
+      budgetCredits: 0,
+    );
+
+    expect(done.status, CoverageJobStatus.completed);
+    expect(done.localResolvedFiles, 2500);
+    expect(appendAllCalls, 3);
+    expect(await verdictStore.readAll('v3-local'), hasLength(2500));
+  });
+
   test('controller analyzes every row and completes', () async {
     final rows = List.generate(
       80,
@@ -1664,6 +1724,26 @@ class _PartialMissingProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+}
+
+class _AppendCountingVerdictStore extends CoverageVerdictStore {
+  _AppendCountingVerdictStore(this.inner, {required this.onAppend})
+    : super(inner.directory);
+
+  final CoverageVerdictStore inner;
+  final void Function() onAppend;
+
+  @override
+  Future<void> appendAll(
+    String snapshotId,
+    List<CoverageVerdict> verdicts,
+  ) async {
+    if (verdicts.isNotEmpty) onAppend();
+    return inner.appendAll(snapshotId, verdicts);
+  }
+
+  @override
+  Future<void> clear(String snapshotId) => inner.clear(snapshotId);
 }
 
 FakeCoverageEngine singleRowEngine(String snapshotId) {

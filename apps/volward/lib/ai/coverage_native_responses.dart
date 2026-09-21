@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'coverage_models.dart';
+import 'coverage_verdict_store.dart';
 
 class CoverageEngineException implements Exception {
   CoverageEngineException(this.message);
@@ -22,8 +23,34 @@ Map<String, dynamic> decodeCoverageObjectJson(String raw) {
   return Map<String, dynamic>.from(decoded);
 }
 
+class LocalCoverageVerdictPage {
+  const LocalCoverageVerdictPage({required this.verdicts, this.nextCursor});
+
+  final List<CoverageVerdict> verdicts;
+  final int? nextCursor;
+}
+
 CoveragePlanSummary parseCoveragePlanSummary(String raw) =>
     CoveragePlanSummary.fromJson(decodeCoverageObjectJson(raw));
+
+LocalCoverageVerdictPage parseLocalCoverageVerdictPage(String raw) {
+  final map = decodeCoverageObjectJson(raw);
+  final rawVerdicts = map['verdicts'];
+  final verdicts = rawVerdicts is List
+      ? rawVerdicts
+            .whereType<Map>()
+            .map(
+              (entry) =>
+                  CoverageVerdict.fromJson(Map<String, dynamic>.from(entry)),
+            )
+            .toList(growable: false)
+      : const <CoverageVerdict>[];
+  final next = map['next_cursor'];
+  return LocalCoverageVerdictPage(
+    verdicts: verdicts,
+    nextCursor: next == null ? null : (next as num).toInt(),
+  );
+}
 
 CoveragePage parseCoveragePage(String raw) =>
     CoveragePage.fromJson(decodeCoverageObjectJson(raw));
