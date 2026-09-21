@@ -18,6 +18,19 @@ pub struct AnalyzeCandidate {
     pub retention_days: Option<u32>,
 }
 
+/// Directory node for tree coverage analyze (compact stats only — no member file paths).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AnalyzeTreeNode {
+    pub path: String,
+    pub size_bytes: u64,
+    pub file_count: u64,
+    pub subdir_count: u64,
+    pub role: String,
+    pub markers: Vec<String>,
+    pub pruned_flags: u32,
+    pub top_extensions: Vec<(String, u32)>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AiVerdict {
     pub path: String,
