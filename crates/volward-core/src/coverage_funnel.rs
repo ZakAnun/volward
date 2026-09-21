@@ -335,6 +335,45 @@ pub fn build_coverage_funnel_context(
     build_funnel_context_for_files(index, &paths, kb, protected_prefixes)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CoverageFunnelStats {
+    pub local_safe_files: u64,
+    pub local_keep_files: u64,
+    pub tail_files: u64,
+    pub tree_pending_files: u64,
+}
+
+/// Count unclassified files by pre-AI funnel resolution (single pass over unclassified set).
+pub fn compute_coverage_funnel_stats(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+) -> CoverageFunnelStats {
+    let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
+    let classified = index.classified_paths();
+    let mut stats = CoverageFunnelStats::default();
+    for (path, size_bytes) in index.unclassified_files() {
+        if classified.contains(&path) {
+            continue;
+        }
+        let project_ancestor = funnel_map.get(&path).cloned().flatten();
+        let ctx = coverage_funnel_context_for_path(
+            project_ancestor,
+            index,
+            protected_prefixes,
+            personal_prefixes,
+        );
+        match resolve_unclassified_for_coverage(&path, size_bytes, kb, &ctx) {
+            CoverageFileResolution::LocalSafe(_) => stats.local_safe_files += 1,
+            CoverageFileResolution::LocalKeep { .. } => stats.local_keep_files += 1,
+            CoverageFileResolution::TailCandidate { .. } => stats.tail_files += 1,
+            CoverageFileResolution::TreeCandidate => stats.tree_pending_files += 1,
+        }
+    }
+    stats
+}
+
 /// Build per-file [`CoverageFunnelContext`] using shared index-level prefix lists.
 pub fn coverage_funnel_context_for_path(
     project_ancestor: Option<String>,
@@ -485,6 +524,28 @@ mod tests {
                 panic!("sibling should be local via exclusion prefix")
             }
         }
+    }
+
+    #[test]
+    fn compute_coverage_funnel_stats_counts_each_bucket() {
+        let mut builder = SnapshotIndexBuilder::new("/Users/x");
+        builder.insert_entry(classified_entry(
+            "/Users/x/Library/Caches/myapp/anchor.bin",
+            1,
+            EntryCategory::Cache,
+        ));
+        builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
+        builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
+        builder.record_file_size("/Users/x/MyProj/src/main.rs", 20);
+        builder.record_file_size("/Users/x/loose.dat", 5);
+        builder.record_file_size("/Users/x/project/llm-output/note.md", 5);
+        let index = finish(builder);
+        let kb = test_kb();
+        let stats = compute_coverage_funnel_stats(&index, &kb, &[], &[]);
+        assert!(stats.local_safe_files >= 1, "{stats:?}");
+        assert!(stats.local_keep_files >= 1, "{stats:?}");
+        assert!(stats.tail_files >= 1, "{stats:?}");
+        assert!(stats.tree_pending_files >= 1, "{stats:?}");
     }
 
     #[test]

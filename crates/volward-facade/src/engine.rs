@@ -20,11 +20,11 @@ use volward_core::PlatformStorage;
 use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
-    ai_aggregate_path_from_delete_target, build_ai_coverage_plan, coverage_group_member_paths,
-    AiCandidateBuilder, AiCoveragePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
-    CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
-    DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink, OsKnowledgeBase,
-    SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
+    ai_aggregate_path_from_delete_target, build_ai_coverage_plan, compute_coverage_funnel_stats,
+    coverage_group_member_paths, AiCandidateBuilder, AiCoveragePlan, AnalysisOptions, Capability,
+    CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
+    CleanupCandidateAnalyzer, DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink,
+    OsKnowledgeBase, SimilarPhotoAnalyzer, AI_COVERAGE_PLAN_VERSION, DEFAULT_CANDIDATE_CAP,
 };
 
 use volward_index_pb::{decode_snapshot_index, schedule_json_index_migration};
@@ -1317,6 +1317,12 @@ impl VolwardEngine {
             Err(error) => return error,
         };
         let plan = build_ai_coverage_plan(&index, &kb);
+        let funnel = compute_coverage_funnel_stats(
+            &index,
+            &kb,
+            self.platform.protected_prefixes(),
+            &[],
+        );
         let snapshot_id = plan.snapshot_id.clone();
         let root_path = plan.root_path.clone();
         let root_size_bytes = plan.root_size_bytes;
@@ -1342,6 +1348,10 @@ impl VolwardEngine {
             "group_rows": group_rows,
             "file_rows": file_rows,
             "estimated_pages": estimated_pages,
+            "local_safe_files": funnel.local_safe_files,
+            "local_keep_files": funnel.local_keep_files,
+            "tail_files": funnel.tail_files,
+            "tree_pending_files": funnel.tree_pending_files,
         })
         .to_string()
     }
@@ -2430,18 +2440,20 @@ mod tests {
         engine.set_last_index(index);
 
         let summary = engine.build_ai_coverage_plan_json("coverage-snap");
-        assert!(summary.contains(r#""total_unclassified":120"#), "{summary}");
-        assert!(summary.contains(r#""group_rows":1"#), "{summary}");
-        assert!(summary.contains(r#""plan_version":1"#), "{summary}");
+        assert!(summary.contains(r#""total_unclassified":60"#), "{summary}");
+        assert!(summary.contains(r#""group_rows":0"#), "{summary}");
+        assert!(summary.contains(r#""plan_version":2"#), "{summary}");
+        assert!(summary.contains(r#""local_safe_files":60"#), "{summary}");
+        assert!(summary.contains(r#""tree_pending_files":60"#), "{summary}");
 
-        let page1 = engine.next_ai_coverage_page_json("coverage-snap", 1, 0, 40);
+        let page1 = engine.next_ai_coverage_page_json("coverage-snap", 2, 0, 40);
         let parsed: serde_json::Value = serde_json::from_str(&page1).unwrap();
         assert_eq!(parsed["rows"].as_array().unwrap().len(), 40);
         assert_eq!(parsed["next_cursor"], 40);
 
-        let page2 = engine.next_ai_coverage_page_json("coverage-snap", 1, 40, 40);
+        let page2 = engine.next_ai_coverage_page_json("coverage-snap", 2, 40, 40);
         let parsed2: serde_json::Value = serde_json::from_str(&page2).unwrap();
-        assert_eq!(parsed2["rows"].as_array().unwrap().len(), 21);
+        assert_eq!(parsed2["rows"].as_array().unwrap().len(), 20);
         assert_eq!(parsed2["next_cursor"], serde_json::Value::Null);
     }
 
@@ -2486,5 +2498,53 @@ mod tests {
             summary.contains("error:no index or snapshot loaded"),
             "{summary}"
         );
+    }
+
+    #[test]
+    fn coverage_plan_summary_includes_funnel_stats() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::{EntryCategory, RiskLevel, ScanStats, SourceType, StorageEntry};
+
+        fn classified(path: &str) -> StorageEntry {
+            StorageEntry {
+                id: format!("id:{path}"),
+                display_name: path.rsplit('/').next().unwrap_or(path).to_string(),
+                path_or_uri: path.to_string(),
+                size_bytes: 1,
+                category: EntryCategory::Cache,
+                risk_level: RiskLevel::Low,
+                source_type: SourceType::File,
+                deletable: true,
+                reason: "test".to_string(),
+                modified_at_ms: None,
+            }
+        }
+
+        let engine = VolwardEngine::new();
+        let root = "/Users/x";
+        let mut builder = SnapshotIndexBuilder::new(root);
+        builder.insert_entry(classified(
+            "/Users/x/Library/Caches/myapp/anchor.bin",
+        ));
+        builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
+        builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
+        builder.record_file_size("/Users/x/MyProj/src/main.rs", 20);
+        builder.record_file_size("/Users/x/loose.dat", 5);
+        builder.record_file_size("/Users/x/project/llm-output/note.md", 5);
+        let index = builder.finish(
+            "coverage-funnel-snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let summary = engine.build_ai_coverage_plan_json("coverage-funnel-snap");
+        let parsed: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert!(parsed["local_safe_files"].as_u64().unwrap_or(0) >= 1);
+        assert!(parsed["local_keep_files"].as_u64().unwrap_or(0) >= 1);
+        assert!(parsed["tail_files"].as_u64().unwrap_or(0) >= 1);
+        assert!(parsed["tree_pending_files"].as_u64().unwrap_or(0) >= 1);
     }
 }
