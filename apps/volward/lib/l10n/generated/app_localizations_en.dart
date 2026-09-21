@@ -855,6 +855,26 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiCoverageLocalResolved(int count) {
+    return 'Locally resolved: $count files';
+  }
+
+  @override
+  String aiCoverageEstimatedTreeRounds(int rounds) {
+    return 'Estimated tree rounds: ~$rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedTailRounds(int rounds) {
+    return 'Estimated tail rounds: ~$rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedCreditsTotal(int credits) {
+    return 'Total estimated credits: ~$credits';
+  }
+
+  @override
   String get aiCoveragePurchaseFooter =>
       'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.';
 

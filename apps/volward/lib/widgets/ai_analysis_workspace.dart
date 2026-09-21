@@ -10,6 +10,7 @@ import '../ai/ai_provider.dart';
 import '../ai/ai_settings_store.dart';
 import '../ai/byok_ai_provider.dart';
 import '../ai/coverage_client_logic.dart';
+import '../ai/coverage_models.dart';
 import '../ai/coverage_job_state.dart';
 import '../ai/coverage_pause_messages.dart';
 import '../ai/coverage_ui_helpers.dart';
@@ -65,6 +66,24 @@ int _asInt(Object? value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse('$value') ?? 0;
+}
+
+bool coveragePlanSummaryShowsV3PrecheckBreakdown(CoveragePlanSummary? summary) {
+  if (summary == null || summary.planVersion < 3) {
+    return false;
+  }
+  return summary.localSafeFiles != null &&
+      summary.localKeepFiles != null &&
+      summary.estimatedTreeCredits != null &&
+      summary.estimatedTailCredits != null;
+}
+
+int? coveragePrecheckEstimatedCredits(CoveragePlanSummary? summary) {
+  if (summary == null) return null;
+  if (coveragePlanSummaryShowsV3PrecheckBreakdown(summary)) {
+    return summary.estimatedTreeCredits! + summary.estimatedTailCredits!;
+  }
+  return summary.estimatedPages;
 }
 
 _AiCandidatesBootstrap _parseAiCandidatesPayload(String raw) {
@@ -216,6 +235,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool _coverageHydrated = false;
   int? _coverageBudgetCredits;
   int? _estimatedCoverageCredits;
+  CoveragePlanSummary? _coveragePlanSummary;
   int? _runBudgetCredits;
   bool _coverageCapBelowEstimate = false;
   int _coverageVerdictPageCount = 2;
@@ -235,6 +255,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
     return _platformCredits! >= _estimatedCoverageCredits!;
   }
+
+  bool get _showsCoverageV3PrecheckBreakdown =>
+      coveragePlanSummaryShowsV3PrecheckBreakdown(_coveragePlanSummary);
 
   AiVerdict _withCandidateMeta(AiVerdict verdict) {
     AiCandidate? candidate;
@@ -341,6 +364,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coverageHydrated = false;
       _coverageBudgetCredits = null;
       _estimatedCoverageCredits = null;
+      _coveragePlanSummary = null;
       _runBudgetCredits = null;
       _coverageVerdictRows = const [];
     });
@@ -430,20 +454,22 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           widget.snapshotId,
         );
         if (!_isCurrent(generation)) return;
+        final estimatedCredits = coveragePrecheckEstimatedCredits(summary);
         int? runBudgetCredits;
         if (mode == AiMode.platform &&
-            summary?.estimatedPages != null &&
+            estimatedCredits != null &&
             platformCredits != null) {
           runBudgetCredits = await AiSettingsStore.instance
               .resolveRunBudgetCredits(
-                estimatedCredits: summary!.estimatedPages,
+                estimatedCredits: estimatedCredits,
                 accountBalance: platformCredits,
               );
         }
         if (!_isCurrent(generation)) return;
         if (mounted) {
           setState(() {
-            _estimatedCoverageCredits = summary?.estimatedPages;
+            _coveragePlanSummary = summary;
+            _estimatedCoverageCredits = estimatedCredits;
             _runBudgetCredits = runBudgetCredits;
           });
         }
@@ -1742,6 +1768,34 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ),
         ],
         if (_useFullCoverage &&
+            _mode == AiMode.platform &&
+            _showsCoverageV3PrecheckBreakdown) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            l10n.aiCoverageLocalResolved(
+              _coveragePlanSummary!.localSafeFiles! +
+                  _coveragePlanSummary!.localKeepFiles!,
+            ),
+          ),
+          Text(
+            l10n.aiCoverageEstimatedTreeRounds(
+              _coveragePlanSummary!.estimatedTreeCredits!,
+            ),
+          ),
+          Text(
+            l10n.aiCoverageEstimatedTailRounds(
+              _coveragePlanSummary!.estimatedTailCredits!,
+            ),
+          ),
+          Text(
+            l10n.aiCoverageEstimatedCreditsTotal(_estimatedCoverageCredits!),
+          ),
+          if (_platformCredits != null)
+            Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
+          if (_runBudgetCredits != null)
+            Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
+          Text(l10n.aiCoveragePurchaseFooter, style: context.vwCaption),
+        ] else if (_useFullCoverage &&
             _mode == AiMode.platform &&
             _estimatedCoverageCredits != null) ...[
           const SizedBox(height: AppleSpacing.xs),

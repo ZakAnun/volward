@@ -540,6 +540,38 @@
       }
     }
   },
+  "aiCoverageLocalResolved": "本地已判定：{count} 个文件",
+  "@aiCoverageLocalResolved": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedTreeRounds": "预估目录轮次：约 {rounds}",
+  "@aiCoverageEstimatedTreeRounds": {
+    "placeholders": {
+      "rounds": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedTailRounds": "预估剩余文件轮次：约 {rounds}",
+  "@aiCoverageEstimatedTailRounds": {
+    "placeholders": {
+      "rounds": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedCreditsTotal": "预估总积分：约 {credits}",
+  "@aiCoverageEstimatedCreditsTotal": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoveragePurchaseFooter": "完整分析一次通常约 30–80 积分；开始前会显示预估值。",
   "aiCoverageInsufficientForEstimate": "预计需要约 {needed} 积分，当前余额 {available}。",
   "@aiCoverageInsufficientForEstimate": {

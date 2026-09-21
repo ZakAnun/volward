@@ -488,6 +488,22 @@ const _coveragePlanSummary23 = CoveragePlanSummary(
   estimatedPages: 23,
 );
 
+const _coveragePlanSummaryV3 = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 3,
+  rootPath: '/tmp',
+  totalUnclassified: 5000,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 5000,
+  estimatedPages: 99,
+  seedNodeCount: 12,
+  localSafeFiles: 800,
+  localKeepFiles: 200,
+  estimatedTreeCredits: 15,
+  estimatedTailCredits: 5,
+);
+
 void main() {
   setUp(() {
     AiCoverageCoordinator.debugForceAvailable = false;
@@ -703,6 +719,34 @@ void main() {
       BorderSide.none,
     );
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('precheck shows v3 plan breakdown from plan summary', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummaryV3;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Locally resolved: 1000 files'),
+    );
+
+    expect(find.textContaining('Locally resolved: 1000 files'), findsOneWidget);
+    expect(find.textContaining('Estimated tree rounds: ~15'), findsOneWidget);
+    expect(find.textContaining('Estimated tail rounds: ~5'), findsOneWidget);
+    expect(find.textContaining('Total estimated credits: ~20'), findsOneWidget);
+    expect(find.textContaining('Estimated for full analysis'), findsNothing);
+    expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
   });
 
   testWidgets('precheck shows estimated credits from plan summary', (

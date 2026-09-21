@@ -540,6 +540,38 @@
       }
     }
   },
+  "aiCoverageLocalResolved": "Locally resolved: {count} files",
+  "@aiCoverageLocalResolved": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedTreeRounds": "Estimated tree rounds: ~{rounds}",
+  "@aiCoverageEstimatedTreeRounds": {
+    "placeholders": {
+      "rounds": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedTailRounds": "Estimated tail rounds: ~{rounds}",
+  "@aiCoverageEstimatedTailRounds": {
+    "placeholders": {
+      "rounds": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageEstimatedCreditsTotal": "Total estimated credits: ~{credits}",
+  "@aiCoverageEstimatedCreditsTotal": {
+    "placeholders": {
+      "credits": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoveragePurchaseFooter": "Full analysis typically uses about 30–80 credits. You will see an estimate before starting.",
   "aiCoverageInsufficientForEstimate": "Need about {needed} credits; you have {available}.",
   "@aiCoverageInsufficientForEstimate": {

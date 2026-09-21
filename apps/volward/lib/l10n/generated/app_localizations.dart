@@ -1483,6 +1483,30 @@ abstract class AppLocalizations {
   /// **'Estimated for full analysis: ~{credits} credits'**
   String aiCoverageEstimatedCredits(int credits);
 
+  /// No description provided for @aiCoverageLocalResolved.
+  ///
+  /// In en, this message translates to:
+  /// **'Locally resolved: {count} files'**
+  String aiCoverageLocalResolved(int count);
+
+  /// No description provided for @aiCoverageEstimatedTreeRounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated tree rounds: ~{rounds}'**
+  String aiCoverageEstimatedTreeRounds(int rounds);
+
+  /// No description provided for @aiCoverageEstimatedTailRounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated tail rounds: ~{rounds}'**
+  String aiCoverageEstimatedTailRounds(int rounds);
+
+  /// No description provided for @aiCoverageEstimatedCreditsTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Total estimated credits: ~{credits}'**
+  String aiCoverageEstimatedCreditsTotal(int credits);
+
   /// No description provided for @aiCoveragePurchaseFooter.
   ///
   /// In en, this message translates to:

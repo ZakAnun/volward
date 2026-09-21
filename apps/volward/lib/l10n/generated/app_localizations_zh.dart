@@ -812,6 +812,26 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String aiCoverageLocalResolved(int count) {
+    return '本地已判定：$count 个文件';
+  }
+
+  @override
+  String aiCoverageEstimatedTreeRounds(int rounds) {
+    return '预估目录轮次：约 $rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedTailRounds(int rounds) {
+    return '预估剩余文件轮次：约 $rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedCreditsTotal(int credits) {
+    return '预估总积分：约 $credits';
+  }
+
+  @override
   String get aiCoveragePurchaseFooter => '完整分析一次通常约 30–80 积分；开始前会显示预估值。';
 
   @override
