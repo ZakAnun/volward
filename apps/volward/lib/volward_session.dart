@@ -2519,6 +2519,22 @@ class VolwardSession extends ChangeNotifier {
       _engine != null &&
       VolwardNativeBridge.instance.hasAiTreeCoverageApi;
 
+  /// True when the in-memory Rust index matches [snapshotId] and is safe for AI/coverage FFI.
+  bool isAiCoverageSnapshotReady(String snapshotId) {
+    if (snapshotId.isEmpty || !hasAiCoverageApi) return false;
+    if (_restoringSnapshot || _scanning) return false;
+    final engine = _engine;
+    if (engine == null) return false;
+    final bridge = VolwardNativeBridge.instance;
+    if (bridge.isIndexLoading(engine)) return false;
+    final snap = _lastSnapshot;
+    if (snap == null || snap.snapshotId != snapshotId) return false;
+    if (snap.stats['scan_state']?.toString() != 'Done') return false;
+    final summary = bridge.getIndexSummaryJson(engine);
+    if (summary == null) return false;
+    return summary['snapshot_id']?.toString() == snapshotId;
+  }
+
   NativeCoverageEngine? get coverageEngine {
     final engine = _engine;
     if (!hasAiCoverageApi || engine == null) return null;
@@ -2572,6 +2588,9 @@ class VolwardSession extends ChangeNotifier {
   bool get hasAiContractApi =>
       _ready && VolwardNativeBridge.instance.hasAiContractApi;
 
+  bool get hasAiTreeContractApi =>
+      _ready && VolwardNativeBridge.instance.hasAiTreeContractApi;
+
   String? aiUpstreamEndpoint() {
     if (!hasAiContractApi) return null;
     return VolwardNativeBridge.instance.aiUpstreamEndpoint();
@@ -2613,6 +2632,40 @@ class VolwardSession extends ChangeNotifier {
     }
   }
 
+  int? aiTreeBatchSize() {
+    if (!hasAiTreeContractApi) return null;
+    return VolwardNativeBridge.instance.aiTreeBatchSize();
+  }
+
+  String? aiBuildTreeRequestJson(List<Map<String, dynamic>> nodes) {
+    if (!hasAiTreeContractApi) return null;
+    return VolwardNativeBridge.instance.aiBuildTreeRequestJson(
+      jsonEncode(nodes),
+    );
+  }
+
+  List<AiVerdict>? aiParseTreeResponseJson(
+    String upstreamBody,
+    List<Map<String, dynamic>> batch,
+  ) {
+    if (!hasAiTreeContractApi) return null;
+    final raw = VolwardNativeBridge.instance.aiParseTreeResponseJson(
+      upstreamBody,
+      jsonEncode(batch),
+    );
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return decoded
+          .whereType<Map>()
+          .map((e) => AiVerdict.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
   String? buildAiCandidatesJson(String snapshotId) {
     final engine = _engine;
     if (!_ready || engine == null) return null;
@@ -2628,6 +2681,9 @@ class VolwardSession extends ChangeNotifier {
     if (!_ready || engine == null) return null;
     final bridge = VolwardNativeBridge.instance;
     if (!bridge.hasAsyncAiCandidatesApi) {
+      debugPrint(
+        'Volward: sync buildAiCandidatesJson (missing async FFI symbols — rebuild Rust dylib)',
+      );
       return bridge.buildAiCandidatesJson(engine, snapshotId);
     }
 
@@ -2655,7 +2711,23 @@ class VolwardSession extends ChangeNotifier {
       }
       await Future<void>.delayed(const Duration(milliseconds: 40));
     }
-    return bridge.getAiCandidatesJson(engine);
+    final spillPath = bridge.takeAiCandidatesSpillPath(engine);
+    if (spillPath != null &&
+        spillPath.isNotEmpty &&
+        !spillPath.startsWith('error:')) {
+      // Pass path only — reading multi‑MB JSON here copies it onto the UI isolate.
+      return 'spill:$spillPath';
+    }
+    final inline = bridge.getAiCandidatesJson(engine);
+    if (inline != null &&
+        inline.length > 512 * 1024 &&
+        !inline.startsWith('error:')) {
+      debugPrint(
+        'Volward: large inline candidates payload (${inline.length} bytes) — '
+        'prefer async spill build; UI may stutter',
+      );
+    }
+    return inline;
   }
 
   bool saveAiResultJson(String snapshotId, String resultJson) {

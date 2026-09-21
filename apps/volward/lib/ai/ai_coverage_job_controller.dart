@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' show min;
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'cancel_token.dart';
@@ -8,6 +9,7 @@ import 'coverage_analyze_batch.dart';
 import 'coverage_analyze_tree_batch.dart';
 import 'coverage_client_logic.dart';
 import 'coverage_engine.dart';
+import 'coverage_native_responses.dart';
 import 'coverage_job_state.dart';
 import 'coverage_models.dart';
 import 'coverage_verdict_store.dart';
@@ -33,16 +35,18 @@ typedef FetchLocalVerdictPage =
       int cursor,
     );
 
-Future<void> flushLocalVerdictsInChunks({
+Future<int> flushLocalVerdictsInChunks({
   required CoverageVerdictStore verdictStore,
   required String snapshotId,
   required FetchLocalVerdictPage fetchPage,
   int chunkSize = 1000,
 }) async {
   var cursor = 0;
+  var flushed = 0;
   while (true) {
     final page = await fetchPage(cursor);
     if (page.verdicts.isEmpty) break;
+    flushed += page.verdicts.length;
     for (var i = 0; i < page.verdicts.length; i += chunkSize) {
       final end = i + chunkSize < page.verdicts.length
           ? i + chunkSize
@@ -53,6 +57,7 @@ Future<void> flushLocalVerdictsInChunks({
     if (next == null) break;
     cursor = next;
   }
+  return flushed;
 }
 
 class CoverageJobController {
@@ -62,6 +67,7 @@ class CoverageJobController {
     required this.stateStore,
     required this.analyzeBatch,
     this.analyzeTreeBatch,
+    this.preferTreeCoveragePlan = false,
     this.batchSize = 40,
     this.maxInFlight = 4,
     this.treeBatchSize = 80,
@@ -75,6 +81,9 @@ class CoverageJobController {
   final CoverageJobStateStore stateStore;
   final AnalyzeBatch analyzeBatch;
   final AnalyzeTreeBatch? analyzeTreeBatch;
+
+  /// When true, job uses native tree plan v3 (matches coordinator pre-check).
+  final bool preferTreeCoveragePlan;
   final int batchSize;
   final int maxInFlight;
   final int treeBatchSize;
@@ -175,6 +184,7 @@ class CoverageJobController {
       status: CoverageJobStatus.running,
       pauseReason: () => null,
       pauseDetail: () => null,
+      pauseMessage: () => null,
       failedBatchPaths: const [],
       clientLogicVersion: kCoverageClientLogicVersion,
     );
@@ -231,6 +241,7 @@ class CoverageJobController {
       status: CoverageJobStatus.running,
       pauseReason: () => null,
       pauseDetail: () => null,
+      pauseMessage: () => null,
       failedBatchPaths: const [],
       budgetTokens: budgetTokens > 0 ? budgetTokens : current.budgetTokens,
       budgetCredits: budgetCredits > 0 ? budgetCredits : current.budgetCredits,
@@ -276,26 +287,38 @@ class CoverageJobController {
       if (guard == null) return;
       final snapshotId = guard.snapshotId;
 
-      var plan = await engine.buildPlan(snapshotId);
-      if (plan.isTreePlan) {
-        plan = await engine.buildTreePlan(snapshotId);
-      }
+      final plan = preferTreeCoveragePlan
+          ? await engine.buildTreePlan(snapshotId)
+          : await engine.buildPlan(snapshotId);
       if (plan.snapshotId != snapshotId) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'coverage plan snapshot mismatch',
+        );
         return;
       }
       if (guard.cursor > 0 && guard.planVersion != plan.planVersion) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message:
+              'coverage plan version changed (${guard.planVersion} → ${plan.planVersion}); restart the job',
+        );
         return;
       }
       if (guard.rootPath.isNotEmpty && guard.rootPath != plan.rootPath) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'scan root changed since this job started',
+        );
         return;
       }
       if (guard.fingerprint != null &&
           plan.fingerprint != null &&
           !guard.fingerprint!.matches(plan.fingerprint!)) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'scan fingerprint changed; restart full coverage',
+        );
         return;
       }
       guard = _state = CoverageJobState(
@@ -318,35 +341,76 @@ class CoverageJobController {
         tailQueueCursor: guard.tailQueueCursor,
         localResolvedFiles: guard.localResolvedFiles,
         treeNodesCompleted: guard.treeNodesCompleted,
-        estimatedTreeCredits: guard.estimatedTreeCredits,
-        estimatedTailCredits: guard.estimatedTailCredits,
+        estimatedTreeCredits:
+            plan.estimatedTreeCredits ?? guard.estimatedTreeCredits,
+        estimatedTailCredits:
+            plan.estimatedTailCredits ?? guard.estimatedTailCredits,
       );
       await stateStore.save(_state!);
       _emit();
 
-      if (plan.planVersion >= 3 && guard.localResolvedFiles == 0) {
-        await flushLocalVerdictsInChunks(
-          verdictStore: verdictStore,
-          snapshotId: snapshotId,
-          fetchPage: (cursor) async {
-            final page = await engine.fetchLocalVerdictsPage(
-              snapshotId,
-              cursor: cursor,
-            );
-            return (verdicts: page.verdicts, nextCursor: page.nextCursor);
-          },
-        );
-        final localResolved =
+      if (plan.planVersion >= 3 && _state!.localResolvedFiles == 0) {
+        final localExpected =
             (plan.localSafeFiles ?? 0) + (plan.localKeepFiles ?? 0);
-        if (localResolved > 0 && _state != null) {
-          _state = _state!.copyWith(localResolvedFiles: localResolved);
+        try {
+          final flushed = await flushLocalVerdictsInChunks(
+            verdictStore: verdictStore,
+            snapshotId: snapshotId,
+            fetchPage: (cursor) async {
+              final page = await engine.fetchLocalVerdictsPage(
+                snapshotId,
+                cursor: cursor,
+              );
+              return (verdicts: page.verdicts, nextCursor: page.nextCursor);
+            },
+          );
+          if (localExpected > 0 && flushed == 0) {
+            await _pause(
+              CoveragePauseReason.failed,
+              detail: CoveragePauseDetail.api,
+              message:
+                  'local coverage verdicts missing (expected $localExpected)',
+            );
+            return;
+          }
+        } on CoverageEngineException catch (e) {
+          if (localExpected > 0) {
+            await _pause(
+              CoveragePauseReason.failed,
+              detail: CoveragePauseDetail.api,
+              message: e.message,
+            );
+            return;
+          }
+          debugPrint('Coverage: skip local verdict flush ($e)');
+        }
+        if (localExpected > 0 && _state != null) {
+          final current = _state!;
+          _state = current.copyWith(
+            localResolvedFiles: localExpected,
+            analyzedFiles: current.analyzedFiles + localExpected,
+          );
           await stateStore.save(_state!);
           _emit();
         }
       }
 
       final treeBatch = analyzeTreeBatch;
-      if (plan.planVersion >= 3 && plan.isTreePlan && treeBatch != null) {
+      if (plan.planVersion >= 3 && preferTreeCoveragePlan) {
+        if (treeBatch == null || !plan.isTreePlan) {
+          await _pause(
+            CoveragePauseReason.failed,
+            message: treeBatch == null
+                ? 'tree AI batch unavailable (update app / rebuild native library)'
+                : 'tree coverage plan missing seed nodes (plan v${plan.planVersion})',
+          );
+          return;
+        }
+      }
+      if (plan.planVersion >= 3 &&
+          plan.isTreePlan &&
+          preferTreeCoveragePlan &&
+          treeBatch != null) {
         final treeOk = await _runTreeBfsPhase(
           snapshotId: snapshotId,
           plan: plan,
@@ -465,8 +529,13 @@ class CoverageJobController {
         }
       }
       await _finishPauseOrCancel();
-    } catch (_) {
-      await _pause(CoveragePauseReason.failed);
+    } catch (e, st) {
+      debugPrint('CoverageJobController._run failed: $e\n$st');
+      await _pause(
+        CoveragePauseReason.failed,
+        detail: e is CoverageEngineException ? CoveragePauseDetail.api : null,
+        message: e.toString(),
+      );
     } finally {
       _running = false;
     }
@@ -917,6 +986,7 @@ class CoverageJobController {
   Future<void> _pause(
     CoveragePauseReason reason, {
     CoveragePauseDetail? detail,
+    String? message,
   }) async {
     _pauseRequested = false;
     _pauseRequestReason = null;
@@ -924,6 +994,7 @@ class CoverageJobController {
       status: CoverageJobStatus.paused,
       pauseReason: () => reason,
       pauseDetail: () => reason == CoveragePauseReason.failed ? detail : null,
+      pauseMessage: () => reason == CoveragePauseReason.failed ? message : null,
     );
     if (_state != null) await stateStore.save(_state!);
     _emit();

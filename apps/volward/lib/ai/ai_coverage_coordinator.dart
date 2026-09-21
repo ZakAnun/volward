@@ -52,6 +52,10 @@ final class StartCoverageBlocked extends StartFullCoverageResult {
   );
 }
 
+final class StartFullCoverageLocalOnly extends StartFullCoverageResult {
+  const StartFullCoverageLocalOnly();
+}
+
 /// Process-scoped owner for full-coverage jobs (Design §5.3).
 class AiCoverageCoordinator with WidgetsBindingObserver {
   AiCoverageCoordinator._({
@@ -74,6 +78,13 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   @visibleForTesting
   static Future<CoveragePlanSummary?> Function(String snapshotId)?
   debugPlanSummary;
+
+  @visibleForTesting
+  static bool debugTreatSnapshotReady = false;
+
+  /// When true, [startFullCoverage] fails if [planSummary] returns null (tests).
+  @visibleForTesting
+  static bool debugRequirePlanSummary = false;
 
   @visibleForTesting
   factory AiCoverageCoordinator.testing({
@@ -104,6 +115,8 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   Future<void> _prepareServiceTail = Future<void>.value();
   final _listeners = <void Function(CoverageJobState state)>{};
   CoverageJobState? _lastTrackedState;
+  String? _cachedPlanSnapshotId;
+  CoveragePlanSummary? _cachedPlanSummary;
 
   @Deprecated('Use addJobStateListener/removeJobStateListener')
   set listener(void Function(CoverageJobState state)? callback) {
@@ -163,18 +176,28 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     if (override != null) {
       return override(snapshotId);
     }
+    if (_cachedPlanSnapshotId == snapshotId && _cachedPlanSummary != null) {
+      return _cachedPlanSummary;
+    }
     final session = _session;
     if (session == null || !_isCoverageApiReady(session)) return null;
     final engine = session.coverageEngine;
     if (engine == null) return null;
     try {
-      if (session.hasAiTreeCoverageApi) {
-        return await engine.buildTreePlan(snapshotId);
-      }
-      return await engine.buildPlan(snapshotId);
+      final summary = session.hasAiTreeCoverageApi
+          ? await engine.buildTreePlan(snapshotId)
+          : await engine.buildPlan(snapshotId);
+      _cachedPlanSnapshotId = snapshotId;
+      _cachedPlanSummary = summary;
+      return summary;
     } catch (_) {
       return null;
     }
+  }
+
+  void invalidatePlanSummaryCache() {
+    _cachedPlanSnapshotId = null;
+    _cachedPlanSummary = null;
   }
 
   Future<AiCoverageService?> prepareService(AiProvider provider) {
@@ -216,11 +239,22 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   }) async {
     final service = await prepareService(provider);
     if (service == null) return const StartFullCoverageUnavailable();
+    final summary = await planSummary(snapshotId);
+    final session = _session;
+    if (summary == null &&
+        (debugRequirePlanSummary ||
+            (session != null && session.hasAiTreeCoverageApi))) {
+      return const StartFullCoverageUnavailable();
+    }
+    if (summary != null &&
+        summary.planVersion >= 3 &&
+        !coveragePlanRequiresApi(summary)) {
+      return const StartFullCoverageLocalOnly();
+    }
     final budget = await AiSettingsStore.instance.coverageBudgetForMode(mode);
     var budgetTokens = budget.tokens;
     var resolvedBudgetCredits = budgetCredits ?? budget.credits;
     if (mode == AiMode.platform) {
-      final summary = await planSummary(snapshotId);
       final estimatedCredits = coveragePrecheckEstimatedCredits(summary) ?? 0;
       final configured = await AiSettingsStore.instance.coverageBudgetForMode(
         AiMode.platform,
@@ -274,6 +308,7 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     if (provider == null) return;
     final service = await prepareService(provider);
     if (service == null) return;
+    if (!await _waitForCoverageSnapshotReady(snapshotId)) return;
     await service.resume(snapshotId);
   }
 
@@ -305,12 +340,14 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   Future<void> resumeCoverage(String snapshotId) async {
     final service = await _serviceForSnapshot(snapshotId);
     if (service == null) return;
+    if (!await _waitForCoverageSnapshotReady(snapshotId)) return;
     await service.resume(snapshotId);
   }
 
   Future<bool> tryResumeCoverage(String snapshotId) async {
     final service = await _serviceForSnapshot(snapshotId);
     if (service == null) return false;
+    if (!await _waitForCoverageSnapshotReady(snapshotId)) return false;
     await service.resume(snapshotId);
     return true;
   }
@@ -346,6 +383,21 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
 
   Future<void> markAppQuit() async {
     await _service?.markAppQuit();
+  }
+
+  /// Waits until Rust has loaded the snapshot index for [snapshotId] (avoids
+  /// `error:no index or snapshot loaded` during early app startup).
+  Future<bool> _waitForCoverageSnapshotReady(String snapshotId) async {
+    if (debugTreatSnapshotReady) return true;
+    final session = _session;
+    if (session == null) return false;
+    if (session.isAiCoverageSnapshotReady(snapshotId)) return true;
+    return waitUntilReady(
+      isReady: () => session.isAiCoverageSnapshotReady(snapshotId),
+      addListener: session.addListener,
+      removeListener: session.removeListener,
+      timeout: const Duration(minutes: 5),
+    );
   }
 
   Future<void> _tryAutoResumeSavedJobs() async {
@@ -389,6 +441,13 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     final state = resumable.first;
     final service = await prepareService(provider);
     if (service == null) return;
+    if (!await _waitForCoverageSnapshotReady(state.snapshotId)) {
+      debugPrint(
+        'AiCoverageCoordinator: defer auto-resume until index is loaded '
+        'for ${state.snapshotId}',
+      );
+      return;
+    }
     await service.resume(state.snapshotId);
   }
 

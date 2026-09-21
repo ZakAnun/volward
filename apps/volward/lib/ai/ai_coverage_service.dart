@@ -5,6 +5,7 @@ import 'ai_provider.dart';
 import 'platform_ai_provider.dart';
 import 'cancel_token.dart';
 import 'coverage_analyze_batch.dart';
+import 'coverage_analyze_tree_batch.dart';
 import 'coverage_engine.dart';
 import 'coverage_job_state.dart';
 import 'coverage_verdict_store.dart';
@@ -30,6 +31,14 @@ class AiCoverageService {
     final cacheDir = SnapshotCache.cacheDir();
     final cancelToken = CancelToken();
     final platformProvider = provider is PlatformAiProvider ? provider : null;
+    final preferTree = session.hasAiTreeCoverageApi;
+    AnalyzeTreeBatch? treeBatch;
+    if (provider is TreeAiProvider) {
+      treeBatch = createCoverageAnalyzeTreeBatch(
+        provider: provider as TreeAiProvider,
+        cancelToken: cancelToken,
+      );
+    }
     return AiCoverageService(
       engine: nativeEngine,
       platformProvider: platformProvider,
@@ -41,6 +50,8 @@ class AiCoverageService {
           provider: provider,
           cancelToken: cancelToken,
         ),
+        analyzeTreeBatch: treeBatch,
+        preferTreeCoveragePlan: preferTree,
         cancelToken: cancelToken,
         platformCreditsRemaining: platformProvider == null
             ? null

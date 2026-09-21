@@ -30,23 +30,64 @@ bool coveragePlanSummaryShowsV3PrecheckBreakdown(CoveragePlanSummary? summary) {
       summary.estimatedTailCredits != null;
 }
 
+/// File count for coverage progress (v3 funnel totals when plan omits the field).
+int coveragePlanTotalUnclassified(CoveragePlanSummary summary) {
+  if (summary.totalUnclassified > 0) {
+    return summary.totalUnclassified;
+  }
+  if (summary.planVersion < 3) return summary.totalUnclassified;
+  final localSafe = summary.localSafeFiles ?? 0;
+  final localKeep = summary.localKeepFiles ?? 0;
+  final tail = summary.tailFiles ?? summary.tailFileCount ?? 0;
+  final treePending = summary.treePendingFiles ?? 0;
+  return localSafe + localKeep + tail + treePending;
+}
+
 int? coveragePrecheckEstimatedCredits(CoveragePlanSummary? summary) {
   if (summary == null) return null;
   if (coveragePlanSummaryShowsV3PrecheckBreakdown(summary)) {
-    return summary.estimatedTreeCredits! + summary.estimatedTailCredits!;
+    return coveragePlanMinApiCalls(summary);
   }
   return summary.estimatedPages;
 }
 
-int coverageJobEstimatedRemainingCredits(CoverageJobState state) {
+int coveragePlanMinApiCalls(CoveragePlanSummary summary) {
+  if (summary.planVersion >= 3 &&
+      summary.estimatedTreeCredits != null &&
+      summary.estimatedTailCredits != null) {
+    return summary.estimatedTreeCredits! + summary.estimatedTailCredits!;
+  }
+  return coveragePrecheckEstimatedCredits(summary) ?? summary.estimatedPages;
+}
+
+bool coveragePlanRequiresApi(CoveragePlanSummary summary) =>
+    coveragePlanMinApiCalls(summary) > 0;
+
+int coverageJobMinApiCalls(CoverageJobState state) {
   if (state.planVersion >= 3 &&
       state.estimatedTreeCredits != null &&
       state.estimatedTailCredits != null) {
     return state.estimatedTreeCredits! + state.estimatedTailCredits!;
   }
+  return state.estimatedCreditsRemaining ?? 0;
+}
+
+int coverageJobEstimatedRemainingApiCalls(CoverageJobState state) {
+  if (state.planVersion >= 3 &&
+      state.estimatedTreeCredits != null &&
+      state.estimatedTailCredits != null) {
+    return max(0, coverageJobMinApiCalls(state) - state.usedCredits);
+  }
   if (state.planVersion >= 2 && state.estimatedCreditsRemaining != null) {
-    return state.estimatedCreditsRemaining!;
+    return max(0, state.estimatedCreditsRemaining! - state.usedCredits);
   }
   final pending = max(0, state.totalUnclassified - state.analyzedFiles);
-  return (pending / 40).ceil();
+  final legacyEstimate = (pending / 40).ceil();
+  return max(0, legacyEstimate - state.usedCredits);
 }
+
+bool coverageJobUsesCreditBilling(CoverageJobState state) =>
+    state.budgetCredits > 0;
+
+int coverageJobEstimatedRemainingCredits(CoverageJobState state) =>
+    coverageJobEstimatedRemainingApiCalls(state);

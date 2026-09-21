@@ -1,4 +1,5 @@
 import 'ai_provider.dart';
+import 'coverage_models.dart';
 import '../volward_session.dart';
 
 /// Shared DeepSeek analyze contract (request/parse/batch/endpoint).
@@ -9,6 +10,19 @@ abstract class AiContract {
   int batchSize();
   String buildRequestJson(List<AiCandidate> batch);
   List<AiVerdict> parseResponseJson(String body, List<AiCandidate> batch);
+
+  int treeBatchSize() => 80;
+
+  String buildTreeRequestJson(List<CoverageTreeNode> batch) {
+    throw UnimplementedError('tree contract unavailable');
+  }
+
+  List<AiVerdict> parseTreeResponseJson(
+    String body,
+    List<CoverageTreeNode> batch,
+  ) {
+    throw UnimplementedError('tree contract unavailable');
+  }
 }
 
 Map<String, dynamic> analyzeCandidateMap(AiCandidate c) => {
@@ -71,6 +85,41 @@ class SessionAiContract implements AiContract {
     );
     if (out == null) {
       throw Exception('ai_contract_unavailable');
+    }
+    return out;
+  }
+
+  @override
+  int treeBatchSize() {
+    final v = _session.aiTreeBatchSize();
+    if (v == null || v <= 0) {
+      throw Exception('ai_tree_contract_unavailable');
+    }
+    return v;
+  }
+
+  @override
+  String buildTreeRequestJson(List<CoverageTreeNode> batch) {
+    final raw = _session.aiBuildTreeRequestJson(
+      batch.map((n) => n.toJson()).toList(),
+    );
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) {
+      throw Exception('ai_tree_contract_unavailable');
+    }
+    return raw;
+  }
+
+  @override
+  List<AiVerdict> parseTreeResponseJson(
+    String body,
+    List<CoverageTreeNode> batch,
+  ) {
+    final out = _session.aiParseTreeResponseJson(
+      body,
+      batch.map((n) => n.toJson()).toList(),
+    );
+    if (out == null) {
+      throw Exception('ai_tree_contract_unavailable');
     }
     return out;
   }

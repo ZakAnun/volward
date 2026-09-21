@@ -143,32 +143,44 @@ class CoveragePlanSummary {
     this.estimatedTailCredits,
   });
 
-  factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) =>
-      CoveragePlanSummary(
-        snapshotId: json['snapshot_id'] as String,
-        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
-        rootPath: json['root_path'] as String,
-        totalUnclassified: (json['total_unclassified'] as num?)?.toInt() ?? 0,
-        preClassifiedCount:
-            (json['pre_classified_count'] as num?)?.toInt() ?? 0,
-        groupRows: (json['group_rows'] as num?)?.toInt() ?? 0,
-        fileRows: (json['file_rows'] as num?)?.toInt() ?? 0,
-        estimatedPages: (json['estimated_pages'] as num?)?.toInt() ?? 0,
-        fingerprint:
-            json.containsKey('root_size_bytes') ||
-                json.containsKey('scanned_at_ms') ||
-                json.containsKey('stats')
-            ? CoverageSnapshotFingerprint.fromJson(json)
-            : null,
-        seedNodeCount: (json['seed_node_count'] as num?)?.toInt(),
-        tailFileCount: (json['tail_file_count'] as num?)?.toInt(),
-        localSafeFiles: (json['local_safe_files'] as num?)?.toInt(),
-        localKeepFiles: (json['local_keep_files'] as num?)?.toInt(),
-        tailFiles: (json['tail_files'] as num?)?.toInt(),
-        treePendingFiles: (json['tree_pending_files'] as num?)?.toInt(),
-        estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
-        estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
-      );
+  factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) {
+    final planVersion = (json['plan_version'] as num?)?.toInt() ?? 0;
+    var totalUnclassified = (json['total_unclassified'] as num?)?.toInt() ?? 0;
+    if (planVersion >= 3 && totalUnclassified == 0) {
+      final localSafe = (json['local_safe_files'] as num?)?.toInt() ?? 0;
+      final localKeep = (json['local_keep_files'] as num?)?.toInt() ?? 0;
+      final tail =
+          (json['tail_files'] as num?)?.toInt() ??
+          (json['tail_file_count'] as num?)?.toInt() ??
+          0;
+      final treePending = (json['tree_pending_files'] as num?)?.toInt() ?? 0;
+      totalUnclassified = localSafe + localKeep + tail + treePending;
+    }
+    return CoveragePlanSummary(
+      snapshotId: json['snapshot_id'] as String,
+      planVersion: planVersion,
+      rootPath: json['root_path'] as String,
+      totalUnclassified: totalUnclassified,
+      preClassifiedCount: (json['pre_classified_count'] as num?)?.toInt() ?? 0,
+      groupRows: (json['group_rows'] as num?)?.toInt() ?? 0,
+      fileRows: (json['file_rows'] as num?)?.toInt() ?? 0,
+      estimatedPages: (json['estimated_pages'] as num?)?.toInt() ?? 0,
+      fingerprint:
+          json.containsKey('root_size_bytes') ||
+              json.containsKey('scanned_at_ms') ||
+              json.containsKey('stats')
+          ? CoverageSnapshotFingerprint.fromJson(json)
+          : null,
+      seedNodeCount: (json['seed_node_count'] as num?)?.toInt(),
+      tailFileCount: (json['tail_file_count'] as num?)?.toInt(),
+      localSafeFiles: (json['local_safe_files'] as num?)?.toInt(),
+      localKeepFiles: (json['local_keep_files'] as num?)?.toInt(),
+      tailFiles: (json['tail_files'] as num?)?.toInt(),
+      treePendingFiles: (json['tree_pending_files'] as num?)?.toInt(),
+      estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
+      estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
+    );
+  }
 
   final String snapshotId;
   final int planVersion;

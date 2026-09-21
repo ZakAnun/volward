@@ -4,11 +4,12 @@ import 'package:http/http.dart' as http;
 
 import 'ai_provider.dart';
 import 'cancel_token.dart';
+import 'coverage_models.dart';
 import 'platform_auth_store.dart';
 
 const _kPlatformTimeout = Duration(seconds: 300);
 
-class PlatformAiProvider implements AiProvider {
+class PlatformAiProvider implements AiProvider, TreeAiProvider {
   PlatformAiProvider({
     required this.token,
     http.Client? client,
@@ -192,6 +193,25 @@ class PlatformAiProvider implements AiProvider {
     if (baseUrl.trim().isEmpty) {
       throw StateError('platform_api_unconfigured');
     }
+  }
+
+  @override
+  Future<AnalyzeResult> analyzeTreeNodes(
+    List<CoverageTreeNode> nodes, {
+    CancelToken? cancelToken,
+  }) {
+    final candidates = nodes
+        .map(
+          (n) => AiCandidate(
+            path: n.path,
+            sizeBytes: n.sizeBytes,
+            isDir: true,
+            childCount: n.fileCount,
+            cleanupSource: 'tree_role:${n.role}',
+          ),
+        )
+        .toList(growable: false);
+    return analyze(candidates, cancelToken: cancelToken);
   }
 
   Future<void> _mapErrorStatus(int status) async {

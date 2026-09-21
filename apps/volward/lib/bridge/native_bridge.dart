@@ -116,6 +116,10 @@ typedef VolwardAiIsCandidatesBuilding = bool Function(Pointer<Void>);
 typedef VolwardAiGetCandidatesJsonNative =
     Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardAiGetCandidatesJson = Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardAiTakeCandidatesSpillPathNative =
+    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardAiTakeCandidatesSpillPath =
+    Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardAiSaveResultJsonNative =
     Bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiSaveResultJson =
@@ -134,10 +138,28 @@ typedef VolwardAiParseResponseJsonNative =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiParseResponseJson =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiTreeBatchSizeNative = Uint32 Function();
+typedef VolwardAiTreeBatchSize = int Function();
+typedef VolwardAiBuildTreeRequestJsonNative =
+    Pointer<Utf8> Function(Pointer<Utf8>);
+typedef VolwardAiBuildTreeRequestJson = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef VolwardAiParseTreeResponseJsonNative =
+    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiParseTreeResponseJson =
+    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiBuildCoveragePlanJsonNative =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
 typedef VolwardAiBuildCoveragePlanJson =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiStartBuildCoveragePlanAsyncNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Bool);
+typedef VolwardAiStartBuildCoveragePlanAsync =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, bool);
+typedef VolwardAiIsCoveragePlanBuildingNative = Bool Function(Pointer<Void>);
+typedef VolwardAiIsCoveragePlanBuilding = bool Function(Pointer<Void>);
+typedef VolwardAiGetCoveragePlanJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>);
+typedef VolwardAiGetCoveragePlanJson = Pointer<Utf8> Function(Pointer<Void>);
 typedef VolwardAiNextCoveragePageJsonNative =
     Pointer<Utf8> Function(
       Pointer<Void>,
@@ -392,13 +414,20 @@ final class VolwardNativeBridge implements VolwardBridge {
     _startBuildAiCandidatesAsync = _tryLookupAiStartBuildCandidatesAsync();
     _isAiCandidatesBuilding = _tryLookupAiIsCandidatesBuilding();
     _getAiCandidatesJson = _tryLookupAiGetCandidatesJson();
+    _takeAiCandidatesSpillPath = _tryLookupAiTakeCandidatesSpillPath();
     _saveAiResultJson = _tryLookupAiSaveResultJson();
     _loadAiResultJson = _tryLookupAiLoadResultJson();
     _aiUpstreamEndpoint = _tryLookupAiUpstreamEndpoint();
     _aiBatchSize = _tryLookupAiBatchSize();
     _aiBuildRequestJson = _tryLookupAiBuildRequestJson();
     _aiParseResponseJson = _tryLookupAiParseResponseJson();
+    _aiTreeBatchSize = _tryLookupAiTreeBatchSize();
+    _aiBuildTreeRequestJson = _tryLookupAiBuildTreeRequestJson();
+    _aiParseTreeResponseJson = _tryLookupAiParseTreeResponseJson();
     _buildAiCoveragePlanJson = _tryLookupAiBuildCoveragePlanJson();
+    _startBuildAiCoveragePlanAsync = _tryLookupAiStartBuildCoveragePlanAsync();
+    _isAiCoveragePlanBuilding = _tryLookupAiIsCoveragePlanBuilding();
+    _getAiCoveragePlanJson = _tryLookupAiGetCoveragePlanJson();
     _nextAiCoveragePageJson = _tryLookupAiNextCoveragePageJson();
     _listLocalCoverageVerdictsJson =
         _tryLookupAiListLocalCoverageVerdictsJson();
@@ -417,7 +446,8 @@ final class VolwardNativeBridge implements VolwardBridge {
         _nextAiTreeCoveragePageJson != null &&
         _nextAiTailCoveragePageJson != null &&
         _expandAiTreeNodeJson != null &&
-        _applyAiDirVerdictJson != null;
+        _applyAiDirVerdictJson != null &&
+        _listLocalCoverageVerdictsJson != null;
     hasAiSessionApi =
         _buildAiCandidatesJson != null && _saveAiResultJson != null;
     hasAiContractApi =
@@ -425,6 +455,11 @@ final class VolwardNativeBridge implements VolwardBridge {
         _aiBatchSize != null &&
         _aiBuildRequestJson != null &&
         _aiParseResponseJson != null;
+    hasAiTreeContractApi =
+        hasAiContractApi &&
+        _aiTreeBatchSize != null &&
+        _aiBuildTreeRequestJson != null &&
+        _aiParseTreeResponseJson != null;
     _queryDirectoryJson = _tryLookupQueryDirectoryJson();
     _refreshDirectory = _tryLookupRefreshDirectory();
     _loadIndexFromPath = _tryLookupLoadIndexFromPath();
@@ -622,19 +657,28 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardEmptyTrashJson? _emptyTrashJson;
   late final bool hasAiSessionApi;
   late final bool hasAiContractApi;
+  late final bool hasAiTreeContractApi;
   late final bool hasAiCoverageApi;
   late final bool hasAiTreeCoverageApi;
   late final VolwardAiBuildCandidatesJson? _buildAiCandidatesJson;
   late final VolwardAiStartBuildCandidatesAsync? _startBuildAiCandidatesAsync;
   late final VolwardAiIsCandidatesBuilding? _isAiCandidatesBuilding;
   late final VolwardAiGetCandidatesJson? _getAiCandidatesJson;
+  late final VolwardAiTakeCandidatesSpillPath? _takeAiCandidatesSpillPath;
   late final VolwardAiSaveResultJson? _saveAiResultJson;
   late final VolwardAiLoadResultJson? _loadAiResultJson;
   late final VolwardAiUpstreamEndpoint? _aiUpstreamEndpoint;
   late final VolwardAiBatchSize? _aiBatchSize;
   late final VolwardAiBuildRequestJson? _aiBuildRequestJson;
   late final VolwardAiParseResponseJson? _aiParseResponseJson;
+  late final VolwardAiTreeBatchSize? _aiTreeBatchSize;
+  late final VolwardAiBuildTreeRequestJson? _aiBuildTreeRequestJson;
+  late final VolwardAiParseTreeResponseJson? _aiParseTreeResponseJson;
   late final VolwardAiBuildCoveragePlanJson? _buildAiCoveragePlanJson;
+  late final VolwardAiStartBuildCoveragePlanAsync?
+  _startBuildAiCoveragePlanAsync;
+  late final VolwardAiIsCoveragePlanBuilding? _isAiCoveragePlanBuilding;
+  late final VolwardAiGetCoveragePlanJson? _getAiCoveragePlanJson;
   late final VolwardAiNextCoveragePageJson? _nextAiCoveragePageJson;
   late final VolwardAiListLocalCoverageVerdictsJson?
   _listLocalCoverageVerdictsJson;
@@ -721,6 +765,12 @@ final class VolwardNativeBridge implements VolwardBridge {
       _startBuildAiCandidatesAsync != null &&
       _isAiCandidatesBuilding != null &&
       _getAiCandidatesJson != null;
+
+  /// True when coverage plan build can run on a Rust worker thread.
+  bool get hasAsyncAiCoveragePlanApi =>
+      _startBuildAiCoveragePlanAsync != null &&
+      _isAiCoveragePlanBuilding != null &&
+      _getAiCoveragePlanJson != null;
 
   Pointer<Void> createEngine() => _create();
 
@@ -992,6 +1042,58 @@ final class VolwardNativeBridge implements VolwardBridge {
 
   String? getAiCandidatesJson(Pointer<Void> engine) {
     final fn = _getAiCandidatesJson;
+    if (fn == null) return null;
+    final out = fn(engine);
+    if (out == nullptr) return null;
+    try {
+      return out.toDartString();
+    } finally {
+      _freeString(out);
+    }
+  }
+
+  /// Temp-file path for the latest async candidates JSON (caller deletes after read).
+  String? takeAiCandidatesSpillPath(Pointer<Void> engine) {
+    final fn = _takeAiCandidatesSpillPath;
+    if (fn == null) return null;
+    final out = fn(engine);
+    if (out == nullptr) return null;
+    try {
+      return out.toDartString();
+    } finally {
+      _freeString(out);
+    }
+  }
+
+  String? startBuildAiCoveragePlanAsync(
+    Pointer<Void> engine,
+    String snapshotId, {
+    required bool tree,
+  }) {
+    final fn = _startBuildAiCoveragePlanAsync;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr, tree);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  bool isAiCoveragePlanBuilding(Pointer<Void> engine) {
+    final fn = _isAiCoveragePlanBuilding;
+    if (fn == null) return false;
+    return fn(engine);
+  }
+
+  String? getAiCoveragePlanJson(Pointer<Void> engine) {
+    final fn = _getAiCoveragePlanJson;
     if (fn == null) return null;
     final out = fn(engine);
     if (out == nullptr) return null;
@@ -1302,6 +1404,48 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  int? aiTreeBatchSize() {
+    final fn = _aiTreeBatchSize;
+    if (fn == null) return null;
+    return fn();
+  }
+
+  String? aiBuildTreeRequestJson(String nodesJson) {
+    final fn = _aiBuildTreeRequestJson;
+    if (fn == null) return null;
+    final ptr = nodesJson.toNativeUtf8();
+    try {
+      final out = fn(ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? aiParseTreeResponseJson(String upstreamBody, String batchJson) {
+    final fn = _aiParseTreeResponseJson;
+    if (fn == null) return null;
+    final bodyPtr = upstreamBody.toNativeUtf8();
+    final batchPtr = batchJson.toNativeUtf8();
+    try {
+      final out = fn(bodyPtr, batchPtr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(bodyPtr);
+      calloc.free(batchPtr);
+    }
+  }
+
   Map<String, dynamic> _decodeJsonPtr(Pointer<Utf8> ptr) {
     try {
       final raw = ptr.toDartString();
@@ -1424,6 +1568,18 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  VolwardAiTakeCandidatesSpillPath? _tryLookupAiTakeCandidatesSpillPath() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiTakeCandidatesSpillPathNative>>(
+            'volward_ai_take_candidates_spill_path',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
   VolwardAiSaveResultJson? _tryLookupAiSaveResultJson() {
     try {
       return _lib
@@ -1496,11 +1652,84 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  VolwardAiTreeBatchSize? _tryLookupAiTreeBatchSize() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiTreeBatchSizeNative>>(
+            'volward_ai_tree_batch_size',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildTreeRequestJson? _tryLookupAiBuildTreeRequestJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildTreeRequestJsonNative>>(
+            'volward_ai_build_tree_request_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiParseTreeResponseJson? _tryLookupAiParseTreeResponseJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiParseTreeResponseJsonNative>>(
+            'volward_ai_parse_tree_response_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
   VolwardAiBuildCoveragePlanJson? _tryLookupAiBuildCoveragePlanJson() {
     try {
       return _lib
           .lookup<NativeFunction<VolwardAiBuildCoveragePlanJsonNative>>(
             'volward_ai_build_coverage_plan_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiStartBuildCoveragePlanAsync?
+  _tryLookupAiStartBuildCoveragePlanAsync() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiStartBuildCoveragePlanAsyncNative>>(
+            'volward_ai_start_build_coverage_plan_async',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiIsCoveragePlanBuilding? _tryLookupAiIsCoveragePlanBuilding() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiIsCoveragePlanBuildingNative>>(
+            'volward_ai_is_coverage_plan_building',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiGetCoveragePlanJson? _tryLookupAiGetCoveragePlanJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiGetCoveragePlanJsonNative>>(
+            'volward_ai_get_coverage_plan_json',
           )
           .asFunction();
     } on Object {

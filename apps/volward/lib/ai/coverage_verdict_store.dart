@@ -95,7 +95,7 @@ class CoverageVerdictStore {
         _mergedCache != null) {
       return _mergedCache!;
     }
-    final merged = await readAll(snapshotId);
+    final merged = List<CoverageVerdict>.from(await readAll(snapshotId));
     merged.sort((a, b) => a.path.compareTo(b.path));
     _mergedCacheSnapshotId = snapshotId;
     _mergedCacheFileLength = fileLength;
@@ -187,7 +187,7 @@ class CoverageVerdictStore {
         byPath[verdict.path] = verdict;
       } catch (_) {}
     }
-    return byPath.values.toList(growable: false);
+    return byPath.values.toList();
   }
 
   Future<int> countAnalyzedFiles(

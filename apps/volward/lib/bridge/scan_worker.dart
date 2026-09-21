@@ -4,6 +4,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
+import '../proto/snapshot_pb_decoder.dart';
 import 'native_bridge.dart';
 
 typedef VolwardScanBridge = VolwardNativeBridge;
@@ -336,7 +337,7 @@ void volwardPeekScanIsolate(List<dynamic> args) {
           return;
         }
 
-        final snapshot = bridge.getLastSnapshot(engine);
+        final snapshot = _readLastSnapshotWithoutJsonFfi(bridge, engine);
         if (snapshot == null) {
           snapshotAttempts++;
           if (snapshotAttempts < 5) return;
@@ -387,7 +388,7 @@ String _persistSnapshot(
     return bridge.writeLastSnapshotToPath(engine, path);
   }
 
-  final snap = bridge.getLastSnapshot(engine);
+  final snap = _readLastSnapshotWithoutJsonFfi(bridge, engine);
   if (snap == null) {
     return 'error:no snapshot';
   }
@@ -397,4 +398,49 @@ String _persistSnapshot(
   }
   File(path).writeAsStringSync(jsonEncode(snap));
   return snapshotId;
+}
+
+/// Reads the engine snapshot via file/protobuf when available, avoiding
+/// `volward_get_last_snapshot_json` (full JSON over FFI).
+Map<String, dynamic>? _readLastSnapshotWithoutJsonFfi(
+  VolwardNativeBridge bridge,
+  Pointer<Void> engine,
+) {
+  if (bridge.hasSnapshotFilePbApi) {
+    final path =
+        '${Directory.systemTemp.path}/volward-engine-snap-${DateTime.now().microsecondsSinceEpoch}.pb';
+    final id = bridge.writeLastSnapshotToPathPb(engine, path);
+    if (!id.startsWith('error:')) {
+      try {
+        return decodeSnapshotPb(File(path).readAsBytesSync());
+      } catch (_) {
+        // fall through
+      } finally {
+        try {
+          File(path).deleteSync();
+        } catch (_) {}
+      }
+    }
+  }
+  if (bridge.hasSnapshotFileApi) {
+    final path =
+        '${Directory.systemTemp.path}/volward-engine-snap-${DateTime.now().microsecondsSinceEpoch}.json';
+    final id = bridge.writeLastSnapshotToPath(engine, path);
+    if (!id.startsWith('error:')) {
+      try {
+        final raw = File(path).readAsStringSync();
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        // fall through
+      } finally {
+        try {
+          File(path).deleteSync();
+        } catch (_) {}
+      }
+    }
+  }
+  return bridge.getLastSnapshot(engine);
 }
