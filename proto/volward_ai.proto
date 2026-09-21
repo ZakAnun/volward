@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package volward;
+
+// AI workspace payloads — compiled by volward-facade only (not volward-index-pb).
+// Flutter decoders: apps/volward/lib/proto/ai_payload_pb_decoder.dart
+
+message AiPreClassifiedEntry {
+  string path = 1;
+  uint64 size_bytes = 2;
+  bool is_dir = 3;
+  uint32 category = 4;
+  string confidence = 5;
+  string reason = 6;
+  bool deletable = 7;
+}
+
+message AiUnknownCandidate {
+  string path = 1;
+  uint64 size_bytes = 2;
+  bool is_dir = 3;
+  optional uint32 child_count = 4;
+  optional string extension = 5;
+  optional string cleanup_source = 6;
+  optional string cleanup_hint = 7;
+  optional uint32 retention_days = 8;
+  repeated string member_paths = 9;
+  optional string delete_target = 10;
+}
+
+message AiCandidatesPayload {
+  string snapshot_id = 1;
+  string root_path = 2;
+  string result_cache_key = 3;
+  repeated AiPreClassifiedEntry pre_classified = 4;
+  repeated AiUnknownCandidate unknown_candidates = 5;
+  uint32 estimated_input_tokens = 6;
+  uint32 total_raw_count = 7;
+  uint32 candidates_total_before_cap = 8;
+  bool truncated = 9;
+  bool pre_classified_truncated = 10;
+  bool has_existing_result = 11;
+  uint32 estimated_byok_batch_input_tokens = 12;
+}
+
+message AiVerdictEntryWire {
+  string path = 1;
+  uint64 size_bytes = 2;
+  string verdict = 3;
+  string confidence = 4;
+  string reason = 5;
+  optional string cleanup_source = 6;
+  optional string cleanup_hint = 7;
+  optional uint32 retention_days = 8;
+}
+
+message AiTokenUsageWire {
+  uint64 input = 1;
+  uint64 output = 2;
+}
+
+message AiAnalysisResultWire {
+  uint32 schema_version = 1;
+  string snapshot_id = 2;
+  optional string cache_key = 3;
+  optional string root_path = 4;
+  int64 analyzed_at_ms = 5;
+  string mode = 6;
+  string model = 7;
+  repeated AiVerdictEntryWire entries = 8;
+  AiTokenUsageWire token_usage = 9;
+  double cost_estimate_usd = 10;
+  uint32 credits_used = 11;
+}
