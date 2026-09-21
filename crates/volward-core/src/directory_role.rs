@@ -166,6 +166,18 @@ mod tests {
     }
 
     #[test]
+    fn pruned_vcs_child_marks_project_root() {
+        let mut builder = SnapshotIndexBuilder::new("/proj");
+        builder.ensure_dir("/proj");
+        builder.or_pruned_child_flags("/proj", PRUNED_VCS);
+        let index = finish(builder);
+
+        let (role, markers) = classify_directory_role(&index, "/proj");
+        assert_eq!(role, DirectoryRole::ProjectRoot);
+        assert!(markers.iter().any(|m| m == "pruned:vcs"));
+    }
+
+    #[test]
     fn neither_manifest_nor_project_signals_is_unknown() {
         let mut builder = SnapshotIndexBuilder::new("/root");
         builder.ensure_dir("/root/random");

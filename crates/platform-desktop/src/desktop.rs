@@ -347,6 +347,7 @@ impl PlatformStorage for DesktopPlatform {
             }
             let dir_fingerprints_cache =
                 Arc::new(Mutex::new(HashMap::<PathBuf, Option<DirFingerprint>>::new()));
+            let pruned_child_flags_cache = Arc::new(Mutex::new(HashMap::<PathBuf, u32>::new()));
             for entry in WalkDir::new(root_path)
                 .parallelism(Parallelism::RayonNewPool(scan_parallelism()))
                 .skip_hidden(false)
@@ -355,6 +356,7 @@ impl PlatformStorage for DesktopPlatform {
                 .process_read_dir({
                     let protected = self.protected_prefixes.clone();
                     let dir_fingerprints_cache = dir_fingerprints_cache.clone();
+                    let pruned_child_flags_cache = pruned_child_flags_cache.clone();
                     let baseline_fingerprints = baseline_fingerprints.clone();
                     move |_depth, path, _state, children| {
                         let current_fingerprint = dir_fingerprint_from_read_dir(path, children);
@@ -373,7 +375,12 @@ impl PlatformStorage for DesktopPlatform {
                         if subtree_skipped {
                             children.clear();
                         }
-                        prune_child_directories(children, &protected);
+                        let pruned_flags = prune_child_directories(children, &protected);
+                        if pruned_flags != 0 {
+                            if let Ok(mut cache) = pruned_child_flags_cache.lock() {
+                                *cache.entry(path.to_path_buf()).or_insert(0) |= pruned_flags;
+                            }
+                        }
                     }
                 })
                 .into_iter()
@@ -435,6 +442,15 @@ impl PlatformStorage for DesktopPlatform {
                 } else {
                     None
                 };
+                let pruned_child_flags = if is_dir {
+                    pruned_child_flags_cache
+                        .lock()
+                        .ok()
+                        .and_then(|cache| cache.get(&path).copied())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
                 match on_entry(RawFsEntry {
                     path: path_str,
                     is_dir,
@@ -449,6 +465,7 @@ impl PlatformStorage for DesktopPlatform {
                             .map(system_time_secs)
                             .map(|secs| secs.saturating_mul(1000))
                     },
+                    pruned_child_flags,
                 }) {
                     WalkAction::Stop => return Ok(paths_skipped),
                     WalkAction::SkipSubtree => continue,
@@ -578,6 +595,7 @@ impl PlatformStorage for DesktopPlatform {
                         .map(system_time_secs)
                         .map(|secs| secs.saturating_mul(1000))
                 },
+                pruned_child_flags: 0,
             });
         }
         Ok(out)
@@ -807,6 +825,49 @@ mod tests {
         let fingerprint = root_fingerprint.expect("root fingerprint should be emitted");
         assert!(fingerprint.mtime_secs > 0);
         assert_eq!(fingerprint.children_count, 3);
+
+        fs::remove_dir_all(root_path).expect("remove test directory");
+    }
+
+    #[test]
+    fn walk_emits_pruned_vcs_flag_when_git_child_skipped() {
+        use crate::walk_prune::PRUNED_CHILD_VCS;
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root_path = std::env::temp_dir().join(format!(
+            "volward-pruned-vcs-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root_path.join(".git")).expect("create .git");
+        fs::write(root_path.join("README"), b"x").expect("write file");
+
+        let platform = DesktopPlatform::new();
+        let roots = vec![ScanRoot {
+            path: root_path.to_string_lossy().to_string(),
+            label: "test".to_string(),
+        }];
+        let cancel = AtomicBool::new(false);
+        let mut root_flags = 0u32;
+        platform
+            .walk_entries(
+                &roots,
+                WalkOptions {
+                    baseline_fingerprints: None,
+                },
+                &cancel,
+                &mut |entry| {
+                    if entry.path == roots[0].path {
+                        root_flags = entry.pruned_child_flags;
+                    }
+                    WalkAction::Continue
+                },
+            )
+            .expect("walk should succeed");
+
+        assert_eq!(root_flags, PRUNED_CHILD_VCS);
 
         fs::remove_dir_all(root_path).expect("remove test directory");
     }

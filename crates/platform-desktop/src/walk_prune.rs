@@ -5,6 +5,12 @@ use jwalk::{DirEntry, Error};
 
 /// Directory names pruned during full-volume walks (devtools / VCS / build artifacts).
 /// Does not skip cache-like paths (`Caches`, `.cache`, etc.).
+/// VCS metadata directories; must stay in [`SKIP_DIR_NAMES`].
+pub const VCS_DIR_NAMES: &[&str] = &[".git", ".svn", ".hg"];
+
+/// Bit when a pruned immediate child is VCS metadata. Must match `volward_core::PRUNED_VCS`.
+pub const PRUNED_CHILD_VCS: u32 = 1;
+
 pub const SKIP_DIR_NAMES: &[&str] = &[
     "node_modules",
     ".git",
@@ -42,6 +48,14 @@ pub const SKIP_DIR_NAMES: &[&str] = &[
 
 pub fn is_skippable_dir_name(name: &OsStr) -> bool {
     name.to_str().is_some_and(|n| SKIP_DIR_NAMES.contains(&n))
+}
+
+/// Prune flags to OR onto the parent directory when this child name is skipped.
+pub fn pruned_child_flags_for_dir_name(name: &OsStr) -> u32 {
+    name.to_str()
+        .filter(|n| VCS_DIR_NAMES.contains(n))
+        .map(|_| PRUNED_CHILD_VCS)
+        .unwrap_or(0)
 }
 
 pub fn is_protected_path(path: &Path, protected_prefixes: &[String]) -> bool {
@@ -94,16 +108,19 @@ fn is_windows_drive_root(path: &str) -> bool {
 }
 
 /// Prevent jwalk from descending into protected or dev/build directories.
+/// Returns OR of [`pruned_child_flags_for_dir_name`] for skipped directory children.
 pub fn prune_child_directories(
     children: &mut [Result<DirEntry<((), ())>, Error>],
     protected_prefixes: &[String],
-) {
+) -> u32 {
+    let mut parent_flags = 0u32;
     for entry in children.iter_mut() {
         let Ok(dir_entry) = entry else { continue };
         if !dir_entry.file_type.is_dir() {
             continue;
         }
         if is_skippable_dir_name(&dir_entry.file_name) {
+            parent_flags |= pruned_child_flags_for_dir_name(&dir_entry.file_name);
             dir_entry.read_children_path = None;
             continue;
         }
@@ -111,11 +128,24 @@ pub fn prune_child_directories(
             dir_entry.read_children_path = None;
         }
     }
+    parent_flags
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vcs_dir_names_set_pruned_vcs_flag() {
+        assert_eq!(
+            pruned_child_flags_for_dir_name(OsStr::new(".git")),
+            PRUNED_CHILD_VCS
+        );
+        assert_eq!(
+            pruned_child_flags_for_dir_name(OsStr::new("node_modules")),
+            0
+        );
+    }
 
     #[test]
     fn skips_known_dir_names() {
