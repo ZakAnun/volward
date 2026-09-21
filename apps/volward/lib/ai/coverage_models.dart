@@ -189,4 +189,77 @@ class CoveragePage {
   final List<CoverageRow> rows;
 }
 
+class CoverageTreeTopExtension {
+  const CoverageTreeTopExtension({
+    required this.extension,
+    required this.count,
+  });
+
+  final String extension;
+  final int count;
+}
+
+/// Directory node from native tree coverage pages (plan v3).
+class CoverageTreeNode {
+  const CoverageTreeNode({
+    required this.path,
+    required this.sizeBytes,
+    required this.fileCount,
+    required this.subdirCount,
+    required this.role,
+    this.markers = const [],
+    this.prunedFlags = 0,
+    this.topExtensions = const [],
+  });
+
+  factory CoverageTreeNode.fromJson(Map<String, dynamic> json) {
+    final rawExt = json['top_extensions'];
+    final topExtensions = rawExt is List
+        ? rawExt
+              .whereType<List>()
+              .map(
+                (pair) => CoverageTreeTopExtension(
+                  extension: pair.isNotEmpty ? pair[0].toString() : '',
+                  count: pair.length > 1 ? (pair[1] as num?)?.toInt() ?? 0 : 0,
+                ),
+              )
+              .toList(growable: false)
+        : const <CoverageTreeTopExtension>[];
+    return CoverageTreeNode(
+      path: json['path'] as String,
+      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      fileCount: (json['file_count'] as num?)?.toInt() ?? 0,
+      subdirCount: (json['subdir_count'] as num?)?.toInt() ?? 0,
+      role: json['role'] as String? ?? 'unknown',
+      markers: ((json['markers'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+      prunedFlags: (json['pruned_flags'] as num?)?.toInt() ?? 0,
+      topExtensions: topExtensions,
+    );
+  }
+
+  final String path;
+  final int sizeBytes;
+  final int fileCount;
+  final int subdirCount;
+  final String role;
+  final List<String> markers;
+  final int prunedFlags;
+  final List<CoverageTreeTopExtension> topExtensions;
+
+  Map<String, dynamic> toJson() => {
+    'path': path,
+    'size_bytes': sizeBytes,
+    'file_count': fileCount,
+    'subdir_count': subdirCount,
+    'role': role,
+    'markers': markers,
+    'pruned_flags': prunedFlags,
+    'top_extensions': topExtensions
+        .map((e) => [e.extension, e.count])
+        .toList(growable: false),
+  };
+}
+
 String coverageJsonEncode(Object value) => jsonEncode(value);

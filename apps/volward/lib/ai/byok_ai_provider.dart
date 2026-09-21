@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'ai_contract.dart';
 import 'ai_provider.dart';
 import 'cancel_token.dart';
+import 'coverage_models.dart';
 import '../volward_session.dart';
 
 const _kRequestTimeout = Duration(seconds: 90);
@@ -25,7 +26,7 @@ class ByokTokenUsage {
 /// DeepSeek Chat Completions BYOK provider (transport only).
 ///
 /// Request/parse/batch/endpoint come from [AiContract] (FFI in production).
-class ByokAiProvider implements AiProvider {
+class ByokAiProvider implements AiProvider, TreeAiProvider {
   ByokAiProvider({
     required this.apiKey,
     this.contract,
@@ -130,6 +131,14 @@ class ByokAiProvider implements AiProvider {
       outputTokens: completionTokens,
       estimated: estimated,
     );
+  }
+
+  @override
+  Future<AnalyzeResult> analyzeTreeNodes(
+    List<CoverageTreeNode> nodes, {
+    CancelToken? cancelToken,
+  }) {
+    throw UnimplementedError('BYOK tree analyze not wired');
   }
 
   Future<
