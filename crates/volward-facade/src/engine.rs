@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -21,8 +22,10 @@ use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, apply_dir_verdict, build_ai_coverage_plan,
-    build_ai_tree_plan, collect_local_coverage_verdicts, compute_coverage_funnel_stats,
-    coverage_group_member_paths, expand_tree_drill_children, DirectoryRole,
+    build_ai_tree_plan, build_coverage_funnel_context, build_unclassified_subtree_index,
+    compute_coverage_funnel_stats, coverage_group_member_paths,
+    expand_tree_drill_children_with_index, page_local_coverage_verdicts, CoverageFunnelContextMap,
+    DirectoryRole, UnclassifiedSubtreeIndex,
     AiCandidateBuilder,
     AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
     CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
@@ -32,7 +35,22 @@ use volward_core::{
 };
 
 use volward_index_pb::{decode_snapshot_index, schedule_json_index_migration};
+
+use crate::pb_convert::decode_storage_snapshot_from_pb;
 use crate::proto;
+
+struct LocalCoverageFunnelCache {
+    snapshot_id: String,
+    index_version: u64,
+    funnel_map: Arc<CoverageFunnelContextMap>,
+    classified: Arc<HashSet<String>>,
+}
+
+struct UnclassifiedSubtreeIndexCache {
+    snapshot_id: String,
+    index_version: u64,
+    subtree_index: Arc<UnclassifiedSubtreeIndex>,
+}
 
 const MAX_CONCURRENT_CAPABILITY_JOBS: usize = 4;
 
@@ -79,7 +97,13 @@ pub struct VolwardEngine {
     _scan_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
     is_ai_candidates_building: Arc<AtomicBool>,
     ai_candidates_json: Arc<Mutex<Option<String>>>,
+    ai_candidates_spill_path: Arc<Mutex<Option<String>>>,
     ai_candidates_generation: Arc<std::sync::atomic::AtomicU64>,
+    is_ai_coverage_plan_building: Arc<AtomicBool>,
+    ai_coverage_plan_preview_json: Arc<Mutex<Option<String>>>,
+    ai_coverage_plan_build_generation: Arc<std::sync::atomic::AtomicU64>,
+    local_coverage_funnel_cache: Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
+    unclassified_subtree_index_cache: Arc<Mutex<Option<UnclassifiedSubtreeIndexCache>>>,
     ai_coverage_plan: Arc<Mutex<Option<AiCoveragePlan>>>,
     ai_tree_coverage_plan: Arc<Mutex<Option<AiTreePlan>>>,
     capability_registry: Arc<Mutex<CapabilityRegistry>>,
@@ -131,7 +155,13 @@ impl VolwardEngine {
             _scan_handle: Arc::new(Mutex::new(None)),
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_spill_path: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            is_ai_coverage_plan_building: Arc::new(AtomicBool::new(false)),
+            ai_coverage_plan_preview_json: Arc::new(Mutex::new(None)),
+            ai_coverage_plan_build_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            local_coverage_funnel_cache: Arc::new(Mutex::new(None)),
+            unclassified_subtree_index_cache: Arc::new(Mutex::new(None)),
             ai_coverage_plan: Arc::new(Mutex::new(None)),
             ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(capability_registry)),
@@ -163,6 +193,7 @@ impl VolwardEngine {
     }
 
     pub fn set_last_snapshot(&self, snapshot: StorageSnapshot) {
+        self.clear_local_coverage_funnel_cache();
         // Rebuild the path-keyed index atomically alongside the snapshot so
         // Dart can query it immediately without a separate hydration call.
         let version = self.index_version.fetch_add(1, Ordering::Relaxed) + 1;
@@ -176,6 +207,7 @@ impl VolwardEngine {
     }
 
     pub fn set_last_index(&self, index: SnapshotIndex) {
+        self.clear_local_coverage_funnel_cache();
         let version = self.index_version.fetch_add(1, Ordering::Relaxed) + 1;
         if let Ok(mut g) = self.last_index.lock() {
             *g = Some(index);
@@ -1005,8 +1037,114 @@ impl VolwardEngine {
 
     /// Loads snapshot from [path] into this engine (single parse, for delete operations).
     pub fn load_last_snapshot_from_path(&self, path: &str) -> Result<(), String> {
+        if path.ends_with(".pb") {
+            let bytes = std::fs::read(path).map_err(|e| format!("read snapshot pb: {e}"))?;
+            let snapshot = decode_storage_snapshot_from_pb(&bytes)?;
+            self.set_last_snapshot(snapshot);
+            return Ok(());
+        }
         let json = std::fs::read_to_string(path).map_err(|e| format!("read snapshot: {e}"))?;
         self.set_last_snapshot_json(&json)
+    }
+
+    fn clear_local_coverage_funnel_cache(&self) {
+        if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.unclassified_subtree_index_cache.lock() {
+            *guard = None;
+        }
+    }
+
+    fn unclassified_subtree_index_for(
+        &self,
+        index: &SnapshotIndex,
+        kb: &OsKnowledgeBase,
+        protected_prefixes: &[String],
+    ) -> Arc<UnclassifiedSubtreeIndex> {
+        let snapshot_id = index.snapshot_id.clone();
+        let index_version = self.index_version.load(Ordering::Relaxed);
+        if let Ok(guard) = self.unclassified_subtree_index_cache.lock() {
+            if let Some(cache) = guard.as_ref() {
+                if cache.snapshot_id == snapshot_id && cache.index_version == index_version {
+                    return cache.subtree_index.clone();
+                }
+            }
+        }
+        let (funnel_map, _) =
+            self.local_coverage_funnel_cache_for(index, kb, protected_prefixes);
+        let subtree_index = Arc::new(build_unclassified_subtree_index(
+            index,
+            kb,
+            protected_prefixes,
+            &[],
+            funnel_map.as_ref(),
+        ));
+        if let Ok(mut guard) = self.unclassified_subtree_index_cache.lock() {
+            *guard = Some(UnclassifiedSubtreeIndexCache {
+                snapshot_id,
+                index_version,
+                subtree_index: subtree_index.clone(),
+            });
+        }
+        subtree_index
+    }
+
+    fn tree_plan_preview_json(index: &SnapshotIndex, plan: &AiTreePlan) -> String {
+        let funnel = &plan.funnel_stats;
+        let total_unclassified = funnel.local_safe_files
+            + funnel.local_keep_files
+            + funnel.tail_files
+            + funnel.tree_pending_files;
+        serde_json::json!({
+            "snapshot_id": plan.snapshot_id,
+            "plan_version": AI_COVERAGE_TREE_PLAN_VERSION,
+            "root_path": plan.root_path,
+            "root_size_bytes": index.summary().root_size_bytes,
+            "scanned_at_ms": index.scanned_at_ms,
+            "total_unclassified": total_unclassified,
+            "seed_node_count": plan.seed_nodes.len() as u64,
+            "tail_file_count": plan.tail_file_paths.len() as u64,
+            "local_safe_files": funnel.local_safe_files,
+            "local_keep_files": funnel.local_keep_files,
+            "tail_files": funnel.tail_files,
+            "tree_pending_files": funnel.tree_pending_files,
+            "estimated_tree_credits": plan.estimated_tree_credits,
+            "estimated_tail_credits": plan.estimated_tail_credits,
+        })
+        .to_string()
+    }
+
+    fn local_coverage_funnel_cache_for(
+        &self,
+        index: &SnapshotIndex,
+        kb: &OsKnowledgeBase,
+        protected_prefixes: &[String],
+    ) -> (Arc<CoverageFunnelContextMap>, Arc<HashSet<String>>) {
+        let snapshot_id = index.snapshot_id.clone();
+        let index_version = self.index_version.load(Ordering::Relaxed);
+        if let Ok(guard) = self.local_coverage_funnel_cache.lock() {
+            if let Some(cache) = guard.as_ref() {
+                if cache.snapshot_id == snapshot_id && cache.index_version == index_version {
+                    return (cache.funnel_map.clone(), cache.classified.clone());
+                }
+            }
+        }
+        let funnel_map = Arc::new(build_coverage_funnel_context(
+            index,
+            kb,
+            protected_prefixes,
+        ));
+        let classified = Arc::new(index.classified_paths());
+        if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
+            *guard = Some(LocalCoverageFunnelCache {
+                snapshot_id,
+                index_version,
+                funnel_map: funnel_map.clone(),
+                classified: classified.clone(),
+            });
+        }
+        (funnel_map, classified)
     }
 
     pub fn delete_entries_json(
@@ -1221,6 +1359,7 @@ impl VolwardEngine {
             "pre_classified": set.pre_classified,
             "unknown_candidates": set.candidates,
             "estimated_input_tokens": set.estimated_input_tokens,
+            "estimated_byok_batch_input_tokens": set.estimated_byok_batch_input_tokens,
             "total_raw_count": set.total_raw_count,
             "candidates_total_before_cap": set.candidates_total_before_cap,
             "truncated": set.truncated,
@@ -1247,13 +1386,18 @@ impl VolwardEngine {
         if let Ok(mut g) = self.ai_candidates_json.lock() {
             *g = None;
         }
+        if let Ok(mut g) = self.ai_candidates_spill_path.lock() {
+            *g = None;
+        }
 
         // Snapshot Arc handles for the worker; the build method locks briefly.
         let engine_index = self.last_index.clone();
         let engine_snapshot = self.last_snapshot.clone();
         let result_slot = self.ai_candidates_json.clone();
+        let spill_slot = self.ai_candidates_spill_path.clone();
         let building = self.is_ai_candidates_building.clone();
         let generation_slot = self.ai_candidates_generation.clone();
+        let snapshot_id_for_path = snapshot_id.clone();
 
         // We need a thin stand-in that can call the same build logic. Reconstruct
         // a minimal engine view via a free helper using the cloned Arcs.
@@ -1261,8 +1405,39 @@ impl VolwardEngine {
             let json =
                 Self::build_ai_candidates_json_with(&engine_index, &engine_snapshot, &snapshot_id);
             if generation_slot.load(Ordering::SeqCst) == generation {
-                if let Ok(mut g) = result_slot.lock() {
-                    *g = Some(json);
+                if json.starts_with("error:") {
+                    if let Ok(mut g) = result_slot.lock() {
+                        *g = Some(json);
+                    }
+                } else {
+                    let path = std::env::temp_dir().join(format!(
+                        "volward-ai-candidates-{}-{}.pb",
+                        snapshot_id_for_path,
+                        generation
+                    ));
+                    let bytes = match crate::pb_convert::encode_ai_candidates_payload_from_json(&json)
+                    {
+                        Ok(encoded) => encoded,
+                        Err(err) => {
+                            if let Ok(mut g) = result_slot.lock() {
+                                *g = Some(err);
+                            }
+                            building.store(false, Ordering::Release);
+                            return;
+                        }
+                    };
+                    match std::fs::write(&path, bytes) {
+                        Ok(()) => {
+                            if let Ok(mut spill) = spill_slot.lock() {
+                                *spill = Some(path.to_string_lossy().into_owned());
+                            }
+                        }
+                        Err(e) => {
+                            if let Ok(mut g) = result_slot.lock() {
+                                *g = Some(format!("error:spill:{e}"));
+                            }
+                        }
+                    }
                 }
             }
             building.store(false, Ordering::Release);
@@ -1295,7 +1470,13 @@ impl VolwardEngine {
             _scan_handle: Arc::new(Mutex::new(None)),
             is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
             ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_spill_path: Arc::new(Mutex::new(None)),
             ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            is_ai_coverage_plan_building: Arc::new(AtomicBool::new(false)),
+            ai_coverage_plan_preview_json: Arc::new(Mutex::new(None)),
+            ai_coverage_plan_build_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            local_coverage_funnel_cache: Arc::new(Mutex::new(None)),
+            unclassified_subtree_index_cache: Arc::new(Mutex::new(None)),
             ai_coverage_plan: Arc::new(Mutex::new(None)),
             ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
@@ -1304,16 +1485,203 @@ impl VolwardEngine {
         shell.build_ai_candidates_json(snapshot_id)
     }
 
+    /// Build coverage plan JSON on a worker thread (tree or flat plan).
+    pub fn start_build_ai_coverage_plan_async(
+        &self,
+        snapshot_id: String,
+        tree: bool,
+    ) -> String {
+        if tree && !self.is_ai_coverage_plan_building.load(Ordering::Relaxed) {
+            if let Ok(guard) = self.ai_tree_coverage_plan.lock() {
+                if let Some(plan) = guard.as_ref() {
+                    if plan.snapshot_id == snapshot_id {
+                        if let Ok(index) = self.index_for_ai(&snapshot_id) {
+                            let json = Self::tree_plan_preview_json(&index, plan);
+                            if let Ok(mut preview) = self.ai_coverage_plan_preview_json.lock() {
+                                *preview = Some(json);
+                            }
+                            return "ok".to_string();
+                        }
+                    }
+                }
+            }
+        }
+
+        if self
+            .is_ai_coverage_plan_building
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return "busy:coverage plan build already in progress".to_string();
+        }
+
+        let generation = self
+            .ai_coverage_plan_build_generation
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
+        if let Ok(mut g) = self.ai_coverage_plan_preview_json.lock() {
+            *g = None;
+        }
+
+        let last_index = self.last_index.clone();
+        let platform = self.platform.clone();
+        let ai_coverage_plan = self.ai_coverage_plan.clone();
+        let ai_tree_coverage_plan = self.ai_tree_coverage_plan.clone();
+        let local_coverage_funnel_cache = self.local_coverage_funnel_cache.clone();
+        let result_slot = self.ai_coverage_plan_preview_json.clone();
+        let building = self.is_ai_coverage_plan_building.clone();
+        let generation_slot = self.ai_coverage_plan_build_generation.clone();
+
+        std::thread::spawn(move || {
+            let json = if tree {
+                Self::build_ai_tree_plan_json_with(
+                    &last_index,
+                    &platform,
+                    &ai_tree_coverage_plan,
+                    &snapshot_id,
+                )
+            } else {
+                Self::build_ai_coverage_plan_json_with(
+                    &last_index,
+                    &platform,
+                    &ai_coverage_plan,
+                    &local_coverage_funnel_cache,
+                    &snapshot_id,
+                )
+            };
+            if generation_slot.load(Ordering::SeqCst) == generation {
+                if let Ok(mut g) = result_slot.lock() {
+                    *g = Some(json);
+                }
+            }
+            building.store(false, Ordering::Release);
+        });
+
+        "ok".to_string()
+    }
+
+    fn build_ai_coverage_plan_json_with(
+        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        platform: &Arc<DesktopPlatform>,
+        ai_coverage_plan: &Arc<Mutex<Option<AiCoveragePlan>>>,
+        local_coverage_funnel_cache: &Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
+        snapshot_id: &str,
+    ) -> String {
+        let shell = VolwardEngine {
+            platform: platform.clone(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            persist_pause: Arc::new(AtomicBool::new(false)),
+            is_scanning: Arc::new(AtomicBool::new(false)),
+            last_snapshot: Arc::new(Mutex::new(None)),
+            last_index: last_index.clone(),
+            is_index_loading: Arc::new(AtomicBool::new(false)),
+            last_index_load_error: Arc::new(Mutex::new(None)),
+            last_pause_error: Arc::new(Mutex::new(None)),
+            index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            last_progress: Arc::new(Mutex::new(None)),
+            last_checkpoint: Arc::new(Mutex::new(None)),
+            _scan_handle: Arc::new(Mutex::new(None)),
+            is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
+            ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_spill_path: Arc::new(Mutex::new(None)),
+            ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            is_ai_coverage_plan_building: Arc::new(AtomicBool::new(false)),
+            ai_coverage_plan_preview_json: Arc::new(Mutex::new(None)),
+            ai_coverage_plan_build_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            local_coverage_funnel_cache: local_coverage_funnel_cache.clone(),
+            unclassified_subtree_index_cache: Arc::new(Mutex::new(None)),
+            ai_coverage_plan: ai_coverage_plan.clone(),
+            ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
+            capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
+            capability_jobs: CapabilityJobStore::new(),
+        };
+        shell.build_ai_coverage_plan_json(snapshot_id)
+    }
+
+    fn build_ai_tree_plan_json_with(
+        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        platform: &Arc<DesktopPlatform>,
+        ai_tree_coverage_plan: &Arc<Mutex<Option<AiTreePlan>>>,
+        snapshot_id: &str,
+    ) -> String {
+        let shell = VolwardEngine {
+            platform: platform.clone(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            persist_pause: Arc::new(AtomicBool::new(false)),
+            is_scanning: Arc::new(AtomicBool::new(false)),
+            last_snapshot: Arc::new(Mutex::new(None)),
+            last_index: last_index.clone(),
+            is_index_loading: Arc::new(AtomicBool::new(false)),
+            last_index_load_error: Arc::new(Mutex::new(None)),
+            last_pause_error: Arc::new(Mutex::new(None)),
+            index_load_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            index_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            last_progress: Arc::new(Mutex::new(None)),
+            last_checkpoint: Arc::new(Mutex::new(None)),
+            _scan_handle: Arc::new(Mutex::new(None)),
+            is_ai_candidates_building: Arc::new(AtomicBool::new(false)),
+            ai_candidates_json: Arc::new(Mutex::new(None)),
+            ai_candidates_spill_path: Arc::new(Mutex::new(None)),
+            ai_candidates_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            is_ai_coverage_plan_building: Arc::new(AtomicBool::new(false)),
+            ai_coverage_plan_preview_json: Arc::new(Mutex::new(None)),
+            ai_coverage_plan_build_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            local_coverage_funnel_cache: Arc::new(Mutex::new(None)),
+            unclassified_subtree_index_cache: Arc::new(Mutex::new(None)),
+            ai_coverage_plan: Arc::new(Mutex::new(None)),
+            ai_tree_coverage_plan: ai_tree_coverage_plan.clone(),
+            capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
+            capability_jobs: CapabilityJobStore::new(),
+        };
+        shell.build_ai_tree_plan_json(snapshot_id)
+    }
+
+    pub fn is_ai_coverage_plan_building(&self) -> bool {
+        self.is_ai_coverage_plan_building.load(Ordering::Relaxed)
+    }
+
+    pub fn get_ai_coverage_plan_json(&self) -> String {
+        self.ai_coverage_plan_preview_json
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .unwrap_or_else(|| "error:not_ready".to_string())
+    }
+
     pub fn is_ai_candidates_building(&self) -> bool {
         self.is_ai_candidates_building.load(Ordering::Relaxed)
     }
 
     /// Latest async build payload (or error string). Empty when none yet.
+    ///
+    /// After an async build, reads the spill file when present (then deletes it).
     pub fn get_ai_candidates_json(&self) -> String {
+        if let Ok(mut spill) = self.ai_candidates_spill_path.lock() {
+            if let Some(path) = spill.take() {
+                match std::fs::read_to_string(&path) {
+                    Ok(json) => {
+                        let _ = std::fs::remove_file(&path);
+                        return json;
+                    }
+                    Err(e) => return format!("error:spill:{e}"),
+                }
+            }
+        }
         self.ai_candidates_json
             .lock()
             .ok()
             .and_then(|g| g.clone())
+            .unwrap_or_else(|| "error:not_ready".to_string())
+    }
+
+    /// Takes the temp-file path for the latest async candidates build (if any).
+    /// The file is removed from engine state; the caller owns deletion after read.
+    pub fn take_ai_candidates_spill_path(&self) -> String {
+        self.ai_candidates_spill_path
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
             .unwrap_or_else(|| "error:not_ready".to_string())
     }
 
@@ -1375,28 +1743,21 @@ impl VolwardEngine {
             Err(error) => return error,
         };
         let limit = limit.max(1) as usize;
-        let all = collect_local_coverage_verdicts(
+        let protected = self.platform.protected_prefixes();
+        let (funnel_map, classified) =
+            self.local_coverage_funnel_cache_for(&index, &kb, protected);
+        let (verdicts, next_cursor) = page_local_coverage_verdicts(
             &index,
             &kb,
-            self.platform.protected_prefixes(),
+            protected,
             &[],
+            &funnel_map,
+            &classified,
+            cursor,
+            limit,
         );
-        let start = cursor as usize;
-        if start >= all.len() {
-            return serde_json::json!({
-                "verdicts": [],
-                "next_cursor": serde_json::Value::Null,
-            })
-            .to_string();
-        }
-        let end = (start + limit).min(all.len());
-        let next_cursor = if end < all.len() {
-            serde_json::json!(end as u64)
-        } else {
-            serde_json::Value::Null
-        };
         serde_json::json!({
-            "verdicts": &all[start..end],
+            "verdicts": verdicts,
             "next_cursor": next_cursor,
         })
         .to_string()
@@ -1439,34 +1800,10 @@ impl VolwardEngine {
         };
         let protected = self.platform.protected_prefixes();
         let plan = build_ai_tree_plan(&index, &kb, protected, &[]);
-        let snapshot_id = plan.snapshot_id.clone();
-        let root_path = plan.root_path.clone();
-        let root_size_bytes = index.summary().root_size_bytes;
-        let scanned_at_ms = index.scanned_at_ms;
-        let seed_node_count = plan.seed_nodes.len() as u64;
-        let tail_file_count = plan.tail_file_paths.len() as u64;
-        let funnel = plan.funnel_stats.clone();
-        let estimated_tree_credits = plan.estimated_tree_credits;
-        let estimated_tail_credits = plan.estimated_tail_credits;
         if let Ok(mut slot) = self.ai_tree_coverage_plan.lock() {
-            *slot = Some(plan);
+            *slot = Some(plan.clone());
         }
-        serde_json::json!({
-            "snapshot_id": snapshot_id,
-            "plan_version": AI_COVERAGE_TREE_PLAN_VERSION,
-            "root_path": root_path,
-            "root_size_bytes": root_size_bytes,
-            "scanned_at_ms": scanned_at_ms,
-            "seed_node_count": seed_node_count,
-            "tail_file_count": tail_file_count,
-            "local_safe_files": funnel.local_safe_files,
-            "local_keep_files": funnel.local_keep_files,
-            "tail_files": funnel.tail_files,
-            "tree_pending_files": funnel.tree_pending_files,
-            "estimated_tree_credits": estimated_tree_credits,
-            "estimated_tail_credits": estimated_tail_credits,
-        })
-        .to_string()
+        Self::tree_plan_preview_json(&index, &plan)
     }
 
     pub fn next_ai_tree_coverage_page_json(
@@ -1546,7 +1883,15 @@ impl VolwardEngine {
             return "error:snapshot mismatch".to_string();
         }
         let protected = self.platform.protected_prefixes();
-        let nodes = expand_tree_drill_children(&index, &kb, protected, &[], dir_path);
+        let subtree_index = self.unclassified_subtree_index_for(&index, &kb, protected);
+        let nodes = expand_tree_drill_children_with_index(
+            &index,
+            &kb,
+            protected,
+            &[],
+            dir_path,
+            subtree_index.as_ref(),
+        );
         serde_json::json!({ "nodes": nodes }).to_string()
     }
 
@@ -1601,7 +1946,25 @@ impl VolwardEngine {
         if result.snapshot_id.is_empty() {
             result.snapshot_id = snapshot_id.to_string();
         }
-        result.save_for_reuse().is_ok()
+        if !result.save_for_reuse().is_ok() {
+            return false;
+        }
+        let pb = crate::pb_convert::encode_ai_analysis_result_pb(&result);
+        let mut ok = true;
+        if let Some(cache_key) = result.cache_key.as_deref() {
+            if !cache_key.is_empty()
+                && AiAnalysisResult::save_pb_for_key(cache_key, &pb).is_err()
+            {
+                ok = false;
+            }
+        }
+        if !result.snapshot_id.is_empty()
+            && result.cache_key.as_deref() != Some(result.snapshot_id.as_str())
+            && AiAnalysisResult::save_pb_for_key(&result.snapshot_id, &pb).is_err()
+        {
+            ok = false;
+        }
+        ok
     }
 
     /// Load a previously saved AI analysis JSON.
@@ -2253,6 +2616,29 @@ mod tests {
     }
 
     #[test]
+    fn load_last_snapshot_from_path_accepts_pb_snapshot() {
+        use prost::Message;
+
+        let snapshot = minimal_snapshot();
+        let expected_id = snapshot.snapshot_id.clone();
+        let path = std::env::temp_dir().join(format!(
+            "volward-pb-snapshot-{}.pb",
+            std::process::id()
+        ));
+        let bytes = proto::StorageSnapshot::from(&snapshot).encode_to_vec();
+        std::fs::write(&path, bytes).expect("write pb snapshot");
+
+        let engine = VolwardEngine::new();
+        engine
+            .load_last_snapshot_from_path(&path.to_string_lossy())
+            .expect("pb snapshot should load");
+        let loaded = engine.get_last_snapshot().expect("snapshot loaded");
+        assert_eq!(loaded.snapshot_id, expected_id);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn load_index_from_path_accepts_pb_index() {
         use prost::Message;
 
@@ -2726,9 +3112,9 @@ mod tests {
         let page1 = engine.list_local_coverage_verdicts_json("local-verdicts-snap", 0, 1);
         let parsed1: serde_json::Value = serde_json::from_str(&page1).unwrap();
         assert_eq!(parsed1["verdicts"].as_array().unwrap().len(), 1);
-        assert_eq!(parsed1["next_cursor"].as_u64(), Some(1));
+        let cursor1 = parsed1["next_cursor"].as_u64().expect("next page cursor");
 
-        let page2 = engine.list_local_coverage_verdicts_json("local-verdicts-snap", 1, 100);
+        let page2 = engine.list_local_coverage_verdicts_json("local-verdicts-snap", cursor1, 100);
         let parsed2: serde_json::Value = serde_json::from_str(&page2).unwrap();
         assert!(parsed2["verdicts"].as_array().unwrap().len() >= 1);
         assert!(parsed2["next_cursor"].is_null());

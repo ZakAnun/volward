@@ -411,6 +411,81 @@ fn local_verdict_from_keep(
     }
 }
 
+fn local_verdict_for_unclassified(
+    path: String,
+    size_bytes: u64,
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    funnel_map: &CoverageFunnelContextMap,
+) -> Option<CoverageLocalVerdict> {
+    let project_ancestor = funnel_map.get(&path).cloned().flatten();
+    let ctx = coverage_funnel_context_for_path(
+        project_ancestor,
+        index,
+        protected_prefixes,
+        personal_prefixes,
+    );
+    match resolve_unclassified_for_coverage(&path, size_bytes, kb, &ctx) {
+        CoverageFileResolution::LocalSafe(entry) => Some(local_verdict_from_safe(entry, kb)),
+        CoverageFileResolution::LocalKeep { reason, confidence } => Some(local_verdict_from_keep(
+            path, size_bytes, reason, confidence, kb,
+        )),
+        CoverageFileResolution::TailCandidate { .. } | CoverageFileResolution::TreeCandidate => None,
+    }
+}
+
+/// Page funnel-resolved local verdicts without building the full list.
+///
+/// `unclassified_cursor` is the number of unclassified file slots already
+/// consumed (including tail/tree candidates). `next_cursor` continues from
+/// the next unclassified slot so paging is O(total_unclassified) across all
+/// pages, not O(n × pages).
+pub fn page_local_coverage_verdicts(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    funnel_map: &CoverageFunnelContextMap,
+    classified: &std::collections::HashSet<String>,
+    unclassified_cursor: u64,
+    limit: usize,
+) -> (Vec<CoverageLocalVerdict>, Option<u64>) {
+    if limit == 0 {
+        return (Vec::new(), Some(unclassified_cursor));
+    }
+    let mut out = Vec::new();
+    let mut unclassified_seen = 0u64;
+    for (path, size_bytes) in index.unclassified_files() {
+        if classified.contains(&path) {
+            continue;
+        }
+        if unclassified_seen < unclassified_cursor {
+            unclassified_seen += 1;
+            continue;
+        }
+        if let Some(verdict) = local_verdict_for_unclassified(
+            path,
+            size_bytes,
+            index,
+            kb,
+            protected_prefixes,
+            personal_prefixes,
+            funnel_map,
+        ) {
+            out.push(verdict);
+            unclassified_seen += 1;
+            if out.len() >= limit {
+                return (out, Some(unclassified_seen));
+            }
+            continue;
+        }
+        unclassified_seen += 1;
+    }
+    (out, None)
+}
+
 /// Collect funnel-resolved local verdicts for all unclassified files (single pass).
 pub fn collect_local_coverage_verdicts(
     index: &SnapshotIndex,
@@ -425,23 +500,16 @@ pub fn collect_local_coverage_verdicts(
         if classified.contains(&path) {
             continue;
         }
-        let project_ancestor = funnel_map.get(&path).cloned().flatten();
-        let ctx = coverage_funnel_context_for_path(
-            project_ancestor,
+        if let Some(verdict) = local_verdict_for_unclassified(
+            path,
+            size_bytes,
             index,
+            kb,
             protected_prefixes,
             personal_prefixes,
-        );
-        match resolve_unclassified_for_coverage(&path, size_bytes, kb, &ctx) {
-            CoverageFileResolution::LocalSafe(entry) => {
-                out.push(local_verdict_from_safe(entry, kb));
-            }
-            CoverageFileResolution::LocalKeep { reason, confidence } => {
-                out.push(local_verdict_from_keep(
-                    path, size_bytes, reason, confidence, kb,
-                ));
-            }
-            CoverageFileResolution::TailCandidate { .. } | CoverageFileResolution::TreeCandidate => {}
+            &funnel_map,
+        ) {
+            out.push(verdict);
         }
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
@@ -598,6 +666,44 @@ mod tests {
                 panic!("sibling should be local via exclusion prefix")
             }
         }
+    }
+
+    #[test]
+    fn page_local_coverage_verdicts_matches_collect_count() {
+        let mut builder = SnapshotIndexBuilder::new("/Users/x");
+        builder.insert_entry(classified_entry(
+            "/Users/x/Library/Caches/myapp/anchor.bin",
+            1,
+            EntryCategory::Cache,
+        ));
+        builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
+        builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
+        builder.record_file_size("/Users/x/loose.dat", 5);
+        let index = finish(builder);
+        let kb = test_kb();
+        let funnel_map = build_coverage_funnel_context(&index, &kb, &[]);
+        let classified = index.classified_paths();
+        let all = collect_local_coverage_verdicts(&index, &kb, &[], &[]);
+        let mut cursor = 0u64;
+        let mut paged = Vec::new();
+        loop {
+            let (page, next) = page_local_coverage_verdicts(
+                &index,
+                &kb,
+                &[],
+                &[],
+                &funnel_map,
+                &classified,
+                cursor,
+                1,
+            );
+            paged.extend(page);
+            match next {
+                Some(n) => cursor = n,
+                None => break,
+            }
+        }
+        assert_eq!(paged.len(), all.len());
     }
 
     #[test]

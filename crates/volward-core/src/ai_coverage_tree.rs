@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::coverage_funnel::{
-    build_coverage_funnel_context, compute_coverage_funnel_stats,
-    coverage_funnel_context_for_path, resolve_unclassified_for_coverage, CoverageFileResolution,
-    CoverageFunnelContextMap, CoverageFunnelStats,
+    build_coverage_funnel_context, coverage_funnel_context_for_path,
+    resolve_unclassified_for_coverage, CoverageFileResolution, CoverageFunnelContextMap,
+    CoverageFunnelStats,
 };
 use crate::directory_role::{classify_directory_role, DirectoryRole};
 use crate::index::SnapshotIndex;
@@ -83,25 +83,20 @@ pub fn build_ai_tree_plan(
     personal_prefixes: &[String],
 ) -> AiTreePlan {
     let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
-    let funnel_stats = compute_coverage_funnel_stats(
-        index,
-        kb,
-        protected_prefixes,
-        personal_prefixes,
-    );
-    let tail_file_paths = collect_tail_queue(
+    let scan = scan_unclassified_for_tree_plan(
         index,
         kb,
         protected_prefixes,
         personal_prefixes,
         &funnel_map,
     );
-    let seed_nodes = build_seed_nodes(
+    let seed_nodes = collect_seed_nodes_under(
         index,
         kb,
         protected_prefixes,
         personal_prefixes,
-        &funnel_map,
+        &scan.subtree_index,
+        &index.root_path,
     );
 
     AiTreePlan {
@@ -109,55 +104,119 @@ pub fn build_ai_tree_plan(
         snapshot_id: index.snapshot_id.clone(),
         root_path: index.root_path.clone(),
         estimated_tree_credits: seed_nodes.len().div_ceil(TREE_NODE_BATCH_SIZE as usize) as u64,
-        estimated_tail_credits: tail_file_paths
+        estimated_tail_credits: scan.tail_file_paths
             .len()
             .div_ceil(TAIL_FILE_BATCH_SIZE as usize) as u64,
         seed_nodes,
-        tail_file_paths,
-        funnel_stats,
+        tail_file_paths: scan.tail_file_paths,
+        funnel_stats: scan.funnel_stats,
     }
 }
 
-fn collect_tail_queue(
+#[derive(Debug, Default, Clone)]
+struct DirUnclassifiedAgg {
+    unclassified_files: u64,
+    local_files: u64,
+    ai_pending_files: u64,
+    ext_counts: HashMap<String, u32>,
+}
+
+/// Per-directory aggregates for unclassified files (one scan over the unclassified set).
+#[derive(Debug, Default, Clone)]
+pub struct UnclassifiedSubtreeIndex {
+    by_dir: HashMap<String, DirUnclassifiedAgg>,
+}
+
+struct UnclassifiedPlanScan {
+    funnel_stats: CoverageFunnelStats,
+    tail_file_paths: Vec<(String, u64)>,
+    subtree_index: UnclassifiedSubtreeIndex,
+}
+
+/// Build subtree aggregates in one pass (used by expand/drill when plan cache is unavailable).
+pub fn build_unclassified_subtree_index(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,
     protected_prefixes: &[String],
     personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
-) -> Vec<(String, u64)> {
-    let classified = index.classified_paths();
-    let mut tail: Vec<(String, u64)> = Vec::new();
-    for (path, size_bytes) in index.unclassified_files() {
-        if classified.contains(&path) {
-            continue;
-        }
-        let resolution = resolve_file(index, kb, protected_prefixes, personal_prefixes, funnel_map, &path, size_bytes);
-        if matches!(
-            resolution,
-            CoverageFileResolution::TailCandidate { .. }
-        ) {
-            tail.push((path, size_bytes));
-        }
-    }
-    tail.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    tail
-}
-
-fn build_seed_nodes(
-    index: &SnapshotIndex,
-    kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
-    funnel_map: &CoverageFunnelContextMap,
-) -> Vec<AiTreeNode> {
-    collect_seed_nodes_under(
+) -> UnclassifiedSubtreeIndex {
+    scan_unclassified_for_tree_plan(
         index,
         kb,
         protected_prefixes,
         personal_prefixes,
         funnel_map,
-        &index.root_path,
     )
+    .subtree_index
+}
+
+fn scan_unclassified_for_tree_plan(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    funnel_map: &CoverageFunnelContextMap,
+) -> UnclassifiedPlanScan {
+    let classified = index.classified_paths();
+    let root = normalize_path(&index.root_path);
+    let mut funnel_stats = CoverageFunnelStats::default();
+    let mut tail_file_paths: Vec<(String, u64)> = Vec::new();
+    let mut subtree_index = UnclassifiedSubtreeIndex::default();
+
+    for (path, size_bytes) in index.unclassified_files() {
+        if classified.contains(&path) {
+            continue;
+        }
+        let resolution = resolve_file(
+            index,
+            kb,
+            protected_prefixes,
+            personal_prefixes,
+            funnel_map,
+            &path,
+            size_bytes,
+        );
+        match &resolution {
+            CoverageFileResolution::LocalSafe(_) => funnel_stats.local_safe_files += 1,
+            CoverageFileResolution::LocalKeep { .. } => funnel_stats.local_keep_files += 1,
+            CoverageFileResolution::TailCandidate { .. } => {
+                funnel_stats.tail_files += 1;
+                tail_file_paths.push((path.clone(), size_bytes));
+            }
+            CoverageFileResolution::TreeCandidate => funnel_stats.tree_pending_files += 1,
+        }
+
+        let (is_local, is_ai) = match &resolution {
+            CoverageFileResolution::LocalSafe(_) | CoverageFileResolution::LocalKeep { .. } => {
+                (true, false)
+            }
+            CoverageFileResolution::TailCandidate { .. }
+            | CoverageFileResolution::TreeCandidate => (false, true),
+        };
+        let ext = extension_token(&path);
+        for dir in ancestor_directories(&path, &root) {
+            let agg = subtree_index.by_dir.entry(dir).or_default();
+            agg.unclassified_files += 1;
+            if is_local {
+                agg.local_files += 1;
+            }
+            if is_ai {
+                agg.ai_pending_files += 1;
+            }
+            if let Some(ext) = ext.as_ref() {
+                *agg.ext_counts.entry(ext.clone()).or_default() += 1;
+            }
+        }
+    }
+
+    tail_file_paths.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+
+    UnclassifiedPlanScan {
+        funnel_stats,
+        tail_file_paths,
+        subtree_index,
+    }
 }
 
 /// Direct child directories of `parent_dir` that qualify as BFS drill seeds (same S2 rules as plan v3).
@@ -169,22 +228,48 @@ pub fn expand_tree_drill_children(
     parent_dir: &str,
 ) -> Vec<AiTreeNode> {
     let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
-    collect_seed_nodes_under(
+    let subtree_index = build_unclassified_subtree_index(
         index,
         kb,
         protected_prefixes,
         personal_prefixes,
         &funnel_map,
+    );
+    collect_seed_nodes_under(
+        index,
+        kb,
+        protected_prefixes,
+        personal_prefixes,
+        &subtree_index,
+        parent_dir,
+    )
+}
+
+/// Same as [`expand_tree_drill_children`] but reuses a pre-built [`UnclassifiedSubtreeIndex`].
+pub fn expand_tree_drill_children_with_index(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    parent_dir: &str,
+    subtree_index: &UnclassifiedSubtreeIndex,
+) -> Vec<AiTreeNode> {
+    collect_seed_nodes_under(
+        index,
+        kb,
+        protected_prefixes,
+        personal_prefixes,
+        subtree_index,
         parent_dir,
     )
 }
 
 fn collect_seed_nodes_under(
     index: &SnapshotIndex,
-    kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
-    funnel_map: &CoverageFunnelContextMap,
+    _kb: &OsKnowledgeBase,
+    _protected_prefixes: &[String],
+    _personal_prefixes: &[String],
+    subtree_index: &UnclassifiedSubtreeIndex,
     parent_dir: &str,
 ) -> Vec<AiTreeNode> {
     let query = index.query_directory(parent_dir, None, false, "name");
@@ -201,27 +286,13 @@ fn collect_seed_nodes_under(
         ) {
             continue;
         }
-        if !subtree_has_tree_or_tail_pending(
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            funnel_map,
-            &dir_path,
-        ) {
+        if !subtree_has_tree_or_tail_pending(subtree_index, &dir_path) {
             continue;
         }
-        if subtree_all_local_resolved(
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            funnel_map,
-            &dir_path,
-        ) {
+        if subtree_all_local_resolved(subtree_index, &dir_path) {
             continue;
         }
-        nodes.push(build_tree_node(index, &dir_path, role, markers));
+        nodes.push(build_tree_node(index, &dir_path, role, markers, subtree_index));
     }
     nodes.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
     nodes
@@ -232,8 +303,15 @@ fn build_tree_node(
     dir_path: &str,
     role: DirectoryRole,
     markers: Vec<String>,
+    subtree_index: &UnclassifiedSubtreeIndex,
 ) -> AiTreeNode {
-    let (file_count, subdir_count, ext_counts) = subtree_unclassified_stats(index, dir_path);
+    let dir_key = normalize_path(dir_path);
+    let (file_count, ext_counts) = subtree_index
+        .by_dir
+        .get(&dir_key)
+        .map(|agg| (agg.unclassified_files, agg.ext_counts.clone()))
+        .unwrap_or((0, HashMap::new()));
+    let subdir_count = count_subdirs(index, dir_path);
     let top_extensions = top_n_extensions(&ext_counts, 3);
     let size_bytes = index
         .directory_record(dir_path)
@@ -254,99 +332,53 @@ fn build_tree_node(
 }
 
 fn subtree_has_tree_or_tail_pending(
-    index: &SnapshotIndex,
-    kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
-    funnel_map: &CoverageFunnelContextMap,
+    subtree_index: &UnclassifiedSubtreeIndex,
     dir_path: &str,
 ) -> bool {
-    let classified = index.classified_paths();
-    for (path, size_bytes) in index.unclassified_files() {
-        if classified.contains(&path) {
-            continue;
-        }
-        if !path_is_at_or_under(&path, dir_path) {
-            continue;
-        }
-        let resolution = resolve_file(
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            funnel_map,
-            &path,
-            size_bytes,
-        );
-        if matches!(
-            resolution,
-            CoverageFileResolution::TreeCandidate | CoverageFileResolution::TailCandidate { .. }
-        ) {
-            return true;
-        }
-    }
-    false
+    subtree_index
+        .by_dir
+        .get(&normalize_path(dir_path))
+        .is_some_and(|agg| agg.ai_pending_files > 0)
 }
 
-fn subtree_all_local_resolved(
-    index: &SnapshotIndex,
-    kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
-    funnel_map: &CoverageFunnelContextMap,
-    dir_path: &str,
-) -> bool {
-    let classified = index.classified_paths();
-    let mut saw_any = false;
-    for (path, size_bytes) in index.unclassified_files() {
-        if classified.contains(&path) {
-            continue;
-        }
-        if !path_is_at_or_under(&path, dir_path) {
-            continue;
-        }
-        saw_any = true;
-        let resolution = resolve_file(
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            funnel_map,
-            &path,
-            size_bytes,
-        );
-        if !matches!(
-            resolution,
-            CoverageFileResolution::LocalSafe(_) | CoverageFileResolution::LocalKeep { .. }
-        ) {
-            return false;
-        }
-    }
-    saw_any
+fn subtree_all_local_resolved(subtree_index: &UnclassifiedSubtreeIndex, dir_path: &str) -> bool {
+    subtree_index
+        .by_dir
+        .get(&normalize_path(dir_path))
+        .is_some_and(|agg| agg.unclassified_files > 0 && agg.ai_pending_files == 0)
 }
 
-fn subtree_unclassified_stats(
-    index: &SnapshotIndex,
-    dir_path: &str,
-) -> (u64, u64, HashMap<String, u32>) {
-    let classified = index.classified_paths();
-    let mut file_count = 0u64;
-    let mut ext_counts: HashMap<String, u32> = HashMap::new();
-    for (path, size_bytes) in index.unclassified_files() {
-        if classified.contains(&path) {
-            continue;
+fn ancestor_directories(file_path: &str, root: &str) -> Vec<String> {
+    let root = normalize_path(root);
+    let mut dirs = Vec::new();
+    let mut current = normalize_path(file_path);
+    loop {
+        let Some(parent) = parent_directory(&current) else {
+            break;
+        };
+        if !path_is_at_or_under(&parent, &root) {
+            break;
         }
-        if !path_is_at_or_under(&path, dir_path) {
-            continue;
+        dirs.push(parent.clone());
+        if parent == root {
+            break;
         }
-        let _ = size_bytes;
-        file_count += 1;
-        if let Some(ext) = extension_token(&path) {
-            *ext_counts.entry(ext).or_default() += 1;
-        }
+        current = parent;
     }
-    let subdir_count = count_subdirs(index, dir_path);
-    (file_count, subdir_count, ext_counts)
+    dirs
+}
+
+fn parent_directory(path: &str) -> Option<String> {
+    let path = normalize_path(path);
+    if path.is_empty() {
+        return None;
+    }
+    let slash = path.rfind('/')?;
+    if slash == 0 {
+        Some("/".to_string())
+    } else {
+        Some(path[..slash].to_string())
+    }
 }
 
 fn count_subdirs(index: &SnapshotIndex, dir_path: &str) -> u64 {

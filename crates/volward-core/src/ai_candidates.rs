@@ -1,10 +1,12 @@
 use crate::model::{EntryCategory, ScanTreeNode};
 use crate::os_knowledge::{Confidence, OsKnowledgeBase};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Default maximum number of candidates sent to the model / UI.
 pub const DEFAULT_CANDIDATE_CAP: usize = 150;
+/// BYOK flat analyze batch size — keep in sync with `volward_ai::BATCH_SIZE`.
+pub const BYOK_ANALYZE_BATCH_SIZE: usize = 40;
 /// Max concrete member paths retained per aggregated directory candidate.
 /// Keeps the FFI JSON bounded even when a single parent has huge fan-out.
 pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
@@ -78,7 +80,7 @@ pub fn ai_aggregate_path_from_delete_target(target: &str) -> Option<&str> {
         .filter(|path| !path.is_empty())
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiCandidate {
     pub path: String,
     pub size_bytes: u64,
@@ -100,7 +102,7 @@ pub struct AiCandidate {
     /// real file candidates. Deleting an aggregate MUST target these paths
     /// instead of `path`, which is only the common parent directory and may
     /// hold unrelated (classified or user) data.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub member_paths: Vec<String>,
     /// Opaque native target used to resolve all aggregate members at deletion
     /// time without serializing every path over FFI.
@@ -108,7 +110,7 @@ pub struct AiCandidate {
     pub delete_target: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreClassifiedEntry {
     pub path: String,
     pub size_bytes: u64,
@@ -122,7 +124,10 @@ pub struct PreClassifiedEntry {
 pub struct AiCandidateSet {
     pub pre_classified: Vec<PreClassifiedEntry>,
     pub candidates: Vec<AiCandidate>,
+    /// Sum of estimated input tokens across all BYOK API batches.
     pub estimated_input_tokens: usize,
+    /// Estimated input tokens for the first BYOK batch (≤ [`BYOK_ANALYZE_BATCH_SIZE`] items).
+    pub estimated_byok_batch_input_tokens: usize,
     /// Unclassified files discovered *before* `aggregate_by_dir` folded
     /// siblings and before `cap_top_n` truncated the list.
     pub total_raw_count: usize,
@@ -139,6 +144,38 @@ pub struct AiCandidateBuilder {
     raw_unknown: Vec<AiCandidate>,
     raw_file_count: usize,
     total_before_cap: Option<usize>,
+}
+
+/// Rough BYOK prompt size for one batched analyze call (paths + JSON overhead).
+pub fn estimate_candidate_input_tokens(candidates: &[AiCandidate]) -> usize {
+    const BASE_PROMPT_TOKENS: usize = 320;
+    candidates.iter().fold(BASE_PROMPT_TOKENS, |total, candidate| {
+        let path_tokens = candidate.path.len().saturating_div(4).max(8);
+        let hint_tokens = candidate
+            .cleanup_hint
+            .as_deref()
+            .map(|hint| hint.len().saturating_div(4))
+            .unwrap_or(0);
+        total + 24 + path_tokens + hint_tokens
+    })
+}
+
+pub fn estimate_byok_batch_input_tokens(candidates: &[AiCandidate]) -> usize {
+    let end = candidates.len().min(BYOK_ANALYZE_BATCH_SIZE);
+    if end == 0 {
+        return 0;
+    }
+    estimate_candidate_input_tokens(&candidates[..end])
+}
+
+pub fn estimate_byok_total_input_tokens(candidates: &[AiCandidate]) -> usize {
+    if candidates.is_empty() {
+        return 0;
+    }
+    candidates
+        .chunks(BYOK_ANALYZE_BATCH_SIZE)
+        .map(estimate_candidate_input_tokens)
+        .sum()
 }
 
 impl AiCandidateBuilder {
@@ -285,11 +322,14 @@ impl AiCandidateBuilder {
     pub fn build(self) -> AiCandidateSet {
         let candidates_total_before_cap = self.total_before_cap.unwrap_or(self.raw_unknown.len());
         let truncated = candidates_total_before_cap > self.raw_unknown.len();
-        let estimated_input_tokens = self.raw_unknown.len() * 8 + 200;
+        let estimated_input_tokens = estimate_byok_total_input_tokens(&self.raw_unknown);
+        let estimated_byok_batch_input_tokens =
+            estimate_byok_batch_input_tokens(&self.raw_unknown);
         AiCandidateSet {
             pre_classified: self.pre_classified,
             candidates: self.raw_unknown,
             estimated_input_tokens,
+            estimated_byok_batch_input_tokens,
             total_raw_count: self.raw_file_count,
             candidates_total_before_cap,
             truncated,
@@ -364,11 +404,11 @@ impl AiCandidateBuilder {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct AiCleanupHint {
-    pub(crate) source: &'static str,
-    pub(crate) hint: &'static str,
-    pub(crate) retention_days: u32,
+#[derive(Clone, Copy, Debug)]
+pub struct AiCleanupHint {
+    pub source: &'static str,
+    pub hint: &'static str,
+    pub retention_days: u32,
 }
 
 /// High-confidence cleanup hints are resolved locally (option A) and never sent to the model.
@@ -814,6 +854,29 @@ mod tests {
         let tree = leaf("/Users/x/Projects/old/weird_thing.xyz", 50000);
         let set = AiCandidateBuilder::from_tree(&tree, &HashSet::new(), &kb).build();
         assert!(set.estimated_input_tokens > 0);
+        assert!(set.estimated_byok_batch_input_tokens > 0);
+        assert_eq!(
+            set.estimated_input_tokens,
+            set.estimated_byok_batch_input_tokens
+        );
+    }
+
+    #[test]
+    fn byok_total_token_estimate_sums_batches() {
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let files: Vec<(String, u64)> = (0..50)
+            .map(|i| (format!("/Users/x/dir/file_{i}.dat"), 100))
+            .collect();
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
+            .build();
+        assert_eq!(set.candidates.len(), 50);
+        let batch_only = estimate_byok_batch_input_tokens(&set.candidates);
+        let total = estimate_byok_total_input_tokens(&set.candidates);
+        assert_eq!(set.estimated_byok_batch_input_tokens, batch_only);
+        assert_eq!(set.estimated_input_tokens, total);
+        assert!(total > batch_only);
     }
 
     #[test]

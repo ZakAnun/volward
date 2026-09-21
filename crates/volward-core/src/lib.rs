@@ -39,7 +39,8 @@ pub use ai_coverage::{
 };
 pub use ai_coverage_propagate::{apply_dir_verdict, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
-    build_ai_tree_plan, expand_tree_drill_children, AiTreeNode, AiTreePlan,
+    build_ai_tree_plan, build_unclassified_subtree_index, expand_tree_drill_children,
+    expand_tree_drill_children_with_index, AiTreeNode, AiTreePlan, UnclassifiedSubtreeIndex,
     AI_COVERAGE_TREE_PLAN_VERSION,
 };
 pub use capability::*;
@@ -50,6 +51,7 @@ pub use cleanup_candidates::*;
 pub use coverage_funnel::{
     build_coverage_funnel_context, build_funnel_context_for_files,
     collect_local_coverage_verdicts, compute_coverage_funnel_stats,
+    page_local_coverage_verdicts,
     coverage_funnel_context_for_path,
     coverage_local_exclusion_prefixes, deepest_project_ancestor_for_path,
     path_under_longest_prefix, resolve_unclassified_for_coverage, CoverageFileResolution,
