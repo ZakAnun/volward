@@ -1,6 +1,7 @@
 pub mod ai_analysis;
 pub mod ai_candidates;
 pub mod ai_coverage;
+pub mod ai_coverage_propagate;
 pub mod ai_coverage_tree;
 pub mod capability;
 pub mod capability_job;
@@ -36,6 +37,7 @@ pub use ai_coverage::{
     build_ai_coverage_plan, coverage_group_member_paths, AiCoveragePlan, AiCoverageRow,
     AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION,
 };
+pub use ai_coverage_propagate::{apply_dir_verdict, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
     build_ai_tree_plan, AiTreeNode, AiTreePlan, AI_COVERAGE_TREE_PLAN_VERSION,
 };
