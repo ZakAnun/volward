@@ -1037,19 +1037,25 @@ mod ai_contract_tests {
                 c"ffi-coverage".as_ptr(),
             ))
         };
-        assert!(summary.contains(r#""total_unclassified":90"#), "{summary}");
+        let summary_json: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(summary_json["pre_classified_count"], 90);
+        assert_eq!(summary_json["local_safe_files"], 90);
+        assert_eq!(summary_json["total_unclassified"], 0);
+        assert_eq!(summary_json["file_rows"], 0);
+        assert_eq!(summary_json["group_rows"], 0);
 
+        let plan_version = summary_json["plan_version"].as_u64().unwrap_or(1);
         let page = unsafe {
             take(volward_ai_next_coverage_page_json(
                 &mut engine as *mut VolwardEngine,
                 c"ffi-coverage".as_ptr(),
-                1,
+                plan_version,
                 0,
                 40,
             ))
         };
         let parsed: serde_json::Value = serde_json::from_str(&page).unwrap();
-        assert_eq!(parsed["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["rows"].as_array().unwrap().len(), 0);
         assert_eq!(parsed["next_cursor"], serde_json::Value::Null);
 
         let group = unsafe {
