@@ -152,6 +152,34 @@ typedef VolwardAiResolveCoverageGroupJsonNative =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiResolveCoverageGroupJson =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiBuildTreeCoveragePlanJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiBuildTreeCoveragePlanJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
+typedef VolwardAiNextTreeCoveragePageJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Uint64,
+      Uint64,
+      Uint32,
+    );
+typedef VolwardAiNextTreeCoveragePageJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
+typedef VolwardAiNextTailCoveragePageJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Uint64,
+      Uint64,
+      Uint32,
+    );
+typedef VolwardAiNextTailCoveragePageJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
+typedef VolwardAiExpandTreeNodeJsonNative =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef VolwardAiExpandTreeNodeJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
 // ---------------------------------------------------------------------------
 // Catalog index API typedefs (Design §5.3)
@@ -351,10 +379,19 @@ final class VolwardNativeBridge implements VolwardBridge {
     _buildAiCoveragePlanJson = _tryLookupAiBuildCoveragePlanJson();
     _nextAiCoveragePageJson = _tryLookupAiNextCoveragePageJson();
     _resolveAiCoverageGroupJson = _tryLookupAiResolveCoverageGroupJson();
+    _buildAiTreeCoveragePlanJson = _tryLookupAiBuildTreeCoveragePlanJson();
+    _nextAiTreeCoveragePageJson = _tryLookupAiNextTreeCoveragePageJson();
+    _nextAiTailCoveragePageJson = _tryLookupAiNextTailCoveragePageJson();
+    _expandAiTreeNodeJson = _tryLookupAiExpandTreeNodeJson();
     hasAiCoverageApi =
         _buildAiCoveragePlanJson != null &&
         _nextAiCoveragePageJson != null &&
         _resolveAiCoverageGroupJson != null;
+    hasAiTreeCoverageApi =
+        _buildAiTreeCoveragePlanJson != null &&
+        _nextAiTreeCoveragePageJson != null &&
+        _nextAiTailCoveragePageJson != null &&
+        _expandAiTreeNodeJson != null;
     hasAiSessionApi =
         _buildAiCandidatesJson != null && _saveAiResultJson != null;
     hasAiContractApi =
@@ -560,6 +597,7 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final bool hasAiSessionApi;
   late final bool hasAiContractApi;
   late final bool hasAiCoverageApi;
+  late final bool hasAiTreeCoverageApi;
   late final VolwardAiBuildCandidatesJson? _buildAiCandidatesJson;
   late final VolwardAiStartBuildCandidatesAsync? _startBuildAiCandidatesAsync;
   late final VolwardAiIsCandidatesBuilding? _isAiCandidatesBuilding;
@@ -573,6 +611,10 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardAiBuildCoveragePlanJson? _buildAiCoveragePlanJson;
   late final VolwardAiNextCoveragePageJson? _nextAiCoveragePageJson;
   late final VolwardAiResolveCoverageGroupJson? _resolveAiCoverageGroupJson;
+  late final VolwardAiBuildTreeCoveragePlanJson? _buildAiTreeCoveragePlanJson;
+  late final VolwardAiNextTreeCoveragePageJson? _nextAiTreeCoveragePageJson;
+  late final VolwardAiNextTailCoveragePageJson? _nextAiTailCoveragePageJson;
+  late final VolwardAiExpandTreeNodeJson? _expandAiTreeNodeJson;
 
   // Catalog index API fields
   late final VolwardQueryDirectoryJson? _queryDirectoryJson;
@@ -994,6 +1036,92 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  String? buildAiTreeCoveragePlanJson(Pointer<Void> engine, String snapshotId) {
+    final fn = _buildAiTreeCoveragePlanJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? nextAiTreeCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 80,
+  }) {
+    final fn = _nextAiTreeCoveragePageJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr, planVersion, cursor, pageSize);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? nextAiTailCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 40,
+  }) {
+    final fn = _nextAiTailCoveragePageJson;
+    if (fn == null) return null;
+    final ptr = snapshotId.toNativeUtf8();
+    try {
+      final out = fn(engine, ptr, planVersion, cursor, pageSize);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  String? expandAiTreeNodeJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    String dirPath,
+  ) {
+    final fn = _expandAiTreeNodeJson;
+    if (fn == null) return null;
+    final snapPtr = snapshotId.toNativeUtf8();
+    final dirPtr = dirPath.toNativeUtf8();
+    try {
+      final out = fn(engine, snapPtr, dirPtr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(snapPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
   bool saveAiResultJson(
     Pointer<Void> engine,
     String snapshotId,
@@ -1307,6 +1435,54 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardAiResolveCoverageGroupJsonNative>>(
             'volward_ai_resolve_coverage_group_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildTreeCoveragePlanJson? _tryLookupAiBuildTreeCoveragePlanJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildTreeCoveragePlanJsonNative>>(
+            'volward_ai_build_tree_coverage_plan_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiNextTreeCoveragePageJson? _tryLookupAiNextTreeCoveragePageJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiNextTreeCoveragePageJsonNative>>(
+            'volward_ai_next_tree_coverage_page_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiNextTailCoveragePageJson? _tryLookupAiNextTailCoveragePageJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiNextTailCoveragePageJsonNative>>(
+            'volward_ai_next_tail_coverage_page_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiExpandTreeNodeJson? _tryLookupAiExpandTreeNodeJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiExpandTreeNodeJsonNative>>(
+            'volward_ai_expand_tree_node_json',
           )
           .asFunction();
     } on Object {

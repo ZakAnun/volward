@@ -21,7 +21,8 @@ use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, build_ai_coverage_plan, build_ai_tree_plan,
-    compute_coverage_funnel_stats, coverage_group_member_paths, AiCandidateBuilder,
+    compute_coverage_funnel_stats, coverage_group_member_paths, expand_tree_drill_children,
+    AiCandidateBuilder,
     AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
     CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
     DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink, OsKnowledgeBase,
@@ -1493,6 +1494,20 @@ impl VolwardEngine {
             "rows": rows,
         })
         .to_string()
+    }
+
+    pub fn expand_ai_tree_node_json(&self, snapshot_id: &str, dir_path: &str) -> String {
+        let kb = OsKnowledgeBase::for_current_platform();
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        if index.snapshot_id != snapshot_id {
+            return "error:snapshot mismatch".to_string();
+        }
+        let protected = self.platform.protected_prefixes();
+        let nodes = expand_tree_drill_children(&index, &kb, protected, &[], dir_path);
+        serde_json::json!({ "nodes": nodes }).to_string()
     }
 
     pub fn resolve_ai_coverage_group_json(&self, snapshot_id: &str, group_path: &str) -> String {

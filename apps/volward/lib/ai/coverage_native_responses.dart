@@ -28,6 +28,22 @@ CoveragePlanSummary parseCoveragePlanSummary(String raw) =>
 CoveragePage parseCoveragePage(String raw) =>
     CoveragePage.fromJson(decodeCoverageObjectJson(raw));
 
+CoverageTreePage parseCoverageTreePage(String raw) =>
+    CoverageTreePage.fromJson(decodeCoverageObjectJson(raw));
+
+CoverageTailPage parseCoverageTailPage(String raw) =>
+    CoverageTailPage.fromJson(decodeCoverageObjectJson(raw));
+
+List<CoverageTreeNode> parseCoverageTreeExpandNodes(String raw) {
+  final map = decodeCoverageObjectJson(raw);
+  final nodes = map['nodes'];
+  if (nodes is! List) return const [];
+  return nodes
+      .whereType<Map>()
+      .map((e) => CoverageTreeNode.fromJson(Map<String, dynamic>.from(e)))
+      .toList(growable: false);
+}
+
 List<Map<String, dynamic>> parseCoverageGroupMembers(String raw) {
   final map = decodeCoverageObjectJson(raw);
   final members = map['members'];

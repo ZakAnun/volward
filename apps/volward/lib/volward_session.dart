@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import 'cache_restore_policy.dart';
 import 'ai/ai_provider.dart';
+import 'ai/coverage_models.dart';
 import 'ai/native_coverage_engine.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
@@ -2513,6 +2514,11 @@ class VolwardSession extends ChangeNotifier {
       _engine != null &&
       VolwardNativeBridge.instance.hasAiCoverageApi;
 
+  bool get hasAiTreeCoverageApi =>
+      _ready &&
+      _engine != null &&
+      VolwardNativeBridge.instance.hasAiTreeCoverageApi;
+
   NativeCoverageEngine? get coverageEngine {
     final engine = _engine;
     if (!hasAiCoverageApi || engine == null) return null;
@@ -2521,6 +2527,47 @@ class VolwardSession extends ChangeNotifier {
       engine: engine,
     );
   }
+
+  NativeCoverageEngine? get treeCoverageEngine {
+    final engine = _engine;
+    if (!hasAiTreeCoverageApi || engine == null) return null;
+    return NativeCoverageEngine(
+      bridge: VolwardNativeBridge.instance,
+      engine: engine,
+    );
+  }
+
+  Future<CoveragePlanSummary?> buildTreeCoveragePlan(String snapshotId) async =>
+      treeCoverageEngine?.buildTreePlan(snapshotId);
+
+  Future<CoverageTreePage?> nextTreeCoveragePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async => treeCoverageEngine?.nextTreePage(
+    snapshotId,
+    planVersion,
+    cursor,
+    pageSize: pageSize,
+  );
+
+  Future<CoverageTailPage?> nextTailCoveragePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async => treeCoverageEngine?.nextTailPage(
+    snapshotId,
+    planVersion,
+    cursor,
+    pageSize: pageSize,
+  );
+
+  Future<List<CoverageTreeNode>?> expandTreeCoverageNode(
+    String snapshotId,
+    String dirPath,
+  ) async => treeCoverageEngine?.expandTreeNode(snapshotId, dirPath);
 
   bool get hasAiContractApi =>
       _ready && VolwardNativeBridge.instance.hasAiContractApi;

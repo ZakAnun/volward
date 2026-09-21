@@ -61,6 +61,81 @@ class NativeCoverageEngine implements CoverageEngine {
   }
 
   @override
+  Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async {
+    final raw = _requireJson(
+      bridge.buildAiTreeCoveragePlanJson(engine, snapshotId),
+      'build tree coverage plan',
+    );
+    final summary = parseCoveragePlanSummary(raw);
+    if (summary.snapshotId != snapshotId) {
+      throw CoverageEngineException(
+        'error:tree coverage plan snapshot mismatch',
+      );
+    }
+    return summary;
+  }
+
+  @override
+  Future<CoverageTreePage> nextTreePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async {
+    final raw = _requireJson(
+      bridge.nextAiTreeCoveragePageJson(
+        engine,
+        snapshotId,
+        planVersion,
+        cursor,
+        pageSize: pageSize ?? this.pageSize,
+      ),
+      'next tree coverage page',
+    );
+    final page = parseCoverageTreePage(raw);
+    if (page.snapshotId != snapshotId || page.planVersion != planVersion) {
+      throw CoverageEngineException('error:tree coverage page mismatch');
+    }
+    return page;
+  }
+
+  @override
+  Future<CoverageTailPage> nextTailPage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async {
+    final raw = _requireJson(
+      bridge.nextAiTailCoveragePageJson(
+        engine,
+        snapshotId,
+        planVersion,
+        cursor,
+        pageSize: pageSize ?? this.pageSize,
+      ),
+      'next tail coverage page',
+    );
+    final page = parseCoverageTailPage(raw);
+    if (page.snapshotId != snapshotId || page.planVersion != planVersion) {
+      throw CoverageEngineException('error:tail coverage page mismatch');
+    }
+    return page;
+  }
+
+  @override
+  Future<List<CoverageTreeNode>> expandTreeNode(
+    String snapshotId,
+    String dirPath,
+  ) async {
+    final raw = _requireJson(
+      bridge.expandAiTreeNodeJson(engine, snapshotId, dirPath),
+      'expand tree node',
+    );
+    return parseCoverageTreeExpandNodes(raw);
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> resolveGroupMembers(
     String snapshotId,
     String groupPath,

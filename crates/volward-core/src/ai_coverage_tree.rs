@@ -150,9 +150,46 @@ fn build_seed_nodes(
     personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
 ) -> Vec<AiTreeNode> {
-    let root_query = index.query_directory(&index.root_path, None, false, "name");
+    collect_seed_nodes_under(
+        index,
+        kb,
+        protected_prefixes,
+        personal_prefixes,
+        funnel_map,
+        &index.root_path,
+    )
+}
+
+/// Direct child directories of `parent_dir` that qualify as BFS drill seeds (same S2 rules as plan v3).
+pub fn expand_tree_drill_children(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    parent_dir: &str,
+) -> Vec<AiTreeNode> {
+    let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
+    collect_seed_nodes_under(
+        index,
+        kb,
+        protected_prefixes,
+        personal_prefixes,
+        &funnel_map,
+        parent_dir,
+    )
+}
+
+fn collect_seed_nodes_under(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    funnel_map: &CoverageFunnelContextMap,
+    parent_dir: &str,
+) -> Vec<AiTreeNode> {
+    let query = index.query_directory(parent_dir, None, false, "name");
     let mut nodes: Vec<AiTreeNode> = Vec::new();
-    for child in root_query.direct_children {
+    for child in query.direct_children {
         if !child.is_directory {
             continue;
         }
@@ -459,5 +496,26 @@ mod tests {
 
         assert_eq!(plan.estimated_tree_credits, 1);
         assert_eq!(plan.estimated_tail_credits, 1);
+
+        let drill = expand_tree_drill_children(&index, &kb, &[], &[], "/root/unknown_storage");
+        assert!(
+            drill.is_empty(),
+            "leaf storage dir has no qualifying child seeds: {drill:?}"
+        );
+    }
+
+    #[test]
+    fn expand_tree_drill_children_returns_sorted_seed_dirs() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/bucket/inner");
+        builder.ensure_dir("/root/alpha/inner");
+        builder.record_file_size("/root/bucket/inner/x.dat", 100);
+        builder.record_file_size("/root/alpha/inner/y.dat", 50);
+        let index = finish(builder);
+        let kb = kb_empty();
+
+        let nodes = expand_tree_drill_children(&index, &kb, &[], &[], "/root");
+        let paths: Vec<&str> = nodes.iter().map(|n| n.path.as_str()).collect();
+        assert_eq!(paths, ["/root/bucket", "/root/alpha"]);
     }
 }

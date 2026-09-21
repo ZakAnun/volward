@@ -39,7 +39,8 @@ pub use ai_coverage::{
 };
 pub use ai_coverage_propagate::{apply_dir_verdict, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
-    build_ai_tree_plan, AiTreeNode, AiTreePlan, AI_COVERAGE_TREE_PLAN_VERSION,
+    build_ai_tree_plan, expand_tree_drill_children, AiTreeNode, AiTreePlan,
+    AI_COVERAGE_TREE_PLAN_VERSION,
 };
 pub use capability::*;
 pub use capability_job::*;

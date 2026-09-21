@@ -133,6 +133,14 @@ class CoveragePlanSummary {
     required this.fileRows,
     required this.estimatedPages,
     this.fingerprint,
+    this.seedNodeCount,
+    this.tailFileCount,
+    this.localSafeFiles,
+    this.localKeepFiles,
+    this.tailFiles,
+    this.treePendingFiles,
+    this.estimatedTreeCredits,
+    this.estimatedTailCredits,
   });
 
   factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) =>
@@ -152,6 +160,14 @@ class CoveragePlanSummary {
                 json.containsKey('stats')
             ? CoverageSnapshotFingerprint.fromJson(json)
             : null,
+        seedNodeCount: (json['seed_node_count'] as num?)?.toInt(),
+        tailFileCount: (json['tail_file_count'] as num?)?.toInt(),
+        localSafeFiles: (json['local_safe_files'] as num?)?.toInt(),
+        localKeepFiles: (json['local_keep_files'] as num?)?.toInt(),
+        tailFiles: (json['tail_files'] as num?)?.toInt(),
+        treePendingFiles: (json['tree_pending_files'] as num?)?.toInt(),
+        estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
+        estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
       );
 
   final String snapshotId;
@@ -163,6 +179,79 @@ class CoveragePlanSummary {
   final int fileRows;
   final int estimatedPages;
   final CoverageSnapshotFingerprint? fingerprint;
+  final int? seedNodeCount;
+  final int? tailFileCount;
+  final int? localSafeFiles;
+  final int? localKeepFiles;
+  final int? tailFiles;
+  final int? treePendingFiles;
+  final int? estimatedTreeCredits;
+  final int? estimatedTailCredits;
+
+  bool get isTreePlan => planVersion >= 3 && seedNodeCount != null;
+}
+
+class CoverageTreePage {
+  const CoverageTreePage({
+    required this.snapshotId,
+    required this.planVersion,
+    required this.nextCursor,
+    required this.nodes,
+  });
+
+  factory CoverageTreePage.fromJson(Map<String, dynamic> json) =>
+      CoverageTreePage(
+        snapshotId: json['snapshot_id'] as String,
+        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+        nextCursor: (json['next_cursor'] as num?)?.toInt(),
+        nodes: ((json['nodes'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CoverageTreeNode.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false),
+      );
+
+  final String snapshotId;
+  final int planVersion;
+  final int? nextCursor;
+  final List<CoverageTreeNode> nodes;
+}
+
+class CoverageTailRow {
+  const CoverageTailRow({required this.path, required this.sizeBytes});
+
+  factory CoverageTailRow.fromJson(Map<String, dynamic> json) =>
+      CoverageTailRow(
+        path: json['path'] as String,
+        sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      );
+
+  final String path;
+  final int sizeBytes;
+}
+
+class CoverageTailPage {
+  const CoverageTailPage({
+    required this.snapshotId,
+    required this.planVersion,
+    required this.nextCursor,
+    required this.rows,
+  });
+
+  factory CoverageTailPage.fromJson(Map<String, dynamic> json) =>
+      CoverageTailPage(
+        snapshotId: json['snapshot_id'] as String,
+        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+        nextCursor: (json['next_cursor'] as num?)?.toInt(),
+        rows: ((json['rows'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CoverageTailRow.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false),
+      );
+
+  final String snapshotId;
+  final int planVersion;
+  final int? nextCursor;
+  final List<CoverageTailRow> rows;
 }
 
 class CoveragePage {
