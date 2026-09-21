@@ -1,13 +1,19 @@
 //! Pre-AI coverage funnel helpers (Phase 2). See `docs/superpowers/specs/2026-09-20-ai-coverage-phase2-tree-design.md`.
 
+use std::collections::HashMap;
+
 use crate::ai_candidates::{
     ai_cleanup_hint_for_path, hint_source_skips_ai, pre_classified_from_heuristics,
     pre_classified_from_hint, pre_classified_from_kb, pre_classified_under_index_prefix,
     AiCleanupHint, PreClassifiedEntry,
 };
+use crate::directory_role::collect_project_anchor_paths;
 use crate::index::SnapshotIndex;
 use crate::model::EntryCategory;
 use crate::os_knowledge::OsKnowledgeBase;
+
+/// Unclassified file path → deepest matching project anchor directory (if any).
+pub type CoverageFunnelContextMap = HashMap<String, Option<String>>;
 
 const EXCLUSION_DIR_NAMES: &[&str] = &[
     "node_modules",
@@ -162,9 +168,9 @@ impl CoverageFileResolution {
             CoverageFileResolution::TailCandidate { cleanup_hint } => {
                 UnclassifiedAiRouting::SendToAi { cleanup_hint }
             }
-            CoverageFileResolution::TreeCandidate => UnclassifiedAiRouting::SendToAi {
-                cleanup_hint: None,
-            },
+            CoverageFileResolution::TreeCandidate => {
+                UnclassifiedAiRouting::SendToAi { cleanup_hint: None }
+            }
         }
     }
 }
@@ -268,9 +274,80 @@ fn path_is_at_or_under(path: &str, root: &str) -> bool {
     if root.is_empty() {
         return false;
     }
-    path == root
-        || (path.starts_with(root)
-            && path.as_bytes().get(root.len()) == Some(&b'/'))
+    path == root || (path.starts_with(root) && path.as_bytes().get(root.len()) == Some(&b'/'))
+}
+
+/// Deepest project anchor on `sorted_anchors` that contains `path` (lex-sorted anchors).
+pub fn deepest_project_ancestor_for_path(path: &str, sorted_anchors: &[String]) -> Option<String> {
+    let path = normalize_path(path);
+    if sorted_anchors.is_empty() {
+        return None;
+    }
+    let mut lo = 0usize;
+    let mut hi = sorted_anchors.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if sorted_anchors[mid].as_str() <= path.as_str() {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    let mut idx = lo;
+    while idx > 0 {
+        idx -= 1;
+        if path_is_at_or_under(&path, &sorted_anchors[idx]) {
+            return Some(sorted_anchors[idx].clone());
+        }
+    }
+    None
+}
+
+/// Map each file path to its deepest project anchor (one pass over sorted paths + anchors).
+pub fn build_funnel_context_for_files(
+    index: &SnapshotIndex,
+    file_paths: &[String],
+    _kb: &OsKnowledgeBase,
+    _protected_prefixes: &[String],
+) -> CoverageFunnelContextMap {
+    let anchors = collect_project_anchor_paths(index);
+    let mut sorted_paths: Vec<String> = file_paths.to_vec();
+    sorted_paths.sort();
+    let mut map = CoverageFunnelContextMap::new();
+    for path in sorted_paths {
+        let ancestor = deepest_project_ancestor_for_path(&path, &anchors);
+        map.insert(path, ancestor);
+    }
+    map
+}
+
+/// Project ancestry map for all unclassified files in `index`.
+pub fn build_coverage_funnel_context(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+) -> CoverageFunnelContextMap {
+    let paths: Vec<String> = index
+        .unclassified_files()
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    build_funnel_context_for_files(index, &paths, kb, protected_prefixes)
+}
+
+/// Build per-file [`CoverageFunnelContext`] using shared index-level prefix lists.
+pub fn coverage_funnel_context_for_path(
+    project_ancestor: Option<String>,
+    index: &SnapshotIndex,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+) -> CoverageFunnelContext {
+    CoverageFunnelContext {
+        exclusion_prefixes: coverage_local_exclusion_prefixes(index),
+        protected_prefixes: protected_prefixes.to_vec(),
+        personal_prefixes: personal_prefixes.to_vec(),
+        project_ancestor,
+    }
 }
 
 #[cfg(test)]
@@ -304,6 +381,77 @@ mod tests {
         )
     }
 
+    fn test_kb() -> OsKnowledgeBase {
+        OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+            .unwrap()
+    }
+
+    #[test]
+    fn build_funnel_nested_projects_pick_deepest_anchor() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/a/pkg/src");
+        builder.record_file_size("/root/a/Cargo.toml", 10);
+        builder.record_file_size("/root/a/pkg/Cargo.toml", 10);
+        builder.record_file_size("/root/a/pkg/src/x.rs", 100);
+        let index = finish(builder);
+        let map = build_coverage_funnel_context(&index, &test_kb(), &[]);
+        assert_eq!(
+            map.get("/root/a/pkg/src/x.rs"),
+            Some(&Some("/root/a/pkg".to_string()))
+        );
+        assert_ne!(
+            map.get("/root/a/pkg/src/x.rs"),
+            Some(&Some("/root/a".to_string()))
+        );
+    }
+
+    #[test]
+    fn build_funnel_project_like_anchor_covers_subtree() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/myapp/src");
+        builder.record_file_size("/root/myapp/README.md", 50);
+        builder.record_file_size("/root/myapp/src/lib.rs", 80);
+        let index = finish(builder);
+        let map = build_coverage_funnel_context(&index, &test_kb(), &[]);
+        assert_eq!(
+            map.get("/root/myapp/src/lib.rs"),
+            Some(&Some("/root/myapp".to_string()))
+        );
+    }
+
+    #[test]
+    fn build_funnel_file_outside_project_anchor_is_none() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/random");
+        builder.record_file_size("/root/random/notes.txt", 10);
+        let index = finish(builder);
+        let map = build_coverage_funnel_context(&index, &test_kb(), &[]);
+        assert_eq!(map.get("/root/random/notes.txt"), Some(&None));
+    }
+
+    #[ignore]
+    #[test]
+    fn build_funnel_many_paths_stays_correct() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/proj/src");
+        builder.record_file_size("/root/proj/Cargo.toml", 1);
+        for i in 0..10_000 {
+            builder.record_file_size(&format!("/root/proj/src/f{i}.rs"), 1);
+        }
+        let index = finish(builder);
+        let paths: Vec<String> = index
+            .unclassified_files()
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        let map = build_funnel_context_for_files(&index, &paths, &test_kb(), &[]);
+        assert_eq!(map.len(), 10_000);
+        assert_eq!(
+            map.get("/root/proj/src/f0.rs"),
+            Some(&Some("/root/proj".to_string()))
+        );
+    }
+
     #[test]
     fn siblings_under_node_modules_both_match_parent_prefix() {
         let mut builder = SnapshotIndexBuilder::new("/root");
@@ -325,9 +473,11 @@ mod tests {
         let sibling = "/root/app/node_modules/other/x.js";
         assert!(path_under_longest_prefix(sibling, &prefixes).is_some());
 
-        let kb =
-            crate::os_knowledge::OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
-                .unwrap();
+        let kb = crate::os_knowledge::OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []",
+            "macos",
+        )
+        .unwrap();
         let wired = crate::indexed_local_exclusion_prefixes(&index);
         match crate::resolve_unclassified_for_ai(sibling, 50, &kb, &wired) {
             crate::UnclassifiedAiRouting::Local(_) => {}
@@ -339,11 +489,14 @@ mod tests {
 
     #[test]
     fn ai_generated_output_routes_to_tail_not_tree() {
-        let kb =
-            crate::os_knowledge::OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
-                .unwrap();
+        let kb = crate::os_knowledge::OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []",
+            "macos",
+        )
+        .unwrap();
         let path = "/Users/x/project/llm-output/note.md";
-        let resolution = resolve_unclassified_for_coverage(path, 5, &kb, &CoverageFunnelContext::default());
+        let resolution =
+            resolve_unclassified_for_coverage(path, 5, &kb, &CoverageFunnelContext::default());
         assert!(matches!(
             resolution,
             CoverageFileResolution::TailCandidate { .. }
@@ -352,18 +505,19 @@ mod tests {
 
     #[test]
     fn personal_prefix_keeps_without_ai() {
-        let kb =
-            crate::os_knowledge::OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
-                .unwrap();
+        let kb = crate::os_knowledge::OsKnowledgeBase::from_yaml(
+            "version: 1\nmacos: []\nwindows: []\nlinux: []",
+            "macos",
+        )
+        .unwrap();
         let mut ctx = CoverageFunnelContext::default();
         ctx.personal_prefixes.push("/Users/x/Documents".to_string());
-        let resolution = resolve_unclassified_for_coverage(
-            "/Users/x/Documents/notes.txt",
-            10,
-            &kb,
-            &ctx,
-        );
-        assert!(matches!(resolution, CoverageFileResolution::LocalKeep { .. }));
+        let resolution =
+            resolve_unclassified_for_coverage("/Users/x/Documents/notes.txt", 10, &kb, &ctx);
+        assert!(matches!(
+            resolution,
+            CoverageFileResolution::LocalKeep { .. }
+        ));
     }
 
     #[test]

@@ -44,7 +44,10 @@ const MANIFEST_EXACT: &[&str] = &[
 const PROJECT_SUBDIR_NAMES: &[&str] = &["src", "lib", "apps", "packages", "Sources", "include"];
 
 /// Classify a directory using direct children from the snapshot index (no filesystem I/O).
-pub fn classify_directory_role(index: &SnapshotIndex, dir_path: &str) -> (DirectoryRole, Vec<String>) {
+pub fn classify_directory_role(
+    index: &SnapshotIndex,
+    dir_path: &str,
+) -> (DirectoryRole, Vec<String>) {
     let pruned = index.directory_pruned_child_flags(dir_path);
     if pruned & PRUNED_VCS != 0 {
         return (DirectoryRole::ProjectRoot, vec!["pruned:vcs".to_string()]);
@@ -85,6 +88,30 @@ pub fn classify_directory_role(index: &SnapshotIndex, dir_path: &str) -> (Direct
     }
 
     (DirectoryRole::Unknown, vec![])
+}
+
+/// Sorted unique directory paths classified as [`DirectoryRole::ProjectRoot`] or [`DirectoryRole::ProjectLike`].
+pub fn collect_project_anchor_paths(index: &SnapshotIndex) -> Vec<String> {
+    let mut anchors = Vec::new();
+    let mut stack = vec![index.root_path.clone()];
+    while let Some(dir) = stack.pop() {
+        let (role, _) = classify_directory_role(index, &dir);
+        if matches!(
+            role,
+            DirectoryRole::ProjectRoot | DirectoryRole::ProjectLike
+        ) {
+            anchors.push(dir.clone());
+        }
+        let query = index.query_directory(&dir, None, false, "name");
+        for child in query.direct_children {
+            if child.is_directory {
+                stack.push(child.path);
+            }
+        }
+    }
+    anchors.sort();
+    anchors.dedup();
+    anchors
 }
 
 fn is_manifest_filename(name: &str) -> bool {
