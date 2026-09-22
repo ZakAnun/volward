@@ -268,4 +268,56 @@ void main() {
       expect(path, pbFile.path);
     },
   );
+
+  test(
+    'catalogPathForSnapshotId resolves a specific scan on the same root',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('volward-cache-test');
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.delete(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      const oldId = 'dc3d3856-51cf-47cf-ae8e-81e78dd647fd';
+      const newId = '0e20294e-259e-4640-b5dd-790131d72cc4';
+      const root = '/Users/test/Downloads';
+
+      final manifests = Directory('${temp.path}/manifests')..createSync();
+      final snapshots = Directory('${temp.path}/snapshots')..createSync();
+
+      File('${snapshots.path}/$oldId.pb').writeAsBytesSync([0x08, 0x01]);
+      File('${snapshots.path}/$newId.pb').writeAsBytesSync([0x08, 0x02]);
+
+      File('${manifests.path}/$oldId.json').writeAsStringSync(
+        jsonEncode({
+          'root': root,
+          'scanned_at_ms': 1000,
+          'snapshot_id': oldId,
+          'dir_fingerprints': {},
+        }),
+      );
+      File('${manifests.path}/$newId.json').writeAsStringSync(
+        jsonEncode({
+          'root': root,
+          'scanned_at_ms': 2000,
+          'snapshot_id': newId,
+          'dir_fingerprints': {},
+        }),
+      );
+
+      expect(
+        await SnapshotCache.catalogPathForSnapshotId(oldId),
+        '${snapshots.path}/$oldId.pb',
+      );
+      expect(
+        await SnapshotCache.catalogPathForSnapshotId(newId),
+        '${snapshots.path}/$newId.pb',
+      );
+      expect(
+        await SnapshotCache.latestSnapshotPath(preferredRoot: root),
+        '${snapshots.path}/$newId.pb',
+      );
+    },
+  );
 }

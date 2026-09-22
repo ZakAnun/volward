@@ -148,6 +148,9 @@ pub struct RawFsEntry {
     /// walk without reading file contents; `None` for directories or
     /// unavailable metadata.
     pub modified_at_ms: Option<i64>,
+    /// OR of prune signals recorded on this directory during walk (`process_read_dir`).
+    #[serde(default)]
+    pub pruned_child_flags: u32,
 }
 
 /// Physical on-disk size of a file, i.e. allocated blocks rather than the

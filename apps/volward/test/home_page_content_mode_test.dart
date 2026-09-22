@@ -230,7 +230,7 @@ class _HomePendingByokProvider extends ByokAiProvider {
   }
 }
 
-class _HomeAiContract implements AiContract {
+class _HomeAiContract extends AiContract {
   @override
   int batchSize() => 40;
 

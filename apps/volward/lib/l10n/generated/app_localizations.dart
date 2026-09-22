@@ -1036,8 +1036,68 @@ abstract class AppLocalizations {
   /// No description provided for @aiPreCheckUnknownTitle.
   ///
   /// In en, this message translates to:
-  /// **'{count} items will be sent for AI analysis (~{tokens} tokens)'**
-  String aiPreCheckUnknownTitle(int count, int tokens);
+  /// **'{count} items still need AI (BYOK ~{tokens} input tokens per API call, up to {batchSize} items each; {cap} items max per analysis)'**
+  String aiPreCheckUnknownTitle(int count, int tokens, int batchSize, int cap);
+
+  /// No description provided for @aiPreCheckCoverageEstimatePending.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimating full coverage cost…'**
+  String get aiPreCheckCoverageEstimatePending;
+
+  /// No description provided for @aiPreCheckAiScope.
+  ///
+  /// In en, this message translates to:
+  /// **'{tree} files need directory AI, {tail} loose files in tail queue'**
+  String aiPreCheckAiScope(int tree, int tail);
+
+  /// No description provided for @aiPreCheckAiScopeV2.
+  ///
+  /// In en, this message translates to:
+  /// **'Directory AI scope: ~{treePending} files · tail queue: {tail} files · about {apiCalls} API calls (minimum)'**
+  String aiPreCheckAiScopeV2(int treePending, int tail, int apiCalls);
+
+  /// No description provided for @aiPreCheckLocalOnlyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No API calls needed for this scan'**
+  String get aiPreCheckLocalOnlyTitle;
+
+  /// No description provided for @aiPreCheckLocalOnlyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Local rules already cover the directory and tail queues. Review local results without starting full coverage.'**
+  String get aiPreCheckLocalOnlyBody;
+
+  /// No description provided for @aiStartLocalOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Review local results'**
+  String get aiStartLocalOnly;
+
+  /// No description provided for @aiPreCheckFullCoverageEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'~{credits} credits minimum ({calls} API calls from plan; tree BFS may add more)'**
+  String aiPreCheckFullCoverageEstimate(int credits, int calls);
+
+  /// No description provided for @aiPreCheckTreeCreditsMayGrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Directory tree analysis may use more credits than this plan minimum.'**
+  String get aiPreCheckTreeCreditsMayGrow;
+
+  /// No description provided for @aiPreCheckSelectAllShown.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all shown'**
+  String get aiPreCheckSelectAllShown;
+
+  /// No description provided for @aiPreCheckClearSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear selection'**
+  String get aiPreCheckClearSelection;
 
   /// No description provided for @aiStartAnalysis.
   ///
@@ -1060,7 +1120,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiDeleteSelected.
   ///
   /// In en, this message translates to:
-  /// **'Delete {count} Selected Items'**
+  /// **'Move {count} Selected to Trash'**
   String aiDeleteSelected(int count);
 
   /// No description provided for @aiVerdictSafe.
@@ -1456,14 +1516,247 @@ abstract class AppLocalizations {
   /// No description provided for @aiTruncatedNotice.
   ///
   /// In en, this message translates to:
-  /// **'Showing the {shown} largest of {total} items — the rest were skipped to keep the request small.'**
-  String aiTruncatedNotice(int shown, int total);
+  /// **'Including the {shown} largest of {total} items ({cap} cap) — the rest are skipped.'**
+  String aiTruncatedNotice(int shown, int total, int cap);
 
   /// No description provided for @aiCoverageProgress.
   ///
   /// In en, this message translates to:
-  /// **'Coverage: {analyzed} / {total} files analyzed'**
+  /// **'Coverage: {analyzed} / {total} unclassified files resolved'**
   String aiCoverageProgress(int analyzed, int total);
+
+  /// No description provided for @aiCoverageFunnelBreakdown.
+  ///
+  /// In en, this message translates to:
+  /// **'Local {localSafe} safe · {localKeep} keep · ~{treePending} via directory AI · {tail} tail files'**
+  String aiCoverageFunnelBreakdown(
+    int localSafe,
+    int localKeep,
+    int treePending,
+    int tail,
+  );
+
+  /// No description provided for @aiCoverageApiCallsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'API calls this run: {used} used · at least {min} planned ({remaining} left at plan minimum)'**
+  String aiCoverageApiCallsEstimate(int used, int min, int remaining);
+
+  /// No description provided for @aiCoverageRemainingApiCalls.
+  ///
+  /// In en, this message translates to:
+  /// **'About {remaining} API calls left (plan minimum; directory drill-down may add more)'**
+  String aiCoverageRemainingApiCalls(int remaining);
+
+  /// No description provided for @aiCoveragePausedBeforeProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Local previews below are ready. Resume to flush local verdicts and run directory/tail AI on the rest.'**
+  String get aiCoveragePausedBeforeProgress;
+
+  /// No description provided for @aiCoverageRemainingEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'About {credits} credits remaining'**
+  String aiCoverageRemainingEstimate(int credits);
+
+  /// No description provided for @aiCoverageAccountBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Account balance: {credits} credits'**
+  String aiCoverageAccountBalance(int credits);
+
+  /// No description provided for @aiCoverageEstimatedCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated for full analysis: ~{credits} credits'**
+  String aiCoverageEstimatedCredits(int credits);
+
+  /// No description provided for @aiCoverageLocalResolved.
+  ///
+  /// In en, this message translates to:
+  /// **'Locally resolved: {count} files'**
+  String aiCoverageLocalResolved(int count);
+
+  /// No description provided for @aiCoverageEstimatedTreeRounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated tree rounds: ~{rounds}'**
+  String aiCoverageEstimatedTreeRounds(int rounds);
+
+  /// No description provided for @aiCoverageEstimatedTailRounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated tail rounds: ~{rounds}'**
+  String aiCoverageEstimatedTailRounds(int rounds);
+
+  /// No description provided for @aiCoverageEstimatedCreditsTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Total estimated credits: ~{credits}'**
+  String aiCoverageEstimatedCreditsTotal(int credits);
+
+  /// No description provided for @aiCoveragePurchaseFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.'**
+  String get aiCoveragePurchaseFooter;
+
+  /// No description provided for @aiCoveragePurchaseFooterConditional.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.'**
+  String get aiCoveragePurchaseFooterConditional;
+
+  /// No description provided for @aiCoverageInsufficientForEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Need about {needed} credits; you have {available}.'**
+  String aiCoverageInsufficientForEstimate(int needed, int available);
+
+  /// No description provided for @aiCoverageFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Analysis paused: {reason}'**
+  String aiCoverageFailedReason(Object reason);
+
+  /// No description provided for @aiCoverageFailedReasonParse.
+  ///
+  /// In en, this message translates to:
+  /// **'AI response could not be parsed'**
+  String get aiCoverageFailedReasonParse;
+
+  /// No description provided for @aiCoverageFailedReasonNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'network or server error'**
+  String get aiCoverageFailedReasonNetwork;
+
+  /// No description provided for @aiCoverageFailedReasonApi.
+  ///
+  /// In en, this message translates to:
+  /// **'analysis service error'**
+  String get aiCoverageFailedReasonApi;
+
+  /// No description provided for @aiCoverageFailedReasonGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'analysis request failed'**
+  String get aiCoverageFailedReasonGeneric;
+
+  /// No description provided for @aiCoverageFailedBatchItemsOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{1 item did not receive results.} other{{count} items did not receive results.}}'**
+  String aiCoverageFailedBatchItemsOnly(int count);
+
+  /// No description provided for @aiCoverageFailedBatchCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'{credits, plural, one{1 credit was used but {count} items did not receive results.} other{{credits} credits were used but {count} items did not receive results.}}'**
+  String aiCoverageFailedBatchCredits(int credits, int count);
+
+  /// No description provided for @aiCoverageFailedBatchPathsPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected: {paths}'**
+  String aiCoverageFailedBatchPathsPreview(Object paths);
+
+  /// No description provided for @aiCoverageFailedBatchPathsOverflow.
+  ///
+  /// In en, this message translates to:
+  /// **'…and {count} more'**
+  String aiCoverageFailedBatchPathsOverflow(int count);
+
+  /// No description provided for @aiCoverageIncompleteGroupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete AI response ({count})'**
+  String aiCoverageIncompleteGroupTitle(int count);
+
+  /// No description provided for @aiCoverageFailedResumeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry analysis?'**
+  String get aiCoverageFailedResumeTitle;
+
+  /// No description provided for @aiCoverageFailedResumeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The last batch failed after using {credits} credit(s). {count} items were not saved. Retry may use additional credits.'**
+  String aiCoverageFailedResumeBody(int credits, int count);
+
+  /// No description provided for @aiCoverageFailedResumeBodyNoCredit.
+  ///
+  /// In en, this message translates to:
+  /// **'The last batch failed. {count} items were not saved. Retry may use additional credits.'**
+  String aiCoverageFailedResumeBodyNoCredit(int count);
+
+  /// No description provided for @aiCoverageFailedResumeConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get aiCoverageFailedResumeConfirm;
+
+  /// No description provided for @aiCoverageLegacyJobHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This job was paused under older analysis logic. Resume applies new rules (incomplete API responses are saved as review needed).'**
+  String get aiCoverageLegacyJobHint;
+
+  /// No description provided for @aiCoverageLegacyResumeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply updated analysis logic?'**
+  String get aiCoverageLegacyResumeTitle;
+
+  /// No description provided for @aiCoverageLegacyResumeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved progress is from an older client. Resume continues from the cursor with new batch rules; verdicts already on disk are kept.'**
+  String get aiCoverageLegacyResumeBody;
+
+  /// No description provided for @aiCoverageLegacyResumeConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get aiCoverageLegacyResumeConfirm;
+
+  /// No description provided for @aiCoverageRestartFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart full coverage'**
+  String get aiCoverageRestartFull;
+
+  /// No description provided for @aiCoverageRestartFullTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart full coverage?'**
+  String get aiCoverageRestartFullTitle;
+
+  /// No description provided for @aiCoverageRestartFullBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Clears coverage progress and saved verdicts for this snapshot and starts over. This may use credits or tokens again.'**
+  String get aiCoverageRestartFullBody;
+
+  /// No description provided for @aiCoverageRestartFullConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get aiCoverageRestartFullConfirm;
+
+  /// No description provided for @aiCoverageRaiseBudgetToEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Raise limit to match estimate'**
+  String get aiCoverageRaiseBudgetToEstimate;
+
+  /// No description provided for @aiCoverageRunCapConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Run cap for this scan: {cap} credits'**
+  String aiCoverageRunCapConfigured(int cap);
 
   /// No description provided for @aiCoverageFullRunHint.
   ///
@@ -1522,7 +1815,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiCoverageSourceStats.
   ///
   /// In en, this message translates to:
-  /// **'{file} per-file · {group} directory-level · {local} local pre-classified'**
+  /// **'Verdict sources: {file} file AI · {group} directory AI · {local} local'**
   String aiCoverageSourceStats(int file, int group, int local);
 
   /// No description provided for @aiCoverageBudgetPausedCredits.
@@ -1609,11 +1902,41 @@ abstract class AppLocalizations {
   /// **'Enter a budget higher than the current limit.'**
   String get aiCoverageBudgetInvalid;
 
+  /// No description provided for @aiCoverageJobBillingModeMismatchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage run uses a different billing mode'**
+  String get aiCoverageJobBillingModeMismatchTitle;
+
+  /// No description provided for @aiCoverageJobBillingModeMismatchPlatform.
+  ///
+  /// In en, this message translates to:
+  /// **'This run was started with a BYOK token limit ({budget} tokens, {used} used). You are in Platform mode, which bills credits. Restart full coverage to start a Platform run, or switch back to BYOK to resume this job.'**
+  String aiCoverageJobBillingModeMismatchPlatform(int budget, int used);
+
+  /// No description provided for @aiCoverageJobBillingModeMismatchByok.
+  ///
+  /// In en, this message translates to:
+  /// **'This run uses Platform credits ({used}/{budget}). You are in BYOK mode now. Restart full coverage to apply your token budget, or switch back to Platform to resume.'**
+  String aiCoverageJobBillingModeMismatchByok(int used, int budget);
+
+  /// No description provided for @aiCoverageJobBillingModeMismatchBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Billing mode changed since this run started. Restart full coverage for {mode}, or switch AI mode to match this job.'**
+  String aiCoverageJobBillingModeMismatchBanner(String mode);
+
   /// No description provided for @aiCoverageHydrating.
   ///
   /// In en, this message translates to:
   /// **'Loading coverage job status…'**
   String get aiCoverageHydrating;
+
+  /// No description provided for @aiCandidatesBootstrapLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading candidate list…'**
+  String get aiCandidatesBootstrapLoading;
 
   /// No description provided for @aiCoverageUnavailable.
   ///
@@ -1666,7 +1989,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiSettingsCoverageBudgetCreditsDescription.
   ///
   /// In en, this message translates to:
-  /// **'Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.'**
+  /// **'Per-scan credit spending cap (safety limit, not your account balance). Full-run estimate is shown before you start; raise this if the estimate exceeds the cap.'**
   String get aiSettingsCoverageBudgetCreditsDescription;
 
   /// No description provided for @aiSettingsCoverageBudgetTokensDescription.
@@ -1756,7 +2079,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiWorkspacePhaseDeleting.
   ///
   /// In en, this message translates to:
-  /// **'Deleting'**
+  /// **'Moving to Trash'**
   String get aiWorkspacePhaseDeleting;
 
   /// No description provided for @aiWorkspacePhaseRecovery.
@@ -1794,6 +2117,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{bytes} reclaimable · {review} need review'**
   String aiResultsDecisionSummary(String bytes, int review);
+
+  /// No description provided for @aiResultsLocalPreviewHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe and keep counts below include local rules from the latest scan, not only finished AI coverage.'**
+  String get aiResultsLocalPreviewHint;
 
   /// No description provided for @aiResultsMetricAnalyzed.
   ///
@@ -1914,6 +2243,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep {count}'**
   String aiResultsGroupKeep(int count);
+
+  /// No description provided for @aiResultsShowMoreInGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Show {count} more in this folder'**
+  String aiResultsShowMoreInGroup(int count);
 
   /// No description provided for @aiResultsSelectedForCleanup.
   ///

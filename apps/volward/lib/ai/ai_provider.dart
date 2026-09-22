@@ -1,4 +1,5 @@
 import 'cancel_token.dart';
+import 'coverage_models.dart';
 
 String? _optionalString(Object? value) {
   if (value == null) return null;
@@ -120,6 +121,13 @@ abstract interface class AiProvider {
     CancelToken? cancelToken,
   });
   Future<AiQuotaInfo?> queryQuota();
+}
+
+abstract interface class TreeAiProvider {
+  Future<AnalyzeResult> analyzeTreeNodes(
+    List<CoverageTreeNode> nodes, {
+    CancelToken? cancelToken,
+  });
 }
 
 /// Per-call result of [AiProvider.analyze]: verdicts plus the usage consumed by

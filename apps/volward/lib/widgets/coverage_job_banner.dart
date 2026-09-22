@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../ai/coverage_analyze_batch.dart';
+import '../ai/coverage_banner_copy.dart';
+import '../ai/coverage_client_logic.dart';
 import '../ai/coverage_job_state.dart';
+import '../ai/coverage_models.dart';
+import '../ai/coverage_pause_messages.dart';
+import '../ai/coverage_ui_helpers.dart';
 import '../ai/coverage_verdict_store.dart';
 import '../l10n/l10n.dart';
 import '../theme/apple_tokens.dart';
@@ -13,18 +19,28 @@ class CoverageJobBanner extends StatelessWidget {
     super.key,
     required this.state,
     required this.verdictRows,
+    this.planSummary,
+    this.showPausedBeforeProgressNotice = false,
     this.onPause,
     this.onResume,
     this.onCancel,
     this.onRaiseBudget,
+    this.onRestart,
+    this.billingModeMismatch = false,
+    this.billingModeMismatchMessage,
   });
 
   final CoverageJobState state;
   final List<CoverageVerdict> verdictRows;
+  final CoveragePlanSummary? planSummary;
+  final bool showPausedBeforeProgressNotice;
   final VoidCallback? onPause;
   final VoidCallback? onResume;
   final VoidCallback? onCancel;
   final VoidCallback? onRaiseBudget;
+  final VoidCallback? onRestart;
+  final bool billingModeMismatch;
+  final String? billingModeMismatchMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +54,32 @@ class CoverageJobBanner extends StatelessWidget {
     final isPaused = state.status == CoverageJobStatus.paused;
     final budgetPaused =
         isPaused && state.pauseReason == CoveragePauseReason.budget;
+    final failedPaused =
+        isPaused && state.pauseReason == CoveragePauseReason.failed;
+    final legacyLogic = coverageJobNeedsClientLogicUpgrade(state);
+    final incompleteCount = verdictRows
+        .where((row) => row.coverageSource == kIncompleteCoverageSource)
+        .length;
     final usesCredits = state.budgetCredits > 0;
     final usesTokens = !usesCredits && state.budgetTokens > 0;
+
+    final sourceStats = computeCoverageSourceStats(
+      verdicts: verdictRows,
+      preClassifiedCount: state.preClassifiedCount,
+    );
+    final copy = buildCoverageBannerCopy(
+      state: state,
+      plan: planSummary,
+      l10n: l10n,
+      showPausedBeforeProgressNotice: showPausedBeforeProgressNotice,
+      sourceStats: sourceStats.isEmpty
+          ? null
+          : CoverageSourceStatsInput(
+              fileVerdicts: sourceStats.fileVerdicts,
+              groupVerdicts: sourceStats.groupVerdicts,
+              localPreClassified: sourceStats.localPreClassified,
+            ),
+    );
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -56,13 +96,36 @@ class CoverageJobBanner extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    l10n.aiCoverageProgress(
-                      state.analyzedFiles,
-                      state.totalUnclassified,
+                  Text(copy.progressLine, style: context.vwBodyStrong),
+                  if (copy.pausedNoticeLine case final notice?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(notice, style: context.vwCaption),
+                  ],
+                  if (billingModeMismatch &&
+                      billingModeMismatchMessage != null) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      billingModeMismatchMessage!,
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
                     ),
-                    style: context.vwBodyStrong,
-                  ),
+                  ],
+                  if (copy.funnelLine case final funnel?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(funnel, style: context.vwCaption),
+                  ],
+                  if (copy.apiCallsLine case final apiLine?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(apiLine, style: context.vwCaption),
+                  ],
+                  if (copy.showCreditRemaining) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageRemainingApiCalls(copy.remainingApiCalls),
+                      style: context.vwCaption,
+                    ),
+                  ],
                   if (usesCredits) ...[
                     const SizedBox(height: AppleSpacing.xxs),
                     Text(
@@ -82,6 +145,10 @@ class CoverageJobBanner extends StatelessWidget {
                       style: context.vwCaption,
                     ),
                   ],
+                  if (copy.sourceStatsLine case final statsLine?) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(statsLine, style: context.vwCaption),
+                  ],
                   if (budgetPaused) ...[
                     const SizedBox(height: AppleSpacing.xxs),
                     Text(
@@ -94,6 +161,46 @@ class CoverageJobBanner extends StatelessWidget {
                               state.usedTokens,
                               state.budgetTokens,
                             ),
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
+                    ),
+                  ],
+                  if (failedPaused && state.failedBatchPaths.isNotEmpty) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      state.creditsChargedNoVerdict > 0
+                          ? l10n.aiCoverageFailedBatchCredits(
+                              state.creditsChargedNoVerdict,
+                              state.failedBatchPaths.length,
+                            )
+                          : l10n.aiCoverageFailedBatchItemsOnly(
+                              state.failedBatchPaths.length,
+                            ),
+                      style: AppleTypography.caption.copyWith(
+                        color: tokens.warning,
+                      ),
+                    ),
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      formatFailedBatchPathPreview(
+                        l10n,
+                        state.failedBatchPaths,
+                      ),
+                      style: context.vwCaption,
+                    ),
+                  ],
+                  if (incompleteCount > 0) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageIncompleteGroupTitle(incompleteCount),
+                      style: context.vwCaption,
+                    ),
+                  ],
+                  if (legacyLogic) ...[
+                    const SizedBox(height: AppleSpacing.xxs),
+                    Text(
+                      l10n.aiCoverageLegacyJobHint,
                       style: AppleTypography.caption.copyWith(
                         color: tokens.warning,
                       ),
@@ -115,19 +222,30 @@ class CoverageJobBanner extends StatelessWidget {
                       variant: AppleButtonVariant.pearl,
                       onPressed: onPause,
                     ),
-                  if (isPaused && onResume != null)
+                  if (isPaused && onResume != null && !budgetPaused)
                     AppleButton(
                       label: l10n.aiCoverageResume,
                       icon: Icons.play_arrow_outlined,
                       variant: AppleButtonVariant.pearl,
                       onPressed: onResume,
                     ),
-                  if (budgetPaused && onRaiseBudget != null)
+                  if (budgetPaused &&
+                      onRaiseBudget != null &&
+                      !billingModeMismatch)
                     AppleButton(
                       label: l10n.aiCoverageRaiseBudget,
                       icon: Icons.trending_up_outlined,
                       variant: AppleButtonVariant.pearl,
                       onPressed: onRaiseBudget,
+                    ),
+                  if (isPaused &&
+                      onRestart != null &&
+                      (legacyLogic || billingModeMismatch))
+                    AppleButton(
+                      label: l10n.aiCoverageRestartFull,
+                      icon: Icons.refresh_outlined,
+                      variant: AppleButtonVariant.pearl,
+                      onPressed: onRestart,
                     ),
                 ],
               ),

@@ -86,15 +86,70 @@ List<AiResultGroup> groupAiResults(
     builder.add(verdict, sizeByPath[verdict.path] ?? 0);
   }
 
-  final groups = builders.values.map((builder) => builder.build()).toList();
-  groups.sort((a, b) {
-    final reviewDiff = b.reviewCount.compareTo(a.reviewCount);
-    if (reviewDiff != 0) return reviewDiff;
-    final sizeDiff = b.totalBytes.compareTo(a.totalBytes);
-    if (sizeDiff != 0) return sizeDiff;
-    return a.path.compareTo(b.path);
-  });
+  final groups = builders.values.map((builder) => builder.build()).toList()
+    ..sort(_compareAiResultGroups);
   return groups;
+}
+
+/// Scan root's immediate child directory for [path], or [rootPath] itself when
+/// [path] is a direct file under the root.
+String? firstLevelDirectoryUnderRoot(String path, String rootPath) {
+  final normalizedRoot = normalizeFsPath(rootPath);
+  if (normalizedRoot.isEmpty) return null;
+  final normalizedPath = normalizeFsPath(path);
+  if (!_isWithinRoot(normalizedPath, normalizedRoot)) return null;
+  if (normalizedPath == normalizedRoot) return normalizedRoot;
+  final relativePath = normalizedRoot == '/'
+      ? normalizedPath.substring(1)
+      : normalizedRoot.endsWith('/')
+      ? normalizedPath.substring(normalizedRoot.length)
+      : normalizedPath.substring(normalizedRoot.length + 1);
+  if (relativePath.isEmpty) return normalizedRoot;
+  final separator = relativePath.indexOf('/');
+  if (separator == -1) {
+    return normalizedRoot;
+  }
+  final firstSegment = relativePath.substring(0, separator);
+  if (firstSegment.isEmpty) return normalizedRoot;
+  return joinFsPath(normalizedRoot, firstSegment);
+}
+
+int _compareAiResultGroups(AiResultGroup a, AiResultGroup b) {
+  final reviewDiff = b.reviewCount.compareTo(a.reviewCount);
+  if (reviewDiff != 0) return reviewDiff;
+  final sizeDiff = b.totalBytes.compareTo(a.totalBytes);
+  if (sizeDiff != 0) return sizeDiff;
+  return a.path.compareTo(b.path);
+}
+
+/// Ensures every first-level directory under [rootPath] has a group row (even
+/// when all verdicts are `keep` and would otherwise be omitted from the list).
+List<AiResultGroup> ensureFirstLevelDirectoryGroups(
+  List<AiResultGroup> groups,
+  String rootPath,
+  Iterable<String> firstLevelDirectoryPaths,
+) {
+  final normalizedRoot = normalizeFsPath(rootPath);
+  if (normalizedRoot.isEmpty) return groups;
+  final byPath = {for (final group in groups) group.path: group};
+  for (final raw in firstLevelDirectoryPaths) {
+    final path = normalizeFsPath(raw);
+    if (path == normalizedRoot) continue;
+    if (!isUnderFsRoot(path, normalizedRoot)) continue;
+    byPath.putIfAbsent(
+      path,
+      () => AiResultGroup._(
+        path: path,
+        items: const [],
+        totalBytes: 0,
+        safeCount: 0,
+        reviewCount: 0,
+        keepCount: 0,
+      ),
+    );
+  }
+  final out = byPath.values.toList()..sort(_compareAiResultGroups);
+  return out;
 }
 
 String _groupDirectory(

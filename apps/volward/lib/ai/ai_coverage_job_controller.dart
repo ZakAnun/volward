@@ -1,7 +1,15 @@
 import 'dart:async';
+import 'dart:math' show min;
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import 'cancel_token.dart';
+import 'coverage_analyze_batch.dart';
+import 'coverage_analyze_tree_batch.dart';
+import 'coverage_client_logic.dart';
 import 'coverage_engine.dart';
+import 'coverage_native_responses.dart';
 import 'coverage_job_state.dart';
 import 'coverage_models.dart';
 import 'coverage_verdict_store.dart';
@@ -22,14 +30,57 @@ class BatchOutcome {
 
 typedef AnalyzeBatch = Future<BatchOutcome> Function(List<CoverageRow> rows);
 
+typedef FetchLocalVerdictPage =
+    Future<({List<CoverageVerdict> verdicts, int? nextCursor})> Function(
+      int cursor,
+    );
+
+/// Optional plan reuse on resume/raise to avoid rebuilding large coverage plans.
+typedef CoverageResumePlanLoader =
+    Future<CoveragePlanSummary?> Function(
+      String snapshotId,
+      CoverageJobState job,
+    );
+
+Future<int> flushLocalVerdictsInChunks({
+  required CoverageVerdictStore verdictStore,
+  required String snapshotId,
+  required FetchLocalVerdictPage fetchPage,
+  int chunkSize = 1000,
+}) async {
+  var cursor = 0;
+  var flushed = 0;
+  while (true) {
+    final page = await fetchPage(cursor);
+    if (page.verdicts.isEmpty) break;
+    flushed += page.verdicts.length;
+    for (var i = 0; i < page.verdicts.length; i += chunkSize) {
+      final end = i + chunkSize < page.verdicts.length
+          ? i + chunkSize
+          : page.verdicts.length;
+      await verdictStore.appendAll(snapshotId, page.verdicts.sublist(i, end));
+    }
+    final next = page.nextCursor;
+    if (next == null) break;
+    cursor = next;
+  }
+  return flushed;
+}
+
 class CoverageJobController {
   CoverageJobController({
     required this.engine,
     required this.verdictStore,
     required this.stateStore,
     required this.analyzeBatch,
+    this.analyzeTreeBatch,
+    this.preferTreeCoveragePlan = false,
     this.batchSize = 40,
     this.maxInFlight = 4,
+    this.treeBatchSize = 80,
+    this.treeMaxInFlight = 2,
+    this.platformCreditsRemaining,
+    this.resumePlanLoader,
     CancelToken? cancelToken,
   }) : _cancelToken = cancelToken ?? CancelToken();
 
@@ -37,8 +88,18 @@ class CoverageJobController {
   final CoverageVerdictStore verdictStore;
   final CoverageJobStateStore stateStore;
   final AnalyzeBatch analyzeBatch;
+  final AnalyzeTreeBatch? analyzeTreeBatch;
+
+  /// When true, job uses native tree plan v3 (matches coordinator pre-check).
+  final bool preferTreeCoveragePlan;
   final int batchSize;
   final int maxInFlight;
+  final int treeBatchSize;
+  final int treeMaxInFlight;
+
+  /// When null, wallet balance is unknown — wave sizing ignores wallet cap.
+  final int? Function()? platformCreditsRemaining;
+  final CoverageResumePlanLoader? resumePlanLoader;
   final CancelToken _cancelToken;
 
   CoverageJobState? _state;
@@ -55,6 +116,7 @@ class CoverageJobController {
     String snapshotId, {
     required int budgetTokens,
     required int budgetCredits,
+    bool detachRun = false,
   }) async {
     if (_running) {
       if (_state?.snapshotId == snapshotId) {
@@ -80,10 +142,11 @@ class CoverageJobController {
       budgetTokens: budgetTokens,
       budgetCredits: budgetCredits,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      clientLogicVersion: kCoverageClientLogicVersion,
     );
     await stateStore.save(_state!);
     _emit();
-    await _run();
+    await _runJobLoop(detachRun: detachRun);
     return _state!;
   }
 
@@ -115,7 +178,10 @@ class CoverageJobController {
     await waitUntilIdle();
   }
 
-  Future<CoverageJobState> resume(String snapshotId) async {
+  Future<CoverageJobState> resume(
+    String snapshotId, {
+    bool detachRun = false,
+  }) async {
     if (_running) {
       if (_state?.snapshotId == snapshotId) {
         return _state!;
@@ -130,10 +196,14 @@ class CoverageJobController {
     _state = current.copyWith(
       status: CoverageJobStatus.running,
       pauseReason: () => null,
+      pauseDetail: () => null,
+      pauseMessage: () => null,
+      failedBatchPaths: const [],
+      clientLogicVersion: kCoverageClientLogicVersion,
     );
     await stateStore.save(_state!);
     _emit();
-    await _run();
+    await _runJobLoop(detachRun: detachRun);
     return _state!;
   }
 
@@ -169,6 +239,7 @@ class CoverageJobController {
     required String snapshotId,
     required int budgetTokens,
     required int budgetCredits,
+    bool detachRun = false,
   }) async {
     if (_running) {
       if (_state?.snapshotId == snapshotId) {
@@ -183,13 +254,25 @@ class CoverageJobController {
     _state = current.copyWith(
       status: CoverageJobStatus.running,
       pauseReason: () => null,
+      pauseDetail: () => null,
+      pauseMessage: () => null,
+      failedBatchPaths: const [],
       budgetTokens: budgetTokens > 0 ? budgetTokens : current.budgetTokens,
       budgetCredits: budgetCredits > 0 ? budgetCredits : current.budgetCredits,
+      clientLogicVersion: kCoverageClientLogicVersion,
     );
     await stateStore.save(_state!);
     _emit();
-    await _run();
+    await _runJobLoop(detachRun: detachRun);
     return _state!;
+  }
+
+  Future<void> _runJobLoop({required bool detachRun}) async {
+    if (detachRun) {
+      unawaited(_run());
+    } else {
+      await _run();
+    }
   }
 
   Future<CoverageJobState?> _ensureLoaded(String snapshotId) async {
@@ -217,6 +300,22 @@ class CoverageJobController {
     updatedAtMs: DateTime.now().millisecondsSinceEpoch,
   );
 
+  Future<CoveragePlanSummary> _loadPlanForRun(
+    String snapshotId,
+    CoverageJobState guard,
+  ) async {
+    final loader = resumePlanLoader;
+    if (loader != null) {
+      final cached = await loader(snapshotId, guard);
+      if (cached != null && cached.snapshotId == snapshotId) {
+        return cached;
+      }
+    }
+    return preferTreeCoveragePlan
+        ? await engine.buildTreePlan(snapshotId)
+        : await engine.buildPlan(snapshotId);
+  }
+
   Future<void> _run() async {
     if (_running) return;
     _running = true;
@@ -226,23 +325,39 @@ class CoverageJobController {
       if (guard == null) return;
       final snapshotId = guard.snapshotId;
 
-      final plan = await engine.buildPlan(snapshotId);
+      // Let the UI thread paint (dialog dismiss) before plan/work resumes.
+      await Future<void>.delayed(Duration.zero);
+
+      final plan = await _loadPlanForRun(snapshotId, guard);
       if (plan.snapshotId != snapshotId) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'coverage plan snapshot mismatch',
+        );
         return;
       }
       if (guard.cursor > 0 && guard.planVersion != plan.planVersion) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message:
+              'coverage plan version changed (${guard.planVersion} → ${plan.planVersion}); restart the job',
+        );
         return;
       }
       if (guard.rootPath.isNotEmpty && guard.rootPath != plan.rootPath) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'scan root changed since this job started',
+        );
         return;
       }
       if (guard.fingerprint != null &&
           plan.fingerprint != null &&
           !guard.fingerprint!.matches(plan.fingerprint!)) {
-        await _pause(CoveragePauseReason.failed);
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'scan fingerprint changed; restart full coverage',
+        );
         return;
       }
       guard = _state = CoverageJobState(
@@ -260,9 +375,108 @@ class CoverageJobController {
         budgetCredits: guard.budgetCredits,
         fingerprint: plan.fingerprint ?? guard.fingerprint,
         updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        clientLogicVersion: guard.clientLogicVersion,
+        treeQueueCursor: guard.treeQueueCursor,
+        tailQueueCursor: guard.tailQueueCursor,
+        localResolvedFiles: guard.localResolvedFiles,
+        treeNodesCompleted: guard.treeNodesCompleted,
+        estimatedTreeCredits:
+            plan.estimatedTreeCredits ?? guard.estimatedTreeCredits,
+        estimatedTailCredits:
+            plan.estimatedTailCredits ?? guard.estimatedTailCredits,
       );
       await stateStore.save(_state!);
       _emit();
+
+      if (plan.planVersion >= 3 && _state!.localResolvedFiles == 0) {
+        final localExpected =
+            (plan.localSafeFiles ?? 0) + (plan.localKeepFiles ?? 0);
+        try {
+          final flushed = await flushLocalVerdictsInChunks(
+            verdictStore: verdictStore,
+            snapshotId: snapshotId,
+            fetchPage: (cursor) async {
+              final page = await engine.fetchLocalVerdictsPage(
+                snapshotId,
+                cursor: cursor,
+              );
+              return (verdicts: page.verdicts, nextCursor: page.nextCursor);
+            },
+          );
+          if (localExpected > 0 && flushed == 0) {
+            await _pause(
+              CoveragePauseReason.failed,
+              detail: CoveragePauseDetail.api,
+              message:
+                  'local coverage verdicts missing (expected $localExpected)',
+            );
+            return;
+          }
+          if (localExpected > 0) {
+            debugPrint(
+              'CoverageJobController: flushed $flushed local verdict(s) '
+              '(no AI, native rules)',
+            );
+          }
+        } on CoverageEngineException catch (e) {
+          if (localExpected > 0) {
+            await _pause(
+              CoveragePauseReason.failed,
+              detail: CoveragePauseDetail.api,
+              message: e.message,
+            );
+            return;
+          }
+          debugPrint('Coverage: skip local verdict flush ($e)');
+        }
+        if (localExpected > 0 && _state != null) {
+          final current = _state!;
+          _state = current.copyWith(
+            localResolvedFiles: localExpected,
+            analyzedFiles: current.analyzedFiles + localExpected,
+          );
+          await stateStore.save(_state!);
+          _emit();
+        }
+      }
+
+      final treeBatch = analyzeTreeBatch;
+      if (plan.planVersion >= 3 && preferTreeCoveragePlan) {
+        if (treeBatch == null || !plan.isTreePlan) {
+          await _pause(
+            CoveragePauseReason.failed,
+            message: treeBatch == null
+                ? 'tree AI batch unavailable (update app / rebuild native library)'
+                : 'tree coverage plan missing seed nodes (plan v${plan.planVersion})',
+          );
+          return;
+        }
+      }
+      if (plan.planVersion >= 3 &&
+          plan.isTreePlan &&
+          preferTreeCoveragePlan &&
+          treeBatch != null) {
+        final treeOk = await _runTreeBfsPhase(
+          snapshotId: snapshotId,
+          plan: plan,
+          analyzeTreeBatch: treeBatch,
+        );
+        if (!treeOk) {
+          await _finishPauseOrCancel();
+          return;
+        }
+        final tailOk = await _runTailPhase(snapshotId: snapshotId, plan: plan);
+        if (!tailOk) {
+          await _finishPauseOrCancel();
+          return;
+        }
+        if (!_pauseRequested) {
+          await _complete();
+        } else {
+          await _finishPauseOrCancel();
+        }
+        return;
+      }
 
       while (!_pauseRequested && _state != null) {
         final state = _state!;
@@ -297,8 +511,13 @@ class CoverageJobController {
             await _pause(CoveragePauseReason.budget);
             return;
           }
-          final waveEnd = waveStart + maxInFlight < chunks.length
-              ? waveStart + maxInFlight
+          final remaining = _remainingWaveSlots(_state!);
+          if (remaining <= 0) {
+            await _pause(CoveragePauseReason.budget);
+            return;
+          }
+          final waveEnd = waveStart + remaining < chunks.length
+              ? waveStart + remaining
               : chunks.length;
           final results = await Future.wait(
             chunks
@@ -354,24 +573,384 @@ class CoverageJobController {
           return;
         }
       }
-      if (_cancelRequested && _state != null) {
-        _cancelRequested = false;
-        _pauseRequested = false;
-        _state = _state!.copyWith(
-          status: CoverageJobStatus.cancelled,
-          pauseReason: () => null,
-        );
-        await stateStore.save(_state!);
-        _emit();
-      } else if (_pauseRequested &&
-          _state?.status == CoverageJobStatus.running) {
-        await _pause(_pauseRequestReason ?? CoveragePauseReason.manual);
-      }
-    } catch (_) {
-      await _pause(CoveragePauseReason.failed);
+      await _finishPauseOrCancel();
+    } catch (e, st) {
+      debugPrint('CoverageJobController._run failed: $e\n$st');
+      await _pause(
+        CoveragePauseReason.failed,
+        detail: e is CoverageEngineException ? CoveragePauseDetail.api : null,
+        message: e.toString(),
+      );
     } finally {
       _running = false;
     }
+  }
+
+  Future<void> _finishPauseOrCancel() async {
+    if (_cancelRequested && _state != null) {
+      _cancelRequested = false;
+      _pauseRequested = false;
+      _state = _state!.copyWith(
+        status: CoverageJobStatus.cancelled,
+        pauseReason: () => null,
+      );
+      await stateStore.save(_state!);
+      _emit();
+    } else if (_pauseRequested && _state?.status == CoverageJobStatus.running) {
+      await _pause(_pauseRequestReason ?? CoveragePauseReason.manual);
+    }
+  }
+
+  /// Returns false when paused, cancelled, or failed mid-phase.
+  Future<bool> _runTreeBfsPhase({
+    required String snapshotId,
+    required CoveragePlanSummary plan,
+    required AnalyzeTreeBatch analyzeTreeBatch,
+  }) async {
+    final queue = <CoverageTreeNode>[];
+    var seedCursor = _state!.treeQueueCursor;
+    while (!_pauseRequested) {
+      final page = await engine.nextTreePage(
+        snapshotId,
+        plan.planVersion,
+        seedCursor,
+      );
+      if (page.nodes.isEmpty && page.nextCursor == null) {
+        break;
+      }
+      queue.addAll(page.nodes);
+      final next = page.nextCursor;
+      if (next == null) {
+        seedCursor = seedCursor + 1;
+        await _persistJobState(treeQueueCursor: seedCursor);
+        break;
+      }
+      seedCursor = next;
+      await _persistJobState(treeQueueCursor: seedCursor);
+    }
+
+    while (!_pauseRequested && queue.isNotEmpty) {
+      if (_overBudget(_state!)) {
+        await _pause(CoveragePauseReason.budget);
+        return false;
+      }
+      final levelSize = queue.length;
+      final levelNodes = queue.sublist(0, levelSize);
+      queue.removeRange(0, levelSize);
+
+      final chunks = <List<CoverageTreeNode>>[];
+      for (var i = 0; i < levelNodes.length; i += treeBatchSize) {
+        final end = i + treeBatchSize < levelNodes.length
+            ? i + treeBatchSize
+            : levelNodes.length;
+        chunks.add(levelNodes.sublist(i, end));
+      }
+      for (
+        var waveStart = 0;
+        waveStart < chunks.length;
+        waveStart += treeMaxInFlight
+      ) {
+        if (_pauseRequested) return false;
+        if (_overBudget(_state!)) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+        final remaining = _remainingTreeWaveSlots(_state!);
+        if (remaining <= 0) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+        final waveEnd = waveStart + remaining < chunks.length
+            ? waveStart + remaining
+            : chunks.length;
+        final waveChunks = chunks.sublist(waveStart, waveEnd);
+        final results = await Future.wait(
+          waveChunks.map(
+            (chunk) =>
+                _analyzeTreeWithRetry(snapshotId, chunk, analyzeTreeBatch),
+          ),
+        );
+        var committed = 0;
+        for (final result in results) {
+          if (result == null) break;
+          committed++;
+        }
+        var waveTokens = 0;
+        var waveCredits = 0;
+        var waveLocalResolved = 0;
+        var waveAnalyzedFiles = 0;
+        for (var i = 0; i < committed; i++) {
+          final result = results[i]!;
+          waveTokens += result.usage.tokens;
+          waveCredits += result.usage.credits;
+          waveLocalResolved += result.localResolved;
+          waveAnalyzedFiles += result.analyzedFiles;
+          queue.addAll(result.childrenToEnqueue);
+        }
+        final nodesThisWave = waveChunks
+            .take(committed)
+            .fold<int>(0, (sum, chunk) => sum + chunk.length);
+        if (committed > 0) {
+          final current = _state!;
+          _state = current.copyWith(
+            treeNodesCompleted: current.treeNodesCompleted + nodesThisWave,
+            usedTokens: current.usedTokens + waveTokens,
+            usedCredits: current.usedCredits + waveCredits,
+            localResolvedFiles: current.localResolvedFiles + waveLocalResolved,
+            analyzedFiles: current.analyzedFiles + waveAnalyzedFiles,
+            updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+          );
+          await stateStore.save(_state!);
+          _emit();
+        }
+        if (committed < results.length) {
+          return false;
+        }
+        if (_overBudget(_state!)) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _runTailPhase({
+    required String snapshotId,
+    required CoveragePlanSummary plan,
+  }) async {
+    var tailCursor = _state!.tailQueueCursor;
+    while (!_pauseRequested) {
+      if (_overBudget(_state!)) {
+        await _pause(CoveragePauseReason.budget);
+        return false;
+      }
+      final page = await engine.nextTailPage(
+        snapshotId,
+        plan.planVersion,
+        tailCursor,
+        pageSize: batchSize,
+      );
+      if (page.rows.isEmpty) {
+        if (page.nextCursor == null) return true;
+        tailCursor = page.nextCursor!;
+        await _persistJobState(tailQueueCursor: tailCursor);
+        continue;
+      }
+      final rows = <CoverageRow>[];
+      for (var i = 0; i < page.rows.length; i++) {
+        final row = page.rows[i];
+        rows.add(
+          CoverageRow(
+            rowIndex: tailCursor + i,
+            kind: CoverageRowKind.file,
+            path: row.path,
+            sizeBytes: row.sizeBytes,
+          ),
+        );
+      }
+      final chunks = <List<CoverageRow>>[];
+      for (var i = 0; i < rows.length; i += batchSize) {
+        final end = i + batchSize < rows.length ? i + batchSize : rows.length;
+        chunks.add(rows.sublist(i, end));
+      }
+      for (
+        var waveStart = 0;
+        waveStart < chunks.length;
+        waveStart += maxInFlight
+      ) {
+        if (_pauseRequested) return false;
+        if (_overBudget(_state!)) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+        final remaining = _remainingWaveSlots(_state!);
+        if (remaining <= 0) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+        final waveEnd = waveStart + remaining < chunks.length
+            ? waveStart + remaining
+            : chunks.length;
+        final results = await Future.wait(
+          chunks
+              .sublist(waveStart, waveEnd)
+              .map((chunk) => _analyzeWithRetry(snapshotId, chunk)),
+        );
+        var committed = 0;
+        for (final result in results) {
+          if (result == null) break;
+          committed++;
+        }
+        var waveAnalyzed = 0;
+        var waveTokens = 0;
+        var waveCredits = 0;
+        for (var i = 0; i < committed; i++) {
+          final result = results[i]!;
+          waveAnalyzed += result.memberFiles;
+          waveTokens += result.usage.tokens;
+          waveCredits += result.usage.credits;
+        }
+        if (committed > 0) {
+          final waveTailCursor =
+              chunks[waveStart + committed - 1].last.rowIndex + 1;
+          final current = _state!;
+          _state = current.copyWith(
+            tailQueueCursor: waveTailCursor,
+            analyzedFiles: current.analyzedFiles + waveAnalyzed,
+            usedTokens: current.usedTokens + waveTokens,
+            usedCredits: current.usedCredits + waveCredits,
+            updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+          );
+          await stateStore.save(_state!);
+          _emit();
+        }
+        if (committed < results.length) {
+          return false;
+        }
+        if (_overBudget(_state!)) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+      }
+      final next = page.nextCursor;
+      if (next == null) return true;
+      tailCursor = next;
+      await _persistJobState(tailQueueCursor: tailCursor);
+    }
+    return !_pauseRequested;
+  }
+
+  Future<void> _persistJobState({
+    int? treeQueueCursor,
+    int? tailQueueCursor,
+  }) async {
+    final current = _state;
+    if (current == null) return;
+    _state = current.copyWith(
+      treeQueueCursor: treeQueueCursor,
+      tailQueueCursor: tailQueueCursor,
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    await stateStore.save(_state!);
+    _emit();
+  }
+
+  Future<
+    ({
+      BatchUsage usage,
+      int localResolved,
+      int analyzedFiles,
+      List<CoverageTreeNode> childrenToEnqueue,
+    })?
+  >
+  _analyzeTreeWithRetry(
+    String snapshotId,
+    List<CoverageTreeNode> nodes,
+    AnalyzeTreeBatch analyzeTreeBatch,
+  ) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final outcome = await analyzeTreeBatch(nodes);
+        await verdictStore.appendAll(snapshotId, outcome.verdicts);
+        final byPath = {
+          for (final verdict in outcome.verdicts) verdict.path: verdict,
+        };
+        var localResolved = 0;
+        var analyzedFiles = 0;
+        final children = <CoverageTreeNode>[];
+        for (final node in nodes) {
+          final dirVerdict = byPath[node.path];
+          if (dirVerdict == null) continue;
+          if ((dirVerdict.verdict == 'keep' ||
+                  dirVerdict.verdict == 'safe_to_remove') &&
+              dirVerdict.confidence == 'high') {
+            final propagated = await engine.applyDirVerdict(
+              snapshotId,
+              node.path,
+              dirVerdict.verdict,
+              dirVerdict.confidence,
+              node.role,
+            );
+            if (propagated.isNotEmpty) {
+              await verdictStore.appendAll(snapshotId, propagated);
+              localResolved += propagated.length;
+              analyzedFiles += propagated.length;
+            }
+          } else if (dirVerdict.verdict == 'drill_down') {
+            final expanded = await engine.expandTreeNode(snapshotId, node.path);
+            children.addAll(expanded);
+          }
+        }
+        return (
+          usage: outcome.usage,
+          localResolved: localResolved,
+          analyzedFiles: analyzedFiles,
+          childrenToEnqueue: children,
+        );
+      } on CoverageCancelledException {
+        return null;
+      } on CoverageAnalyzeException catch (e) {
+        await _recordFailedTreeBatch(nodes, creditsCharged: e.creditsCharged);
+        await _pause(
+          CoveragePauseReason.failed,
+          detail: CoveragePauseDetail.parse,
+          message: e.message,
+        );
+        return null;
+      } catch (e) {
+        final retryable =
+            e is http.ClientException ||
+            e.toString().contains('api_error:502') ||
+            e.toString().contains('TimeoutException');
+        if (!retryable || attempt == 2) {
+          await _recordFailedTreeBatch(nodes);
+          await _pause(
+            CoveragePauseReason.failed,
+            detail: retryable
+                ? CoveragePauseDetail.network
+                : CoveragePauseDetail.api,
+            message: _coverageFailureMessage(e),
+          );
+          return null;
+        }
+        await Future<void>.delayed(
+          Duration(milliseconds: 200 * (1 << attempt)),
+        );
+      }
+    }
+    return (
+      usage: const BatchUsage(tokens: 0, credits: 0),
+      localResolved: 0,
+      analyzedFiles: 0,
+      childrenToEnqueue: const <CoverageTreeNode>[],
+    );
+  }
+
+  Future<void> _recordFailedTreeBatch(
+    List<CoverageTreeNode> nodes, {
+    int creditsCharged = 0,
+  }) async {
+    if (nodes.isEmpty) return;
+    final current = _state;
+    if (current == null) return;
+    _state = current.copyWith(
+      failedBatchPaths: nodes.map((node) => node.path).toList(growable: false),
+      creditsChargedNoVerdict: creditsCharged > 0
+          ? current.creditsChargedNoVerdict + creditsCharged
+          : current.creditsChargedNoVerdict,
+    );
+    await stateStore.save(_state!);
+    _emit();
+  }
+
+  int _remainingTreeWaveSlots(CoverageJobState state) {
+    final run = state.budgetCredits > 0
+        ? (state.budgetCredits - state.usedCredits).clamp(0, treeMaxInFlight)
+        : treeMaxInFlight;
+    final wallet = platformCreditsRemaining?.call();
+    if (wallet == null) return run;
+    return min(run, wallet.clamp(0, treeMaxInFlight));
   }
 
   Future<({int memberFiles, BatchUsage usage})?> _analyzeWithRetry(
@@ -388,9 +967,28 @@ class CoverageJobController {
         );
       } on CoverageCancelledException {
         return null;
-      } catch (_) {
-        if (attempt == 2) {
-          await _pause(CoveragePauseReason.failed);
+      } on CoverageAnalyzeException catch (e) {
+        await _recordFailedBatch(rows, creditsCharged: e.creditsCharged);
+        await _pause(
+          CoveragePauseReason.failed,
+          detail: CoveragePauseDetail.parse,
+          message: e.message,
+        );
+        return null;
+      } catch (e) {
+        final retryable =
+            e is http.ClientException ||
+            e.toString().contains('api_error:502') ||
+            e.toString().contains('TimeoutException');
+        if (!retryable || attempt == 2) {
+          await _recordFailedBatch(rows);
+          await _pause(
+            CoveragePauseReason.failed,
+            detail: retryable
+                ? CoveragePauseDetail.network
+                : CoveragePauseDetail.api,
+            message: _coverageFailureMessage(e),
+          );
           return null;
         }
         await Future<void>.delayed(
@@ -408,12 +1006,51 @@ class CoverageJobController {
     return state.budgetCredits > 0 && state.usedCredits >= state.budgetCredits;
   }
 
-  Future<void> _pause(CoveragePauseReason reason) async {
+  int _remainingWaveSlots(CoverageJobState state) {
+    final run = state.budgetCredits > 0
+        ? (state.budgetCredits - state.usedCredits).clamp(0, maxInFlight)
+        : maxInFlight;
+    final wallet = platformCreditsRemaining?.call();
+    if (wallet == null) return run;
+    return min(run, wallet.clamp(0, maxInFlight));
+  }
+
+  Future<void> _recordFailedBatch(
+    List<CoverageRow> rows, {
+    int creditsCharged = 0,
+  }) async {
+    if (rows.isEmpty) return;
+    final current = _state;
+    if (current == null) return;
+    _state = current.copyWith(
+      failedBatchPaths: rows.map((row) => row.path).toList(growable: false),
+      creditsChargedNoVerdict: creditsCharged > 0
+          ? current.creditsChargedNoVerdict + creditsCharged
+          : current.creditsChargedNoVerdict,
+    );
+    await stateStore.save(_state!);
+    _emit();
+  }
+
+  Future<void> _pause(
+    CoveragePauseReason reason, {
+    CoveragePauseDetail? detail,
+    String? message,
+  }) async {
+    if (reason == CoveragePauseReason.failed) {
+      debugPrint(
+        'CoverageJobController: paused (failed) '
+        'snapshot=${_state?.snapshotId} detail=$detail '
+        'message=${message ?? "(none)"}',
+      );
+    }
     _pauseRequested = false;
     _pauseRequestReason = null;
     _state = _state?.copyWith(
       status: CoverageJobStatus.paused,
       pauseReason: () => reason,
+      pauseDetail: () => reason == CoveragePauseReason.failed ? detail : null,
+      pauseMessage: () => reason == CoveragePauseReason.failed ? message : null,
     );
     if (_state != null) await stateStore.save(_state!);
     _emit();
@@ -432,4 +1069,12 @@ class CoverageJobController {
     final state = _state;
     if (state != null && !_states.isClosed) _states.add(state);
   }
+}
+
+String _coverageFailureMessage(Object error) {
+  if (error is CoverageAnalyzeException) return error.message;
+  if (error is CoverageEngineException) return error.message;
+  final text = error.toString();
+  if (text.length <= 500) return text;
+  return '${text.substring(0, 500)}…';
 }

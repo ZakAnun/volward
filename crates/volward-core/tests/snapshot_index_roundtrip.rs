@@ -1,7 +1,9 @@
 use volward_core::{
-    CapabilityLevel, EntryCategory, RiskLevel, ScanStats, ScanTreeNode, SnapshotIndex, SourceType,
-    StorageEntry, StorageSnapshot,
+    classify_directory_role, CapabilityLevel, DirectoryRole, EntryCategory, PRUNED_VCS, RiskLevel,
+    ScanStats, ScanTreeNode, SnapshotIndex, SnapshotIndexBuilder, SourceType, StorageEntry,
+    StorageSnapshot,
 };
+use volward_core::model::ScanStats as IndexScanStats;
 
 fn sample_snapshot() -> StorageSnapshot {
     StorageSnapshot {
@@ -75,8 +77,8 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
 
     let json = serde_json::to_string(&index).expect("serialize index");
     assert!(
-        json.contains("\"format_version\":5"),
-        "writers should emit format_version=5"
+        json.contains("\"format_version\":6"),
+        "writers should emit format_version=6"
     );
     assert!(json.contains("\"file_size_by_path\""));
     let loaded: SnapshotIndex = serde_json::from_str(&json).expect("deserialize index");
@@ -93,7 +95,15 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
     );
 
     // Older caches with versions 2–4 must still load.
-    let v2_json = json.replace("\"format_version\":5", "\"format_version\":2");
+    let v5_json = json.replace("\"format_version\":6", "\"format_version\":5");
+    let loaded_v5: SnapshotIndex =
+        serde_json::from_str(&v5_json).expect("deserialize format_version=5 index");
+    assert_eq!(
+        loaded_v5.summary_json().unwrap(),
+        index.summary_json().unwrap()
+    );
+
+    let v2_json = json.replace("\"format_version\":6", "\"format_version\":2");
     let loaded_v2: SnapshotIndex =
         serde_json::from_str(&v2_json).expect("deserialize format_version=2 index");
     assert_eq!(
@@ -101,7 +111,7 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
         index.summary_json().unwrap()
     );
 
-    let v3_json = json.replace("\"format_version\":5", "\"format_version\":3");
+    let v3_json = json.replace("\"format_version\":6", "\"format_version\":3");
     let loaded_v3: SnapshotIndex =
         serde_json::from_str(&v3_json).expect("deserialize format_version=3 index");
     assert_eq!(
@@ -116,11 +126,33 @@ fn compact_index_roundtrips_and_accepts_older_format_versions() {
         2
     );
 
-    let v4_json = json.replace("\"format_version\":5", "\"format_version\":4");
+    let v4_json = json.replace("\"format_version\":6", "\"format_version\":4");
     let loaded_v4: SnapshotIndex =
         serde_json::from_str(&v4_json).expect("deserialize format_version=4 index");
     assert_eq!(
         loaded_v4.summary_json().unwrap(),
         index.summary_json().unwrap()
     );
+}
+
+#[test]
+fn pruned_child_flags_roundtrip_and_classify_project_root() {
+    let mut builder = SnapshotIndexBuilder::new("/proj");
+    builder.ensure_dir("/proj");
+    builder.or_pruned_child_flags("/proj", PRUNED_VCS);
+    let index = builder.finish(
+        "snap".to_string(),
+        1,
+        1,
+        "Done".to_string(),
+        IndexScanStats::default(),
+    );
+
+    let json = serde_json::to_string(&index).expect("serialize");
+    let loaded: SnapshotIndex = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(loaded.directory_pruned_child_flags("/proj"), PRUNED_VCS);
+
+    let (role, markers) = classify_directory_role(&loaded, "/proj");
+    assert_eq!(role, DirectoryRole::ProjectRoot);
+    assert!(markers.iter().any(|m| m == "pruned:vcs"));
 }

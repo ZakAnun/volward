@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'ai_settings_store.dart';
 import 'ai_coverage_job_controller.dart';
 import 'ai_provider.dart';
@@ -5,6 +7,13 @@ import 'byok_ai_provider.dart';
 import 'cancel_token.dart';
 import 'coverage_models.dart';
 import 'coverage_verdict_store.dart';
+
+/// Marks verdicts synthesized when the API omitted a path from its response.
+const kIncompleteCoverageSource = 'file:incomplete';
+
+/// English fallback; UI should localize via [kIncompleteCoverageSource].
+const kIncompleteVerdictReason =
+    'AI response did not include this path (incomplete batch).';
 
 List<AiCandidate> coverageRowsToCandidates(List<CoverageRow> rows) {
   return rows
@@ -25,24 +34,39 @@ List<AiCandidate> coverageRowsToCandidates(List<CoverageRow> rows) {
 String coverageSourceForRow(CoverageRow row) =>
     row.kind == CoverageRowKind.group ? 'group:${row.path}' : 'file';
 
-CoverageVerdict coverageVerdictForRow(CoverageRow row, AiVerdict verdict) =>
-    CoverageVerdict(
-      path: row.path,
-      verdict: verdict.verdict,
-      confidence: verdict.confidence,
-      reason: verdict.reason,
-      coverageSource: coverageSourceForRow(row),
-      sizeBytes: row.sizeBytes,
-      groupMemberCount: row.memberCount,
-    );
+CoverageVerdict coverageVerdictForRow(
+  CoverageRow row,
+  AiVerdict verdict, {
+  String? coverageSource,
+}) => CoverageVerdict(
+  path: row.path,
+  verdict: verdict.verdict,
+  confidence: verdict.confidence,
+  reason: verdict.reason,
+  coverageSource: coverageSource ?? coverageSourceForRow(row),
+  sizeBytes: row.sizeBytes,
+  groupMemberCount: row.memberCount,
+);
 
 AnalyzeBatch createCoverageAnalyzeBatch({
   required AiProvider provider,
   CancelToken? cancelToken,
 }) {
   return (rows) async {
+    if (kDebugMode && rows.isNotEmpty) {
+      debugPrint(
+        'Coverage AI: flat batch ${rows.length} row(s), '
+        'first=${rows.first.path}',
+      );
+    }
     final candidates = coverageRowsToCandidates(rows);
     final result = await provider.analyze(candidates, cancelToken: cancelToken);
+    if (rows.isNotEmpty && result.verdicts.isEmpty) {
+      throw CoverageAnalyzeException(
+        'empty verdict list for ${rows.length} rows',
+        creditsCharged: result.credits,
+      );
+    }
     final byPath = {
       for (final verdict in result.verdicts) verdict.path: verdict,
     };
@@ -50,7 +74,19 @@ AnalyzeBatch createCoverageAnalyzeBatch({
     for (final row in rows) {
       final verdict = byPath[row.path];
       if (verdict == null) {
-        throw CoverageAnalyzeException('missing verdict for ${row.path}');
+        mapped.add(
+          coverageVerdictForRow(
+            row,
+            AiVerdict(
+              path: row.path,
+              verdict: 'review_needed',
+              confidence: 'low',
+              reason: kIncompleteVerdictReason,
+            ),
+            coverageSource: kIncompleteCoverageSource,
+          ),
+        );
+        continue;
       }
       mapped.add(coverageVerdictForRow(row, verdict));
     }
@@ -71,9 +107,10 @@ AnalyzeBatch createCoverageAnalyzeBatch({
 }
 
 class CoverageAnalyzeException implements Exception {
-  CoverageAnalyzeException(this.message);
+  CoverageAnalyzeException(this.message, {this.creditsCharged = 0});
 
   final String message;
+  final int creditsCharged;
 
   @override
   String toString() => message;

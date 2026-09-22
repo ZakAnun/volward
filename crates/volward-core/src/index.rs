@@ -108,6 +108,8 @@ pub struct DirectoryRecord {
     pub category_mask: u64,
     pub deletable_category_mask: u64,
     pub deletable_file_count: u64,
+    #[serde(default)]
+    pub pruned_child_flags: u32,
 }
 
 /// Internal entry record — all string fields interned to u32 IDs.
@@ -181,14 +183,15 @@ pub struct SnapshotIndex {
 // Custom serde: compact wire format (string table + u32 ids).
 // format_version=4 adds file_size_by_path for unclassified file sizes.
 // format_version=5 adds optional modified_at_ms on entry records.
-// Readers also accept 2/3 (pre-size-map caches) via #[serde(default)].
+// format_version=6 adds pruned_child_flags on directory records.
+// Readers also accept 2–5 via #[serde(default)] on newer fields.
 impl Serialize for SnapshotIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut st = serializer.serialize_struct("SnapshotIndexSerde", 17)?;
-        st.serialize_field("format_version", &5u32)?;
+        st.serialize_field("format_version", &6u32)?;
         st.serialize_field("snapshot_id", &self.snapshot_id)?;
         st.serialize_field("root_path", &self.root_path)?;
         st.serialize_field("scanned_at_ms", &self.scanned_at_ms)?;
@@ -222,9 +225,14 @@ impl<'de> Deserialize<'de> for SnapshotIndex {
     {
         use serde::de::Error;
         let s = SnapshotIndexWire::deserialize(deserializer)?;
-        if s.format_version != 2 && s.format_version != 3 && s.format_version != 4 && s.format_version != 5 {
+        if s.format_version != 2
+            && s.format_version != 3
+            && s.format_version != 4
+            && s.format_version != 5
+            && s.format_version != 6
+        {
             return Err(D::Error::custom(format!(
-                "unsupported SnapshotIndex format_version {} (expected 2, 3, 4, or 5)",
+                "unsupported SnapshotIndex format_version {} (expected 2, 3, 4, 5, or 6)",
                 s.format_version
             )));
         }
@@ -323,7 +331,7 @@ impl SnapshotIndex {
     /// Export a wire DTO for protobuf/compact persistence encoders.
     pub fn to_wire(&self) -> SnapshotIndexWire {
         SnapshotIndexWire {
-            format_version: 5,
+            format_version: 6,
             snapshot_id: self.snapshot_id.clone(),
             root_path: self.root_path.clone(),
             scanned_at_ms: self.scanned_at_ms,
@@ -755,6 +763,14 @@ impl SnapshotIndex {
             .collect()
     }
 
+    /// Scan-time prune flags for direct children skipped during walk (e.g. VCS dirs).
+    pub fn directory_pruned_child_flags(&self, path: &str) -> u32 {
+        self.resolve_path_id(path)
+            .and_then(|path_id| self.directory_by_id.get(&path_id))
+            .map(|r| r.pruned_child_flags)
+            .unwrap_or(0)
+    }
+
     pub fn directory_record(&self, path: &str) -> Option<SnapshotDirectoryRecord> {
         let path_id = self.resolve_path_id(path)?;
         self.directory_by_id
@@ -1089,6 +1105,7 @@ impl SnapshotIndexBuilder {
                 category_mask: 0,
                 deletable_category_mask: 0,
                 deletable_file_count: 0,
+                pruned_child_flags: 0,
             },
         );
         let mut children_by_id = HashMap::new();
@@ -1115,6 +1132,22 @@ impl SnapshotIndexBuilder {
         }
         let path_id = self.table.intern(&path);
         self.ensure_dir_internal(path_id);
+    }
+
+    /// OR walk-prune signals onto a directory (e.g. [`crate::PRUNED_VCS`] when `.git` was skipped).
+    pub fn or_pruned_child_flags(&mut self, path: &str, flags: u32) {
+        if flags == 0 {
+            return;
+        }
+        let path = canonicalize_under_root(path, &self.root_path);
+        if !path_is_at_or_below(&path, &self.root_path) {
+            return;
+        }
+        let path_id = self.table.intern(&path);
+        self.ensure_dir_internal(path_id);
+        if let Some(record) = self.directory_by_id.get_mut(&path_id) {
+            record.pruned_child_flags |= flags;
+        }
     }
 
     pub fn record_file_size(&mut self, path: &str, size_bytes: u64) {
@@ -1228,6 +1261,7 @@ impl SnapshotIndexBuilder {
                         category_mask: record.category_mask,
                         deletable_category_mask: record.deletable_category_mask,
                         deletable_file_count: record.deletable_file_count,
+                        pruned_child_flags: record.pruned_child_flags,
                     },
                 );
             }
@@ -1358,6 +1392,7 @@ impl SnapshotIndexBuilder {
                 category_mask: 0,
                 deletable_category_mask: 0,
                 deletable_file_count: 0,
+                pruned_child_flags: 0,
             },
         );
         self.children_by_id.entry(path_id).or_default();
@@ -1664,6 +1699,7 @@ fn walk_tree(
             category_mask,
             deletable_category_mask,
             deletable_file_count,
+            pruned_child_flags: 0,
         },
     );
     (category_mask, deletable_category_mask, deletable_file_count)

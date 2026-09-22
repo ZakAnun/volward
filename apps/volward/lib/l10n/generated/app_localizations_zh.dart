@@ -552,9 +552,47 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String aiPreCheckUnknownTitle(int count, int tokens) {
-    return '$count 项将发送给 AI 分析（约 $tokens tokens）';
+  String aiPreCheckUnknownTitle(int count, int tokens, int batchSize, int cap) {
+    return '仍有 $count 项需 AI 分析（BYOK 每次请求最多 $batchSize 条、约 $tokens input tokens；单次分析上限 $cap 条）';
   }
+
+  @override
+  String get aiPreCheckCoverageEstimatePending => '正在估算全量覆盖分析成本…';
+
+  @override
+  String aiPreCheckAiScope(int tree, int tail) {
+    return '目录 AI 待分析 $tree 个文件，零散 tail 队列 $tail 个';
+  }
+
+  @override
+  String aiPreCheckAiScopeV2(int treePending, int tail, int apiCalls) {
+    return '目录 AI 范围约 $treePending 个文件 · tail 队列 $tail 个 · 至少约 $apiCalls 次 API';
+  }
+
+  @override
+  String get aiPreCheckLocalOnlyTitle => '本次扫描无需 API';
+
+  @override
+  String get aiPreCheckLocalOnlyBody =>
+      '本地规则已覆盖目录与 tail 队列，可直接查看本地结论，无需启动全量覆盖。';
+
+  @override
+  String get aiStartLocalOnly => '查看本地结论';
+
+  @override
+  String aiPreCheckFullCoverageEstimate(int credits, int calls) {
+    return '至少约 $credits credits（plan 估算 $calls 次 API；目录 BFS 可能更多）';
+  }
+
+  @override
+  String get aiPreCheckTreeCreditsMayGrow =>
+      '目录树展开后，实际 credits 可能高于上述 plan 下限。';
+
+  @override
+  String get aiPreCheckSelectAllShown => '全选当前列表';
+
+  @override
+  String get aiPreCheckClearSelection => '清除选择';
 
   @override
   String get aiStartAnalysis => '开始 AI 分析';
@@ -567,7 +605,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String aiDeleteSelected(int count) {
-    return '删除选中的 $count 项';
+    return '将选中的 $count 项移到废纸篓';
   }
 
   @override
@@ -787,13 +825,186 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiErrorInvalidPayload => '候选项数据格式无效。';
 
   @override
-  String aiTruncatedNotice(int shown, int total) {
-    return '共 $total 项，已显示其中最大的 $shown 项，其余已跳过以控制请求体积。';
+  String aiTruncatedNotice(int shown, int total, int cap) {
+    return '共 $total 项，仅纳入最大的 $shown 项（上限 $cap 条），其余已跳过。';
   }
 
   @override
   String aiCoverageProgress(int analyzed, int total) {
-    return '覆盖率：已分析 $analyzed / $total 个文件';
+    return '覆盖进度：未分类文件已处理 $analyzed / $total';
+  }
+
+  @override
+  String aiCoverageFunnelBreakdown(
+    int localSafe,
+    int localKeep,
+    int treePending,
+    int tail,
+  ) {
+    return '含本地可删 $localSafe · 保留 $localKeep · 目录 AI 约 $treePending · tail $tail';
+  }
+
+  @override
+  String aiCoverageApiCallsEstimate(int used, int min, int remaining) {
+    return '本次 API：已用 $used · plan 至少 $min 次（按 plan 下限还剩 $remaining）';
+  }
+
+  @override
+  String aiCoverageRemainingApiCalls(int remaining) {
+    return '按 plan 下限约剩 $remaining 次 API（目录下钻可能增加）';
+  }
+
+  @override
+  String get aiCoveragePausedBeforeProgress =>
+      '下方为本地预判结果。继续覆盖将写入本地裁决并对待处理目录/零散文件发起 AI。';
+
+  @override
+  String aiCoverageRemainingEstimate(int credits) {
+    return '预计还需约 $credits 积分';
+  }
+
+  @override
+  String aiCoverageAccountBalance(int credits) {
+    return '账户积分：$credits';
+  }
+
+  @override
+  String aiCoverageEstimatedCredits(int credits) {
+    return '完整分析预估：约 $credits 积分';
+  }
+
+  @override
+  String aiCoverageLocalResolved(int count) {
+    return '本地已判定：$count 个文件';
+  }
+
+  @override
+  String aiCoverageEstimatedTreeRounds(int rounds) {
+    return '预估目录轮次：约 $rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedTailRounds(int rounds) {
+    return '预估剩余文件轮次：约 $rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedCreditsTotal(int credits) {
+    return '预估总积分：约 $credits';
+  }
+
+  @override
+  String get aiCoveragePurchaseFooter => '完整分析一次通常约 30–80 积分；开始前会显示预估值。';
+
+  @override
+  String get aiCoveragePurchaseFooterConditional =>
+      '以上已显示 API 预估。整盘/用户目录全量扫描常见约 30–80 积分。';
+
+  @override
+  String aiCoverageInsufficientForEstimate(int needed, int available) {
+    return '预计需要约 $needed 积分，当前余额 $available。';
+  }
+
+  @override
+  String aiCoverageFailedReason(Object reason) {
+    return '分析已暂停：$reason';
+  }
+
+  @override
+  String get aiCoverageFailedReasonParse => 'AI 响应解析失败';
+
+  @override
+  String get aiCoverageFailedReasonNetwork => '网络或服务器错误';
+
+  @override
+  String get aiCoverageFailedReasonApi => '分析服务返回错误';
+
+  @override
+  String get aiCoverageFailedReasonGeneric => '分析请求失败';
+
+  @override
+  String aiCoverageFailedBatchItemsOnly(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 项未获得结果。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchCredits(int credits, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      credits,
+      locale: localeName,
+      other: '已消耗 $credits 积分，但有 $count 项未获得结果。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsPreview(Object paths) {
+    return '受影响项：$paths';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsOverflow(int count) {
+    return '…还有 $count 项';
+  }
+
+  @override
+  String aiCoverageIncompleteGroupTitle(int count) {
+    return 'AI 响应不完整（$count 项）';
+  }
+
+  @override
+  String get aiCoverageFailedResumeTitle => '重试分析？';
+
+  @override
+  String aiCoverageFailedResumeBody(int credits, int count) {
+    return '上一批失败，已消耗 $credits 积分，$count 项未保存。重试可能再次消耗积分。';
+  }
+
+  @override
+  String aiCoverageFailedResumeBodyNoCredit(int count) {
+    return '上一批失败，$count 项未保存。重试可能再次消耗积分。';
+  }
+
+  @override
+  String get aiCoverageFailedResumeConfirm => '重试';
+
+  @override
+  String get aiCoverageLegacyJobHint => '此任务在旧版分析逻辑下暂停；继续将应用新规则（不完整响应会保存为待复核）。';
+
+  @override
+  String get aiCoverageLegacyResumeTitle => '应用新版分析逻辑？';
+
+  @override
+  String get aiCoverageLegacyResumeBody =>
+      '本地保存的进度来自旧版客户端。继续覆盖分析将从未完成处接着跑，并使用新版批处理规则；已落盘的结果仍会保留。';
+
+  @override
+  String get aiCoverageLegacyResumeConfirm => '继续';
+
+  @override
+  String get aiCoverageRestartFull => '重新全量分析';
+
+  @override
+  String get aiCoverageRestartFullTitle => '重新全量分析？';
+
+  @override
+  String get aiCoverageRestartFullBody =>
+      '将清除本快照的覆盖分析进度与已保存 verdict，并从头开始；会再次消耗积分或 token。';
+
+  @override
+  String get aiCoverageRestartFullConfirm => '重新开始';
+
+  @override
+  String get aiCoverageRaiseBudgetToEstimate => '按预估提高上限';
+
+  @override
+  String aiCoverageRunCapConfigured(int cap) {
+    return '本次上限：$cap 积分';
   }
 
   @override
@@ -834,7 +1045,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String aiCoverageSourceStats(int file, int group, int local) {
-    return '逐文件 $file · 目录级 $group · 本地预分类 $local';
+    return '裁决来源：文件 AI $file · 目录 AI $group · 本地 $local';
   }
 
   @override
@@ -893,7 +1104,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiCoverageBudgetInvalid => '请输入高于当前上限的预算值。';
 
   @override
+  String get aiCoverageJobBillingModeMismatchTitle => '本次任务与当前 AI 模式计费方式不一致';
+
+  @override
+  String aiCoverageJobBillingModeMismatchPlatform(int budget, int used) {
+    return '本次任务在 BYOK 下启动，Token 上限为 $budget（已用 $used）。当前为平台模式，按 credits 计费。请「重新开始全量覆盖」以平台模式运行，或切回 BYOK 以继续本任务。';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchByok(int used, int budget) {
+    return '本次任务按平台 credits 计费（$used/$budget）。当前为 BYOK 模式。请「重新开始全量覆盖」以应用 Token 预算，或切回平台模式以继续本任务。';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchBanner(String mode) {
+    return 'AI 模式已切换，与本任务的计费方式不一致。请为$mode重新开始全量覆盖，或切回匹配的 AI 模式。';
+  }
+
+  @override
   String get aiCoverageHydrating => '正在加载覆盖分析任务状态…';
+
+  @override
+  String get aiCandidatesBootstrapLoading => '正在加载候选列表…';
 
   @override
   String get aiCoverageUnavailable => '当前无法启动全量覆盖分析，请等待扫描加载完成后再试。';
@@ -923,7 +1155,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiSettingsCoverageBudgetCreditsDescription =>
-      '单次全量覆盖最多消耗的积分，与账户余额、充值包为同一单位。每次 AI 分析请求扣 1 积分。';
+      '单次扫描的积分花费上限（安全阀，与账户余额无关）。开始前会显示完整分析预估；若预估超过此上限，可在此调高。';
 
   @override
   String get aiSettingsCoverageBudgetTokensDescription =>
@@ -971,7 +1203,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiWorkspacePhaseReview => '确认建议';
 
   @override
-  String get aiWorkspacePhaseDeleting => '正在删除';
+  String get aiWorkspacePhaseDeleting => '正在移到废纸篓';
 
   @override
   String get aiWorkspacePhaseRecovery => '恢复';
@@ -997,6 +1229,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String aiResultsDecisionSummary(String bytes, int review) {
     return '可清理 $bytes · $review 项待确认';
   }
+
+  @override
+  String get aiResultsLocalPreviewHint =>
+      '下列 Safe/Keep 含最新扫描的本地规则结论，不限于已完成的 AI 覆盖任务。';
 
   @override
   String get aiResultsMetricAnalyzed => '已分析';
@@ -1066,6 +1302,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String aiResultsGroupKeep(int count) {
     return '保留 $count';
+  }
+
+  @override
+  String aiResultsShowMoreInGroup(int count) {
+    return '再显示此文件夹中 $count 项';
   }
 
   @override

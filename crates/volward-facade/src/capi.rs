@@ -397,6 +397,47 @@ pub unsafe extern "C" fn volward_ai_get_candidates_json(engine: *mut VolwardEngi
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_take_candidates_spill_path(
+    engine: *mut VolwardEngine,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.take_ai_candidates_spill_path())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_start_build_coverage_plan_async(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    tree: bool,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.start_build_ai_coverage_plan_async(snapshot_id, tree))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_is_coverage_plan_building(engine: *mut VolwardEngine) -> bool {
+    let Some(e) = engine_ref(engine) else {
+        return false;
+    };
+    e.is_ai_coverage_plan_building()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_get_coverage_plan_json(
+    engine: *mut VolwardEngine,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    to_c_string(e.get_ai_coverage_plan_json())
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_ai_build_coverage_plan_json(
     engine: *mut VolwardEngine,
     snapshot_id: *const c_char,
@@ -406,6 +447,20 @@ pub unsafe extern "C" fn volward_ai_build_coverage_plan_json(
     };
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
     to_c_string(e.build_ai_coverage_plan_json(&snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_list_local_coverage_verdicts_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    cursor: u64,
+    limit: u32,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.list_local_coverage_verdicts_json(&snapshot_id, cursor, limit))
 }
 
 #[no_mangle]
@@ -421,6 +476,98 @@ pub unsafe extern "C" fn volward_ai_next_coverage_page_json(
     };
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
     to_c_string(e.next_ai_coverage_page_json(&snapshot_id, plan_version, cursor, page_size))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_tree_coverage_plan_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.build_ai_tree_plan_json(&snapshot_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_next_tree_coverage_page_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    plan_version: u64,
+    cursor: u64,
+    page_size: u32,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.next_ai_tree_coverage_page_json(
+        &snapshot_id,
+        plan_version,
+        cursor,
+        page_size,
+    ))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_next_tail_coverage_page_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    plan_version: u64,
+    cursor: u64,
+    page_size: u32,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.next_ai_tail_coverage_page_json(
+        &snapshot_id,
+        plan_version,
+        cursor,
+        page_size,
+    ))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_expand_tree_node_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    dir_path: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    let dir_path = cstr_to_string(dir_path).unwrap_or_default();
+    to_c_string(e.expand_ai_tree_node_json(&snapshot_id, &dir_path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_apply_dir_verdict_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    dir_path: *const c_char,
+    verdict: *const c_char,
+    confidence: *const c_char,
+    role_snake_case: *const c_char,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    let dir_path = cstr_to_string(dir_path).unwrap_or_default();
+    let verdict = cstr_to_string(verdict).unwrap_or_default();
+    let confidence = cstr_to_string(confidence).unwrap_or_default();
+    let role_snake_case = cstr_to_string(role_snake_case).unwrap_or_default();
+    to_c_string(e.apply_ai_dir_verdict_json(
+        &snapshot_id,
+        &dir_path,
+        &verdict,
+        &confidence,
+        &role_snake_case,
+    ))
 }
 
 #[no_mangle]
@@ -472,6 +619,46 @@ pub unsafe extern "C" fn volward_ai_upstream_endpoint() -> *mut c_char {
 #[no_mangle]
 pub unsafe extern "C" fn volward_ai_batch_size() -> u32 {
     volward_ai::BATCH_SIZE as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_tree_batch_size() -> u32 {
+    volward_ai::TREE_BATCH_SIZE as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_tree_request_json(
+    nodes_json: *const c_char,
+) -> *mut c_char {
+    let Some(raw) = cstr_to_string(nodes_json) else {
+        return to_c_string("error:null nodes".into());
+    };
+    match serde_json::from_str::<Vec<volward_ai::AnalyzeTreeNode>>(&raw) {
+        Ok(nodes) => to_c_string(volward_ai::build_tree_request_body(&nodes)),
+        Err(e) => to_c_string(format!("error:parse:{e}")),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_parse_tree_response_json(
+    response_json: *const c_char,
+    batch_json: *const c_char,
+) -> *mut c_char {
+    let Some(body) = cstr_to_string(response_json) else {
+        return to_c_string("error:null response".into());
+    };
+    let Some(raw_batch) = cstr_to_string(batch_json) else {
+        return to_c_string("error:null batch".into());
+    };
+    let batch: Vec<volward_ai::AnalyzeTreeNode> = match serde_json::from_str(&raw_batch) {
+        Ok(b) => b,
+        Err(e) => return to_c_string(format!("error:parse:{e}")),
+    };
+    let verdicts = volward_ai::parse_tree_response(&body, &batch);
+    match serde_json::to_string(&verdicts) {
+        Ok(s) => to_c_string(s),
+        Err(e) => to_c_string(format!("error:encode:{e}")),
+    }
 }
 
 #[no_mangle]
@@ -900,6 +1087,10 @@ mod ai_contract_tests {
             unsafe { volward_ai_batch_size() } as usize,
             volward_ai::BATCH_SIZE
         );
+        assert_eq!(
+            unsafe { volward_ai_tree_batch_size() } as usize,
+            volward_ai::TREE_BATCH_SIZE
+        );
     }
 
     #[test]
@@ -931,19 +1122,25 @@ mod ai_contract_tests {
                 c"ffi-coverage".as_ptr(),
             ))
         };
-        assert!(summary.contains(r#""total_unclassified":90"#), "{summary}");
+        let summary_json: serde_json::Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(summary_json["pre_classified_count"], 90);
+        assert_eq!(summary_json["local_safe_files"], 90);
+        assert_eq!(summary_json["total_unclassified"], 0);
+        assert_eq!(summary_json["file_rows"], 0);
+        assert_eq!(summary_json["group_rows"], 0);
 
+        let plan_version = summary_json["plan_version"].as_u64().unwrap_or(1);
         let page = unsafe {
             take(volward_ai_next_coverage_page_json(
                 &mut engine as *mut VolwardEngine,
                 c"ffi-coverage".as_ptr(),
-                1,
+                plan_version,
                 0,
                 40,
             ))
         };
         let parsed: serde_json::Value = serde_json::from_str(&page).unwrap();
-        assert_eq!(parsed["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["rows"].as_array().unwrap().len(), 0);
         assert_eq!(parsed["next_cursor"], serde_json::Value::Null);
 
         let group = unsafe {

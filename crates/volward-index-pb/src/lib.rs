@@ -19,7 +19,7 @@ use volward_core::{
 
 pub use proto::SnapshotIndex as ProtoSnapshotIndex;
 
-const SNAPSHOT_INDEX_FORMAT_VERSION: u32 = 5;
+const SNAPSHOT_INDEX_FORMAT_VERSION: u32 = 6;
 
 fn scan_stats_to_proto(s: &model::ScanStats) -> proto::ScanStats {
     proto::ScanStats {
@@ -43,6 +43,7 @@ fn directory_record_to_proto(rec: &DirectoryRecord) -> proto::IndexDirectoryReco
         category_mask: rec.category_mask,
         deletable_category_mask: rec.deletable_category_mask,
         deletable_file_count: rec.deletable_file_count,
+        pruned_child_flags: rec.pruned_child_flags,
     }
 }
 
@@ -56,6 +57,7 @@ fn directory_record_from_proto(rec: proto::IndexDirectoryRecord) -> DirectoryRec
         category_mask: rec.category_mask,
         deletable_category_mask: rec.deletable_category_mask,
         deletable_file_count: rec.deletable_file_count,
+        pruned_child_flags: rec.pruned_child_flags,
     }
 }
 
@@ -157,9 +159,9 @@ fn wire_to_proto(wire: &SnapshotIndexWire) -> proto::SnapshotIndex {
 }
 
 fn wire_from_proto(msg: proto::SnapshotIndex) -> Result<SnapshotIndexWire, String> {
-    if msg.format_version != SNAPSHOT_INDEX_FORMAT_VERSION {
+    if msg.format_version != SNAPSHOT_INDEX_FORMAT_VERSION && msg.format_version != 5 {
         return Err(format!(
-            "unsupported SnapshotIndex format_version {} (expected {})",
+            "unsupported SnapshotIndex format_version {} (expected 5 or {})",
             msg.format_version, SNAPSHOT_INDEX_FORMAT_VERSION
         ));
     }

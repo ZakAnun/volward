@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'ai_contract.dart';
 import 'ai_provider.dart';
 import 'cancel_token.dart';
+import 'coverage_models.dart';
 import '../volward_session.dart';
 
 const _kRequestTimeout = Duration(seconds: 90);
@@ -25,7 +26,7 @@ class ByokTokenUsage {
 /// DeepSeek Chat Completions BYOK provider (transport only).
 ///
 /// Request/parse/batch/endpoint come from [AiContract] (FFI in production).
-class ByokAiProvider implements AiProvider {
+class ByokAiProvider implements AiProvider, TreeAiProvider {
   ByokAiProvider({
     required this.apiKey,
     this.contract,
@@ -132,6 +133,50 @@ class ByokAiProvider implements AiProvider {
     );
   }
 
+  @override
+  Future<AnalyzeResult> analyzeTreeNodes(
+    List<CoverageTreeNode> nodes, {
+    CancelToken? cancelToken,
+  }) async {
+    lastTokenUsage = null;
+    _tokenUsageComplete = true;
+    if (apiKey.trim().isEmpty) {
+      throw Exception('empty_api_key');
+    }
+    final contract = _resolveContract();
+    final size = contract.treeBatchSize();
+    final out = <AiVerdict>[];
+    var promptTokens = 0;
+    var completionTokens = 0;
+    var estimated = false;
+    for (var i = 0; i < nodes.length; i += size) {
+      final end = i + size < nodes.length ? i + size : nodes.length;
+      final sub = await _analyzeTreeBatch(
+        contract,
+        nodes.sublist(i, end),
+        cancelToken: cancelToken,
+      );
+      out.addAll(sub.verdicts);
+      promptTokens += sub.promptTokens;
+      completionTokens += sub.completionTokens;
+      estimated = estimated || sub.estimated;
+      lastTokenUsage = ByokTokenUsage(
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+        totalTokens: promptTokens + completionTokens,
+      );
+      _tokenUsageComplete = !estimated;
+    }
+    return AnalyzeResult(
+      verdicts: out,
+      tokens: promptTokens + completionTokens,
+      credits: 0,
+      inputTokens: promptTokens,
+      outputTokens: completionTokens,
+      estimated: estimated,
+    );
+  }
+
   Future<
     ({
       List<AiVerdict> verdicts,
@@ -192,6 +237,103 @@ class ByokAiProvider implements AiProvider {
       );
     }
     throw Exception('rate_limited_after_retries');
+  }
+
+  Future<
+    ({
+      List<AiVerdict> verdicts,
+      int promptTokens,
+      int completionTokens,
+      bool estimated,
+    })
+  >
+  _analyzeTreeBatch(
+    AiContract contract,
+    List<CoverageTreeNode> batch, {
+    CancelToken? cancelToken,
+  }) async {
+    final body = contract.buildTreeRequestJson(batch);
+    final endpoint = contract.upstreamEndpoint();
+    cancelToken?.whenCancelled.then((_) => _abortClient());
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CoverageCancelledException();
+      }
+      late final http.Response response;
+      try {
+        response = await _ensureClient()
+            .post(
+              Uri.parse(endpoint),
+              headers: {
+                'Authorization': 'Bearer $apiKey',
+                'Content-Type': 'application/json',
+              },
+              body: body,
+            )
+            .timeout(requestTimeout);
+      } on TimeoutException {
+        throw Exception('request_timeout');
+      } on http.ClientException catch (e) {
+        if (cancelToken?.isCancelled ?? false) {
+          throw const CoverageCancelledException();
+        }
+        throw Exception('network_error:$e');
+      }
+
+      if (response.statusCode == 429) {
+        await Future.delayed(Duration(seconds: 1 << attempt));
+        continue;
+      }
+      if (response.statusCode == 401) {
+        throw Exception('invalid_api_key');
+      }
+      if (response.statusCode != 200) {
+        throw Exception('api_error:${response.statusCode}');
+      }
+      final usage = _extractTreeTokenUsage(response.body, batch);
+      return (
+        verdicts: contract.parseTreeResponseJson(response.body, batch),
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        estimated: usage.estimated,
+      );
+    }
+    throw Exception('rate_limited_after_retries');
+  }
+
+  ({int promptTokens, int completionTokens, bool estimated})
+  _extractTreeTokenUsage(String responseBody, List<CoverageTreeNode> batch) {
+    try {
+      final decoded = jsonDecode(responseBody);
+      if (decoded is! Map) {
+        return _estimatedTreeUsage(batch);
+      }
+      final usage = decoded['usage'];
+      if (usage is! Map) {
+        return _estimatedTreeUsage(batch);
+      }
+      final promptTokens = (usage['prompt_tokens'] as num?)?.toInt();
+      final completionTokens = (usage['completion_tokens'] as num?)?.toInt();
+      if (promptTokens == null || completionTokens == null) {
+        return _estimatedTreeUsage(batch);
+      }
+      return (
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+        estimated: false,
+      );
+    } catch (_) {
+      return _estimatedTreeUsage(batch);
+    }
+  }
+
+  ({int promptTokens, int completionTokens, bool estimated})
+  _estimatedTreeUsage(List<CoverageTreeNode> batch) {
+    return (
+      promptTokens: batch.length * 12 + 400,
+      completionTokens: batch.length * 48,
+      estimated: true,
+    );
   }
 
   ({int promptTokens, int completionTokens, bool estimated}) _extractTokenUsage(

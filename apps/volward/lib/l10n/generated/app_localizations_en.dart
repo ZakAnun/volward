@@ -581,9 +581,48 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String aiPreCheckUnknownTitle(int count, int tokens) {
-    return '$count items will be sent for AI analysis (~$tokens tokens)';
+  String aiPreCheckUnknownTitle(int count, int tokens, int batchSize, int cap) {
+    return '$count items still need AI (BYOK ~$tokens input tokens per API call, up to $batchSize items each; $cap items max per analysis)';
   }
+
+  @override
+  String get aiPreCheckCoverageEstimatePending =>
+      'Estimating full coverage cost…';
+
+  @override
+  String aiPreCheckAiScope(int tree, int tail) {
+    return '$tree files need directory AI, $tail loose files in tail queue';
+  }
+
+  @override
+  String aiPreCheckAiScopeV2(int treePending, int tail, int apiCalls) {
+    return 'Directory AI scope: ~$treePending files · tail queue: $tail files · about $apiCalls API calls (minimum)';
+  }
+
+  @override
+  String get aiPreCheckLocalOnlyTitle => 'No API calls needed for this scan';
+
+  @override
+  String get aiPreCheckLocalOnlyBody =>
+      'Local rules already cover the directory and tail queues. Review local results without starting full coverage.';
+
+  @override
+  String get aiStartLocalOnly => 'Review local results';
+
+  @override
+  String aiPreCheckFullCoverageEstimate(int credits, int calls) {
+    return '~$credits credits minimum ($calls API calls from plan; tree BFS may add more)';
+  }
+
+  @override
+  String get aiPreCheckTreeCreditsMayGrow =>
+      'Directory tree analysis may use more credits than this plan minimum.';
+
+  @override
+  String get aiPreCheckSelectAllShown => 'Select all shown';
+
+  @override
+  String get aiPreCheckClearSelection => 'Clear selection';
 
   @override
   String get aiStartAnalysis => 'Start AI Analysis';
@@ -597,7 +636,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String aiDeleteSelected(int count) {
-    return 'Delete $count Selected Items';
+    return 'Move $count Selected to Trash';
   }
 
   @override
@@ -830,13 +869,191 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiErrorInvalidPayload => 'Invalid candidates payload.';
 
   @override
-  String aiTruncatedNotice(int shown, int total) {
-    return 'Showing the $shown largest of $total items — the rest were skipped to keep the request small.';
+  String aiTruncatedNotice(int shown, int total, int cap) {
+    return 'Including the $shown largest of $total items ($cap cap) — the rest are skipped.';
   }
 
   @override
   String aiCoverageProgress(int analyzed, int total) {
-    return 'Coverage: $analyzed / $total files analyzed';
+    return 'Coverage: $analyzed / $total unclassified files resolved';
+  }
+
+  @override
+  String aiCoverageFunnelBreakdown(
+    int localSafe,
+    int localKeep,
+    int treePending,
+    int tail,
+  ) {
+    return 'Local $localSafe safe · $localKeep keep · ~$treePending via directory AI · $tail tail files';
+  }
+
+  @override
+  String aiCoverageApiCallsEstimate(int used, int min, int remaining) {
+    return 'API calls this run: $used used · at least $min planned ($remaining left at plan minimum)';
+  }
+
+  @override
+  String aiCoverageRemainingApiCalls(int remaining) {
+    return 'About $remaining API calls left (plan minimum; directory drill-down may add more)';
+  }
+
+  @override
+  String get aiCoveragePausedBeforeProgress =>
+      'Local previews below are ready. Resume to flush local verdicts and run directory/tail AI on the rest.';
+
+  @override
+  String aiCoverageRemainingEstimate(int credits) {
+    return 'About $credits credits remaining';
+  }
+
+  @override
+  String aiCoverageAccountBalance(int credits) {
+    return 'Account balance: $credits credits';
+  }
+
+  @override
+  String aiCoverageEstimatedCredits(int credits) {
+    return 'Estimated for full analysis: ~$credits credits';
+  }
+
+  @override
+  String aiCoverageLocalResolved(int count) {
+    return 'Locally resolved: $count files';
+  }
+
+  @override
+  String aiCoverageEstimatedTreeRounds(int rounds) {
+    return 'Estimated tree rounds: ~$rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedTailRounds(int rounds) {
+    return 'Estimated tail rounds: ~$rounds';
+  }
+
+  @override
+  String aiCoverageEstimatedCreditsTotal(int credits) {
+    return 'Total estimated credits: ~$credits';
+  }
+
+  @override
+  String get aiCoveragePurchaseFooter =>
+      'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.';
+
+  @override
+  String get aiCoveragePurchaseFooterConditional =>
+      'Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.';
+
+  @override
+  String aiCoverageInsufficientForEstimate(int needed, int available) {
+    return 'Need about $needed credits; you have $available.';
+  }
+
+  @override
+  String aiCoverageFailedReason(Object reason) {
+    return 'Analysis paused: $reason';
+  }
+
+  @override
+  String get aiCoverageFailedReasonParse => 'AI response could not be parsed';
+
+  @override
+  String get aiCoverageFailedReasonNetwork => 'network or server error';
+
+  @override
+  String get aiCoverageFailedReasonApi => 'analysis service error';
+
+  @override
+  String get aiCoverageFailedReasonGeneric => 'analysis request failed';
+
+  @override
+  String aiCoverageFailedBatchItemsOnly(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items did not receive results.',
+      one: '1 item did not receive results.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchCredits(int credits, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      credits,
+      locale: localeName,
+      other:
+          '$credits credits were used but $count items did not receive results.',
+      one: '1 credit was used but $count items did not receive results.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsPreview(Object paths) {
+    return 'Affected: $paths';
+  }
+
+  @override
+  String aiCoverageFailedBatchPathsOverflow(int count) {
+    return '…and $count more';
+  }
+
+  @override
+  String aiCoverageIncompleteGroupTitle(int count) {
+    return 'Incomplete AI response ($count)';
+  }
+
+  @override
+  String get aiCoverageFailedResumeTitle => 'Retry analysis?';
+
+  @override
+  String aiCoverageFailedResumeBody(int credits, int count) {
+    return 'The last batch failed after using $credits credit(s). $count items were not saved. Retry may use additional credits.';
+  }
+
+  @override
+  String aiCoverageFailedResumeBodyNoCredit(int count) {
+    return 'The last batch failed. $count items were not saved. Retry may use additional credits.';
+  }
+
+  @override
+  String get aiCoverageFailedResumeConfirm => 'Retry';
+
+  @override
+  String get aiCoverageLegacyJobHint =>
+      'This job was paused under older analysis logic. Resume applies new rules (incomplete API responses are saved as review needed).';
+
+  @override
+  String get aiCoverageLegacyResumeTitle => 'Apply updated analysis logic?';
+
+  @override
+  String get aiCoverageLegacyResumeBody =>
+      'Saved progress is from an older client. Resume continues from the cursor with new batch rules; verdicts already on disk are kept.';
+
+  @override
+  String get aiCoverageLegacyResumeConfirm => 'Continue';
+
+  @override
+  String get aiCoverageRestartFull => 'Restart full coverage';
+
+  @override
+  String get aiCoverageRestartFullTitle => 'Restart full coverage?';
+
+  @override
+  String get aiCoverageRestartFullBody =>
+      'Clears coverage progress and saved verdicts for this snapshot and starts over. This may use credits or tokens again.';
+
+  @override
+  String get aiCoverageRestartFullConfirm => 'Restart';
+
+  @override
+  String get aiCoverageRaiseBudgetToEstimate => 'Raise limit to match estimate';
+
+  @override
+  String aiCoverageRunCapConfigured(int cap) {
+    return 'Run cap for this scan: $cap credits';
   }
 
   @override
@@ -879,7 +1096,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String aiCoverageSourceStats(int file, int group, int local) {
-    return '$file per-file · $group directory-level · $local local pre-classified';
+    return 'Verdict sources: $file file AI · $group directory AI · $local local';
   }
 
   @override
@@ -940,7 +1157,29 @@ class AppLocalizationsEn extends AppLocalizations {
       'Enter a budget higher than the current limit.';
 
   @override
+  String get aiCoverageJobBillingModeMismatchTitle =>
+      'Coverage run uses a different billing mode';
+
+  @override
+  String aiCoverageJobBillingModeMismatchPlatform(int budget, int used) {
+    return 'This run was started with a BYOK token limit ($budget tokens, $used used). You are in Platform mode, which bills credits. Restart full coverage to start a Platform run, or switch back to BYOK to resume this job.';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchByok(int used, int budget) {
+    return 'This run uses Platform credits ($used/$budget). You are in BYOK mode now. Restart full coverage to apply your token budget, or switch back to Platform to resume.';
+  }
+
+  @override
+  String aiCoverageJobBillingModeMismatchBanner(String mode) {
+    return 'Billing mode changed since this run started. Restart full coverage for $mode, or switch AI mode to match this job.';
+  }
+
+  @override
   String get aiCoverageHydrating => 'Loading coverage job status…';
+
+  @override
+  String get aiCandidatesBootstrapLoading => 'Loading candidate list…';
 
   @override
   String get aiCoverageUnavailable =>
@@ -974,7 +1213,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiSettingsCoverageBudgetCreditsDescription =>
-      'Maximum platform credits to spend on one full-coverage run. Same unit as your balance and purchase packs. Each AI request costs 1 credit.';
+      'Per-scan credit spending cap (safety limit, not your account balance). Full-run estimate is shown before you start; raise this if the estimate exceeds the cap.';
 
   @override
   String get aiSettingsCoverageBudgetTokensDescription =>
@@ -1022,7 +1261,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiWorkspacePhaseReview => 'Review';
 
   @override
-  String get aiWorkspacePhaseDeleting => 'Deleting';
+  String get aiWorkspacePhaseDeleting => 'Moving to Trash';
 
   @override
   String get aiWorkspacePhaseRecovery => 'Recovery';
@@ -1048,6 +1287,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String aiResultsDecisionSummary(String bytes, int review) {
     return '$bytes reclaimable · $review need review';
   }
+
+  @override
+  String get aiResultsLocalPreviewHint =>
+      'Safe and keep counts below include local rules from the latest scan, not only finished AI coverage.';
 
   @override
   String get aiResultsMetricAnalyzed => 'Analyzed';
@@ -1123,6 +1366,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String aiResultsGroupKeep(int count) {
     return 'Keep $count';
+  }
+
+  @override
+  String aiResultsShowMoreInGroup(int count) {
+    return 'Show $count more in this folder';
   }
 
   @override

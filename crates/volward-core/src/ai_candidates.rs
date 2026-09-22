@@ -1,10 +1,12 @@
 use crate::model::{EntryCategory, ScanTreeNode};
 use crate::os_knowledge::{Confidence, OsKnowledgeBase};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Default maximum number of candidates sent to the model / UI.
 pub const DEFAULT_CANDIDATE_CAP: usize = 150;
+/// BYOK flat analyze batch size — keep in sync with `volward_ai::BATCH_SIZE`.
+pub const BYOK_ANALYZE_BATCH_SIZE: usize = 40;
 /// Max concrete member paths retained per aggregated directory candidate.
 /// Keeps the FFI JSON bounded even when a single parent has huge fan-out.
 pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
@@ -78,7 +80,7 @@ pub fn ai_aggregate_path_from_delete_target(target: &str) -> Option<&str> {
         .filter(|path| !path.is_empty())
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiCandidate {
     pub path: String,
     pub size_bytes: u64,
@@ -100,7 +102,7 @@ pub struct AiCandidate {
     /// real file candidates. Deleting an aggregate MUST target these paths
     /// instead of `path`, which is only the common parent directory and may
     /// hold unrelated (classified or user) data.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub member_paths: Vec<String>,
     /// Opaque native target used to resolve all aggregate members at deletion
     /// time without serializing every path over FFI.
@@ -108,7 +110,7 @@ pub struct AiCandidate {
     pub delete_target: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreClassifiedEntry {
     pub path: String,
     pub size_bytes: u64,
@@ -122,7 +124,10 @@ pub struct PreClassifiedEntry {
 pub struct AiCandidateSet {
     pub pre_classified: Vec<PreClassifiedEntry>,
     pub candidates: Vec<AiCandidate>,
+    /// Sum of estimated input tokens across all BYOK API batches.
     pub estimated_input_tokens: usize,
+    /// Estimated input tokens for the first BYOK batch (≤ [`BYOK_ANALYZE_BATCH_SIZE`] items).
+    pub estimated_byok_batch_input_tokens: usize,
     /// Unclassified files discovered *before* `aggregate_by_dir` folded
     /// siblings and before `cap_top_n` truncated the list.
     pub total_raw_count: usize,
@@ -141,6 +146,38 @@ pub struct AiCandidateBuilder {
     total_before_cap: Option<usize>,
 }
 
+/// Rough BYOK prompt size for one batched analyze call (paths + JSON overhead).
+pub fn estimate_candidate_input_tokens(candidates: &[AiCandidate]) -> usize {
+    const BASE_PROMPT_TOKENS: usize = 320;
+    candidates.iter().fold(BASE_PROMPT_TOKENS, |total, candidate| {
+        let path_tokens = candidate.path.len().saturating_div(4).max(8);
+        let hint_tokens = candidate
+            .cleanup_hint
+            .as_deref()
+            .map(|hint| hint.len().saturating_div(4))
+            .unwrap_or(0);
+        total + 24 + path_tokens + hint_tokens
+    })
+}
+
+pub fn estimate_byok_batch_input_tokens(candidates: &[AiCandidate]) -> usize {
+    let end = candidates.len().min(BYOK_ANALYZE_BATCH_SIZE);
+    if end == 0 {
+        return 0;
+    }
+    estimate_candidate_input_tokens(&candidates[..end])
+}
+
+pub fn estimate_byok_total_input_tokens(candidates: &[AiCandidate]) -> usize {
+    if candidates.is_empty() {
+        return 0;
+    }
+    candidates
+        .chunks(BYOK_ANALYZE_BATCH_SIZE)
+        .map(estimate_candidate_input_tokens)
+        .sum()
+}
+
 impl AiCandidateBuilder {
     fn empty() -> Self {
         Self {
@@ -157,7 +194,7 @@ impl AiCandidateBuilder {
         kb: &OsKnowledgeBase,
     ) -> Self {
         let mut b = Self::empty();
-        b.walk(tree, classified, kb);
+        b.walk(tree, classified, kb, &[]);
         b.raw_file_count = b.raw_unknown.len();
         b
     }
@@ -168,47 +205,54 @@ impl AiCandidateBuilder {
         self.pre_classified.push(entry);
     }
 
-    fn walk(&mut self, node: &ScanTreeNode, classified: &HashSet<String>, kb: &OsKnowledgeBase) {
+    fn walk(
+        &mut self,
+        node: &ScanTreeNode,
+        classified: &HashSet<String>,
+        kb: &OsKnowledgeBase,
+        indexed_local_prefixes: &[String],
+    ) {
         if classified.contains(&node.path) {
-            return;
-        }
-        if let Some(e) = kb.classify_path(&node.path) {
-            self.pre_classified.push(PreClassifiedEntry {
-                path: node.path.clone(),
-                size_bytes: node.size_bytes,
-                is_dir: node.is_dir,
-                category: e.category,
-                confidence: if e.confidence == Confidence::High {
-                    "high".into()
-                } else {
-                    "medium".into()
-                },
-                reason: e.reason,
-                deletable: e.deletable,
-            });
             return;
         }
         if node.is_dir && !node.children.is_empty() {
             for child in &node.children {
-                self.walk(child, classified, kb);
+                self.walk(child, classified, kb, indexed_local_prefixes);
             }
-        } else if !node.is_dir {
-            let ext = std::path::Path::new(&node.path)
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|s| format!(".{s}"));
-            self.raw_unknown.push(AiCandidate {
-                path: node.path.clone(),
-                size_bytes: node.size_bytes,
-                is_dir: false,
-                child_count: None,
-                extension: ext,
-                cleanup_source: None,
-                cleanup_hint: None,
-                retention_days: None,
-                member_paths: vec![],
-                delete_target: None,
-            });
+            return;
+        }
+        if node.is_dir {
+            return;
+        }
+        match resolve_unclassified_for_ai(&node.path, node.size_bytes, kb, indexed_local_prefixes) {
+            UnclassifiedAiRouting::Local(entry) => self.pre_classified.push(entry),
+            UnclassifiedAiRouting::SendToAi { cleanup_hint } => {
+                let ext = std::path::Path::new(&node.path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| format!(".{s}"));
+                let (cleanup_source, cleanup_hint, retention_days) = cleanup_hint
+                    .map(|h| {
+                        (
+                            Some(h.source.to_string()),
+                            Some(h.hint.to_string()),
+                            Some(h.retention_days),
+                        )
+                    })
+                    .unwrap_or((None, None, None));
+                self.raw_unknown.push(AiCandidate {
+                    path: node.path.clone(),
+                    size_bytes: node.size_bytes,
+                    is_dir: false,
+                    child_count: None,
+                    extension: ext,
+                    cleanup_source,
+                    cleanup_hint,
+                    retention_days,
+                    member_paths: vec![],
+                    delete_target: None,
+                });
+            }
         }
     }
 
@@ -278,11 +322,14 @@ impl AiCandidateBuilder {
     pub fn build(self) -> AiCandidateSet {
         let candidates_total_before_cap = self.total_before_cap.unwrap_or(self.raw_unknown.len());
         let truncated = candidates_total_before_cap > self.raw_unknown.len();
-        let estimated_input_tokens = self.raw_unknown.len() * 8 + 200;
+        let estimated_input_tokens = estimate_byok_total_input_tokens(&self.raw_unknown);
+        let estimated_byok_batch_input_tokens =
+            estimate_byok_batch_input_tokens(&self.raw_unknown);
         AiCandidateSet {
             pre_classified: self.pre_classified,
             candidates: self.raw_unknown,
             estimated_input_tokens,
+            estimated_byok_batch_input_tokens,
             total_raw_count: self.raw_file_count,
             candidates_total_before_cap,
             truncated,
@@ -296,54 +343,58 @@ impl AiCandidateBuilder {
         files: &[(String, u64)],
         classified: &HashSet<String>,
         kb: &OsKnowledgeBase,
+        indexed_local_prefixes: &[String],
     ) -> Self {
         let mut b = Self::empty();
         for (path, size) in files {
             if classified.contains(path) {
                 continue;
             }
-            if let Some(e) = kb.classify_path(path) {
-                b.pre_classified.push(PreClassifiedEntry {
-                    path: path.clone(),
-                    size_bytes: *size,
-                    is_dir: false,
-                    category: e.category,
-                    confidence: if e.confidence == Confidence::High {
-                        "high".into()
-                    } else {
-                        "medium".into()
-                    },
-                    reason: e.reason,
-                    deletable: e.deletable,
-                });
-                continue;
+            match resolve_unclassified_for_ai(path, *size, kb, indexed_local_prefixes) {
+                UnclassifiedAiRouting::Local(entry) => b.pre_classified.push(entry),
+                UnclassifiedAiRouting::SendToAi { cleanup_hint } => {
+                    let ext = std::path::Path::new(path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| format!(".{s}"));
+                    let (cleanup_source, cleanup_hint, retention_days) = cleanup_hint
+                        .map(|h| {
+                            (
+                                Some(h.source.to_string()),
+                                Some(h.hint.to_string()),
+                                Some(h.retention_days),
+                            )
+                        })
+                        .unwrap_or((None, None, None));
+                    b.raw_unknown.push(AiCandidate {
+                        path: path.clone(),
+                        size_bytes: *size,
+                        is_dir: false,
+                        child_count: None,
+                        extension: ext,
+                        cleanup_source,
+                        cleanup_hint,
+                        retention_days,
+                        member_paths: vec![],
+                        delete_target: None,
+                    });
+                }
             }
-            let ext = std::path::Path::new(path)
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|s| format!(".{s}"));
-            b.raw_unknown.push(AiCandidate {
-                path: path.clone(),
-                size_bytes: *size,
-                is_dir: false,
-                child_count: None,
-                extension: ext,
-                cleanup_source: None,
-                cleanup_hint: None,
-                retention_days: None,
-                member_paths: vec![],
-                delete_target: None,
-            });
         }
         b.raw_file_count = b.raw_unknown.len();
         b
     }
 
-    /// Adds conservative AI-tool/temp hints without expanding beyond the
-    /// current snapshot. The model still decides the verdict.
+    /// Adds low-confidence cleanup hints for paths still routed to the model.
     pub fn annotate_ai_cleanup_patterns(mut self) -> Self {
         for candidate in &mut self.raw_unknown {
+            if candidate.cleanup_source.is_some() {
+                continue;
+            }
             if let Some(hint) = ai_cleanup_hint_for_path(&candidate.path) {
+                if hint_source_skips_ai(hint.source) {
+                    continue;
+                }
                 candidate.cleanup_source = Some(hint.source.to_string());
                 candidate.cleanup_hint = Some(hint.hint.to_string());
                 candidate.retention_days = Some(hint.retention_days);
@@ -353,11 +404,185 @@ impl AiCandidateBuilder {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct AiCleanupHint {
-    pub(crate) source: &'static str,
-    pub(crate) hint: &'static str,
-    pub(crate) retention_days: u32,
+#[derive(Clone, Copy, Debug)]
+pub struct AiCleanupHint {
+    pub source: &'static str,
+    pub hint: &'static str,
+    pub retention_days: u32,
+}
+
+/// High-confidence cleanup hints are resolved locally (option A) and never sent to the model.
+pub fn hint_source_skips_ai(source: &str) -> bool {
+    matches!(source, "system_temp" | "ai_tool_cache")
+}
+
+const GENERIC_BUILD_MARKERS: &[&str] = &[
+    "/node_modules/",
+    "/target/",
+    "/.gradle/",
+    "/build/",
+    "/dist/",
+    "/.next/",
+    "/out/",
+    "/__pycache__/",
+    "/.pytest_cache/",
+    "/.mypy_cache/",
+    "/.turbo/",
+    "/.parcel-cache/",
+    "/.npm/",
+    "/.yarn/",
+    "/.pnpm-store/",
+    "/pods/",
+    "/deriveddata/",
+    "/.dart_tool/",
+    "/.pub-cache/",
+    "/.cargo/registry/",
+    "/.cargo/git/",
+    "/.rustup/toolchains/",
+    "/.nuget/packages/",
+    "/.m2/repository/",
+    "/.venv/",
+    "/.tox/",
+];
+
+fn path_matches_generic_cache_or_temp(path: &str) -> bool {
+    let lower = path.replace('\\', "/").to_ascii_lowercase();
+    lower.contains("/caches/")
+        || lower.contains("/cache/")
+        || lower.contains(".cache/")
+        || lower.contains("/tmp/")
+        || lower.contains("/temp/")
+        || lower.ends_with(".tmp")
+}
+
+fn path_matches_common_regeneratable_build(path: &str) -> bool {
+    let lower = path.replace('\\', "/").to_ascii_lowercase();
+    GENERIC_BUILD_MARKERS.iter().any(|marker| lower.contains(marker))
+}
+
+fn path_under_indexed_prefix(path: &str, prefixes: &[String]) -> bool {
+    let normalized = path.replace('\\', "/");
+    prefixes.iter().any(|prefix| {
+        let prefix = prefix.replace('\\', "/");
+        if prefix.is_empty() {
+            return false;
+        }
+        normalized == prefix
+            || normalized
+                .strip_prefix(&prefix)
+                .is_some_and(|rest| rest.starts_with('/'))
+    })
+}
+
+pub(crate) fn pre_classified_from_kb(path: &str, size_bytes: u64, kb: &OsKnowledgeBase) -> Option<PreClassifiedEntry> {
+    let known = kb.classify_path(path)?;
+    Some(PreClassifiedEntry {
+        path: path.to_string(),
+        size_bytes,
+        is_dir: false,
+        category: known.category,
+        confidence: if known.confidence == Confidence::High {
+            "high".into()
+        } else {
+            "medium".into()
+        },
+        reason: known.reason,
+        deletable: known.deletable,
+    })
+}
+
+pub(crate) fn pre_classified_from_hint(path: &str, size_bytes: u64, hint: AiCleanupHint) -> Option<PreClassifiedEntry> {
+    if !hint_source_skips_ai(hint.source) {
+        return None;
+    }
+    let (category, deletable) = match hint.source {
+        "system_temp" => (EntryCategory::Temp, true),
+        "ai_tool_cache" => (EntryCategory::Cache, true),
+        _ => (EntryCategory::Cache, true),
+    };
+    Some(PreClassifiedEntry {
+        path: path.to_string(),
+        size_bytes,
+        is_dir: false,
+        category,
+        confidence: "high".to_string(),
+        reason: hint.hint.to_string(),
+        deletable,
+    })
+}
+
+pub(crate) fn pre_classified_from_heuristics(path: &str, size_bytes: u64) -> Option<PreClassifiedEntry> {
+    if path_matches_generic_cache_or_temp(path) {
+        return Some(PreClassifiedEntry {
+            path: path.to_string(),
+            size_bytes,
+            is_dir: false,
+            category: EntryCategory::Cache,
+            confidence: "medium".to_string(),
+            reason: "Path matches cache or temp segment; safe to review locally without AI.".to_string(),
+            deletable: true,
+        });
+    }
+    if path_matches_common_regeneratable_build(path) {
+        return Some(PreClassifiedEntry {
+            path: path.to_string(),
+            size_bytes,
+            is_dir: false,
+            category: EntryCategory::BuildArtifact,
+            confidence: "high".to_string(),
+            reason: "Common regeneratable build or dependency output; excluded from AI analysis.".to_string(),
+            deletable: true,
+        });
+    }
+    None
+}
+
+pub(crate) fn pre_classified_under_index_prefix(
+    path: &str,
+    size_bytes: u64,
+    prefixes: &[String],
+    kb: &OsKnowledgeBase,
+) -> Option<PreClassifiedEntry> {
+    if !path_under_indexed_prefix(path, prefixes) {
+        return None;
+    }
+    pre_classified_from_kb(path, size_bytes, kb).or_else(|| {
+        Some(PreClassifiedEntry {
+            path: path.to_string(),
+            size_bytes,
+            is_dir: false,
+            category: EntryCategory::BuildArtifact,
+            confidence: "high".to_string(),
+            reason: "Under a locally classified cache, temp, or build path from scan index.".to_string(),
+            deletable: true,
+        })
+    })
+}
+
+pub enum UnclassifiedAiRouting {
+    Local(PreClassifiedEntry),
+    SendToAi {
+        cleanup_hint: Option<AiCleanupHint>,
+    },
+}
+
+/// Single gate for whether an unclassified file should be sent to the model.
+pub fn resolve_unclassified_for_ai(
+    path: &str,
+    size_bytes: u64,
+    kb: &OsKnowledgeBase,
+    indexed_local_prefixes: &[String],
+) -> UnclassifiedAiRouting {
+    let ctx = crate::coverage_funnel::CoverageFunnelContext::with_exclusion_prefixes(indexed_local_prefixes);
+    crate::coverage_funnel::resolve_unclassified_for_coverage(path, size_bytes, kb, &ctx)
+        .into_ai_routing(path, size_bytes)
+}
+
+/// Prefix paths from indexed Cache / Temp / BuildArtifact entries (scan Tier-1).
+pub fn indexed_local_exclusion_prefixes(
+    index: &crate::index::SnapshotIndex,
+) -> Vec<String> {
+    crate::coverage_funnel::coverage_local_exclusion_prefixes(index)
 }
 
 pub(crate) fn ai_cleanup_hint_for_path(path: &str) -> Option<AiCleanupHint> {
@@ -597,7 +822,7 @@ mod tests {
         let files: Vec<(String, u64)> = (0..10)
             .map(|i| (format!("/Users/x/dir_{i}/file.dat"), (i as u64 + 1) * 100))
             .collect();
-        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
             .cap_top_n(3)
             .build();
         assert_eq!(set.candidates.len(), 3);
@@ -614,7 +839,7 @@ mod tests {
             OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
                 .unwrap();
         let files = vec![("/Users/x/a.dat".to_string(), 10u64)];
-        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
             .cap_top_n(DEFAULT_CANDIDATE_CAP)
             .build();
         assert!(!set.truncated);
@@ -629,6 +854,29 @@ mod tests {
         let tree = leaf("/Users/x/Projects/old/weird_thing.xyz", 50000);
         let set = AiCandidateBuilder::from_tree(&tree, &HashSet::new(), &kb).build();
         assert!(set.estimated_input_tokens > 0);
+        assert!(set.estimated_byok_batch_input_tokens > 0);
+        assert_eq!(
+            set.estimated_input_tokens,
+            set.estimated_byok_batch_input_tokens
+        );
+    }
+
+    #[test]
+    fn byok_total_token_estimate_sums_batches() {
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let files: Vec<(String, u64)> = (0..50)
+            .map(|i| (format!("/Users/x/dir/file_{i}.dat"), 100))
+            .collect();
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
+            .build();
+        assert_eq!(set.candidates.len(), 50);
+        let batch_only = estimate_byok_batch_input_tokens(&set.candidates);
+        let total = estimate_byok_total_input_tokens(&set.candidates);
+        assert_eq!(set.estimated_byok_batch_input_tokens, batch_only);
+        assert_eq!(set.estimated_input_tokens, total);
+        assert!(total > batch_only);
     }
 
     #[test]
@@ -639,7 +887,7 @@ mod tests {
         let files: Vec<(String, u64)> = (0..25)
             .map(|i| (format!("/Users/x/big_dir/file_{i}.dat"), 100))
             .collect();
-        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
             .aggregate_by_dir(20)
             .build();
         assert_eq!(set.candidates.len(), 1);
@@ -647,6 +895,28 @@ mod tests {
         assert_eq!(set.candidates[0].child_count, Some(25));
         assert_eq!(set.candidates[0].size_bytes, 2500);
         assert_eq!(set.candidates[0].member_paths.len(), 25);
+    }
+
+    #[test]
+    fn resolve_routes_high_confidence_hints_to_local_only() {
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let path = "/Users/x/Library/Application Support/Cursor/CachedData/x";
+        match resolve_unclassified_for_ai(path, 10, &kb, &[]) {
+            UnclassifiedAiRouting::Local(entry) => {
+                assert_eq!(entry.category, EntryCategory::Cache);
+                assert!(entry.deletable);
+            }
+            UnclassifiedAiRouting::SendToAi { .. } => panic!("expected local routing"),
+        }
+        let ai_output = "/Users/x/project/llm-output/note.md";
+        match resolve_unclassified_for_ai(ai_output, 5, &kb, &[]) {
+            UnclassifiedAiRouting::SendToAi { cleanup_hint } => {
+                assert_eq!(cleanup_hint.unwrap().source, "ai_generated_output");
+            }
+            UnclassifiedAiRouting::Local(_) => panic!("ai output still needs model review"),
+        }
     }
 
     #[test]
@@ -665,30 +935,33 @@ mod tests {
             ("/Users/x/project/temp/draft.txt".to_string(), 50),
             ("/Users/x/Projects/codex/logs/app.log".to_string(), 60),
         ];
-        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
             .annotate_ai_cleanup_patterns()
             .build();
+
+        assert!(set.pre_classified.len() >= 3);
+        assert!(
+            set.pre_classified
+                .iter()
+                .any(|entry| entry.path.contains("CachedData"))
+        );
+        assert!(
+            set.pre_classified
+                .iter()
+                .any(|entry| entry.path.contains("volward-ai"))
+        );
+        assert!(
+            set.pre_classified
+                .iter()
+                .any(|entry| entry.path.contains("draft.txt")),
+            "project temp segment matches local cache/temp heuristics"
+        );
 
         let by_path = set
             .candidates
             .iter()
             .map(|candidate| (candidate.path.as_str(), candidate))
             .collect::<std::collections::HashMap<_, _>>();
-        assert_eq!(
-            by_path["/tmp/volward-ai/a.tmp"].cleanup_source.as_deref(),
-            Some("system_temp")
-        );
-        assert_eq!(by_path["/tmp/volward-ai/a.tmp"].retention_days, Some(10));
-        assert_eq!(
-            by_path["/Users/x/Library/Application Support/Cursor/CachedData/blob"]
-                .cleanup_source
-                .as_deref(),
-            Some("ai_tool_cache")
-        );
-        assert_eq!(
-            by_path["/Users/x/Library/Application Support/Cursor/CachedData/blob"].retention_days,
-            Some(30)
-        );
         assert_eq!(
             by_path["/Users/x/project/ai-output/summary.md"]
                 .cleanup_source
@@ -700,15 +973,15 @@ mod tests {
             Some(90)
         );
         assert_eq!(
-            by_path["/Users/x/project/README.md"].cleanup_source, None,
+            by_path.get("/Users/x/project/README.md").unwrap().cleanup_source, None,
             "plain markdown documents must not be treated as AI output"
         );
-        assert_eq!(
-            by_path["/Users/x/project/temp/draft.txt"].cleanup_source, None,
-            "ordinary project temp folders are not OS temp locations"
+        assert!(
+            by_path.contains_key("/Users/x/Projects/codex/logs/app.log"),
+            "codex log path still routed to AI"
         );
         assert_eq!(
-            by_path["/Users/x/Projects/codex/logs/app.log"].cleanup_source, None,
+            by_path.get("/Users/x/Projects/codex/logs/app.log").unwrap().cleanup_source, None,
             "ordinary project paths named after AI tools are not app cache roots"
         );
     }
@@ -726,7 +999,7 @@ mod tests {
             1,
         ));
 
-        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb)
+        let set = AiCandidateBuilder::from_unclassified_files(&files, &HashSet::new(), &kb, &[])
             .annotate_ai_cleanup_patterns()
             .aggregate_by_dir(20)
             .build();

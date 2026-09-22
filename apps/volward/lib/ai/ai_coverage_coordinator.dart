@@ -8,24 +8,57 @@ import '../analytics/analytics_events.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../snapshot_cache.dart';
 import '../volward_session.dart';
+import 'ai_coverage_job_controller.dart';
 import 'ai_coverage_service.dart';
 import 'ai_provider.dart';
 import 'byok_ai_provider.dart';
 import 'platform_ai_provider.dart';
 import 'ai_settings_store.dart';
 import 'coverage_desktop_notify.dart';
+import 'coverage_client_logic.dart';
 import 'coverage_job_state.dart';
 import 'coverage_lifecycle.dart';
+import 'coverage_models.dart';
 import 'coverage_notification_text.dart';
+import 'native_coverage_engine.dart';
 
 typedef CoverageDesktopNotify =
     Future<void> Function({required String title, required String body});
 
 typedef CoverageServiceFactory =
-    AiCoverageService? Function({
+    Future<AiCoverageService?> Function({
       required VolwardSession session,
       required AiProvider provider,
+      CoverageResumePlanLoader? resumePlanLoader,
+      String? catalogSnapshotId,
     });
+
+enum StartCoverageBlockedReason { capBelowEstimate }
+
+sealed class StartFullCoverageResult {
+  const StartFullCoverageResult();
+}
+
+final class StartFullCoverageStarted extends StartFullCoverageResult {
+  const StartFullCoverageStarted();
+}
+
+final class StartFullCoverageUnavailable extends StartFullCoverageResult {
+  const StartFullCoverageUnavailable();
+}
+
+final class StartCoverageBlocked extends StartFullCoverageResult {
+  const StartCoverageBlocked(this.reason);
+  final StartCoverageBlockedReason reason;
+
+  static const reasonCapBelowEstimate = StartCoverageBlocked(
+    StartCoverageBlockedReason.capBelowEstimate,
+  );
+}
+
+final class StartFullCoverageLocalOnly extends StartFullCoverageResult {
+  const StartFullCoverageLocalOnly();
+}
 
 /// Process-scoped owner for full-coverage jobs (Design §5.3).
 class AiCoverageCoordinator with WidgetsBindingObserver {
@@ -42,6 +75,24 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
            resolveProvider ?? AiSettingsStore.instance.resolveProvider;
 
   static final AiCoverageCoordinator instance = AiCoverageCoordinator._();
+
+  @visibleForTesting
+  static bool debugForceAvailable = false;
+
+  @visibleForTesting
+  static Future<CoveragePlanSummary?> Function(String snapshotId)?
+  debugPlanSummary;
+
+  @visibleForTesting
+  static bool debugTreatSnapshotReady = false;
+
+  /// When true, [startFullCoverage] fails if [planSummary] returns null (tests).
+  @visibleForTesting
+  static bool debugRequirePlanSummary = false;
+
+  @visibleForTesting
+  static Future<CoverageJobState?> Function(String snapshotId)?
+  debugLoadJobState;
 
   @visibleForTesting
   factory AiCoverageCoordinator.testing({
@@ -72,6 +123,8 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   Future<void> _prepareServiceTail = Future<void>.value();
   final _listeners = <void Function(CoverageJobState state)>{};
   CoverageJobState? _lastTrackedState;
+  String? _cachedPlanSnapshotId;
+  CoveragePlanSummary? _cachedPlanSummary;
 
   @Deprecated('Use addJobStateListener/removeJobStateListener')
   set listener(void Function(CoverageJobState state)? callback) {
@@ -91,7 +144,8 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
 
   bool get isAttached => _session != null;
 
-  bool get isAvailable => _session?.hasAiCoverageApi ?? false;
+  bool get isAvailable =>
+      debugForceAvailable || (_session?.hasAiCoverageApi ?? false);
 
   CoverageJobState? get currentState => _service?.state;
 
@@ -122,12 +176,94 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     }
   }
 
-  Future<CoverageJobState?> loadJobState(String snapshotId) =>
-      CoverageJobStateStore(SnapshotCache.cacheDir()).load(snapshotId);
+  Future<CoverageJobState?> loadJobState(String snapshotId) {
+    final override = debugLoadJobState;
+    if (override != null) return override(snapshotId);
+    return CoverageJobStateStore(SnapshotCache.cacheDir()).load(snapshotId);
+  }
 
-  Future<AiCoverageService?> prepareService(AiProvider provider) {
+  Future<CoveragePlanSummary?> planSummary(String snapshotId) async {
+    final override = debugPlanSummary;
+    if (override != null) {
+      return override(snapshotId);
+    }
+    if (_cachedPlanSnapshotId == snapshotId && _cachedPlanSummary != null) {
+      return _cachedPlanSummary;
+    }
+    final session = _session;
+    if (session == null || !_isCoverageApiReady(session)) return null;
+    final engine = session.coverageEngine;
+    if (engine == null) return null;
+    try {
+      final summary = session.hasAiTreeCoverageApi
+          ? await engine.buildTreePlan(snapshotId)
+          : await engine.buildPlan(snapshotId);
+      _cachedPlanSnapshotId = snapshotId;
+      _cachedPlanSummary = summary;
+      return summary;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void invalidatePlanSummaryCache() {
+    _cachedPlanSnapshotId = null;
+    _cachedPlanSummary = null;
+  }
+
+  Future<CoveragePlanSummary?> _tryResumePlanForJob(
+    String snapshotId,
+    CoverageJobState job,
+  ) async {
+    if (_cachedPlanSnapshotId == snapshotId && _cachedPlanSummary != null) {
+      final freshJob =
+          job.analyzedFiles == 0 &&
+          job.cursor == 0 &&
+          job.treeQueueCursor == 0 &&
+          job.tailQueueCursor == 0;
+      if (freshJob) {
+        return _cachedPlanSummary;
+      }
+    }
+    final fromMemory = coverageResumePlanFromMemoryCache(
+      snapshotId: snapshotId,
+      job: job,
+      cachedSnapshotId: _cachedPlanSnapshotId,
+      cachedSummary: _cachedPlanSummary,
+    );
+    if (fromMemory != null) return fromMemory;
+    final session = _session;
+    final engine = session?.coverageEngine;
+    if (engine is NativeCoverageEngine) {
+      return engine.tryReadMaterializedPlanSummary(
+        snapshotId,
+        tree: session!.hasAiTreeCoverageApi,
+      );
+    }
+    return null;
+  }
+
+  @visibleForTesting
+  void debugSetPlanSummaryCache(
+    String snapshotId,
+    CoveragePlanSummary summary,
+  ) {
+    _cachedPlanSnapshotId = snapshotId;
+    _cachedPlanSummary = summary;
+  }
+
+  @visibleForTesting
+  Future<CoveragePlanSummary?> debugTryResumePlanForJob(
+    String snapshotId,
+    CoverageJobState job,
+  ) => _tryResumePlanForJob(snapshotId, job);
+
+  Future<AiCoverageService?> prepareService(
+    AiProvider provider, {
+    String? catalogSnapshotId,
+  }) {
     final operation = _prepareServiceTail.then(
-      (_) => _prepareService(provider),
+      (_) => _prepareService(provider, catalogSnapshotId: catalogSnapshotId),
     );
     _prepareServiceTail = operation.then<void>(
       (_) {},
@@ -136,17 +272,31 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     return operation;
   }
 
-  Future<AiCoverageService?> _prepareService(AiProvider provider) async {
+  Future<AiCoverageService?> _prepareService(
+    AiProvider provider, {
+    String? catalogSnapshotId,
+  }) async {
     final session = _session;
     if (session == null || !_isCoverageApiReady(session)) return null;
     if (_service != null && _sameProvider(_activeProvider, provider)) {
-      if (!identical(provider, _activeProvider)) {
-        _disposeProvider(provider);
+      if (catalogSnapshotId != null &&
+          !_service!.isolateCatalogMatches(catalogSnapshotId)) {
+        await _releaseService();
+      } else {
+        if (!identical(provider, _activeProvider)) {
+          _disposeProvider(provider);
+        }
+        return _service;
       }
-      return _service;
+    } else if (_service != null) {
+      await _releaseService();
     }
-    await _releaseService();
-    _service = _serviceFactory(session: session, provider: provider);
+    _service = await _serviceFactory(
+      session: session,
+      provider: provider,
+      resumePlanLoader: _tryResumePlanForJob,
+      catalogSnapshotId: catalogSnapshotId,
+    );
     _activeProvider = provider;
     _statesSub?.cancel();
     final stream = _service?.states;
@@ -156,14 +306,58 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     return _service;
   }
 
-  Future<bool> startFullCoverage({
+  Future<StartFullCoverageResult> startFullCoverage({
     required String snapshotId,
     required AiMode mode,
     required AiProvider provider,
+    int? budgetCredits,
+    CoveragePlanSummary? preloadedPlanSummary,
   }) async {
-    final service = await prepareService(provider);
-    if (service == null) return false;
+    final service = await prepareService(
+      provider,
+      catalogSnapshotId: snapshotId,
+    );
+    if (service == null) return const StartFullCoverageUnavailable();
+    final summary =
+        preloadedPlanSummary ??
+        (_cachedPlanSnapshotId == snapshotId ? _cachedPlanSummary : null) ??
+        await planSummary(snapshotId);
+    final session = _session;
+    if (summary == null &&
+        (debugRequirePlanSummary ||
+            (session != null && session.hasAiTreeCoverageApi))) {
+      return const StartFullCoverageUnavailable();
+    }
+    if (summary != null &&
+        summary.planVersion >= 3 &&
+        !coveragePlanRequiresApi(summary)) {
+      return const StartFullCoverageLocalOnly();
+    }
     final budget = await AiSettingsStore.instance.coverageBudgetForMode(mode);
+    var budgetTokens = budget.tokens;
+    var resolvedBudgetCredits = budgetCredits ?? budget.credits;
+    if (mode == AiMode.platform) {
+      final estimatedCredits = coveragePrecheckEstimatedCredits(summary) ?? 0;
+      final configured = await AiSettingsStore.instance.coverageBudgetForMode(
+        AiMode.platform,
+      );
+      final fromEstimate = (estimatedCredits * 1.2).ceil();
+      if (fromEstimate > configured.credits) {
+        return StartCoverageBlocked.reasonCapBelowEstimate;
+      }
+      if (budgetCredits == null) {
+        var accountBalance = 0;
+        if (provider is PlatformAiProvider) {
+          await provider.queryQuota();
+          accountBalance = provider.lastCreditsRemaining ?? 0;
+        }
+        resolvedBudgetCredits = await AiSettingsStore.instance
+            .resolveRunBudgetCredits(
+              estimatedCredits: estimatedCredits,
+              accountBalance: accountBalance,
+            );
+      }
+    }
     unawaited(
       Analytics.instance.track(AnalyticsEvents.aiCoverageStarted, {
         'snapshot_id': snapshotId,
@@ -172,10 +366,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     );
     await service.start(
       snapshotId,
-      budgetTokens: budget.tokens,
-      budgetCredits: budget.credits,
+      budgetTokens: budgetTokens,
+      budgetCredits: resolvedBudgetCredits,
     );
-    return true;
+    return const StartFullCoverageStarted();
   }
 
   Future<void> ensureJobRunning(String snapshotId) async {
@@ -191,11 +385,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
         state.status == CoverageJobStatus.running ||
         (state.status == CoverageJobStatus.paused &&
             state.pauseReason == CoveragePauseReason.appQuit);
-    if (!shouldResume) return;
-    final provider = await _resolveProvider();
-    if (provider == null) return;
-    final service = await prepareService(provider);
+    if (!shouldResume || coverageJobNeedsClientLogicUpgrade(state)) return;
+    final service = await _serviceForSnapshot(snapshotId);
     if (service == null) return;
+    if (!await _waitForCoverageSnapshotReady(snapshotId)) return;
     await service.resume(snapshotId);
   }
 
@@ -227,12 +420,14 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   Future<void> resumeCoverage(String snapshotId) async {
     final service = await _serviceForSnapshot(snapshotId);
     if (service == null) return;
+    if (!await _waitForCoverageSnapshotReady(snapshotId)) return;
     await service.resume(snapshotId);
   }
 
   Future<bool> tryResumeCoverage(String snapshotId) async {
     final service = await _serviceForSnapshot(snapshotId);
     if (service == null) return false;
+    if (!await _waitForCoverageSnapshotReady(snapshotId)) return false;
     await service.resume(snapshotId);
     return true;
   }
@@ -270,6 +465,21 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     await _service?.markAppQuit();
   }
 
+  /// Waits until Rust has loaded the snapshot index for [snapshotId] (avoids
+  /// `error:no index or snapshot loaded` during early app startup).
+  Future<bool> _waitForCoverageSnapshotReady(String snapshotId) async {
+    if (debugTreatSnapshotReady) return true;
+    final session = _session;
+    if (session == null) return false;
+    if (session.isAiCoverageSnapshotReady(snapshotId)) return true;
+    return waitUntilReady(
+      isReady: () => session.isAiCoverageSnapshotReady(snapshotId),
+      addListener: session.addListener,
+      removeListener: session.removeListener,
+      timeout: const Duration(minutes: 5),
+    );
+  }
+
   Future<void> _tryAutoResumeSavedJobs() async {
     final session = _session;
     if (session == null) return;
@@ -303,14 +513,21 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
           state.status == CoverageJobStatus.running ||
           (state.status == CoverageJobStatus.paused &&
               state.pauseReason == CoveragePauseReason.appQuit);
-      if (!shouldResume) continue;
+      if (!shouldResume || coverageJobNeedsClientLogicUpgrade(state)) continue;
       resumable.add(state);
     }
     if (resumable.isEmpty) return;
     resumable.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
     final state = resumable.first;
-    final service = await prepareService(provider);
+    final service = await _serviceForSnapshot(state.snapshotId);
     if (service == null) return;
+    if (!await _waitForCoverageSnapshotReady(state.snapshotId)) {
+      debugPrint(
+        'AiCoverageCoordinator: defer auto-resume until index is loaded '
+        'for ${state.snapshotId}',
+      );
+      return;
+    }
     await service.resume(state.snapshotId);
   }
 
@@ -323,13 +540,18 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
           state.status == CoverageJobStatus.running) {
         return null;
       }
-      if (state?.snapshotId == snapshotId && _activeProvider != null) {
+      if (state?.snapshotId == snapshotId &&
+          _activeProvider != null &&
+          current.isolateCatalogMatches(snapshotId)) {
         return current;
+      }
+      if (!current.isolateCatalogMatches(snapshotId)) {
+        await _releaseService();
       }
     }
     final provider = await _resolveProvider();
     if (provider == null) return null;
-    return prepareService(provider);
+    return prepareService(provider, catalogSnapshotId: snapshotId);
   }
 
   Future<void> _releaseService() async {

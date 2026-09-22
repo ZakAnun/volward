@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_coverage_job_controller.dart';
+import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
+import 'package:volward/ai/coverage_analyze_batch.dart';
 import 'package:volward/ai/coverage_engine.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
@@ -22,6 +24,178 @@ void main() {
 
   tearDown(() async {
     await dir.delete(recursive: true);
+  });
+
+  test(
+    'v3 tree BFS drill_down then keep propagates with two API credits',
+    () async {
+      const parentPath = '/root/storage';
+      const childPath = '/root/storage/nested';
+      const parentNode = CoverageTreeNode(
+        path: parentPath,
+        sizeBytes: 500,
+        fileCount: 10,
+        subdirCount: 1,
+        role: 'storage_like',
+      );
+      const childNode = CoverageTreeNode(
+        path: childPath,
+        sizeBytes: 100,
+        fileCount: 2,
+        subdirCount: 0,
+        role: 'unknown',
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 'v3-tree',
+          planVersion: 3,
+          rootPath: '/root',
+          totalUnclassified: 3,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          seedNodeCount: 1,
+        ),
+        pages: const [],
+        treePagesByCursor: {
+          0: const CoverageTreePage(
+            snapshotId: 'v3-tree',
+            planVersion: 3,
+            nextCursor: null,
+            nodes: [parentNode],
+          ),
+        },
+        expandNodes: [childNode],
+        applyDirVerdictHandler: (_, verdict, __, ___) async {
+          if (verdict != 'keep') return const [];
+          return const [
+            CoverageVerdict(
+              path: '/root/storage/nested/a.dat',
+              verdict: 'keep',
+              confidence: 'high',
+              reason: 'propagated',
+              coverageSource: 'dir_propagate:$childPath',
+              sizeBytes: 10,
+            ),
+          ];
+        },
+      );
+      var treeBatches = 0;
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: (_) async => throw StateError('tail unused'),
+        preferTreeCoveragePlan: true,
+        analyzeTreeBatch: (nodes) async {
+          treeBatches++;
+          final node = nodes.single;
+          if (node.path == parentPath) {
+            return BatchOutcome(
+              usage: const BatchUsage(tokens: 1, credits: 1),
+              verdicts: [
+                CoverageVerdict(
+                  path: parentPath,
+                  verdict: 'drill_down',
+                  confidence: 'high',
+                  reason: 'need children',
+                  coverageSource: 'dir:$parentPath',
+                  sizeBytes: parentNode.sizeBytes,
+                ),
+              ],
+            );
+          }
+          expect(node.path, childPath);
+          return BatchOutcome(
+            usage: const BatchUsage(tokens: 1, credits: 1),
+            verdicts: [
+              CoverageVerdict(
+                path: childPath,
+                verdict: 'keep',
+                confidence: 'high',
+                reason: 'archive',
+                coverageSource: 'dir:$childPath',
+                sizeBytes: childNode.sizeBytes,
+              ),
+            ],
+          );
+        },
+      );
+
+      final done = await controller.start(
+        'v3-tree',
+        budgetTokens: 100000,
+        budgetCredits: 10,
+      );
+
+      expect(done.status, CoverageJobStatus.completed);
+      expect(done.usedCredits, 2);
+      expect(treeBatches, 2);
+      expect(done.treeNodesCompleted, 2);
+      final saved = await verdictStore.readAll('v3-tree');
+      expect(saved.any((v) => v.path == '/root/storage/nested/a.dat'), isTrue);
+    },
+  );
+
+  test('v3 start flushes local verdicts in chunks of 1000', () async {
+    final localVerdicts = List.generate(
+      2500,
+      (i) => CoverageVerdict(
+        path: '/local/$i',
+        verdict: i.isEven ? 'safe_to_remove' : 'keep',
+        confidence: 'high',
+        reason: 'funnel',
+        coverageSource: 'local:funnel',
+        sizeBytes: 1,
+      ),
+    );
+    var appendAllCalls = 0;
+    final trackingStore = _AppendCountingVerdictStore(
+      verdictStore,
+      onAppend: () => appendAllCalls++,
+    );
+    final engine = FakeCoverageEngine(
+      summary: const CoveragePlanSummary(
+        snapshotId: 'v3-local',
+        planVersion: 3,
+        rootPath: '/',
+        totalUnclassified: 0,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 0,
+        estimatedPages: 0,
+        seedNodeCount: 1,
+        localSafeFiles: 2000,
+        localKeepFiles: 500,
+      ),
+      pages: const [
+        CoveragePage(
+          snapshotId: 'v3-local',
+          planVersion: 3,
+          nextCursor: null,
+          rows: [],
+        ),
+      ],
+      localVerdictFetcher: (cursor) => cursor == 0 ? localVerdicts : const [],
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: trackingStore,
+      stateStore: stateStore,
+      analyzeBatch: (batch) async => successBatchOutcome(batch),
+    );
+
+    final done = await controller.start(
+      'v3-local',
+      budgetTokens: 100000,
+      budgetCredits: 0,
+    );
+
+    expect(done.status, CoverageJobStatus.completed);
+    expect(done.localResolvedFiles, 2500);
+    expect(appendAllCalls, 3);
+    expect(await verdictStore.readAll('v3-local'), hasLength(2500));
   });
 
   test('controller analyzes every row and completes', () async {
@@ -387,6 +561,200 @@ void main() {
     expect(done.analyzedFiles, 80);
     expect(maxConcurrent, 2);
   });
+
+  test('hard parse failure records paths and does not retry', () async {
+    var attempts = 0;
+    final controller = CoverageJobController(
+      engine: singleRowEngine('s-parse'),
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      analyzeBatch: (_) async {
+        attempts++;
+        throw CoverageAnalyzeException('empty verdict list', creditsCharged: 1);
+      },
+    );
+    final state = await controller.start(
+      's-parse',
+      budgetTokens: 0,
+      budgetCredits: 10,
+    );
+    expect(state.status, CoverageJobStatus.paused);
+    expect(state.pauseReason, CoveragePauseReason.failed);
+    expect(state.pauseDetail, CoveragePauseDetail.parse);
+    expect(state.failedBatchPaths, ['/f0']);
+    expect(state.creditsChargedNoVerdict, 1);
+    expect(attempts, 1);
+  });
+
+  test(
+    'partial missing verdict completes batch with incomplete source',
+    () async {
+      final rows = List.generate(
+        2,
+        (i) => CoverageRow(
+          rowIndex: i,
+          kind: CoverageRowKind.file,
+          path: '/partial$i',
+          sizeBytes: 1,
+        ),
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 's-partial',
+          planVersion: 1,
+          rootPath: '/',
+          totalUnclassified: 2,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 2,
+          estimatedPages: 1,
+        ),
+        pages: [
+          CoveragePage(
+            snapshotId: 's-partial',
+            planVersion: 1,
+            nextCursor: null,
+            rows: rows,
+          ),
+        ],
+      );
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: createCoverageAnalyzeBatch(
+          provider: _PartialMissingProvider(),
+        ),
+      );
+      final state = await controller.start(
+        's-partial',
+        budgetTokens: 0,
+        budgetCredits: 10,
+      );
+      expect(state.status, CoverageJobStatus.completed);
+      final saved = await verdictStore.readAll('s-partial');
+      expect(saved, hasLength(2));
+      expect(
+        saved.singleWhere((v) => v.path == '/partial1').coverageSource,
+        kIncompleteCoverageSource,
+      );
+    },
+  );
+
+  test('wave stops when platform wallet remaining hits zero', () async {
+    var wallet = 1;
+    final controller = CoverageJobController(
+      engine: twoBatchEngine('s-wallet'),
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      batchSize: 40,
+      maxInFlight: 4,
+      platformCreditsRemaining: () => wallet,
+      analyzeBatch: (_) async {
+        wallet--;
+        return successBatchOutcome();
+      },
+    );
+    final state = await controller.start(
+      's-wallet',
+      budgetTokens: 0,
+      budgetCredits: 100,
+    );
+    expect(state.usedCredits, 1);
+    expect(state.status, CoverageJobStatus.paused);
+    expect(state.pauseReason, CoveragePauseReason.budget);
+  });
+
+  test('unknown platform wallet does not cap wave sizing', () async {
+    final controller = CoverageJobController(
+      engine: twoBatchEngine('s-wallet-unknown'),
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      batchSize: 40,
+      maxInFlight: 4,
+      platformCreditsRemaining: () => null,
+      analyzeBatch: (_) async => successBatchOutcome(),
+    );
+    final state = await controller.start(
+      's-wallet-unknown',
+      budgetTokens: 0,
+      budgetCredits: 100,
+    );
+    expect(state.status, CoverageJobStatus.completed);
+    expect(state.usedCredits, 2);
+  });
+
+  test(
+    'wave respects remaining credit budget and does not overshoot',
+    () async {
+      final rows = List.generate(
+        160,
+        (i) => CoverageRow(
+          rowIndex: i,
+          kind: CoverageRowKind.file,
+          path: '/f$i',
+          sizeBytes: 1,
+        ),
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 's-budget-wave',
+          planVersion: 1,
+          rootPath: '/',
+          totalUnclassified: 160,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 160,
+          estimatedPages: 4,
+        ),
+        pages: [
+          CoveragePage(
+            snapshotId: 's-budget-wave',
+            planVersion: 1,
+            nextCursor: null,
+            rows: rows,
+          ),
+        ],
+      );
+      var batchesStarted = 0;
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        batchSize: 40,
+        maxInFlight: 4,
+        analyzeBatch: (batch) async {
+          batchesStarted++;
+          return BatchOutcome(
+            usage: const BatchUsage(tokens: 1, credits: 1),
+            verdicts: batch
+                .map(
+                  (r) => CoverageVerdict(
+                    path: r.path,
+                    verdict: 'keep',
+                    confidence: 'high',
+                    reason: 'test',
+                    coverageSource: 'file',
+                    sizeBytes: r.sizeBytes,
+                  ),
+                )
+                .toList(),
+          );
+        },
+      );
+
+      final paused = await controller.start(
+        's-budget-wave',
+        budgetTokens: 0,
+        budgetCredits: 2,
+      );
+
+      expect(paused.status, CoverageJobStatus.paused);
+      expect(paused.pauseReason, CoveragePauseReason.budget);
+      expect(paused.usedCredits, 2);
+      expect(batchesStarted, 2);
+    },
+  );
 
   test(
     'wave usage accumulation pauses when budget exceeded mid-page',
@@ -1063,6 +1431,74 @@ void main() {
     ]);
   });
 
+  test(
+    'resume continues from cursor without re-analyzing committed rows',
+    () async {
+      await stateStore.save(
+        const CoverageJobState(
+          snapshotId: 's-resume-cursor',
+          rootPath: '/',
+          planVersion: 1,
+          cursor: 40,
+          totalUnclassified: 80,
+          analyzedFiles: 40,
+          preClassifiedCount: 0,
+          status: CoverageJobStatus.paused,
+          pauseReason: CoveragePauseReason.manual,
+          usedTokens: 0,
+          usedCredits: 1,
+          budgetTokens: 0,
+          budgetCredits: 10,
+          updatedAtMs: 1,
+        ),
+      );
+      final rows = List.generate(
+        80,
+        (i) => CoverageRow(
+          rowIndex: i,
+          kind: CoverageRowKind.file,
+          path: '/f$i',
+          sizeBytes: 1,
+        ),
+      );
+      final analyzedStarts = <int>[];
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 's-resume-cursor',
+          planVersion: 1,
+          rootPath: '/',
+          totalUnclassified: 80,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 80,
+          estimatedPages: 2,
+        ),
+        pages: [
+          CoveragePage(
+            snapshotId: 's-resume-cursor',
+            planVersion: 1,
+            nextCursor: null,
+            rows: rows.sublist(40),
+          ),
+        ],
+      );
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: (batch) async {
+          analyzedStarts.add(batch.first.rowIndex);
+          return successBatchOutcome(batch);
+        },
+      );
+
+      await controller.resume('s-resume-cursor');
+
+      expect(analyzedStarts, [40]);
+      expect(analyzedStarts, isNot(contains(0)));
+    },
+  );
+
   test('resume hydrates paused job from store on fresh controller', () async {
     await stateStore.save(
       const CoverageJobState(
@@ -1216,6 +1652,160 @@ void main() {
     expect(resumed.status, CoverageJobStatus.completed);
     expect(resumed.budgetTokens, 200000);
     expect(resumed.analyzedFiles, 80);
+  });
+
+  test('resume reuses plan from loader without rebuilding', () async {
+    var buildPlanCalls = 0;
+    await stateStore.save(
+      const CoverageJobState(
+        snapshotId: 's-cached-plan',
+        rootPath: '/',
+        planVersion: 1,
+        cursor: 40,
+        totalUnclassified: 80,
+        analyzedFiles: 40,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.budget,
+        usedTokens: 50,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      ),
+    );
+    const cachedPlan = CoveragePlanSummary(
+      snapshotId: 's-cached-plan',
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 80,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 80,
+      estimatedPages: 2,
+    );
+    final rows = List.generate(
+      80,
+      (i) => CoverageRow(
+        rowIndex: i,
+        kind: CoverageRowKind.file,
+        path: '/f$i',
+        sizeBytes: 1,
+      ),
+    );
+    final engine = FakeCoverageEngine(
+      summary: cachedPlan,
+      pages: [
+        CoveragePage(
+          snapshotId: 's-cached-plan',
+          planVersion: 1,
+          nextCursor: null,
+          rows: rows.sublist(40),
+        ),
+      ],
+      onBuildPlan: () => buildPlanCalls++,
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      resumePlanLoader: (_, job) async => cachedPlan,
+      analyzeBatch: (batch) async => BatchOutcome(
+        usage: const BatchUsage(tokens: 1, credits: 0),
+        verdicts: batch
+            .map(
+              (r) => CoverageVerdict(
+                path: r.path,
+                verdict: 'keep',
+                confidence: 'high',
+                reason: 'test',
+                coverageSource: 'file',
+                sizeBytes: r.sizeBytes,
+              ),
+            )
+            .toList(),
+      ),
+    );
+
+    await controller.raiseBudgetAndResume(
+      snapshotId: 's-cached-plan',
+      budgetTokens: 500,
+      budgetCredits: 0,
+    );
+
+    expect(buildPlanCalls, 0);
+  });
+
+  test('tree progress resume reuses loader without buildTreePlan', () async {
+    var buildTreeCalls = 0;
+    const treePlan = CoveragePlanSummary(
+      snapshotId: 's-tree-cache',
+      planVersion: 3,
+      rootPath: '/root',
+      totalUnclassified: 2,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 0,
+      estimatedPages: 1,
+      seedNodeCount: 1,
+      tailFileCount: 0,
+      localSafeFiles: 0,
+      localKeepFiles: 0,
+      tailFiles: 0,
+      treePendingFiles: 0,
+      estimatedTreeCredits: 1,
+      estimatedTailCredits: 0,
+    );
+    await stateStore.save(
+      const CoverageJobState(
+        snapshotId: 's-tree-cache',
+        rootPath: '/root',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 2,
+        analyzedFiles: 1,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.budget,
+        usedTokens: 50,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+        treeQueueCursor: 1,
+        localResolvedFiles: 1,
+      ),
+    );
+    final engine = FakeCoverageEngine(
+      summary: treePlan,
+      pages: const [],
+      treeSummary: treePlan,
+      onBuildTreePlan: () => buildTreeCalls++,
+      treePagesByCursor: const {
+        1: CoverageTreePage(
+          snapshotId: 's-tree-cache',
+          planVersion: 3,
+          nextCursor: null,
+          nodes: [],
+        ),
+      },
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      preferTreeCoveragePlan: true,
+      resumePlanLoader: (_, job) async => treePlan,
+      analyzeBatch: (_) async => throw StateError('unused'),
+      analyzeTreeBatch: (_) async => const BatchOutcome(
+        usage: BatchUsage(tokens: 0, credits: 0),
+        verdicts: [],
+      ),
+    );
+
+    await controller.resume('s-tree-cache');
+
+    expect(buildTreeCalls, 0);
   });
 
   test('cancel hydrates paused job from store on fresh controller', () async {
@@ -1378,3 +1968,131 @@ void main() {
     expect(failed.pauseReason, CoveragePauseReason.failed);
   });
 }
+
+class _PartialMissingProvider implements AiProvider {
+  @override
+  Future<AnalyzeResult> analyze(
+    List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  }) async {
+    return AnalyzeResult(
+      verdicts: [
+        AiVerdict(
+          path: candidates.first.path,
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'ok',
+        ),
+      ],
+      credits: 1,
+    );
+  }
+
+  @override
+  Future<AiQuotaInfo?> queryQuota() async => null;
+}
+
+class _AppendCountingVerdictStore extends CoverageVerdictStore {
+  _AppendCountingVerdictStore(this.inner, {required this.onAppend})
+    : super(inner.directory);
+
+  final CoverageVerdictStore inner;
+  final void Function() onAppend;
+
+  @override
+  Future<void> appendAll(
+    String snapshotId,
+    List<CoverageVerdict> verdicts,
+  ) async {
+    if (verdicts.isNotEmpty) onAppend();
+    return inner.appendAll(snapshotId, verdicts);
+  }
+
+  @override
+  Future<void> clear(String snapshotId) => inner.clear(snapshotId);
+}
+
+FakeCoverageEngine singleRowEngine(String snapshotId) {
+  return FakeCoverageEngine(
+    summary: CoveragePlanSummary(
+      snapshotId: snapshotId,
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 1,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 1,
+      estimatedPages: 1,
+    ),
+    pages: [
+      CoveragePage(
+        snapshotId: snapshotId,
+        planVersion: 1,
+        nextCursor: null,
+        rows: const [
+          CoverageRow(
+            rowIndex: 0,
+            kind: CoverageRowKind.file,
+            path: '/f0',
+            sizeBytes: 1,
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+FakeCoverageEngine twoBatchEngine(String snapshotId) {
+  final rows = List.generate(
+    80,
+    (i) => CoverageRow(
+      rowIndex: i,
+      kind: CoverageRowKind.file,
+      path: '/f$i',
+      sizeBytes: 1,
+    ),
+  );
+  return FakeCoverageEngine(
+    summary: CoveragePlanSummary(
+      snapshotId: snapshotId,
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 80,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 80,
+      estimatedPages: 2,
+    ),
+    pages: [
+      CoveragePage(
+        snapshotId: snapshotId,
+        planVersion: 1,
+        nextCursor: 40,
+        rows: rows.sublist(0, 40),
+      ),
+      CoveragePage(
+        snapshotId: snapshotId,
+        planVersion: 1,
+        nextCursor: null,
+        rows: rows.sublist(40),
+      ),
+    ],
+  );
+}
+
+BatchOutcome successBatchOutcome([List<CoverageRow> rows = const []]) =>
+    BatchOutcome(
+      usage: const BatchUsage(tokens: 1, credits: 1),
+      verdicts: rows
+          .map(
+            (r) => CoverageVerdict(
+              path: r.path,
+              verdict: 'keep',
+              confidence: 'high',
+              reason: 'test',
+              coverageSource: 'file',
+              sizeBytes: r.sizeBytes,
+            ),
+          )
+          .toList(),
+    );

@@ -71,7 +71,7 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  http.Response _jsonResponse(Object body, {int status = 200}) {
+  http.Response jsonResponse(Object body, {int status = 200}) {
     return http.Response.bytes(
       utf8.encode(jsonEncode(body)),
       status,
@@ -83,17 +83,17 @@ void main() {
     return MockClient((req) async {
       final path = req.url.path;
       if (path.contains('/billing/packs')) {
-        return _jsonResponse(packsJson);
+        return jsonResponse(packsJson);
       }
       if (path.contains('/auth/me')) {
-        return _jsonResponse({
+        return jsonResponse({
           'user_id': 'u1',
           'email': 'user@example.com',
           'credits': 10,
         });
       }
       if (path.contains('/auth/refresh')) {
-        return _jsonResponse({
+        return jsonResponse({
           'token': validToken,
           'user_id': 'u1',
           'email': 'user@example.com',
@@ -101,10 +101,10 @@ void main() {
         });
       }
       if (path.contains('/billing/checkout')) {
-        return _jsonResponse({'checkout_url': checkoutUrl});
+        return jsonResponse({'checkout_url': checkoutUrl});
       }
       if (path.contains('/ai/quota')) {
-        return _jsonResponse({'credits_remaining': 10, 'credits_total': 10});
+        return jsonResponse({'credits_remaining': 10, 'credits_total': 10});
       }
       return http.Response('not found: ${req.url}', 404);
     });

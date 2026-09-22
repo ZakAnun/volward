@@ -116,6 +116,7 @@ message IndexDirectoryRecord {
   uint64 category_mask = 6;
   uint64 deletable_category_mask = 7;
   uint64 deletable_file_count = 8;
+  uint32 pruned_child_flags = 9;
 }
 
 message IndexEntryRecord {

@@ -5,7 +5,7 @@ import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 
-class _FakeContract implements AiContract {
+class _FakeContract extends AiContract {
   @override
   int batchSize() => 40;
 

@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::ai_candidates::{
+    indexed_local_exclusion_prefixes, resolve_unclassified_for_ai, UnclassifiedAiRouting,
+};
 use crate::index::SnapshotIndex;
 use crate::model::ScanStats;
 use crate::os_knowledge::OsKnowledgeBase;
@@ -29,7 +32,7 @@ pub struct AiCoverageRow {
     pub retention_days: Option<u32>,
 }
 
-pub const AI_COVERAGE_PLAN_VERSION: u64 = 1;
+pub const AI_COVERAGE_PLAN_VERSION: u64 = 2;
 
 #[derive(Debug, Clone)]
 pub struct AiCoveragePlan {
@@ -69,15 +72,19 @@ fn group_key_for_path(path: &str) -> Option<String> {
 fn group_key_and_hint(path: &str) -> (Option<String>, Option<crate::ai_candidates::AiCleanupHint>) {
     let normalized = path.replace('\\', "/");
     let hint = crate::ai_candidates::ai_cleanup_hint_for_path(&normalized);
-    let group = match &hint {
-        Some(h) => match h.source {
-            "system_temp" => parent_dir(&normalized),
-            "ai_tool_cache" => crate::ai_candidates::ai_tool_group_root(&normalized),
-            _ => None,
-        },
-        None => None,
-    };
+    let group = hint.and_then(|h| group_key_for_hint(&normalized, h));
     (group, hint)
+}
+
+fn group_key_for_hint(
+    normalized: &str,
+    hint: crate::ai_candidates::AiCleanupHint,
+) -> Option<String> {
+    match hint.source {
+        "system_temp" => parent_dir(normalized),
+        "ai_tool_cache" => crate::ai_candidates::ai_tool_group_root(normalized),
+        _ => None,
+    }
 }
 
 fn parent_dir(path: &str) -> Option<String> {
@@ -94,6 +101,7 @@ fn parent_dir(path: &str) -> Option<String> {
 
 pub fn build_ai_coverage_plan(index: &SnapshotIndex, kb: &OsKnowledgeBase) -> AiCoveragePlan {
     let classified = index.classified_paths();
+    let indexed_prefixes = indexed_local_exclusion_prefixes(index);
     let mut group_sizes: HashMap<String, u64> = HashMap::new();
     let mut group_counts: HashMap<String, u64> = HashMap::new();
     let mut group_hints: HashMap<String, crate::ai_candidates::AiCleanupHint> = HashMap::new();
@@ -105,19 +113,25 @@ pub fn build_ai_coverage_plan(index: &SnapshotIndex, kb: &OsKnowledgeBase) -> Ai
         if classified.contains(&path) {
             continue;
         }
-        if kb.classify_path(&path).is_some() {
-            pre_classified_count += 1;
-            continue;
-        }
-        let (group, hint) = group_key_and_hint(&path);
-        if let Some(group) = group {
-            *group_sizes.entry(group.clone()).or_insert(0) += size_bytes;
-            *group_counts.entry(group.clone()).or_insert(0) += 1;
-            if let Some(hint) = hint {
-                group_hints.entry(group).or_insert(hint);
+        match resolve_unclassified_for_ai(&path, size_bytes, kb, &indexed_prefixes) {
+            UnclassifiedAiRouting::Local(_) => {
+                pre_classified_count += 1;
+                continue;
             }
-        } else {
-            file_rows.push((path, size_bytes, hint));
+            UnclassifiedAiRouting::SendToAi { cleanup_hint } => {
+                let (group, hint) = cleanup_hint
+                    .map(|h| (group_key_for_hint(&path, h), Some(h)))
+                    .unwrap_or_else(|| group_key_and_hint(&path));
+                if let Some(group) = group {
+                    *group_sizes.entry(group.clone()).or_insert(0) += size_bytes;
+                    *group_counts.entry(group.clone()).or_insert(0) += 1;
+                    if let Some(hint) = hint {
+                        group_hints.entry(group).or_insert(hint);
+                    }
+                } else {
+                    file_rows.push((path, size_bytes, hint));
+                }
+            }
         }
     }
 
@@ -222,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_covers_every_unclassified_file_exactly_once() {
+    fn plan_covers_every_ai_routed_file_exactly_once() {
         let root = "/Users/x";
         let files = [
             ("/Users/x/one.bin", 100u64),
@@ -233,22 +247,14 @@ mod tests {
         let index = build_index(root, &files);
         let plan = build_ai_coverage_plan(&index, &kb_empty());
 
-        assert_eq!(plan.total_unclassified, 4);
-        assert_eq!(plan.group_rows, 1);
+        assert_eq!(plan.pre_classified_count, 2);
+        assert_eq!(plan.total_unclassified, 2);
         assert_eq!(plan.file_rows, 2);
-        assert_eq!(plan.rows.len(), 3);
-        let group = plan
-            .rows
-            .iter()
-            .find(|r| r.kind == AiCoverageRowKind::Group)
-            .expect("cursor group");
-        assert_eq!(group.path, "/Users/x/Library/Caches/cursor");
-        assert_eq!(group.size_bytes, 30);
-        assert_eq!(group.member_count, Some(2));
+        assert_eq!(plan.rows.len(), 2);
     }
 
     #[test]
-    fn plan_attaches_cleanup_hints_to_group_and_ai_output_rows() {
+    fn plan_skips_high_confidence_hints_and_keeps_ai_output_for_model() {
         let root = "/Users/x";
         let files = [
             (
@@ -261,14 +267,11 @@ mod tests {
         let index = build_index(root, &files);
         let plan = build_ai_coverage_plan(&index, &kb_empty());
 
-        let group = plan
-            .rows
-            .iter()
-            .find(|r| r.kind == AiCoverageRowKind::Group)
-            .expect("cursor group");
-        assert_eq!(group.cleanup_source, Some("ai_tool_cache"));
-        assert_eq!(group.retention_days, Some(30));
-        assert!(group.cleanup_hint.is_some());
+        assert_eq!(plan.pre_classified_count, 1);
+        assert!(
+            !plan.rows.iter().any(|r| r.path.contains("CachedData")),
+            "ai_tool_cache paths are local-only"
+        );
 
         let ai_output = plan
             .rows
@@ -316,16 +319,9 @@ mod tests {
         ];
         let index = build_index(root, &files);
         let plan = build_ai_coverage_plan(&index, &kb_empty());
+        assert_eq!(plan.pre_classified_count, 2);
         let paths: Vec<&str> = plan.rows.iter().map(|r| r.path.as_str()).collect();
-        assert_eq!(
-            paths,
-            vec![
-                "/Users/x/Library/Caches/cursor",
-                "/Users/x/b.bin",
-                "/Users/x/a.bin",
-            ]
-        );
-        assert_eq!(plan.rows[0].member_count, Some(2));
+        assert_eq!(paths, vec!["/Users/x/b.bin", "/Users/x/a.bin"]);
     }
 
     #[test]

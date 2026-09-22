@@ -543,6 +543,9 @@ impl<'a> ScanOrchestrator<'a> {
                     dir_fingerprints.insert(e.path.clone(), fingerprint);
                 }
                 index_builder.ensure_dir(&e.path);
+                if e.pruned_child_flags != 0 {
+                    index_builder.or_pruned_child_flags(&e.path, e.pruned_child_flags);
+                }
             } else {
                 stats.files_seen += 1;
                 index_builder.record_file_size(&e.path, e.size_bytes);
@@ -875,8 +878,7 @@ mod tests {
     /// JSON shim so scan tests can round-trip index caches without linking prost.
     fn ensure_test_index_pb_hooks() {
         use crate::manifest::{
-            register_index_pb_decoder, register_index_pb_writer, IndexPbDecoderFn,
-            IndexPbWriterFn,
+            register_index_pb_decoder, register_index_pb_writer, IndexPbDecoderFn, IndexPbWriterFn,
         };
 
         TEST_INDEX_PB_HOOKS.call_once(|| {
@@ -1008,6 +1010,7 @@ mod tests {
                 max_child_mtime_secs: 0,
             }),
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
 
         for i in 0..file_count {
@@ -1019,6 +1022,7 @@ mod tests {
                 size_bytes: 1,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             });
         }
 
@@ -1142,6 +1146,7 @@ mod tests {
                 max_child_mtime_secs: 1_700_000_101,
             }),
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: cache_file.to_string_lossy().to_string(),
@@ -1149,6 +1154,7 @@ mod tests {
             size_bytes: 6,
             dir_fingerprint: None,
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: temp.path().join("Documents").to_string_lossy().to_string(),
@@ -1156,6 +1162,7 @@ mod tests {
             size_bytes: 0,
             dir_fingerprint: None,
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: unknown_file.to_string_lossy().to_string(),
@@ -1163,6 +1170,7 @@ mod tests {
             size_bytes: 17,
             dir_fingerprint: None,
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
 
         let cancel = AtomicBool::new(false);
@@ -1216,6 +1224,7 @@ mod tests {
             size_bytes: 0,
             dir_fingerprint: None,
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
         platform.entries.push(crate::model::RawFsEntry {
             path: cache_file.to_string_lossy().to_string(),
@@ -1223,6 +1232,7 @@ mod tests {
             size_bytes: 6,
             dir_fingerprint: None,
             modified_at_ms: None,
+            pruned_child_flags: 0,
         });
 
         let manifest_dir = temp.path().join("manifests");
@@ -1321,6 +1331,7 @@ mod tests {
                 size_bytes: 0,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
             crate::model::RawFsEntry {
                 path: nested_dir.clone(),
@@ -1332,6 +1343,7 @@ mod tests {
                     max_child_mtime_secs: 2,
                 }),
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
             crate::model::RawFsEntry {
                 path: first_file,
@@ -1339,6 +1351,7 @@ mod tests {
                 size_bytes: 1,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
             crate::model::RawFsEntry {
                 path: second_file,
@@ -1346,6 +1359,7 @@ mod tests {
                 size_bytes: 1,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
         ];
         platform.cancel_after_entries = Some(3);
@@ -1482,6 +1496,7 @@ mod tests {
                 size_bytes: 0,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
             crate::model::RawFsEntry {
                 path: cache_dir.clone(),
@@ -1493,6 +1508,7 @@ mod tests {
                     max_child_mtime_secs: 2,
                 }),
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
             crate::model::RawFsEntry {
                 path: cache_file,
@@ -1500,6 +1516,7 @@ mod tests {
                 size_bytes: 6,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
             crate::model::RawFsEntry {
                 path: temp.path().join("other.txt").to_string_lossy().to_string(),
@@ -1507,6 +1524,7 @@ mod tests {
                 size_bytes: 1,
                 dir_fingerprint: None,
                 modified_at_ms: None,
+                pruned_child_flags: 0,
             },
         ];
         platform.cancel_after_entries = Some(3);

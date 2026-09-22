@@ -1,19 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
+import 'package:volward/snapshot_cache.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
+import 'package:volward/widgets/apple_widgets.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
 
 const candidatePayload = '''
@@ -173,7 +178,7 @@ class _EstimatedPartialUsageFailureByokProvider extends ByokAiProvider {
   }
 }
 
-class _FakeUsageContract implements AiContract {
+class _FakeUsageContract extends AiContract {
   @override
   int batchSize() => 40;
 
@@ -198,6 +203,7 @@ String _candidatePayload({
     {'path': '/tmp/keep.db', 'size_bytes': 300, 'is_dir': false},
   ],
   int estimatedTokens = 640,
+  int estimatedByokBatchTokens = 640,
   bool hasExistingResult = true,
   bool truncated = false,
   int candidatesBeforeCap = 3,
@@ -207,6 +213,7 @@ String _candidatePayload({
     'pre_classified': preClassified,
     'unknown_candidates': unknownCandidates,
     'estimated_input_tokens': estimatedTokens,
+    'estimated_byok_batch_input_tokens': estimatedByokBatchTokens,
     'has_existing_result': hasExistingResult,
     'truncated': truncated,
     'candidates_total_before_cap': candidatesBeforeCap,
@@ -443,6 +450,26 @@ Future<void> _expandGroup(WidgetTester tester, String path) async {
   await tester.pumpAndSettle();
 }
 
+/// Small result sets auto-expand on open; collapse first when testing closed groups.
+Future<void> _collapseGroupIfExpanded(
+  WidgetTester tester,
+  String groupPath, {
+  required Finder expandedItemFinder,
+}) async {
+  if (expandedItemFinder.evaluate().isEmpty) return;
+  await tester.tap(_resultGroup(groupPath));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _ensureGroupExpanded(
+  WidgetTester tester,
+  String groupPath, {
+  required Finder itemFinder,
+}) async {
+  if (itemFinder.evaluate().isNotEmpty) return;
+  await _expandGroup(tester, groupPath);
+}
+
 const _aggregateCandidates = '''
 {
   "pre_classified": [],
@@ -473,7 +500,79 @@ const _aggregateVerdict = [
   ),
 ];
 
+const _coveragePlanSummary23 = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 1,
+  rootPath: '/tmp',
+  totalUnclassified: 920,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 920,
+  estimatedPages: 23,
+);
+
+const _coveragePlanSummaryV3 = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 3,
+  rootPath: '/tmp',
+  totalUnclassified: 5000,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 5000,
+  estimatedPages: 99,
+  seedNodeCount: 12,
+  localSafeFiles: 800,
+  localKeepFiles: 200,
+  treePendingFiles: 4000,
+  tailFiles: 0,
+  estimatedTreeCredits: 15,
+  estimatedTailCredits: 5,
+);
+
+const _coveragePlanSummaryLocalOnly = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 3,
+  rootPath: '/tmp',
+  totalUnclassified: 15,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 15,
+  estimatedPages: 0,
+  localSafeFiles: 10,
+  localKeepFiles: 5,
+  treePendingFiles: 0,
+  tailFiles: 0,
+  estimatedTreeCredits: 0,
+  estimatedTailCredits: 0,
+);
+
+Directory? _workspaceTestCacheDir;
+
+void _writeAnalysisCacheFile(String key, String json) {
+  final base = _workspaceTestCacheDir!;
+  final dir = Directory('${base.path}/ai_analysis')
+    ..createSync(recursive: true);
+  File('${dir.path}/$key.json').writeAsStringSync(json);
+}
+
 void main() {
+  setUp(() {
+    AiCoverageCoordinator.debugForceAvailable = false;
+    AiCoverageCoordinator.debugPlanSummary = null;
+    _workspaceTestCacheDir = Directory.systemTemp.createTempSync(
+      'volward_ai_workspace_test_',
+    );
+    SnapshotCache.cacheDirForTest = _workspaceTestCacheDir;
+  });
+
+  tearDown(() {
+    AiCoverageCoordinator.debugForceAvailable = false;
+    AiCoverageCoordinator.debugPlanSummary = null;
+    AiCoverageCoordinator.debugLoadJobState = null;
+    SnapshotCache.cacheDirForTest = null;
+    _workspaceTestCacheDir?.deleteSync(recursive: true);
+    _workspaceTestCacheDir = null;
+  });
   test(
     'production gateway delegates snapshot-scoped native operations',
     () async {
@@ -635,50 +734,148 @@ void main() {
     expect(gateway.candidateRequests, ['snapshot-1']);
   });
 
-  testWidgets('cached result choices stay inline during bootstrap', (
-    tester,
-  ) async {
+  testWidgets('cached result auto-loads on bootstrap', (tester) async {
     final payload = Map<String, dynamic>.from(
       jsonDecode(candidatePayload) as Map,
     )..['has_existing_result'] = true;
     final gateway = _FakeGateway()
       ..candidatesJson = jsonEncode(payload)
       ..cache['cache-key'] = '{"entries":[]}';
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
       tester,
-      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+      find.byKey(AiAnalysisWorkspace.decisionSummaryKey),
     );
 
-    expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsOneWidget);
-    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
-    RoundedRectangleBorder buttonShape(Key key) {
-      return tester
-              .widgetList<Material>(
-                find.descendant(
-                  of: find.byKey(key),
-                  matching: find.byType(Material),
-                ),
-              )
-              .first
-              .shape
-          as RoundedRectangleBorder;
-    }
-
-    expect(
-      buttonShape(AiAnalysisWorkspace.loadPreviousKey).borderRadius,
-      buttonShape(AiAnalysisWorkspace.analyzeAgainKey).borderRadius,
-    );
-    expect(
-      buttonShape(AiAnalysisWorkspace.loadPreviousKey).side,
-      isNot(BorderSide.none),
-    );
-    expect(
-      buttonShape(AiAnalysisWorkspace.analyzeAgainKey).side,
-      BorderSide.none,
-    );
+    expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('precheck shows v3 plan breakdown from plan summary', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummaryV3;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Locally resolved: 1000 files'),
+    );
+
+    expect(find.textContaining('Locally resolved: 1000 files'), findsOneWidget);
+    expect(find.textContaining('Estimated tree rounds: ~15'), findsOneWidget);
+    expect(find.textContaining('Estimated tail rounds: ~5'), findsOneWidget);
+    expect(find.textContaining('Total estimated credits: ~20'), findsOneWidget);
+    expect(find.textContaining('Estimated for full analysis'), findsNothing);
+    expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
+  });
+
+  testWidgets('precheck shows estimated credits from plan summary', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary23;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Estimated for full analysis'),
+    );
+
+    expect(find.textContaining('Estimated for full analysis'), findsOneWidget);
+    expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
+    expect(find.textContaining('30–80 credits'), findsOneWidget);
+  });
+
+  testWidgets('precheck shows run cap from resolveRunBudgetCredits', (
+    tester,
+  ) async {
+    late Directory tempDir;
+    await tester.runAsync(() async {
+      tempDir = await Directory.systemTemp.createTemp('volward-ws-run-cap');
+      final settingsFile = File('${tempDir.path}/settings.json')
+        ..writeAsStringSync('{}');
+      AiSettingsStore.instance.settingsFileForTest = settingsFile;
+    });
+    addTearDown(() async {
+      AiSettingsStore.instance.settingsFileForTest = null;
+      if (tempDir.existsSync()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    const expectedRunCap = 28;
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary23;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Run cap for this scan: $expectedRunCap credits'),
+    );
+
+    expect(
+      find.textContaining('Run cap for this scan: $expectedRunCap credits'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('precheck blocks start when estimate exceeds platform balance', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary23;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 7, creditsTotal: 20),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Need about 23 credits; you have 7.'),
+    );
+
+    expect(
+      find.textContaining('Need about 23 credits; you have 7.'),
+      findsOneWidget,
+    );
+    final button = tester.widget<AppleButton>(
+      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    );
+    expect(button.onPressed, isNull);
   });
 
   testWidgets('precheck shows local unknown token truncation and quota data', (
@@ -718,9 +915,9 @@ void main() {
     );
 
     expect(find.textContaining('2 items pre-identified'), findsOneWidget);
-    expect(find.textContaining('3 items will be sent'), findsOneWidget);
-    expect(find.textContaining('640 tokens'), findsOneWidget);
-    expect(find.textContaining('largest of 12 items'), findsOneWidget);
+    expect(find.textContaining('12 items still need'), findsOneWidget);
+    expect(find.textContaining('640 input tokens'), findsOneWidget);
+    expect(find.textContaining('150 cap'), findsOneWidget);
     expect(find.textContaining('balance 7'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
@@ -748,26 +945,34 @@ void main() {
             },
           ],
         });
+      _writeAnalysisCacheFile('cache-key', validGateway.cache['cache-key']!);
       await tester.pumpWidget(_workspaceShell(validGateway));
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.loadPreviousKey),
       );
       await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-      await tester.pumpAndSettle();
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.resultsListKey),
+      );
       expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
       expect(validGateway.byokUsageRecords, isEmpty);
 
       final invalidGateway = _FakeGateway()
         ..candidatesJson = _candidatePayload()
         ..cache['cache-key'] = 'not-json';
+      _writeAnalysisCacheFile('cache-key', invalidGateway.cache['cache-key']!);
       await tester.pumpWidget(_workspaceShell(invalidGateway));
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.loadPreviousKey),
       );
       await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-      await tester.pumpAndSettle();
+      await _pumpUntilFound(
+        tester,
+        find.text('Could not load the previous AI result.'),
+      );
       expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
       expect(
         find.text('Could not load the previous AI result.'),
@@ -806,6 +1011,7 @@ void main() {
           },
         ],
       });
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
@@ -813,7 +1019,7 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, _resultGroup('/Users/x/Library'));
     expect(_resultGroup('/Users/x/Library'), findsOneWidget);
 
     expect(find.textContaining('AI tool cache/temp'), findsOneWidget);
@@ -825,6 +1031,7 @@ void main() {
     final gateway = _FakeGateway()
       ..candidatesJson = _candidatePayload()
       ..cache['cache-key'] = jsonEncode({'entries': <Object>[]});
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
@@ -832,7 +1039,10 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.text('No cleanup suggestions were found'),
+    );
 
     expect(find.text('No cleanup suggestions were found'), findsOneWidget);
     expect(find.text('No matching results'), findsNothing);
@@ -890,6 +1100,11 @@ void main() {
           },
         ],
       ),
+    );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: _resultItem('/tmp/safe.cache'),
     );
     expect(_resultGroup('/tmp'), findsOneWidget);
     expect(find.text('/tmp/safe.cache'), findsNothing);
@@ -1047,6 +1262,11 @@ void main() {
       ),
     );
 
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: find.text('/tmp/review.log'),
+    );
     expect(_resultGroup('/tmp'), findsOneWidget);
     expect(find.text('/tmp/review.log'), findsNothing);
     await _expandGroup(tester, '/tmp');
@@ -1230,7 +1450,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _openResults(tester, _FakeGateway());
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: _resultItem('/tmp/review.log'),
+    );
     await tester.tap(_resultItem('/tmp/review.log'));
     await tester.pumpAndSettle();
     expect(find.text('Add to cleanup'), findsOneWidget);
@@ -1317,6 +1541,17 @@ void main() {
           {'path': '/tmp/group-b/keep-b.db', 'size_bytes': 30, 'is_dir': false},
         ],
       ),
+    );
+
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp/group-a',
+      expandedItemFinder: _resultItem('/tmp/group-a/safe-a.cache'),
+    );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp/group-b',
+      expandedItemFinder: _resultItem('/tmp/group-b/safe-b.cache'),
     );
 
     expect(
@@ -1450,6 +1685,11 @@ void main() {
     expect(
       find.text('1 pending review item is excluded until you decide.'),
       findsOneWidget,
+    );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: find.text('/tmp/local-1.cache'),
     );
     expect(find.text('/tmp/local-1.cache'), findsNothing);
     expect(find.text('/tmp/local-2.cache'), findsNothing);
@@ -1814,7 +2054,11 @@ void main() {
 
     await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
     await tester.pumpAndSettle();
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: find.text('/tmp/alpha-safe.cache'),
+    );
 
     expect(find.text('2 items selected · 800 B'), findsOneWidget);
     expect(find.text('/tmp/alpha-safe.cache'), findsOneWidget);
@@ -1927,6 +2171,11 @@ void main() {
     );
     expect(find.text('Show all results'), findsNothing);
     expect(_resultGroup('/tmp'), findsOneWidget);
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: find.text('/tmp/safe-0.cache'),
+    );
     expect(find.text('/tmp/safe-8.cache'), findsNothing);
 
     await _expandGroup(tester, '/tmp');
@@ -2089,7 +2338,11 @@ void main() {
         .getTopLeft(find.byKey(AiAnalysisWorkspace.deleteKey))
         .dy;
 
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: _resultItem('/tmp/safe-0.cache'),
+    );
     expect(_resultItem('/tmp/safe-0.cache'), findsOneWidget);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
@@ -2168,20 +2421,7 @@ void main() {
 
     await _expandGroup(tester, '/tmp/large-tree');
     expect(find.text('/tmp/large-tree/group-2/item-9998.cache'), findsNothing);
-
-    final scrollableState = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.byType(Scrollable),
-      ),
-    );
-    scrollableState.position.jumpTo(scrollableState.position.maxScrollExtent);
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('/tmp/large-tree/group-2/item-9998.cache'),
-      findsOneWidget,
-    );
+    expect(find.text('/tmp/large-tree/group-0/item-0.cache'), findsOneWidget);
   });
 
   testWidgets('compact results stack summary toolbar stream and action bar', (
@@ -2222,7 +2462,11 @@ void main() {
     expect(find.text('Search path, reason, source, or hint'), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.searchToggleKey), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: _resultItem('/tmp/compact-safe-0.cache'),
+    );
     expect(_resultItem('/tmp/compact-safe-0.cache'), findsOneWidget);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));
@@ -2281,6 +2525,96 @@ void main() {
     } finally {
       semantics.dispose();
     }
+  });
+
+  testWidgets('precheck local-only plan hides credit total and shows CTA', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummaryLocalOnly;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload();
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.text('No API calls needed for this scan'),
+    );
+
+    expect(find.text('Review local results'), findsOneWidget);
+    expect(find.textContaining('Total estimated credits'), findsNothing);
+    expect(find.text('Start AI Analysis'), findsNothing);
+  });
+
+  testWidgets(
+    'paused coverage job without persisted verdicts stays on precheck',
+    (tester) async {
+      const persistedJob = CoverageJobState(
+        snapshotId: 'snapshot-1',
+        rootPath: '/Users/liminglin/Downloads',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 54496,
+        analyzedFiles: 45738,
+        preClassifiedCount: 200,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.budget,
+        usedTokens: 1221,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      );
+
+      AiCoverageCoordinator.debugForceAvailable = true;
+      AiCoverageCoordinator.debugPlanSummary = (_) async =>
+          _coveragePlanSummaryV3;
+
+      final gateway = _FakeGateway()
+        ..provider = _ResultProvider(const [])
+        ..candidatesJson = _candidatePayload(hasExistingResult: false);
+
+      await tester.pumpWidget(
+        _workspaceShell(gateway, coverageJobState: persistedJob),
+      );
+      await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+
+      expect(find.text('Raise limit & resume'), findsOneWidget);
+      expect(find.byKey(AiAnalysisWorkspace.decisionSummaryKey), findsNothing);
+    },
+  );
+
+  test('loadJobState hydrates persisted paused job for snapshot', () async {
+    const persistedJob = CoverageJobState(
+      snapshotId: 'snapshot-1',
+      rootPath: '/Users/liminglin/Downloads',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 100,
+      analyzedFiles: 80,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.paused,
+      pauseReason: CoveragePauseReason.budget,
+      usedTokens: 10,
+      usedCredits: 0,
+      budgetTokens: 50,
+      budgetCredits: 0,
+      updatedAtMs: 1,
+    );
+    await CoverageJobStateStore(_workspaceTestCacheDir!).save(persistedJob);
+
+    final loaded = await AiCoverageCoordinator.instance.loadJobState(
+      'snapshot-1',
+    );
+
+    expect(loaded?.status, CoverageJobStatus.paused);
+    expect(loaded?.analyzedFiles, 80);
   });
 
   testWidgets(

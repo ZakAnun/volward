@@ -9,6 +9,7 @@ import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/coverage_engine.dart';
+import 'package:volward/ai/coverage_client_logic.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/coverage_verdict_store.dart';
@@ -152,14 +153,111 @@ void main() {
     },
   );
 
+  test('auto resume skips v2 plan jobs at current client logic', () async {
+    final service = _RecordingService(cacheDir);
+    final provider = _Provider();
+    await CoverageJobStateStore(cacheDir).save(
+      const CoverageJobState(
+        snapshotId: 'snap-v2-plan',
+        rootPath: '/',
+        planVersion: 2,
+        cursor: 4,
+        totalUnclassified: 10,
+        analyzedFiles: 4,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.appQuit,
+        usedTokens: 0,
+        usedCredits: 1,
+        budgetTokens: 100,
+        budgetCredits: 1,
+        updatedAtMs: 1,
+        clientLogicVersion: kCoverageClientLogicVersion,
+      ),
+    );
+    coordinator = AiCoverageCoordinator.testing(
+      serviceFactory:
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
+      isCoverageApiReady: (_) => true,
+      resolveProvider: () async => provider,
+    );
+
+    coordinator.attach(VolwardSession.test());
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(service.resumeCalls, 0);
+  });
+
+  test('auto resume skips jobs saved under legacy client logic', () async {
+    final service = _RecordingService(cacheDir);
+    final provider = _Provider();
+    await CoverageJobStateStore(cacheDir).save(
+      const CoverageJobState(
+        snapshotId: 'snap-legacy',
+        rootPath: '/',
+        planVersion: 1,
+        cursor: 4,
+        totalUnclassified: 10,
+        analyzedFiles: 4,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.appQuit,
+        usedTokens: 0,
+        usedCredits: 1,
+        budgetTokens: 100,
+        budgetCredits: 1,
+        updatedAtMs: 1,
+        clientLogicVersion: 1,
+      ),
+    );
+    coordinator = AiCoverageCoordinator.testing(
+      serviceFactory:
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
+      isCoverageApiReady: (_) => true,
+      resolveProvider: () async => provider,
+    );
+
+    coordinator.attach(VolwardSession.test());
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(service.resumeCalls, 0);
+  });
+
   test('auto resume calls resume, while explicit start stays fresh', () async {
+    AiCoverageCoordinator.debugTreatSnapshotReady = true;
+    addTearDown(() => AiCoverageCoordinator.debugTreatSnapshotReady = false);
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        const CoveragePlanSummary(
+          snapshotId: 'snap-resume',
+          planVersion: 3,
+          rootPath: '/',
+          totalUnclassified: 10,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          estimatedTreeCredits: 1,
+          estimatedTailCredits: 0,
+        );
+    addTearDown(() => AiCoverageCoordinator.debugPlanSummary = null);
+
     final service = _RecordingService(cacheDir);
     final provider = _Provider();
     await CoverageJobStateStore(cacheDir).save(
       const CoverageJobState(
         snapshotId: 'snap-resume',
         rootPath: '/',
-        planVersion: 1,
+        planVersion: 3,
         cursor: 4,
         totalUnclassified: 10,
         analyzedFiles: 4,
@@ -171,10 +269,17 @@ void main() {
         budgetTokens: 100,
         budgetCredits: 1,
         updatedAtMs: 1,
+        clientLogicVersion: kCoverageClientLogicVersion,
       ),
     );
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -202,13 +307,13 @@ void main() {
       );
       coordinator.attach(VolwardSession.test());
 
-      final started = await coordinator.startFullCoverage(
+      final result = await coordinator.startFullCoverage(
         snapshotId: 'snap-missing',
         mode: AiMode.platform,
         provider: _Provider(),
       );
 
-      expect(started, isFalse);
+      expect(result, isA<StartFullCoverageUnavailable>());
     },
   );
 
@@ -216,7 +321,13 @@ void main() {
     final service = _RecordingService(cacheDir);
     final provider = _Provider();
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -264,10 +375,16 @@ void main() {
   test('prepareService recreates service when BYOK key changes', () async {
     var factoryCalls = 0;
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) {
-        factoryCalls++;
-        return _RecordingService(cacheDir);
-      },
+      serviceFactory:
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async {
+            factoryCalls++;
+            return _RecordingService(cacheDir);
+          },
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => _Provider(),
     );
@@ -288,10 +405,16 @@ void main() {
     final provider = _Provider();
     final service = _RecordingService(cacheDir);
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) {
-        factoryCalls++;
-        return service;
-      },
+      serviceFactory:
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async {
+            factoryCalls++;
+            return service;
+          },
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );

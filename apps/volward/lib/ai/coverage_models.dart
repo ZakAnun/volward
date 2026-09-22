@@ -133,26 +133,54 @@ class CoveragePlanSummary {
     required this.fileRows,
     required this.estimatedPages,
     this.fingerprint,
+    this.seedNodeCount,
+    this.tailFileCount,
+    this.localSafeFiles,
+    this.localKeepFiles,
+    this.tailFiles,
+    this.treePendingFiles,
+    this.estimatedTreeCredits,
+    this.estimatedTailCredits,
   });
 
-  factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) =>
-      CoveragePlanSummary(
-        snapshotId: json['snapshot_id'] as String,
-        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
-        rootPath: json['root_path'] as String,
-        totalUnclassified: (json['total_unclassified'] as num?)?.toInt() ?? 0,
-        preClassifiedCount:
-            (json['pre_classified_count'] as num?)?.toInt() ?? 0,
-        groupRows: (json['group_rows'] as num?)?.toInt() ?? 0,
-        fileRows: (json['file_rows'] as num?)?.toInt() ?? 0,
-        estimatedPages: (json['estimated_pages'] as num?)?.toInt() ?? 0,
-        fingerprint:
-            json.containsKey('root_size_bytes') ||
-                json.containsKey('scanned_at_ms') ||
-                json.containsKey('stats')
-            ? CoverageSnapshotFingerprint.fromJson(json)
-            : null,
-      );
+  factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) {
+    final planVersion = (json['plan_version'] as num?)?.toInt() ?? 0;
+    var totalUnclassified = (json['total_unclassified'] as num?)?.toInt() ?? 0;
+    if (planVersion >= 3 && totalUnclassified == 0) {
+      final localSafe = (json['local_safe_files'] as num?)?.toInt() ?? 0;
+      final localKeep = (json['local_keep_files'] as num?)?.toInt() ?? 0;
+      final tail =
+          (json['tail_files'] as num?)?.toInt() ??
+          (json['tail_file_count'] as num?)?.toInt() ??
+          0;
+      final treePending = (json['tree_pending_files'] as num?)?.toInt() ?? 0;
+      totalUnclassified = localSafe + localKeep + tail + treePending;
+    }
+    return CoveragePlanSummary(
+      snapshotId: json['snapshot_id'] as String,
+      planVersion: planVersion,
+      rootPath: json['root_path'] as String,
+      totalUnclassified: totalUnclassified,
+      preClassifiedCount: (json['pre_classified_count'] as num?)?.toInt() ?? 0,
+      groupRows: (json['group_rows'] as num?)?.toInt() ?? 0,
+      fileRows: (json['file_rows'] as num?)?.toInt() ?? 0,
+      estimatedPages: (json['estimated_pages'] as num?)?.toInt() ?? 0,
+      fingerprint:
+          json.containsKey('root_size_bytes') ||
+              json.containsKey('scanned_at_ms') ||
+              json.containsKey('stats')
+          ? CoverageSnapshotFingerprint.fromJson(json)
+          : null,
+      seedNodeCount: (json['seed_node_count'] as num?)?.toInt(),
+      tailFileCount: (json['tail_file_count'] as num?)?.toInt(),
+      localSafeFiles: (json['local_safe_files'] as num?)?.toInt(),
+      localKeepFiles: (json['local_keep_files'] as num?)?.toInt(),
+      tailFiles: (json['tail_files'] as num?)?.toInt(),
+      treePendingFiles: (json['tree_pending_files'] as num?)?.toInt(),
+      estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
+      estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
+    );
+  }
 
   final String snapshotId;
   final int planVersion;
@@ -163,6 +191,101 @@ class CoveragePlanSummary {
   final int fileRows;
   final int estimatedPages;
   final CoverageSnapshotFingerprint? fingerprint;
+  final int? seedNodeCount;
+  final int? tailFileCount;
+  final int? localSafeFiles;
+  final int? localKeepFiles;
+  final int? tailFiles;
+  final int? treePendingFiles;
+  final int? estimatedTreeCredits;
+  final int? estimatedTailCredits;
+
+  bool get isTreePlan => planVersion >= 3 && seedNodeCount != null;
+
+  Map<String, dynamic> toJson() => {
+    'snapshot_id': snapshotId,
+    'plan_version': planVersion,
+    'root_path': rootPath,
+    'total_unclassified': totalUnclassified,
+    'pre_classified_count': preClassifiedCount,
+    'group_rows': groupRows,
+    'file_rows': fileRows,
+    'estimated_pages': estimatedPages,
+    if (fingerprint != null) ...fingerprint!.toJson(),
+    if (seedNodeCount != null) 'seed_node_count': seedNodeCount,
+    if (tailFileCount != null) 'tail_file_count': tailFileCount,
+    if (localSafeFiles != null) 'local_safe_files': localSafeFiles,
+    if (localKeepFiles != null) 'local_keep_files': localKeepFiles,
+    if (tailFiles != null) 'tail_files': tailFiles,
+    if (treePendingFiles != null) 'tree_pending_files': treePendingFiles,
+    if (estimatedTreeCredits != null)
+      'estimated_tree_credits': estimatedTreeCredits,
+    if (estimatedTailCredits != null)
+      'estimated_tail_credits': estimatedTailCredits,
+  };
+}
+
+class CoverageTreePage {
+  const CoverageTreePage({
+    required this.snapshotId,
+    required this.planVersion,
+    required this.nextCursor,
+    required this.nodes,
+  });
+
+  factory CoverageTreePage.fromJson(Map<String, dynamic> json) =>
+      CoverageTreePage(
+        snapshotId: json['snapshot_id'] as String,
+        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+        nextCursor: (json['next_cursor'] as num?)?.toInt(),
+        nodes: ((json['nodes'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CoverageTreeNode.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false),
+      );
+
+  final String snapshotId;
+  final int planVersion;
+  final int? nextCursor;
+  final List<CoverageTreeNode> nodes;
+}
+
+class CoverageTailRow {
+  const CoverageTailRow({required this.path, required this.sizeBytes});
+
+  factory CoverageTailRow.fromJson(Map<String, dynamic> json) =>
+      CoverageTailRow(
+        path: json['path'] as String,
+        sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      );
+
+  final String path;
+  final int sizeBytes;
+}
+
+class CoverageTailPage {
+  const CoverageTailPage({
+    required this.snapshotId,
+    required this.planVersion,
+    required this.nextCursor,
+    required this.rows,
+  });
+
+  factory CoverageTailPage.fromJson(Map<String, dynamic> json) =>
+      CoverageTailPage(
+        snapshotId: json['snapshot_id'] as String,
+        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+        nextCursor: (json['next_cursor'] as num?)?.toInt(),
+        rows: ((json['rows'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CoverageTailRow.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false),
+      );
+
+  final String snapshotId;
+  final int planVersion;
+  final int? nextCursor;
+  final List<CoverageTailRow> rows;
 }
 
 class CoveragePage {
@@ -187,6 +310,79 @@ class CoveragePage {
   final int planVersion;
   final int? nextCursor;
   final List<CoverageRow> rows;
+}
+
+class CoverageTreeTopExtension {
+  const CoverageTreeTopExtension({
+    required this.extension,
+    required this.count,
+  });
+
+  final String extension;
+  final int count;
+}
+
+/// Directory node from native tree coverage pages (plan v3).
+class CoverageTreeNode {
+  const CoverageTreeNode({
+    required this.path,
+    required this.sizeBytes,
+    required this.fileCount,
+    required this.subdirCount,
+    required this.role,
+    this.markers = const [],
+    this.prunedFlags = 0,
+    this.topExtensions = const [],
+  });
+
+  factory CoverageTreeNode.fromJson(Map<String, dynamic> json) {
+    final rawExt = json['top_extensions'];
+    final topExtensions = rawExt is List
+        ? rawExt
+              .whereType<List>()
+              .map(
+                (pair) => CoverageTreeTopExtension(
+                  extension: pair.isNotEmpty ? pair[0].toString() : '',
+                  count: pair.length > 1 ? (pair[1] as num?)?.toInt() ?? 0 : 0,
+                ),
+              )
+              .toList(growable: false)
+        : const <CoverageTreeTopExtension>[];
+    return CoverageTreeNode(
+      path: json['path'] as String,
+      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      fileCount: (json['file_count'] as num?)?.toInt() ?? 0,
+      subdirCount: (json['subdir_count'] as num?)?.toInt() ?? 0,
+      role: json['role'] as String? ?? 'unknown',
+      markers: ((json['markers'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+      prunedFlags: (json['pruned_flags'] as num?)?.toInt() ?? 0,
+      topExtensions: topExtensions,
+    );
+  }
+
+  final String path;
+  final int sizeBytes;
+  final int fileCount;
+  final int subdirCount;
+  final String role;
+  final List<String> markers;
+  final int prunedFlags;
+  final List<CoverageTreeTopExtension> topExtensions;
+
+  Map<String, dynamic> toJson() => {
+    'path': path,
+    'size_bytes': sizeBytes,
+    'file_count': fileCount,
+    'subdir_count': subdirCount,
+    'role': role,
+    'markers': markers,
+    'pruned_flags': prunedFlags,
+    'top_extensions': topExtensions
+        .map((e) => [e.extension, e.count])
+        .toList(growable: false),
+  };
 }
 
 String coverageJsonEncode(Object value) => jsonEncode(value);

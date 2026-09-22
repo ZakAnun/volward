@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' show min;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -59,6 +60,9 @@ class AiSettingsStore {
 
   /// Matches the starter pack credit amount in `server/migrations/005_packs.sql`.
   static const defaultCoverageBudgetCredits = 50;
+
+  /// Platform default before Phase 1 credit redesign (2026-09-04 full-coverage spec).
+  static const legacyCoverageBudgetCredits = 20;
 
   /// Bumped to 2 when Platform mode shipped: paths now transit Volward servers.
   static const kCurrentPrivacyVersion = 2;
@@ -138,22 +142,45 @@ class AiSettingsStore {
       _secure.write(key: _kByokKeyName, value: key);
   Future<void> clearByokKey() => _secure.delete(key: _kByokKeyName);
 
-  Future<({int tokens, int credits})> coverageBudgetForMode(AiMode mode) async {
-    final map = await _readMap();
-    if (mode == AiMode.platform) {
-      return (
-        tokens: 0,
-        credits:
-            (map[_kCoverageBudgetCredits] as num?)?.toInt() ??
-            defaultCoverageBudgetCredits,
-      );
+  Future<int> _coverageBudgetCreditsFromMap(Map<String, dynamic> map) async {
+    final raw = (map[_kCoverageBudgetCredits] as num?)?.toInt();
+    if (raw == legacyCoverageBudgetCredits) {
+      map[_kCoverageBudgetCredits] = defaultCoverageBudgetCredits;
+      await _writeMap(map);
+      return defaultCoverageBudgetCredits;
+    }
+    return raw ?? defaultCoverageBudgetCredits;
+  }
+
+  /// Reads both persisted caps for Settings UI (independent of current [AiMode]).
+  Future<({int tokens, int credits})> loadCoverageBudgetSettings() async {
+    var map = await _readMap();
+    final rawTokens = (map[_kCoverageBudgetTokens] as num?)?.toInt();
+    if (rawTokens != null && rawTokens > 0 && rawTokens < 1000) {
+      map[_kCoverageBudgetTokens] = defaultCoverageBudgetTokens;
+      await _writeMap(map);
     }
     return (
-      tokens:
-          (map[_kCoverageBudgetTokens] as num?)?.toInt() ??
-          defaultCoverageBudgetTokens,
-      credits: 0,
+      tokens: _coverageBudgetTokensFromMap(map),
+      credits: await _coverageBudgetCreditsFromMap(map),
     );
+  }
+
+  int _coverageBudgetTokensFromMap(Map<String, dynamic> map) {
+    final raw = (map[_kCoverageBudgetTokens] as num?)?.toInt();
+    if (raw == null) return defaultCoverageBudgetTokens;
+    if (raw > 0 && raw < 1000) {
+      return defaultCoverageBudgetTokens;
+    }
+    return raw;
+  }
+
+  Future<({int tokens, int credits})> coverageBudgetForMode(AiMode mode) async {
+    final budgets = await loadCoverageBudgetSettings();
+    if (mode == AiMode.platform) {
+      return (tokens: 0, credits: budgets.credits);
+    }
+    return (tokens: budgets.tokens, credits: 0);
   }
 
   Future<void> setCoverageBudgetTokens(int tokens) async {
@@ -166,6 +193,18 @@ class AiSettingsStore {
     final map = await _readMap();
     map[_kCoverageBudgetCredits] = credits;
     await _writeMap(map);
+  }
+
+  Future<int> resolveRunBudgetCredits({
+    required int estimatedCredits,
+    required int accountBalance,
+  }) async {
+    final configured = await coverageBudgetForMode(AiMode.platform);
+    final fromEstimate = (estimatedCredits * 1.2).ceil();
+    final cap = configured.credits > 0
+        ? configured.credits
+        : defaultCoverageBudgetCredits;
+    return [fromEstimate, accountBalance, cap].reduce(min);
   }
 
   Future<ByokTokenUsageTotals> getByokTokenUsageTotals() async {

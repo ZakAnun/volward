@@ -33,7 +33,13 @@ bash ../../scripts/test_core.sh flutter
 | 路径 | 说明 |
 |------|------|
 | `lib/home_page.dart` | 单页主界面：预览、扫描、结果、列浏览、删除 / 清空废纸篓 |
-| `lib/settings_page.dart` | 主题、accent、增量扫描、语言 |
+| `lib/settings_page.dart` | 主题、accent、增量扫描、语言、AI 与全量覆盖积分预算 |
+| `lib/widgets/ai_analysis_workspace.dart` | AI 分析工作区：预检、全量覆盖、结果与删除预览 |
+| `lib/widgets/coverage_job_banner.dart` | 全量覆盖 job 进度、预算/失败暂停与 Resume |
+| `lib/ai/ai_coverage_coordinator.dart` | 全量覆盖启动、resume、plan 摘要与 job 持久化协调 |
+| `lib/ai/ai_coverage_job_controller.dart` | 分批 analyze 循环、cursor、预算与 wave 守卫 |
+| `lib/ai/coverage_analyze_batch.dart` | 单行 batch 映射；缺 path 时降级 verdict |
+| `lib/ai/ai_settings_store.dart` | AI 模式、隐私版本、覆盖预算（含 20→50 迁移） |
 | `lib/volward_session.dart` | 扫描/删除会话、catalog 查询、当前目录刷新、peek / checkpoint |
 | `lib/snapshot_catalog.dart` | 按需目录查询（委托 Rust index） |
 | `lib/l10n/` | 中英 ARB + `gen_l10n` |

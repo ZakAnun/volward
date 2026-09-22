@@ -80,14 +80,33 @@ impl AiAnalysisResult {
     }
 
     pub fn exists(key: &str) -> bool {
-        !key.is_empty() && analysis_path(key).exists()
+        !key.is_empty()
+            && (analysis_path(key).exists() || analysis_pb_path(key).exists())
     }
+
+    pub fn save_pb_for_key(key: &str, bytes: &[u8]) -> Result<(), String> {
+        let path = analysis_pb_path(key);
+        std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+        let tmp = path.with_extension("pbtmp");
+        std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &path).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            e.to_string()
+        })
+    }
+
 }
 
 fn analysis_path(key: &str) -> PathBuf {
     crate::scan::default_data_dir()
         .join("ai_analysis")
         .join(format!("{key}.json"))
+}
+
+fn analysis_pb_path(key: &str) -> PathBuf {
+    crate::scan::default_data_dir()
+        .join("ai_analysis")
+        .join(format!("{key}.pb"))
 }
 
 fn normalize_root(path: &str) -> String {
@@ -179,6 +198,7 @@ mod tests {
             pre_classified: vec![],
             candidates: vec![],
             estimated_input_tokens: 0,
+            estimated_byok_batch_input_tokens: 0,
             total_raw_count: 0,
             candidates_total_before_cap: 0,
             truncated: false,
