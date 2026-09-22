@@ -80,7 +80,7 @@ Future<void> _coverageJobWorkerMain(
     );
   }
 
-  void attachController() {
+  Future<void> attachController() async {
     final previous = provider;
     if (previous is ByokAiProvider) {
       previous.dispose();
@@ -89,6 +89,9 @@ Future<void> _coverageJobWorkerMain(
     }
     provider = buildProvider();
     final p = provider!;
+    if (p is PlatformAiProvider) {
+      await p.queryQuota();
+    }
     AnalyzeTreeBatch? treeBatch;
     if (p is TreeAiProvider) {
       treeBatch = createCoverageAnalyzeTreeBatch(
@@ -133,7 +136,7 @@ Future<void> _coverageJobWorkerMain(
     });
   }
 
-  attachController();
+  await attachController();
 
   final controlPort = ReceivePort();
   mainPort.send(<String, dynamic>{

@@ -676,9 +676,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool get _canStartCoverage {
     if (_mode != AiMode.platform) return true;
     if (_coverageCapBelowEstimate) return false;
-    if (_estimatedCoverageCredits == null || _platformCredits == null) {
-      return true;
-    }
+    if (_useFullCoverage && _coverageHydrating) return false;
+    if (_platformCredits == null) return false;
+    if (_useFullCoverage && _estimatedCoverageCredits == null) return false;
+    if (_estimatedCoverageCredits == null) return true;
     return _platformCredits! >= _estimatedCoverageCredits!;
   }
 
@@ -3183,8 +3184,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _hasProvider &&
         !_candidatesBootstrapPending &&
         _canStartCoverage &&
-        !(_mode == AiMode.platform && _platformCredits == 0) &&
-        (!_useFullCoverage || _coverageHydrated) &&
+        !(_mode == AiMode.platform && (_platformCredits == 0)) &&
+        (!_useFullCoverage || (_coverageHydrated && !_coverageHydrating)) &&
         !_coveragePlanIsLocalOnly;
     final needsSettings =
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
