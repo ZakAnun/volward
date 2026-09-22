@@ -23,6 +23,8 @@ class AiCoverageService {
     required this.engine,
     required CoverageJobController this._controller,
     this.platformProvider,
+    this.isolateCatalogPath,
+    this.isolateCatalogSnapshotId,
   }) : _isolateHost = null;
 
   AiCoverageService._({
@@ -30,12 +32,20 @@ class AiCoverageService {
     this.platformProvider,
     this._controller,
     this._isolateHost,
+    this.isolateCatalogPath,
+    this.isolateCatalogSnapshotId,
   });
 
   final CoverageJobController? _controller;
   final CoverageJobIsolateHost? _isolateHost;
   final CoverageEngine engine;
   final PlatformAiProvider? platformProvider;
+
+  /// Catalog file loaded by the background worker, if any.
+  final String? isolateCatalogPath;
+
+  /// Snapshot id the worker catalog is intended to represent.
+  final String? isolateCatalogSnapshotId;
 
   static bool _preferBackgroundJobIsolate(VolwardSession session) {
     if (kIsWeb) return false;
@@ -48,6 +58,7 @@ class AiCoverageService {
     required VolwardSession session,
     required AiProvider provider,
     CoverageResumePlanLoader? resumePlanLoader,
+    String? catalogSnapshotId,
     bool runJobOnMainIsolate = false,
   }) async {
     final nativeEngine = session.coverageEngine;
@@ -59,9 +70,10 @@ class AiCoverageService {
 
     if (!runJobOnMainIsolate && _preferBackgroundJobIsolate(session)) {
       final snap = session.lastSnapshot;
-      final catalogPath = snap == null
+      final targetSnapshotId = catalogSnapshotId ?? snap?.snapshotId;
+      final catalogPath = targetSnapshotId == null
           ? null
-          : await session.catalogIndexPathForAiCoverage(snap.snapshotId);
+          : await session.catalogIndexPathForAiCoverage(targetSnapshotId);
       if (catalogPath != null && catalogPath.isNotEmpty) {
         final workerConfig = <String, dynamic>{
           'hasIndexApi': session.hasIndexApi,
@@ -85,6 +97,8 @@ class AiCoverageService {
           engine: nativeEngine,
           platformProvider: platformProvider,
           isolateHost: host,
+          isolateCatalogPath: catalogPath,
+          isolateCatalogSnapshotId: targetSnapshotId,
         );
       }
     }
@@ -210,4 +224,10 @@ class AiCoverageService {
 
   Stream<CoverageJobState> get states =>
       _isolateHost?.states ?? _controller!.states;
+
+  bool isolateCatalogMatches(String snapshotId) {
+    if (_isolateHost == null) return true;
+    if (isolateCatalogSnapshotId == snapshotId) return true;
+    return false;
+  }
 }

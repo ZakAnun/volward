@@ -177,8 +177,12 @@ void main() {
     );
     coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async =>
-              service,
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -213,8 +217,12 @@ void main() {
     );
     coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async =>
-              service,
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -266,8 +274,12 @@ void main() {
     );
     coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async =>
-              service,
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -310,8 +322,12 @@ void main() {
     final provider = _Provider();
     coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async =>
-              service,
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -360,7 +376,12 @@ void main() {
     var factoryCalls = 0;
     coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async {
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async {
             factoryCalls++;
             return _RecordingService(cacheDir);
           },
@@ -385,7 +406,12 @@ void main() {
     final service = _RecordingService(cacheDir);
     coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async {
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async {
             factoryCalls++;
             return service;
           },

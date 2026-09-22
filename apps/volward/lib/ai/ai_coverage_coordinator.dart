@@ -30,6 +30,7 @@ typedef CoverageServiceFactory =
       required VolwardSession session,
       required AiProvider provider,
       CoverageResumePlanLoader? resumePlanLoader,
+      String? catalogSnapshotId,
     });
 
 enum StartCoverageBlockedReason { capBelowEstimate }
@@ -257,9 +258,12 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     CoverageJobState job,
   ) => _tryResumePlanForJob(snapshotId, job);
 
-  Future<AiCoverageService?> prepareService(AiProvider provider) {
+  Future<AiCoverageService?> prepareService(
+    AiProvider provider, {
+    String? catalogSnapshotId,
+  }) {
     final operation = _prepareServiceTail.then(
-      (_) => _prepareService(provider),
+      (_) => _prepareService(provider, catalogSnapshotId: catalogSnapshotId),
     );
     _prepareServiceTail = operation.then<void>(
       (_) {},
@@ -268,20 +272,30 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     return operation;
   }
 
-  Future<AiCoverageService?> _prepareService(AiProvider provider) async {
+  Future<AiCoverageService?> _prepareService(
+    AiProvider provider, {
+    String? catalogSnapshotId,
+  }) async {
     final session = _session;
     if (session == null || !_isCoverageApiReady(session)) return null;
     if (_service != null && _sameProvider(_activeProvider, provider)) {
-      if (!identical(provider, _activeProvider)) {
-        _disposeProvider(provider);
+      if (catalogSnapshotId != null &&
+          !_service!.isolateCatalogMatches(catalogSnapshotId)) {
+        await _releaseService();
+      } else {
+        if (!identical(provider, _activeProvider)) {
+          _disposeProvider(provider);
+        }
+        return _service;
       }
-      return _service;
+    } else if (_service != null) {
+      await _releaseService();
     }
-    await _releaseService();
     _service = await _serviceFactory(
       session: session,
       provider: provider,
       resumePlanLoader: _tryResumePlanForJob,
+      catalogSnapshotId: catalogSnapshotId,
     );
     _activeProvider = provider;
     _statesSub?.cancel();
@@ -299,7 +313,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     int? budgetCredits,
     CoveragePlanSummary? preloadedPlanSummary,
   }) async {
-    final service = await prepareService(provider);
+    final service = await prepareService(
+      provider,
+      catalogSnapshotId: snapshotId,
+    );
     if (service == null) return const StartFullCoverageUnavailable();
     final summary =
         preloadedPlanSummary ??
@@ -369,9 +386,7 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
         (state.status == CoverageJobStatus.paused &&
             state.pauseReason == CoveragePauseReason.appQuit);
     if (!shouldResume || coverageJobNeedsClientLogicUpgrade(state)) return;
-    final provider = await _resolveProvider();
-    if (provider == null) return;
-    final service = await prepareService(provider);
+    final service = await _serviceForSnapshot(snapshotId);
     if (service == null) return;
     if (!await _waitForCoverageSnapshotReady(snapshotId)) return;
     await service.resume(snapshotId);
@@ -504,7 +519,7 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     if (resumable.isEmpty) return;
     resumable.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
     final state = resumable.first;
-    final service = await prepareService(provider);
+    final service = await _serviceForSnapshot(state.snapshotId);
     if (service == null) return;
     if (!await _waitForCoverageSnapshotReady(state.snapshotId)) {
       debugPrint(
@@ -525,13 +540,18 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
           state.status == CoverageJobStatus.running) {
         return null;
       }
-      if (state?.snapshotId == snapshotId && _activeProvider != null) {
+      if (state?.snapshotId == snapshotId &&
+          _activeProvider != null &&
+          current.isolateCatalogMatches(snapshotId)) {
         return current;
+      }
+      if (!current.isolateCatalogMatches(snapshotId)) {
+        await _releaseService();
       }
     }
     final provider = await _resolveProvider();
     if (provider == null) return null;
-    return prepareService(provider);
+    return prepareService(provider, catalogSnapshotId: snapshotId);
   }
 
   Future<void> _releaseService() async {

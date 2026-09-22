@@ -1228,15 +1228,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               _coverageHydrated = false;
             });
           }
-          if (!fullCoverageReady && !_useFullCoverage) return;
-          unawaited(_syncActiveCoverageJobAfterPrecheck(generation));
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_isCurrent(generation) || !mounted) return;
-            if (!AiCoverageCoordinator.instance.isAvailable) return;
-            unawaited(
-              _hydrateCoveragePrecheck(generation, mode, platformCredits),
-            );
-          });
+          if (!fullCoverageReady && !_useFullCoverage) {
+            unawaited(_maybeAutoRestorePreviousSession(generation));
+            return;
+          }
+          unawaited(() async {
+            await _syncActiveCoverageJobAfterPrecheck(generation);
+            if (!AiCoverageCoordinator.instance.isAvailable) {
+              await _maybeAutoRestorePreviousSession(generation);
+              return;
+            }
+            await _hydrateCoveragePrecheck(generation, mode, platformCredits);
+            await _maybeAutoRestorePreviousSession(generation);
+          }());
         });
       }
     } catch (error) {
@@ -1282,10 +1286,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return _isCurrent(generation);
   }
 
-  Future<bool> _loadPreviousResult() async {
-    final generation = _beginOperation();
+  Future<bool> _loadPreviousResult({int? bootstrapGeneration}) async {
+    final generation = bootstrapGeneration ?? _beginOperation();
     final l10n = context.l10n;
-    setState(() => _error = null);
+    if (bootstrapGeneration == null) {
+      setState(() => _error = null);
+    }
     final key = _resultCacheKey.isNotEmpty
         ? _resultCacheKey
         : widget.snapshotId;
@@ -1591,7 +1597,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
   }
 
-  /// Reads persisted job state only (no resume, no verdict hydration).
+  /// Reads persisted job state for precheck banners (no verdict hydration).
   Future<void> _syncActiveCoverageJobAfterPrecheck(int generation) async {
     if (!AiCoverageCoordinator.instance.isAvailable) return;
     final state = await AiCoverageCoordinator.instance.loadJobState(
@@ -1600,13 +1606,85 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (!_isCurrent(generation) || !mounted || state == null) return;
     if (state.snapshotId != widget.snapshotId) return;
 
-    final active =
+    final showsBanner =
         state.status == CoverageJobStatus.running ||
         state.status == CoverageJobStatus.paused;
-    if (!active) return;
+    if (!showsBanner) return;
 
     setState(() => _coverageJobState = state);
     _scheduleCoveragePlanSummaryForBannerIfNeeded();
+  }
+
+  Future<CoverageJobState?> _loadCoverageJobStateForRestore() async {
+    final cached = _coverageJobState ?? widget.debugCoverageJobState;
+    if (cached != null && cached.snapshotId == widget.snapshotId) {
+      return cached;
+    }
+    return AiCoverageCoordinator.instance.loadJobState(widget.snapshotId);
+  }
+
+  bool _coverageJobHasRestorableProgress(CoverageJobState state) {
+    if (state.snapshotId != widget.snapshotId) return false;
+    if (state.status == CoverageJobStatus.running ||
+        state.status == CoverageJobStatus.idle) {
+      return false;
+    }
+    return state.analyzedFiles > 0 ||
+        state.localResolvedFiles > 0 ||
+        state.usedTokens > 0 ||
+        state.usedCredits > 0;
+  }
+
+  Future<bool> _coverageVerdictStoreHasRows() async {
+    final store = CoverageVerdictStore(SnapshotCache.cacheDir());
+    return (await store.fileByteLength(widget.snapshotId)) > 0;
+  }
+
+  Future<bool> _tryAutoRestoreCoverageResults(int generation) async {
+    final state = await _loadCoverageJobStateForRestore();
+    if (!_isCurrent(generation) || !mounted) return false;
+    final hasStoredVerdicts = await _coverageVerdictStoreHasRows();
+    final jobSuggestsRestore =
+        state != null && _coverageJobHasRestorableProgress(state);
+    if (!hasStoredVerdicts && !jobSuggestsRestore) return false;
+
+    if (state != null && state.snapshotId == widget.snapshotId) {
+      setState(() {
+        _coverageJobState = state;
+        _coverageUiPrefersAnalyzingPhase = false;
+        _coverageUserEngagedFullRun = false;
+      });
+    }
+    await _refreshVerdictsFromCoverageStore(
+      incremental: false,
+      allowNativeLocalBackfill: false,
+      preferReadAll: hasStoredVerdicts,
+    );
+    if (!_isCurrent(generation) || !mounted || _verdicts.isEmpty) {
+      return false;
+    }
+    setState(() {
+      _phase = _Phase.results;
+      _analyzing = false;
+      _error = null;
+      _hasExistingResult = true;
+    });
+    return true;
+  }
+
+  /// Reopens the last session (legacy saved JSON or persisted coverage verdicts).
+  Future<void> _maybeAutoRestorePreviousSession(int generation) async {
+    if (!_isCurrent(generation) || !mounted || _phase != _Phase.precheck) {
+      return;
+    }
+
+    if (_useFullCoverage && AiCoverageCoordinator.instance.isAvailable) {
+      if (await _tryAutoRestoreCoverageResults(generation)) return;
+    }
+
+    if (_hasExistingResult) {
+      await _loadPreviousResult(bootstrapGeneration: generation);
+    }
   }
 
   Future<void> _ensureCoveragePlanSummaryLoaded() async {
@@ -1984,7 +2062,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (engine == null) return const [];
     final rows = <CoverageVerdict>[];
     var cursor = 0;
-    while (true) {
+    for (var pageIndex = 0; pageIndex < 256; pageIndex++) {
       final page = await engine.fetchLocalVerdictsPage(
         widget.snapshotId,
         cursor: cursor,
@@ -1993,7 +2071,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (page.verdicts.isEmpty) break;
       rows.addAll(page.verdicts);
       final next = page.nextCursor;
-      if (next == null) break;
+      if (next == null || next <= cursor) break;
       cursor = next;
     }
     return rows;
@@ -2001,6 +2079,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _refreshVerdictsFromCoverageStore({
     bool incremental = false,
+    bool allowNativeLocalBackfill = true,
+    bool preferReadAll = false,
   }) async {
     if (_isLightweightAnalyzingUi()) return;
     try {
@@ -2015,15 +2095,25 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (chunk.appended.isEmpty) return;
         coverageVerdicts = _mergeCoverageVerdictRows(chunk.appended);
       } else {
-        coverageVerdicts = await store.readPages(
-          widget.snapshotId,
-          pageCount: _coverageVerdictPageCount,
-          pageSize: _coverageVerdictPageSize,
-        );
+        if (preferReadAll) {
+          coverageVerdicts = await store.readAll(widget.snapshotId);
+        } else {
+          coverageVerdicts = await store.readPages(
+            widget.snapshotId,
+            pageCount: _coverageVerdictPageCount,
+            pageSize: _coverageVerdictPageSize,
+          );
+        }
         _coverageVerdictByteOffset = await store.fileByteLength(
           widget.snapshotId,
         );
         if (coverageVerdicts.isEmpty) {
+          if (_coverageVerdictByteOffset > 0) {
+            return;
+          }
+          if (!allowNativeLocalBackfill) {
+            return;
+          }
           final localExpected =
               (_coveragePlanSummary?.localSafeFiles ?? 0) +
               (_coveragePlanSummary?.localKeepFiles ?? 0);

@@ -142,8 +142,12 @@ void main() {
       final provider = _Provider();
       final coordinator = AiCoverageCoordinator.testing(
         serviceFactory:
-            ({required session, required provider, resumePlanLoader}) async =>
-                service,
+            ({
+              required session,
+              required provider,
+              resumePlanLoader,
+              catalogSnapshotId,
+            }) async => service,
         isCoverageApiReady: (_) => true,
         resolveProvider: () async => provider,
       );
@@ -169,8 +173,12 @@ void main() {
     final provider = _Provider();
     final coordinator = AiCoverageCoordinator.testing(
       serviceFactory:
-          ({required session, required provider, resumePlanLoader}) async =>
-              service,
+          ({
+            required session,
+            required provider,
+            resumePlanLoader,
+            catalogSnapshotId,
+          }) async => service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -210,8 +218,12 @@ void main() {
       final provider = _Provider();
       final coordinator = AiCoverageCoordinator.testing(
         serviceFactory:
-            ({required session, required provider, resumePlanLoader}) async =>
-                service,
+            ({
+              required session,
+              required provider,
+              resumePlanLoader,
+              catalogSnapshotId,
+            }) async => service,
         isCoverageApiReady: (_) => true,
         resolveProvider: () async => provider,
       );

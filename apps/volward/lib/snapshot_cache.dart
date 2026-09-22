@@ -89,6 +89,65 @@ abstract final class SnapshotCache {
     return matchesPrefix && cachedVersion <= updateVersion;
   }
 
+  /// Resolves the on-disk catalog (pb/json) for a specific [snapshotId].
+  ///
+  /// Unlike [latestSnapshotPath], this never returns a newer rescan for the
+  /// same root — required for resuming full-coverage jobs bound to [snapshotId].
+  static Future<String?> catalogPathForSnapshotId(String snapshotId) async {
+    if (snapshotId.isEmpty) return null;
+    final snapshotsDir = Directory('${cacheDir().path}/snapshots');
+    if (await snapshotsDir.exists()) {
+      final pb = File('${snapshotsDir.path}/$snapshotId.pb');
+      if (await pb.exists()) return pb.path;
+      final json = File('${snapshotsDir.path}/$snapshotId.json');
+      if (await json.exists()) return json.path;
+    }
+
+    final manifestsDir = Directory('${cacheDir().path}/manifests');
+    if (!await manifestsDir.exists()) return null;
+
+    await for (final entity in manifestsDir.list()) {
+      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      final manifestName = entity.uri.pathSegments.last.replaceFirst(
+        '.json',
+        '',
+      );
+      final manifest = _readManifest(entity);
+      if (manifest == null) continue;
+      final manifestSnapshotId = manifest['snapshot_id']?.toString() ?? '';
+      if (manifestName != snapshotId && manifestSnapshotId != snapshotId) {
+        continue;
+      }
+      final path = _resolveSnapshotPath(entity.path, manifest);
+      if (path != null) return path;
+    }
+    return null;
+  }
+
+  /// Best-effort snapshot id for an on-disk catalog file resolved by path.
+  static Future<String?> snapshotIdForCatalogPath(String catalogPath) async {
+    if (catalogPath.isEmpty) return null;
+    final file = File(catalogPath);
+    if (!await file.exists()) return null;
+    final name = file.uri.pathSegments.last;
+    if (name.endsWith('.pb')) {
+      return name.substring(0, name.length - 3);
+    }
+    if (name.endsWith('.json')) {
+      try {
+        final header = file.readAsStringSync().trimLeft();
+        if (header.startsWith('{')) {
+          final id = _extractJsonStringField(header, 'snapshot_id');
+          if (id != null && id.isNotEmpty) return id;
+        }
+      } catch (_) {}
+      if (name.length > 5) {
+        return name.substring(0, name.length - 5);
+      }
+    }
+    return null;
+  }
+
   /// Returns the newest on-disk snapshot file path, if any.
   static Future<String?> latestSnapshotPath({String? preferredRoot}) async {
     final manifestsDir = Directory('${cacheDir().path}/manifests');

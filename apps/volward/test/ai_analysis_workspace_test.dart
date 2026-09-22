@@ -734,49 +734,23 @@ void main() {
     expect(gateway.candidateRequests, ['snapshot-1']);
   });
 
-  testWidgets('cached result choices stay inline during bootstrap', (
-    tester,
-  ) async {
+  testWidgets('cached result auto-loads on bootstrap', (tester) async {
     final payload = Map<String, dynamic>.from(
       jsonDecode(candidatePayload) as Map,
     )..['has_existing_result'] = true;
     final gateway = _FakeGateway()
       ..candidatesJson = jsonEncode(payload)
       ..cache['cache-key'] = '{"entries":[]}';
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
       tester,
-      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+      find.byKey(AiAnalysisWorkspace.decisionSummaryKey),
     );
 
-    expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsOneWidget);
-    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
-    RoundedRectangleBorder buttonShape(Key key) {
-      return tester
-              .widgetList<Material>(
-                find.descendant(
-                  of: find.byKey(key),
-                  matching: find.byType(Material),
-                ),
-              )
-              .first
-              .shape
-          as RoundedRectangleBorder;
-    }
-
-    expect(
-      buttonShape(AiAnalysisWorkspace.loadPreviousKey).borderRadius,
-      buttonShape(AiAnalysisWorkspace.analyzeAgainKey).borderRadius,
-    );
-    expect(
-      buttonShape(AiAnalysisWorkspace.loadPreviousKey).side,
-      isNot(BorderSide.none),
-    );
-    expect(
-      buttonShape(AiAnalysisWorkspace.analyzeAgainKey).side,
-      BorderSide.none,
-    );
+    expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
   });
 
@@ -2579,7 +2553,7 @@ void main() {
   });
 
   testWidgets(
-    'paused coverage job on precheck does not auto-open results layout',
+    'paused coverage job without persisted verdicts stays on precheck',
     (tester) async {
       const persistedJob = CoverageJobState(
         snapshotId: 'snapshot-1',

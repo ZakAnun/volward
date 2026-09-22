@@ -2537,11 +2537,18 @@ class VolwardSession extends ChangeNotifier {
 
   /// On-disk catalog path for [snapshotId] (index or snapshot pb/json).
   Future<String?> catalogIndexPathForAiCoverage(String snapshotId) async {
+    final byId = await SnapshotCache.catalogPathForSnapshotId(snapshotId);
+    if (byId != null && byId.isNotEmpty) return byId;
+
     final snap = _lastSnapshot;
     if (snap == null || snap.snapshotId != snapshotId) return null;
     final root = snap.tree?.path;
     if (root == null || root.isEmpty) return null;
-    return SnapshotCache.latestSnapshotPath(preferredRoot: root);
+    final latest = await SnapshotCache.latestSnapshotPath(preferredRoot: root);
+    if (latest == null) return null;
+    final latestId = await SnapshotCache.snapshotIdForCatalogPath(latest);
+    if (latestId == snapshotId) return latest;
+    return null;
   }
 
   NativeCoverageEngine? get coverageEngine {
