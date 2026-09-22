@@ -21,18 +21,16 @@ class AiCoverageService {
   @visibleForTesting
   AiCoverageService({
     required this.engine,
-    required CoverageJobController controller,
+    required CoverageJobController this._controller,
     this.platformProvider,
-  }) : _controller = controller,
-       _isolateHost = null;
+  }) : _isolateHost = null;
 
   AiCoverageService._({
     required this.engine,
     this.platformProvider,
-    CoverageJobController? controller,
-    CoverageJobIsolateHost? isolateHost,
-  }) : _controller = controller,
-       _isolateHost = isolateHost;
+    this._controller,
+    this._isolateHost,
+  });
 
   final CoverageJobController? _controller;
   final CoverageJobIsolateHost? _isolateHost;

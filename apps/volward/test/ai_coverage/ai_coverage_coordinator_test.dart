@@ -81,7 +81,7 @@ void main() {
       );
       coordinator.attach(VolwardSession.test());
       coordinator.debugSetPlanSummaryCache('snap-resume-cache', plan);
-      final job = CoverageJobState(
+      const job = CoverageJobState(
         snapshotId: 'snap-resume-cache',
         rootPath: '/data',
         planVersion: 3,

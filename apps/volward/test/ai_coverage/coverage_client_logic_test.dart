@@ -213,7 +213,7 @@ void main() {
         estimatedPages: 1,
         seedNodeCount: 1,
       );
-      final job = CoverageJobState(
+      const job = CoverageJobState(
         snapshotId: 'snap-a',
         rootPath: '/root',
         planVersion: 3,
@@ -247,7 +247,7 @@ void main() {
         ),
         isNull,
       );
-      final wrongVersion = CoverageJobState(
+      const wrongVersion = CoverageJobState(
         snapshotId: 'snap-a',
         rootPath: '/root',
         planVersion: 2,
@@ -308,7 +308,7 @@ void main() {
       estimatedPages: 1,
       fingerprint: fpB,
     );
-    final job = CoverageJobState(
+    const job = CoverageJobState(
       snapshotId: 'snap-a',
       rootPath: '/',
       planVersion: 1,
