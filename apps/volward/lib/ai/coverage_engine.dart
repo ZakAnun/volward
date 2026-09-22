@@ -80,6 +80,7 @@ class FakeCoverageEngine implements CoverageEngine {
     this.expandNodes = const [],
     this.groupMembers = const [],
     this.onBuildPlan,
+    this.onBuildTreePlan,
     this.localVerdictFetcher,
     this.applyDirVerdictHandler,
     this.treePagesByCursor = const {},
@@ -93,6 +94,7 @@ class FakeCoverageEngine implements CoverageEngine {
   final List<CoverageTreeNode> expandNodes;
   final List<Map<String, dynamic>> groupMembers;
   final void Function()? onBuildPlan;
+  final void Function()? onBuildTreePlan;
   final List<CoverageVerdict> Function(int cursor)? localVerdictFetcher;
   final Future<List<CoverageVerdict>> Function(
     String dirPath,
@@ -128,8 +130,10 @@ class FakeCoverageEngine implements CoverageEngine {
   }
 
   @override
-  Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async =>
-      treeSummary ?? summary;
+  Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async {
+    onBuildTreePlan?.call();
+    return treeSummary ?? summary;
+  }
 
   @override
   Future<CoverageTreePage> nextTreePage(

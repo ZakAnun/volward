@@ -33,6 +33,24 @@ class LocalCoverageVerdictPage {
 CoveragePlanSummary parseCoveragePlanSummary(String raw) =>
     CoveragePlanSummary.fromJson(decodeCoverageObjectJson(raw));
 
+/// Parses plan JSON already held in native preview state (no rebuild).
+CoveragePlanSummary? parseMaterializedCoveragePlanJson({
+  required String? raw,
+  required String snapshotId,
+  required bool tree,
+}) {
+  if (raw == null || raw.isEmpty || raw.startsWith('error:')) return null;
+  try {
+    final summary = parseCoveragePlanSummary(raw);
+    if (summary.snapshotId != snapshotId) return null;
+    if (tree && !summary.isTreePlan) return null;
+    if (!tree && summary.isTreePlan) return null;
+    return summary;
+  } catch (_) {
+    return null;
+  }
+}
+
 LocalCoverageVerdictPage parseLocalCoverageVerdictPage(String raw) {
   final map = decodeCoverageObjectJson(raw);
   final rawVerdicts = map['verdicts'];

@@ -2244,6 +2244,12 @@ abstract class AppLocalizations {
   /// **'Keep {count}'**
   String aiResultsGroupKeep(int count);
 
+  /// No description provided for @aiResultsShowMoreInGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Show {count} more in this folder'**
+  String aiResultsShowMoreInGroup(int count);
+
   /// No description provided for @aiResultsSelectedForCleanup.
   ///
   /// In en, this message translates to:

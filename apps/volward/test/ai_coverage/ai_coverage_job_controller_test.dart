@@ -1654,6 +1654,160 @@ void main() {
     expect(resumed.analyzedFiles, 80);
   });
 
+  test('resume reuses plan from loader without rebuilding', () async {
+    var buildPlanCalls = 0;
+    await stateStore.save(
+      const CoverageJobState(
+        snapshotId: 's-cached-plan',
+        rootPath: '/',
+        planVersion: 1,
+        cursor: 40,
+        totalUnclassified: 80,
+        analyzedFiles: 40,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.budget,
+        usedTokens: 50,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      ),
+    );
+    const cachedPlan = CoveragePlanSummary(
+      snapshotId: 's-cached-plan',
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 80,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 80,
+      estimatedPages: 2,
+    );
+    final rows = List.generate(
+      80,
+      (i) => CoverageRow(
+        rowIndex: i,
+        kind: CoverageRowKind.file,
+        path: '/f$i',
+        sizeBytes: 1,
+      ),
+    );
+    final engine = FakeCoverageEngine(
+      summary: cachedPlan,
+      pages: [
+        CoveragePage(
+          snapshotId: 's-cached-plan',
+          planVersion: 1,
+          nextCursor: null,
+          rows: rows.sublist(40),
+        ),
+      ],
+      onBuildPlan: () => buildPlanCalls++,
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      resumePlanLoader: (_, job) async => cachedPlan,
+      analyzeBatch: (batch) async => BatchOutcome(
+        usage: const BatchUsage(tokens: 1, credits: 0),
+        verdicts: batch
+            .map(
+              (r) => CoverageVerdict(
+                path: r.path,
+                verdict: 'keep',
+                confidence: 'high',
+                reason: 'test',
+                coverageSource: 'file',
+                sizeBytes: r.sizeBytes,
+              ),
+            )
+            .toList(),
+      ),
+    );
+
+    await controller.raiseBudgetAndResume(
+      snapshotId: 's-cached-plan',
+      budgetTokens: 500,
+      budgetCredits: 0,
+    );
+
+    expect(buildPlanCalls, 0);
+  });
+
+  test('tree progress resume reuses loader without buildTreePlan', () async {
+    var buildTreeCalls = 0;
+    const treePlan = CoveragePlanSummary(
+      snapshotId: 's-tree-cache',
+      planVersion: 3,
+      rootPath: '/root',
+      totalUnclassified: 2,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 0,
+      estimatedPages: 1,
+      seedNodeCount: 1,
+      tailFileCount: 0,
+      localSafeFiles: 0,
+      localKeepFiles: 0,
+      tailFiles: 0,
+      treePendingFiles: 0,
+      estimatedTreeCredits: 1,
+      estimatedTailCredits: 0,
+    );
+    await stateStore.save(
+      const CoverageJobState(
+        snapshotId: 's-tree-cache',
+        rootPath: '/root',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 2,
+        analyzedFiles: 1,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.budget,
+        usedTokens: 50,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+        treeQueueCursor: 1,
+        localResolvedFiles: 1,
+      ),
+    );
+    final engine = FakeCoverageEngine(
+      summary: treePlan,
+      pages: const [],
+      treeSummary: treePlan,
+      onBuildTreePlan: () => buildTreeCalls++,
+      treePagesByCursor: const {
+        1: CoverageTreePage(
+          snapshotId: 's-tree-cache',
+          planVersion: 3,
+          nextCursor: null,
+          nodes: [],
+        ),
+      },
+    );
+    final controller = CoverageJobController(
+      engine: engine,
+      verdictStore: verdictStore,
+      stateStore: stateStore,
+      preferTreeCoveragePlan: true,
+      resumePlanLoader: (_, job) async => treePlan,
+      analyzeBatch: (_) async => throw StateError('unused'),
+      analyzeTreeBatch: (_) async => const BatchOutcome(
+        usage: BatchUsage(tokens: 0, credits: 0),
+        verdicts: [],
+      ),
+    );
+
+    await controller.resume('s-tree-cache');
+
+    expect(buildTreeCalls, 0);
+  });
+
   test('cancel hydrates paused job from store on fresh controller', () async {
     await stateStore.save(
       const CoverageJobState(

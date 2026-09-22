@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'ai_settings_store.dart';
 import 'ai_coverage_job_controller.dart';
 import 'ai_provider.dart';
@@ -49,6 +51,12 @@ AnalyzeTreeBatch createCoverageAnalyzeTreeBatch({
   CancelToken? cancelToken,
 }) {
   return (nodes) async {
+    if (kDebugMode && nodes.isNotEmpty) {
+      debugPrint(
+        'Coverage AI: tree batch ${nodes.length} node(s), '
+        'first=${nodes.first.path}',
+      );
+    }
     final result = await provider.analyzeTreeNodes(
       nodes,
       cancelToken: cancelToken,

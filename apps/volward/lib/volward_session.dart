@@ -2535,6 +2535,15 @@ class VolwardSession extends ChangeNotifier {
     return summary['snapshot_id']?.toString() == snapshotId;
   }
 
+  /// On-disk catalog path for [snapshotId] (index or snapshot pb/json).
+  Future<String?> catalogIndexPathForAiCoverage(String snapshotId) async {
+    final snap = _lastSnapshot;
+    if (snap == null || snap.snapshotId != snapshotId) return null;
+    final root = snap.tree?.path;
+    if (root == null || root.isEmpty) return null;
+    return SnapshotCache.latestSnapshotPath(preferredRoot: root);
+  }
+
   NativeCoverageEngine? get coverageEngine {
     final engine = _engine;
     if (!hasAiCoverageApi || engine == null) return null;

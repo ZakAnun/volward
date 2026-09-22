@@ -201,6 +201,28 @@ class CoveragePlanSummary {
   final int? estimatedTailCredits;
 
   bool get isTreePlan => planVersion >= 3 && seedNodeCount != null;
+
+  Map<String, dynamic> toJson() => {
+    'snapshot_id': snapshotId,
+    'plan_version': planVersion,
+    'root_path': rootPath,
+    'total_unclassified': totalUnclassified,
+    'pre_classified_count': preClassifiedCount,
+    'group_rows': groupRows,
+    'file_rows': fileRows,
+    'estimated_pages': estimatedPages,
+    if (fingerprint != null) ...fingerprint!.toJson(),
+    if (seedNodeCount != null) 'seed_node_count': seedNodeCount,
+    if (tailFileCount != null) 'tail_file_count': tailFileCount,
+    if (localSafeFiles != null) 'local_safe_files': localSafeFiles,
+    if (localKeepFiles != null) 'local_keep_files': localKeepFiles,
+    if (tailFiles != null) 'tail_files': tailFiles,
+    if (treePendingFiles != null) 'tree_pending_files': treePendingFiles,
+    if (estimatedTreeCredits != null)
+      'estimated_tree_credits': estimatedTreeCredits,
+    if (estimatedTailCredits != null)
+      'estimated_tail_credits': estimatedTailCredits,
+  };
 }
 
 class CoverageTreePage {

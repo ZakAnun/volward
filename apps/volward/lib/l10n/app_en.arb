@@ -1005,6 +1005,12 @@
       "count": {"type": "int"}
     }
   },
+  "aiResultsShowMoreInGroup": "Show {count} more in this folder",
+  "@aiResultsShowMoreInGroup": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "aiResultsSelectedForCleanup": "{count, plural, =1{1 item selected} other{{count} items selected}} · {bytes}",
   "@aiResultsSelectedForCleanup": {
     "placeholders": {

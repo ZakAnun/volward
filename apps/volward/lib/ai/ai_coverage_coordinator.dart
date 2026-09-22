@@ -8,6 +8,7 @@ import '../analytics/analytics_events.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../snapshot_cache.dart';
 import '../volward_session.dart';
+import 'ai_coverage_job_controller.dart';
 import 'ai_coverage_service.dart';
 import 'ai_provider.dart';
 import 'byok_ai_provider.dart';
@@ -19,14 +20,16 @@ import 'coverage_job_state.dart';
 import 'coverage_lifecycle.dart';
 import 'coverage_models.dart';
 import 'coverage_notification_text.dart';
+import 'native_coverage_engine.dart';
 
 typedef CoverageDesktopNotify =
     Future<void> Function({required String title, required String body});
 
 typedef CoverageServiceFactory =
-    AiCoverageService? Function({
+    Future<AiCoverageService?> Function({
       required VolwardSession session,
       required AiProvider provider,
+      CoverageResumePlanLoader? resumePlanLoader,
     });
 
 enum StartCoverageBlockedReason { capBelowEstimate }
@@ -207,6 +210,53 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     _cachedPlanSummary = null;
   }
 
+  Future<CoveragePlanSummary?> _tryResumePlanForJob(
+    String snapshotId,
+    CoverageJobState job,
+  ) async {
+    if (_cachedPlanSnapshotId == snapshotId && _cachedPlanSummary != null) {
+      final freshJob =
+          job.analyzedFiles == 0 &&
+          job.cursor == 0 &&
+          job.treeQueueCursor == 0 &&
+          job.tailQueueCursor == 0;
+      if (freshJob) {
+        return _cachedPlanSummary;
+      }
+    }
+    final fromMemory = coverageResumePlanFromMemoryCache(
+      snapshotId: snapshotId,
+      job: job,
+      cachedSnapshotId: _cachedPlanSnapshotId,
+      cachedSummary: _cachedPlanSummary,
+    );
+    if (fromMemory != null) return fromMemory;
+    final session = _session;
+    final engine = session?.coverageEngine;
+    if (engine is NativeCoverageEngine) {
+      return engine.tryReadMaterializedPlanSummary(
+        snapshotId,
+        tree: session!.hasAiTreeCoverageApi,
+      );
+    }
+    return null;
+  }
+
+  @visibleForTesting
+  void debugSetPlanSummaryCache(
+    String snapshotId,
+    CoveragePlanSummary summary,
+  ) {
+    _cachedPlanSnapshotId = snapshotId;
+    _cachedPlanSummary = summary;
+  }
+
+  @visibleForTesting
+  Future<CoveragePlanSummary?> debugTryResumePlanForJob(
+    String snapshotId,
+    CoverageJobState job,
+  ) => _tryResumePlanForJob(snapshotId, job);
+
   Future<AiCoverageService?> prepareService(AiProvider provider) {
     final operation = _prepareServiceTail.then(
       (_) => _prepareService(provider),
@@ -228,7 +278,11 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
       return _service;
     }
     await _releaseService();
-    _service = _serviceFactory(session: session, provider: provider);
+    _service = await _serviceFactory(
+      session: session,
+      provider: provider,
+      resumePlanLoader: _tryResumePlanForJob,
+    );
     _activeProvider = provider;
     _statesSub?.cancel();
     final stream = _service?.states;
@@ -243,10 +297,14 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     required AiMode mode,
     required AiProvider provider,
     int? budgetCredits,
+    CoveragePlanSummary? preloadedPlanSummary,
   }) async {
     final service = await prepareService(provider);
     if (service == null) return const StartFullCoverageUnavailable();
-    final summary = await planSummary(snapshotId);
+    final summary =
+        preloadedPlanSummary ??
+        (_cachedPlanSnapshotId == snapshotId ? _cachedPlanSummary : null) ??
+        await planSummary(snapshotId);
     final session = _session;
     if (summary == null &&
         (debugRequirePlanSummary ||

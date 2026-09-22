@@ -176,7 +176,9 @@ void main() {
       ),
     );
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async =>
+              service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -210,7 +212,9 @@ void main() {
       ),
     );
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async =>
+              service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -261,7 +265,9 @@ void main() {
       ),
     );
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async =>
+              service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -303,7 +309,9 @@ void main() {
     final service = _RecordingService(cacheDir);
     final provider = _Provider();
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async =>
+              service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -351,10 +359,11 @@ void main() {
   test('prepareService recreates service when BYOK key changes', () async {
     var factoryCalls = 0;
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) {
-        factoryCalls++;
-        return _RecordingService(cacheDir);
-      },
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async {
+            factoryCalls++;
+            return _RecordingService(cacheDir);
+          },
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => _Provider(),
     );
@@ -375,10 +384,11 @@ void main() {
     final provider = _Provider();
     final service = _RecordingService(cacheDir);
     coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) {
-        factoryCalls++;
-        return service;
-      },
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async {
+            factoryCalls++;
+            return service;
+          },
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );

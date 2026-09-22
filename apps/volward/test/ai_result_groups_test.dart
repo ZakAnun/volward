@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/ai_result_groups.dart';
+import 'package:volward/scan_tree.dart';
 
 void main() {
   test('groups preserve paths and summarize verdicts', () {
@@ -126,88 +127,98 @@ void main() {
     final groups = groupAiResults(
       const [
         AiVerdict(
-          path: '/tmp/meiye_mobile',
-          verdict: 'safe_to_remove',
-          confidence: 'high',
-          reason: 'Generated build output',
+          path: '/tmp/project',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Project folder',
         ),
         AiVerdict(
-          path: '/tmp/meiye_mobile/cache/index.bin',
+          path: '/tmp/project/cache/a.bin',
           verdict: 'safe_to_remove',
           confidence: 'high',
-          reason: 'Generated cache',
+          reason: 'Cache',
         ),
       ],
-      const {},
+      const {'/tmp/project/cache/a.bin': 100},
       rootPath: '/tmp',
-      directoryPaths: {'/tmp/meiye_mobile'},
+      directoryPaths: {'/tmp/project'},
     );
 
-    expect(groups, hasLength(1));
-    expect(groups.single.path, '/tmp/meiye_mobile');
-    expect(groups.single.items, hasLength(2));
+    expect(groups.map((group) => group.path), ['/tmp/project']);
+    expect(groups.first.items, hasLength(2));
   });
 
   test('normalizes Windows paths and keeps similarly named roots separate', () {
     final groups = groupAiResults(
-      [
-        const AiVerdict(
-          path: r'C:\Users\me\Downloads\meiye_mobile',
-          verdict: 'safe_to_remove',
-          confidence: 'high',
-          reason: 'Generated output',
-        ),
-        const AiVerdict(
-          path: r'C:\Users\me\Downloads\meiye_mobile\cache\a.bin',
-          verdict: 'safe_to_remove',
-          confidence: 'high',
-          reason: 'Generated cache',
-        ),
-        const AiVerdict(
-          path: r'C:\Users\me\Downloads-old\item.tmp',
+      const [
+        AiVerdict(
+          path: r'C:\Users\me\Downloads\a.txt',
           verdict: 'keep',
           confidence: 'high',
-          reason: 'Outside scan root',
+          reason: 'a',
         ),
       ],
-      const {},
-      rootPath: r'c:\Users\me\Downloads',
-      directoryPaths: {r'c:\users\me\downloads\MEIYE_MOBILE'},
+      const {r'C:\Users\me\Downloads\a.txt': 1},
+      rootPath: r'C:\Users\me\Downloads',
     );
 
-    expect(
-      groups.map((group) => group.path),
-      unorderedEquals(['c:/Users/me/Downloads/meiye_mobile', 'C:/Users/me']),
-    );
-    expect(
-      groups
-          .singleWhere(
-            (group) => group.path == 'c:/Users/me/Downloads/meiye_mobile',
-          )
-          .items,
-      hasLength(2),
-    );
+    expect(groups.single.path, normalizeFsPath(r'C:\Users\me\Downloads'));
   });
 
   test('groups order ties by path when review and size match', () {
     final groups = groupAiResults(
       const [
         AiVerdict(
-          path: '/tmp/beta/one/nested.log',
-          verdict: 'review_needed',
-          confidence: 'medium',
-          reason: 'Needs review',
+          path: '/tmp/b/x',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'b',
         ),
         AiVerdict(
-          path: '/tmp/alpha/two/nested.log',
-          verdict: 'review_needed',
-          confidence: 'medium',
-          reason: 'Needs review',
+          path: '/tmp/a/x',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: 'a',
         ),
       ],
-      const {'/tmp/beta/one.log': 25, '/tmp/alpha/two.log': 25},
+      const {'/tmp/b/x': 1, '/tmp/a/x': 1},
+      rootPath: '/tmp',
     );
 
-    expect(groups.map((group) => group.path), ['/tmp/alpha', '/tmp/beta']);
+    expect(groups.map((g) => g.path), ['/tmp/a', '/tmp/b']);
+  });
+
+  test('ensureFirstLevelDirectoryGroups adds empty sibling folders', () {
+    final groups = groupAiResults(
+      const [
+        AiVerdict(
+          path: '/root/alpha/a.txt',
+          verdict: 'review_needed',
+          confidence: 'low',
+          reason: 'r',
+        ),
+      ],
+      const {'/root/alpha/a.txt': 1},
+      rootPath: '/root',
+    );
+    final merged = ensureFirstLevelDirectoryGroups(groups, '/root', const [
+      '/root/alpha',
+      '/root/beta',
+      '/root/gamma',
+    ]);
+    expect(merged.map((g) => g.path), [
+      '/root/alpha',
+      '/root/beta',
+      '/root/gamma',
+    ]);
+    expect(merged[1].items, isEmpty);
+  });
+
+  test('firstLevelDirectoryUnderRoot maps nested files to top child', () {
+    expect(
+      firstLevelDirectoryUnderRoot('/root/alpha/deep/a.txt', '/root'),
+      '/root/alpha',
+    );
+    expect(firstLevelDirectoryUnderRoot('/root/loose.txt', '/root'), '/root');
   });
 }

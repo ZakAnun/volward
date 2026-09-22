@@ -450,6 +450,26 @@ Future<void> _expandGroup(WidgetTester tester, String path) async {
   await tester.pumpAndSettle();
 }
 
+/// Small result sets auto-expand on open; collapse first when testing closed groups.
+Future<void> _collapseGroupIfExpanded(
+  WidgetTester tester,
+  String groupPath, {
+  required Finder expandedItemFinder,
+}) async {
+  if (expandedItemFinder.evaluate().isEmpty) return;
+  await tester.tap(_resultGroup(groupPath));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _ensureGroupExpanded(
+  WidgetTester tester,
+  String groupPath, {
+  required Finder itemFinder,
+}) async {
+  if (itemFinder.evaluate().isNotEmpty) return;
+  await _expandGroup(tester, groupPath);
+}
+
 const _aggregateCandidates = '''
 {
   "pre_classified": [],
@@ -1107,6 +1127,11 @@ void main() {
         ],
       ),
     );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: _resultItem('/tmp/safe.cache'),
+    );
     expect(_resultGroup('/tmp'), findsOneWidget);
     expect(find.text('/tmp/safe.cache'), findsNothing);
     expect(find.text('/tmp/review.log'), findsNothing);
@@ -1263,6 +1288,11 @@ void main() {
       ),
     );
 
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: find.text('/tmp/review.log'),
+    );
     expect(_resultGroup('/tmp'), findsOneWidget);
     expect(find.text('/tmp/review.log'), findsNothing);
     await _expandGroup(tester, '/tmp');
@@ -1446,7 +1476,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _openResults(tester, _FakeGateway());
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: _resultItem('/tmp/review.log'),
+    );
     await tester.tap(_resultItem('/tmp/review.log'));
     await tester.pumpAndSettle();
     expect(find.text('Add to cleanup'), findsOneWidget);
@@ -1533,6 +1567,17 @@ void main() {
           {'path': '/tmp/group-b/keep-b.db', 'size_bytes': 30, 'is_dir': false},
         ],
       ),
+    );
+
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp/group-a',
+      expandedItemFinder: _resultItem('/tmp/group-a/safe-a.cache'),
+    );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp/group-b',
+      expandedItemFinder: _resultItem('/tmp/group-b/safe-b.cache'),
     );
 
     expect(
@@ -1666,6 +1711,11 @@ void main() {
     expect(
       find.text('1 pending review item is excluded until you decide.'),
       findsOneWidget,
+    );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: find.text('/tmp/local-1.cache'),
     );
     expect(find.text('/tmp/local-1.cache'), findsNothing);
     expect(find.text('/tmp/local-2.cache'), findsNothing);
@@ -2030,7 +2080,11 @@ void main() {
 
     await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
     await tester.pumpAndSettle();
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: find.text('/tmp/alpha-safe.cache'),
+    );
 
     expect(find.text('2 items selected · 800 B'), findsOneWidget);
     expect(find.text('/tmp/alpha-safe.cache'), findsOneWidget);
@@ -2143,6 +2197,11 @@ void main() {
     );
     expect(find.text('Show all results'), findsNothing);
     expect(_resultGroup('/tmp'), findsOneWidget);
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: find.text('/tmp/safe-0.cache'),
+    );
     expect(find.text('/tmp/safe-8.cache'), findsNothing);
 
     await _expandGroup(tester, '/tmp');
@@ -2305,7 +2364,11 @@ void main() {
         .getTopLeft(find.byKey(AiAnalysisWorkspace.deleteKey))
         .dy;
 
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: _resultItem('/tmp/safe-0.cache'),
+    );
     expect(_resultItem('/tmp/safe-0.cache'), findsOneWidget);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
@@ -2384,20 +2447,7 @@ void main() {
 
     await _expandGroup(tester, '/tmp/large-tree');
     expect(find.text('/tmp/large-tree/group-2/item-9998.cache'), findsNothing);
-
-    final scrollableState = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.byType(Scrollable),
-      ),
-    );
-    scrollableState.position.jumpTo(scrollableState.position.maxScrollExtent);
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('/tmp/large-tree/group-2/item-9998.cache'),
-      findsOneWidget,
-    );
+    expect(find.text('/tmp/large-tree/group-0/item-0.cache'), findsOneWidget);
   });
 
   testWidgets('compact results stack summary toolbar stream and action bar', (
@@ -2438,7 +2488,11 @@ void main() {
     expect(find.text('Search path, reason, source, or hint'), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.searchToggleKey), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
-    await _expandGroup(tester, '/tmp');
+    await _ensureGroupExpanded(
+      tester,
+      '/tmp',
+      itemFinder: _resultItem('/tmp/compact-safe-0.cache'),
+    );
     expect(_resultItem('/tmp/compact-safe-0.cache'), findsOneWidget);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));

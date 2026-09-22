@@ -35,6 +35,13 @@ typedef FetchLocalVerdictPage =
       int cursor,
     );
 
+/// Optional plan reuse on resume/raise to avoid rebuilding large coverage plans.
+typedef CoverageResumePlanLoader =
+    Future<CoveragePlanSummary?> Function(
+      String snapshotId,
+      CoverageJobState job,
+    );
+
 Future<int> flushLocalVerdictsInChunks({
   required CoverageVerdictStore verdictStore,
   required String snapshotId,
@@ -73,6 +80,7 @@ class CoverageJobController {
     this.treeBatchSize = 80,
     this.treeMaxInFlight = 2,
     this.platformCreditsRemaining,
+    this.resumePlanLoader,
     CancelToken? cancelToken,
   }) : _cancelToken = cancelToken ?? CancelToken();
 
@@ -91,6 +99,7 @@ class CoverageJobController {
 
   /// When null, wallet balance is unknown — wave sizing ignores wallet cap.
   final int? Function()? platformCreditsRemaining;
+  final CoverageResumePlanLoader? resumePlanLoader;
   final CancelToken _cancelToken;
 
   CoverageJobState? _state;
@@ -291,6 +300,22 @@ class CoverageJobController {
     updatedAtMs: DateTime.now().millisecondsSinceEpoch,
   );
 
+  Future<CoveragePlanSummary> _loadPlanForRun(
+    String snapshotId,
+    CoverageJobState guard,
+  ) async {
+    final loader = resumePlanLoader;
+    if (loader != null) {
+      final cached = await loader(snapshotId, guard);
+      if (cached != null && cached.snapshotId == snapshotId) {
+        return cached;
+      }
+    }
+    return preferTreeCoveragePlan
+        ? await engine.buildTreePlan(snapshotId)
+        : await engine.buildPlan(snapshotId);
+  }
+
   Future<void> _run() async {
     if (_running) return;
     _running = true;
@@ -300,9 +325,10 @@ class CoverageJobController {
       if (guard == null) return;
       final snapshotId = guard.snapshotId;
 
-      final plan = preferTreeCoveragePlan
-          ? await engine.buildTreePlan(snapshotId)
-          : await engine.buildPlan(snapshotId);
+      // Let the UI thread paint (dialog dismiss) before plan/work resumes.
+      await Future<void>.delayed(Duration.zero);
+
+      final plan = await _loadPlanForRun(snapshotId, guard);
       if (plan.snapshotId != snapshotId) {
         await _pause(
           CoveragePauseReason.failed,
@@ -385,6 +411,12 @@ class CoverageJobController {
                   'local coverage verdicts missing (expected $localExpected)',
             );
             return;
+          }
+          if (localExpected > 0) {
+            debugPrint(
+              'CoverageJobController: flushed $flushed local verdict(s) '
+              '(no AI, native rules)',
+            );
           }
         } on CoverageEngineException catch (e) {
           if (localExpected > 0) {
@@ -863,6 +895,7 @@ class CoverageJobController {
         await _pause(
           CoveragePauseReason.failed,
           detail: CoveragePauseDetail.parse,
+          message: e.message,
         );
         return null;
       } catch (e) {
@@ -877,6 +910,7 @@ class CoverageJobController {
             detail: retryable
                 ? CoveragePauseDetail.network
                 : CoveragePauseDetail.api,
+            message: _coverageFailureMessage(e),
           );
           return null;
         }
@@ -938,6 +972,7 @@ class CoverageJobController {
         await _pause(
           CoveragePauseReason.failed,
           detail: CoveragePauseDetail.parse,
+          message: e.message,
         );
         return null;
       } catch (e) {
@@ -952,6 +987,7 @@ class CoverageJobController {
             detail: retryable
                 ? CoveragePauseDetail.network
                 : CoveragePauseDetail.api,
+            message: _coverageFailureMessage(e),
           );
           return null;
         }
@@ -1001,6 +1037,13 @@ class CoverageJobController {
     CoveragePauseDetail? detail,
     String? message,
   }) async {
+    if (reason == CoveragePauseReason.failed) {
+      debugPrint(
+        'CoverageJobController: paused (failed) '
+        'snapshot=${_state?.snapshotId} detail=$detail '
+        'message=${message ?? "(none)"}',
+      );
+    }
     _pauseRequested = false;
     _pauseRequestReason = null;
     _state = _state?.copyWith(
@@ -1026,4 +1069,12 @@ class CoverageJobController {
     final state = _state;
     if (state != null && !_states.isClosed) _states.add(state);
   }
+}
+
+String _coverageFailureMessage(Object error) {
+  if (error is CoverageAnalyzeException) return error.message;
+  if (error is CoverageEngineException) return error.message;
+  final text = error.toString();
+  if (text.length <= 500) return text;
+  return '${text.substring(0, 500)}…';
 }

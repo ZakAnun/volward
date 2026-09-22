@@ -134,3 +134,35 @@ int coverageSuggestedCreditBudgetRaise({
   }
   return jobBudgetCredits + increment;
 }
+
+/// Reuse an in-memory precheck plan on resume when it still matches the job snapshot.
+CoveragePlanSummary? coverageResumePlanFromMemoryCache({
+  required String snapshotId,
+  required CoverageJobState job,
+  required String? cachedSnapshotId,
+  required CoveragePlanSummary? cachedSummary,
+}) {
+  if (cachedSnapshotId != snapshotId || cachedSummary == null) {
+    return null;
+  }
+  final cached = cachedSummary;
+  if (cached.planVersion != job.planVersion) return null;
+  if (job.rootPath.isNotEmpty && cached.rootPath != job.rootPath) {
+    return null;
+  }
+  final fp = job.fingerprint;
+  final planFp = cached.fingerprint;
+  if (fp != null && planFp != null && !fp.matches(planFp)) {
+    return null;
+  }
+  return cached;
+}
+
+/// Drop a coalesced [paused] job emit that predates Resume/Raise (same [updatedAtMs]).
+bool coverageIgnoreStalePausedJobState({
+  required CoverageJobState state,
+  required int? stalePausedUpdatedAtMs,
+}) =>
+    state.status == CoverageJobStatus.paused &&
+    stalePausedUpdatedAtMs != null &&
+    state.updatedAtMs == stalePausedUpdatedAtMs;

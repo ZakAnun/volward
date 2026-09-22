@@ -111,6 +111,23 @@ class NativeCoverageEngine implements CoverageEngine {
     );
   }
 
+  /// Reads a plan already materialized by a prior async build (no rebuild).
+  ///
+  /// Still runs on the UI isolate; large JSON parse can jank — prefer memory cache
+  /// via [CoverageResumePlanLoader] when available.
+  CoveragePlanSummary? tryReadMaterializedPlanSummary(
+    String snapshotId, {
+    required bool tree,
+  }) {
+    if (!bridge.hasAsyncAiCoveragePlanApi) return null;
+    if (bridge.isAiCoveragePlanBuilding(engine)) return null;
+    return parseMaterializedCoveragePlanJson(
+      raw: bridge.getAiCoveragePlanJson(engine),
+      snapshotId: snapshotId,
+      tree: tree,
+    );
+  }
+
   @override
   Future<CoveragePlanSummary> buildPlan(String snapshotId) async {
     final raw = await _fetchCoveragePlanJson(snapshotId, tree: false);

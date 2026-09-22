@@ -1305,6 +1305,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String aiResultsShowMoreInGroup(int count) {
+    return '再显示此文件夹中 $count 项';
+  }
+
+  @override
   String aiResultsSelectedForCleanup(int count, String bytes) {
     return '已选择 $count 项 · $bytes';
   }

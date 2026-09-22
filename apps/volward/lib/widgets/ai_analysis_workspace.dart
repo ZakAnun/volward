@@ -5,6 +5,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../ai/ai_analysis_gateway.dart';
 import '../ai/ai_coverage_coordinator.dart';
@@ -26,6 +27,7 @@ import '../ai/ai_result_groups.dart';
 import '../ai/ai_token_estimate.dart';
 import '../l10n/l10n.dart';
 import '../proto/ai_payload_pb_decoder.dart';
+import '../scan_tree.dart';
 import '../snapshot_cache.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
@@ -436,6 +438,8 @@ class _ResultsPresentationPrepInput {
     required this.directoryPaths,
     required this.maxAutoExpandedRows,
     required this.preClassified,
+    required this.firstLevelDirectoryPaths,
+    required this.fullCoverageLayout,
   });
 
   final List<AiVerdict> verdicts;
@@ -444,6 +448,8 @@ class _ResultsPresentationPrepInput {
   final List<String> directoryPaths;
   final int maxAutoExpandedRows;
   final List<Map<String, dynamic>> preClassified;
+  final List<String> firstLevelDirectoryPaths;
+  final bool fullCoverageLayout;
 }
 
 class _ResultsPresentationPrepOutput {
@@ -478,24 +484,43 @@ Set<String> _selectedPathsForVerdictsIsolate(
   return selected;
 }
 
-_ResultsPresentationPrepOutput _prepareResultsPresentationIsolate(
-  _ResultsPresentationPrepInput input,
-) {
-  final groups = groupAiResults(
-    input.verdicts,
-    input.sizeByPath,
-    rootPath: input.rootPath,
-    directoryPaths: input.directoryPaths.toSet(),
-  );
-  var rowBudget = input.maxAutoExpandedRows;
+Set<String> _expandedGroupPathsForPresentation(
+  List<AiResultGroup> groups, {
+  required int maxAutoExpandedRows,
+}) {
+  var rowBudget = maxAutoExpandedRows;
   final expanded = <String>{};
   for (final group in groups) {
-    if (group.items.length >= 3) continue;
+    final actionable = group.reviewCount > 0 || group.safeCount > 0;
+    if (!actionable && group.items.length >= 3) continue;
     final rowCost = group.items.length + 1;
     if (rowBudget < rowCost) break;
     expanded.add(group.path);
     rowBudget -= rowCost;
   }
+  return expanded;
+}
+
+_ResultsPresentationPrepOutput _prepareResultsPresentationIsolate(
+  _ResultsPresentationPrepInput input,
+) {
+  var groups = groupAiResults(
+    input.verdicts,
+    input.sizeByPath,
+    rootPath: input.rootPath,
+    directoryPaths: input.directoryPaths.toSet(),
+  );
+  if (input.fullCoverageLayout && input.rootPath.isNotEmpty) {
+    groups = ensureFirstLevelDirectoryGroups(
+      groups,
+      input.rootPath,
+      input.firstLevelDirectoryPaths,
+    );
+  }
+  final expanded = _expandedGroupPathsForPresentation(
+    groups,
+    maxAutoExpandedRows: input.maxAutoExpandedRows,
+  );
   return _ResultsPresentationPrepOutput(
     normalizedGroups: groups,
     expandedGroupPaths: expanded,
@@ -555,6 +580,8 @@ class AiAnalysisWorkspace extends StatefulWidget {
 class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   static const _preClassifiedPrecheckPreviewCap = 32;
   static const _maxDefaultExpandedResultRows = 96;
+  static const _expandedGroupInitialItemCap = 120;
+  static const _expandedGroupItemCapStep = 120;
   static const _coverageVerdictRefreshMinInterval = Duration(milliseconds: 350);
   static const _heavyResultsLayoutThreshold = 200;
 
@@ -579,6 +606,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   final Set<String> _selected = {};
   final Map<String, _ReviewDecision> _reviewDecisions = {};
   final Set<String> _expandedGroupPaths = {};
+  final Map<String, int> _expandedGroupItemLimits = {};
   final Set<String> _expandedReviewPaths = {};
   final Map<String, int> _sizeByPath = {};
   final Map<String, String> _deleteTargetsByPath = {};
@@ -612,19 +640,34 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   /// True after the user starts, resumes, or opens full-coverage results this visit.
   bool _coverageUserEngagedFullRun = false;
+
+  /// After Start/Resume/Raise, stay on Analyzing until pause/complete (not Review).
+  bool _coverageUiPrefersAnalyzingPhase = false;
+
+  /// [updatedAtMs] of the paused job when Resume/Raise started (drops stale emits).
+  int? _coverageStalePausedUpdatedAtMs;
+
+  /// While true, defer coverage job [setState] until scroll ends (avoids jank).
+  bool _deferCoverageJobUiForScroll = false;
   int? _runBudgetCredits;
   bool _coverageCapBelowEstimate = false;
   int _coverageVerdictPageCount = 2;
   static const _coverageVerdictPageSize = 500;
+
+  /// Initial Full Coverage results load after job ends (more load on scroll).
+  static const _maxCoverageVerdictPagesOnTerminal = 40;
   int _coverageVerdictByteOffset = 0;
   List<CoverageVerdict> _coverageVerdictRows = const [];
-  List<_ResultListRow>? _resultRowsCache;
   DateTime? _lastCoverageVerdictRefreshAt;
   Timer? _coverageJobStateCoalesceTimer;
   CoverageJobState? _pendingCoverageJobState;
   bool _coverageVerdictPageLoadInFlight = false;
   bool _resultsLayoutPending = false;
   int _resultsLayoutGeneration = 0;
+  _ResultListLayout? _resultListLayout;
+  bool _resultsUserScrolling = false;
+  List<CoverageVerdict>? _pendingCoverageVerdictRowsAfterScroll;
+  bool _pendingCoverageVerdictRowsPreserveUi = true;
 
   int _beginOperation() => ++_operationGeneration;
   bool _isCurrent(int generation) =>
@@ -852,6 +895,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         directoryPaths: _directoryPathsForGrouping(),
         maxAutoExpandedRows: _maxDefaultExpandedResultRows,
         preClassified: List<Map<String, dynamic>>.from(_preClassified),
+        firstLevelDirectoryPaths: _scanRootFirstLevelDirectoryPaths().toList(),
+        fullCoverageLayout: _useFullCoverage,
       ),
     );
     if (!mounted || layoutGeneration != _resultsLayoutGeneration) return;
@@ -859,7 +904,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _verdicts = verdicts;
       _normalizedGroupsCache = prep.normalizedGroups;
       _visibleGroupsCache = null;
-      _resultRowsCache = null;
       _resultsLayoutPending = false;
       if (preserveUiState && savedReview != null) {
         _reviewDecisions
@@ -927,7 +971,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   void initState() {
     super.initState();
-    _resultsScrollController.addListener(_maybeLoadMoreCoverageVerdicts);
     AiCoverageCoordinator.instance.addJobStateListener(_onCoverageJobState);
     _bootstrap();
   }
@@ -961,20 +1004,45 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void _invalidateResultGroups() {
     _normalizedGroupsCache = null;
     _visibleGroupsCache = null;
-    _resultRowsCache = null;
-  }
-
-  List<_ResultListRow> _cachedResultRows() {
-    final cached = _resultRowsCache;
-    if (cached != null) return cached;
-    final rows = _resultRows(_visibleResultGroups(_normalizedResultGroups()));
-    _resultRowsCache = rows;
-    return rows;
+    _resultListLayout = null;
   }
 
   void _invalidateVisibleGroups() {
     _visibleGroupsCache = null;
-    _resultRowsCache = null;
+    _resultListLayout = null;
+  }
+
+  _ResultListLayout _resultListLayoutFor(List<_VisibleResultGroup> groups) {
+    final cached = _resultListLayout;
+    if (cached != null && identical(cached.groups, groups)) {
+      return cached;
+    }
+    final layout = _ResultListLayout.build(
+      groups: groups,
+      expandedGroupPaths: _expandedGroupPaths,
+      showsFilteredItems: _showsFilteredItems,
+      itemLimitFor: _expandedItemLimitFor,
+    );
+    _resultListLayout = layout;
+    return layout;
+  }
+
+  void _queueCoverageVerdictRowsUntilScrollIdle(
+    List<CoverageVerdict> rows, {
+    required bool preserveUiState,
+  }) {
+    _pendingCoverageVerdictRowsAfterScroll = rows;
+    _pendingCoverageVerdictRowsPreserveUi = preserveUiState;
+  }
+
+  void _flushPendingCoverageVerdictRowsAfterScroll() {
+    final pending = _pendingCoverageVerdictRowsAfterScroll;
+    if (pending == null) return;
+    _pendingCoverageVerdictRowsAfterScroll = null;
+    _applyCoverageVerdictRows(
+      pending,
+      preserveUiState: _pendingCoverageVerdictRowsPreserveUi,
+    );
   }
 
   @override
@@ -999,6 +1067,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _selected.clear();
       _reviewDecisions.clear();
       _expandedGroupPaths.clear();
+      _expandedGroupItemLimits.clear();
       _expandedReviewPaths.clear();
       _preClassified = [];
       _preClassifiedTotalCount = null;
@@ -1034,6 +1103,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _runBudgetCredits = null;
       _coverageVerdictRows = const [];
       _coverageUserEngagedFullRun = false;
+      _coverageUiPrefersAnalyzingPhase = false;
+      _coverageStalePausedUpdatedAtMs = null;
       _coveragePlanSummaryBannerLoadAttempted = false;
     });
     try {
@@ -1272,6 +1343,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           _selected.clear();
           _reviewDecisions.clear();
           _expandedGroupPaths.clear();
+          _expandedGroupItemLimits.clear();
           _expandedReviewPaths.clear();
           _error = null;
           _phase = _Phase.results;
@@ -1289,6 +1361,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _selected.clear();
         _reviewDecisions.clear();
         _expandedGroupPaths.clear();
+        _expandedGroupItemLimits.clear();
         _expandedReviewPaths.clear();
         _verdicts = verdicts;
         _invalidateResultGroups();
@@ -1339,6 +1412,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _selected.clear();
       _reviewDecisions.clear();
       _expandedGroupPaths.clear();
+      _expandedGroupItemLimits.clear();
       _expandedReviewPaths.clear();
       _invalidateResultGroups();
     });
@@ -1632,7 +1706,87 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     });
   }
 
+  bool _isLightweightAnalyzingUi() {
+    if (!_useFullCoverage || !_coverageUiPrefersAnalyzingPhase) return false;
+    if (_phase != _Phase.analyzing) return false;
+    final job = _coverageJobState;
+    return _analyzing || job?.status == CoverageJobStatus.running;
+  }
+
+  List<CoverageVerdict> _coverageJobBannerVerdictRows() {
+    if (_isLightweightAnalyzingUi()) return const [];
+    return _coverageVerdictRows;
+  }
+
+  int _coverageJobCoalesceDelayMs() {
+    if (_isLightweightAnalyzingUi()) return 1000;
+    final pending = _pendingCoverageJobState;
+    if (_phase == _Phase.analyzing &&
+        _coverageUiPrefersAnalyzingPhase &&
+        pending?.status == CoverageJobStatus.running) {
+      return 1000;
+    }
+    return 150;
+  }
+
+  bool _shouldDeferCoverageJobUiDuringScroll() {
+    if (_phase == _Phase.results || _phase == _Phase.deleting) {
+      final status =
+          _coverageJobState?.status ?? _pendingCoverageJobState?.status;
+      if (status == CoverageJobStatus.paused ||
+          status == CoverageJobStatus.completed ||
+          status == CoverageJobStatus.cancelled) {
+        return false;
+      }
+    }
+    return _phase == _Phase.analyzing || _isLightweightAnalyzingUi();
+  }
+
+  Widget _wrapScrollHoldForRebuild(Widget child) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollStartNotification) {
+          if (_phase == _Phase.results || _phase == _Phase.deleting) {
+            _resultsUserScrolling = true;
+          }
+          if (_shouldDeferCoverageJobUiDuringScroll()) {
+            _deferCoverageJobUiForScroll = true;
+          }
+        } else if (notification is ScrollEndNotification) {
+          if (_deferCoverageJobUiForScroll) {
+            _deferCoverageJobUiForScroll = false;
+            _flushPendingCoverageJobStateAfterScroll();
+          }
+          if (_phase == _Phase.results || _phase == _Phase.deleting) {
+            _resultsUserScrolling = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _flushPendingCoverageVerdictRowsAfterScroll();
+              _maybeLoadMoreCoverageVerdicts();
+            });
+          }
+        }
+        return false;
+      },
+      child: child,
+    );
+  }
+
+  void _flushPendingCoverageJobStateAfterScroll() {
+    if (_pendingCoverageJobState == null || !mounted) return;
+    _coverageJobStateCoalesceTimer?.cancel();
+    _coverageJobStateCoalesceTimer = null;
+    // ScrollEndNotification is dispatched during layout; never setState here.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _deferCoverageJobUiForScroll) return;
+      final pending = _pendingCoverageJobState;
+      if (pending == null) return;
+      unawaited(_applyCoverageJobState(pending));
+    });
+  }
+
   void _maybeLoadMoreCoverageVerdicts() {
+    if (_isLightweightAnalyzingUi()) return;
     if (!_useFullCoverage || !_resultsScrollController.hasClients) return;
     final position = _resultsScrollController.position;
     if (position.maxScrollExtent <= 0) return;
@@ -1656,6 +1810,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         pageSize: _coverageVerdictPageSize,
       );
       if (!mounted || rows.length <= _coverageVerdictRows.length) return;
+      if (_resultsUserScrolling) {
+        _coverageVerdictPageCount = nextPageCount;
+        _queueCoverageVerdictRowsUntilScrollIdle(rows, preserveUiState: true);
+        return;
+      }
       setState(() => _coverageVerdictPageCount = nextPageCount);
       _applyCoverageVerdictRows(rows, preserveUiState: true);
     } finally {
@@ -1666,10 +1825,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void _onCoverageJobState(CoverageJobState state) {
     if (state.snapshotId != widget.snapshotId || !mounted) return;
     _pendingCoverageJobState = state;
-    _coverageJobStateCoalesceTimer ??= Timer(
-      const Duration(milliseconds: 150),
+    _coverageJobStateCoalesceTimer?.cancel();
+    _coverageJobStateCoalesceTimer = Timer(
+      Duration(milliseconds: _coverageJobCoalesceDelayMs()),
       () {
         _coverageJobStateCoalesceTimer = null;
+        if (_deferCoverageJobUiForScroll) return;
         final pending = _pendingCoverageJobState;
         if (pending == null || !mounted) return;
         unawaited(_applyCoverageJobState(pending));
@@ -1677,8 +1838,37 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  void _markCoverageRunEngaged() {
+    _coverageStalePausedUpdatedAtMs =
+        _coverageJobState?.status == CoverageJobStatus.paused
+        ? _coverageJobState!.updatedAtMs
+        : null;
+    _coverageUserEngagedFullRun = true;
+    _coverageUiPrefersAnalyzingPhase = true;
+    _analyzing = true;
+    _phase = _Phase.analyzing;
+    _error = null;
+  }
+
   Future<void> _applyCoverageJobState(CoverageJobState state) async {
     if (state.snapshotId != widget.snapshotId) return;
+    if (_deferCoverageJobUiForScroll) {
+      _pendingCoverageJobState = state;
+      return;
+    }
+    if (_phase == _Phase.results || _phase == _Phase.deleting) {
+      final terminal =
+          state.status == CoverageJobStatus.paused ||
+          state.status == CoverageJobStatus.completed ||
+          state.status == CoverageJobStatus.cancelled;
+      if (terminal &&
+          _verdicts.isNotEmpty &&
+          state.pauseReason != CoveragePauseReason.failed) {
+        if (!mounted) return;
+        setState(() => _coverageJobState = state);
+        return;
+      }
+    }
     // Persisted jobs surface on precheck as the banner only until the user
     // explicitly starts or resumes full coverage this visit.
     if (_phase == _Phase.precheck &&
@@ -1689,29 +1879,80 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _scheduleCoveragePlanSummaryForBannerIfNeeded();
       return;
     }
+    if (coverageIgnoreStalePausedJobState(
+      state: state,
+      stalePausedUpdatedAtMs: _coverageStalePausedUpdatedAtMs,
+    )) {
+      return;
+    }
+    if (state.status == CoverageJobStatus.running) {
+      _coverageStalePausedUpdatedAtMs = null;
+    } else if (state.status == CoverageJobStatus.paused &&
+        _coverageStalePausedUpdatedAtMs != null &&
+        state.updatedAtMs != _coverageStalePausedUpdatedAtMs) {
+      _coverageStalePausedUpdatedAtMs = null;
+    }
     final incremental = _coverageVerdictByteOffset > 0 && _verdicts.isNotEmpty;
     final terminal =
         state.status == CoverageJobStatus.completed ||
-        state.status == CoverageJobStatus.paused;
-    final shouldRefreshVerdicts =
-        state.analyzedFiles > 0 || state.status == CoverageJobStatus.completed;
+        state.status == CoverageJobStatus.paused ||
+        state.status == CoverageJobStatus.cancelled;
+    if (terminal) {
+      _coverageUiPrefersAnalyzingPhase = false;
+    }
+    final lightweightAnalyzing =
+        _useFullCoverage &&
+        _coverageUiPrefersAnalyzingPhase &&
+        _phase == _Phase.analyzing &&
+        state.status == CoverageJobStatus.running;
+    var shouldRefreshVerdicts =
+        !lightweightAnalyzing &&
+        (state.analyzedFiles > 0 ||
+            state.status == CoverageJobStatus.completed);
+    if ((_phase == _Phase.results || _phase == _Phase.deleting) &&
+        terminal &&
+        _verdicts.isNotEmpty) {
+      shouldRefreshVerdicts = false;
+    }
     if (shouldRefreshVerdicts) {
       final now = DateTime.now();
+      final running = state.status == CoverageJobStatus.running;
+      final heavy =
+          _coverageVerdictRows.length >= _heavyResultsLayoutThreshold ||
+          state.analyzedFiles >= _heavyResultsLayoutThreshold;
+      final minInterval = running && heavy
+          ? const Duration(seconds: 4)
+          : _coverageVerdictRefreshMinInterval;
       final dueByTime =
           _lastCoverageVerdictRefreshAt == null ||
-          now.difference(_lastCoverageVerdictRefreshAt!) >=
-              _coverageVerdictRefreshMinInterval;
-      if (terminal || dueByTime) {
-        await _refreshVerdictsFromCoverageStore(incremental: incremental);
-        _lastCoverageVerdictRefreshAt = now;
+          now.difference(_lastCoverageVerdictRefreshAt!) >= minInterval;
+      final allowRefresh = terminal || (dueByTime && (!running || incremental));
+      if (allowRefresh) {
+        // Terminal transitions (completed/paused): paint job state first so
+        // progress does not freeze while reading jsonl / heavy results layout.
+        if (terminal) {
+          _bumpCoverageVerdictPagesForTerminal(state);
+          final inc = incremental;
+          unawaited(() async {
+            await _refreshVerdictsFromCoverageStore(incremental: inc);
+            if (mounted) {
+              _lastCoverageVerdictRefreshAt = DateTime.now();
+            }
+          }());
+        } else {
+          await _refreshVerdictsFromCoverageStore(incremental: incremental);
+          _lastCoverageVerdictRefreshAt = now;
+        }
       }
     }
     if (!mounted) return;
     final showResults =
-        _verdicts.isNotEmpty ||
         state.status == CoverageJobStatus.paused ||
         state.status == CoverageJobStatus.completed ||
-        (state.status == CoverageJobStatus.running && state.analyzedFiles > 0);
+        (!_coverageUiPrefersAnalyzingPhase &&
+            ((state.status == CoverageJobStatus.running &&
+                    state.analyzedFiles > 0) ||
+                _verdicts.isNotEmpty));
     setState(() {
       _coverageJobState = state;
       _analyzing = state.status == CoverageJobStatus.running;
@@ -1761,6 +2002,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<void> _refreshVerdictsFromCoverageStore({
     bool incremental = false,
   }) async {
+    if (_isLightweightAnalyzingUi()) return;
     try {
       final store = CoverageVerdictStore(SnapshotCache.cacheDir());
       List<CoverageVerdict> coverageVerdicts;
@@ -1835,6 +2077,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     List<CoverageVerdict> coverageVerdicts, {
     bool preserveUiState = false,
   }) {
+    if (_resultsUserScrolling &&
+        preserveUiState &&
+        (_phase == _Phase.results || _phase == _Phase.deleting)) {
+      _queueCoverageVerdictRowsUntilScrollIdle(
+        coverageVerdicts,
+        preserveUiState: preserveUiState,
+      );
+      return;
+    }
     unawaited(
       _applyCoverageVerdictRowsAsync(
         coverageVerdicts,
@@ -1847,6 +2098,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     List<CoverageVerdict> coverageVerdicts, {
     bool preserveUiState = false,
   }) async {
+    if (_isLightweightAnalyzingUi()) return;
     final savedReview = preserveUiState
         ? Map<String, _ReviewDecision>.from(_reviewDecisions)
         : null;
@@ -1970,10 +2222,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final mode = await widget.gateway.getMode();
     if (!_isCurrent(generation)) return;
     setState(() {
-      _coverageUserEngagedFullRun = true;
-      _analyzing = true;
-      _phase = _Phase.analyzing;
-      _error = null;
+      _markCoverageRunEngaged();
       _coverageCapBelowEstimate = false;
       _coverageVerdictByteOffset = 0;
       _coverageVerdictRows = const [];
@@ -1981,21 +2230,40 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _selected.clear();
       _reviewDecisions.clear();
       _expandedGroupPaths.clear();
+      _expandedGroupItemLimits.clear();
       _expandedReviewPaths.clear();
       _invalidateResultGroups();
     });
     if (!_isCurrent(generation) || !mounted) return;
+    // Do not await the heavy native plan/job work on this call stack — keeps
+    // the analyzing spinner responsive while startFullCoverage runs.
+    unawaited(
+      _finishStartFullCoverage(
+        generation: generation,
+        mode: mode,
+        provider: provider,
+      ),
+    );
+  }
+
+  Future<void> _finishStartFullCoverage({
+    required int generation,
+    required AiMode mode,
+    required AiProvider provider,
+  }) async {
     final result = await AiCoverageCoordinator.instance.startFullCoverage(
       snapshotId: widget.snapshotId,
       mode: mode,
       provider: provider,
       budgetCredits: _runBudgetCredits,
+      preloadedPlanSummary: _coveragePlanSummary,
     );
     if (!mounted || !_isCurrent(generation)) return;
     if (result is StartCoverageBlocked &&
         result.reason == StartCoverageBlockedReason.capBelowEstimate) {
       setState(() {
         _analyzing = false;
+        _coverageUiPrefersAnalyzingPhase = false;
         _phase = _Phase.precheck;
         _error = null;
         _coverageCapBelowEstimate = true;
@@ -2005,6 +2273,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (result is StartFullCoverageUnavailable) {
       setState(() {
         _analyzing = false;
+        _coverageUiPrefersAnalyzingPhase = false;
         _phase = _Phase.precheck;
         _error = context.l10n.aiCoverageUnavailable;
       });
@@ -2073,7 +2342,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (mounted) setState(() => _hasProvider = false);
       return;
     }
-    setState(() => _coverageUserEngagedFullRun = true);
+    setState(_markCoverageRunEngaged);
     await AiCoverageCoordinator.instance.prepareService(provider);
     final resumed = await AiCoverageCoordinator.instance.tryResumeCoverage(
       widget.snapshotId,
@@ -2291,7 +2560,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (mounted) setState(() => _hasProvider = false);
       return;
     }
-    if (mounted) setState(() => _coverageUserEngagedFullRun = true);
+    if (mounted) setState(_markCoverageRunEngaged);
     await AiCoverageCoordinator.instance.prepareService(provider);
     final raised = await AiCoverageCoordinator.instance.tryRaiseBudgetAndResume(
       snapshotId: widget.snapshotId,
@@ -2310,7 +2579,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final billingMismatch = _coverageJobBillingModeMismatch(job);
     return CoverageJobBanner(
       state: job,
-      verdictRows: _coverageVerdictRows,
+      verdictRows: _coverageJobBannerVerdictRows(),
       planSummary: _coveragePlanSummary,
       showPausedBeforeProgressNotice: _phase == _Phase.results,
       billingModeMismatch: billingMismatch,
@@ -2652,16 +2921,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Set<String> _defaultExpandedGroupPaths() {
-    var rowBudget = _maxDefaultExpandedResultRows;
-    final expanded = <String>{};
-    for (final group in _normalizedResultGroups()) {
-      if (group.items.length >= 3) continue;
-      final rowCost = group.items.length + 1;
-      if (rowBudget < rowCost) break;
-      expanded.add(group.path);
-      rowBudget -= rowCost;
+    return _expandedGroupPathsForPresentation(
+      _normalizedResultGroups(),
+      maxAutoExpandedRows: _maxDefaultExpandedResultRows,
+    );
+  }
+
+  void _bumpCoverageVerdictPagesForTerminal(CoverageJobState state) {
+    if (!_useFullCoverage || state.analyzedFiles <= 0) return;
+    final needed = (state.analyzedFiles / _coverageVerdictPageSize).ceil();
+    final target = needed.clamp(2, _maxCoverageVerdictPagesOnTerminal);
+    if (target > _coverageVerdictPageCount) {
+      _coverageVerdictPageCount = target;
     }
-    return expanded;
   }
 
   int get _selectedBytes =>
@@ -2730,8 +3002,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         candidateCount: 0,
       ),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
-      _Phase.analyzing => _buildAnalyzingBody(),
-      _Phase.results || _Phase.deleting => _buildResults(),
+      _Phase.analyzing => _wrapScrollHoldForRebuild(_buildAnalyzingBody()),
+      _Phase.results ||
+      _Phase.deleting => _wrapScrollHoldForRebuild(_buildResults()),
       _Phase.error => _buildError(),
     };
   }
@@ -2746,7 +3019,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget _buildAnalyzingBody() {
-    if (_useFullCoverage && _verdicts.isNotEmpty) {
+    if (_useFullCoverage &&
+        _verdicts.isNotEmpty &&
+        !_coverageUiPrefersAnalyzingPhase) {
       return _buildResults();
     }
     final l10n = context.l10n;
@@ -3197,14 +3472,47 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           .map((entry) => entry['path']?.toString() ?? '')
           .where((path) => path.isNotEmpty),
     };
-    final groups = groupAiResults(
+    var groups = groupAiResults(
       merged,
       _sizeByPath,
       rootPath: _rootPath,
       directoryPaths: directoryPaths,
     );
+    if (_useFullCoverage && _rootPath.isNotEmpty) {
+      groups = ensureFirstLevelDirectoryGroups(
+        groups,
+        _rootPath,
+        _scanRootFirstLevelDirectoryPaths(),
+      );
+    }
     _normalizedGroupsCache = groups;
     return groups;
+  }
+
+  Set<String> _scanRootFirstLevelDirectoryPaths() {
+    final root = normalizeFsPath(_rootPath);
+    if (root.isEmpty) return const {};
+    final dirs = <String>{};
+    void consider(String path) {
+      if (path.isEmpty) return;
+      final bucket = firstLevelDirectoryUnderRoot(path, root);
+      if (bucket == null || bucket == root) return;
+      dirs.add(bucket);
+    }
+
+    for (final candidate in _unknown) {
+      consider(candidate.path);
+    }
+    for (final entry in _preClassified) {
+      consider(entry['path']?.toString() ?? '');
+    }
+    for (final row in _coverageVerdictRows) {
+      consider(row.path);
+    }
+    for (final verdict in _verdicts) {
+      consider(verdict.path);
+    }
+    return dirs;
   }
 
   _OverallResultSummaryData _overallResultSummaryFor(
@@ -3245,14 +3553,29 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   List<_VisibleResultGroup> _visibleResultGroups(List<AiResultGroup> groups) {
     final cached = _visibleGroupsCache;
     if (cached != null) return cached;
+    final requiredFirstLevel = _useFullCoverage
+        ? _scanRootFirstLevelDirectoryPaths()
+        : const <String>{};
+    final scanRoot = normalizeFsPath(_rootPath);
     final visibleGroups = <_VisibleResultGroup>[];
     for (final group in groups) {
+      if (_useFullCoverage &&
+          scanRoot.isNotEmpty &&
+          group.path == scanRoot &&
+          group.reviewCount == 0 &&
+          group.safeCount == 0) {
+        continue;
+      }
       final visibleItems = group.items
           .where(_matchesPresentationFilters)
           .toList(growable: false);
-      if (visibleItems.isEmpty) continue;
-      final sortedItems = _sortedVisibleItems(visibleItems);
-      if (sortedItems.isEmpty) continue;
+      final forceGroupRow =
+          _useFullCoverage && requiredFirstLevel.contains(group.path);
+      if (visibleItems.isEmpty && !forceGroupRow) continue;
+      final sortedItems = visibleItems.isEmpty
+          ? const <AiVerdict>[]
+          : _sortedVisibleItems(visibleItems);
+      if (sortedItems.isEmpty && !forceGroupRow) continue;
       visibleGroups.add(
         _VisibleResultGroup(
           group: group,
@@ -3265,11 +3588,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       );
     }
     visibleGroups.sort((left, right) {
-      final itemOrder = _compareVisibleItems(
-        left.items.first,
-        right.items.first,
-      );
-      if (itemOrder != 0) return itemOrder;
+      final leftHasItems = left.items.isNotEmpty;
+      final rightHasItems = right.items.isNotEmpty;
+      if (leftHasItems && rightHasItems) {
+        final itemOrder = _compareVisibleItems(
+          left.items.first,
+          right.items.first,
+        );
+        if (itemOrder != 0) return itemOrder;
+      } else if (leftHasItems != rightHasItems) {
+        return leftHasItems ? -1 : 1;
+      } else {
+        final reviewDiff = right.group.reviewCount.compareTo(
+          left.group.reviewCount,
+        );
+        if (reviewDiff != 0) return reviewDiff;
+        final safeDiff = right.group.safeCount.compareTo(left.group.safeCount);
+        if (safeDiff != 0) return safeDiff;
+      }
       final sizeOrder = right.totalBytes.compareTo(left.totalBytes);
       if (sizeOrder != 0) return sizeOrder;
       return left.group.path.compareTo(right.group.path);
@@ -3324,26 +3660,33 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     ];
   }
 
-  List<_ResultListRow> _resultRows(List<_VisibleResultGroup> groups) {
-    final rows = <_ResultListRow>[];
-    for (final group in groups) {
-      rows.add(_ResultListRow.group(group));
-      if (_expandedGroupPaths.contains(group.group.path) ||
-          _showsFilteredItems) {
-        for (final item in group.items) {
-          rows.add(_ResultListRow.item(group.group, item));
-        }
-      }
-    }
-    return rows;
+  int _expandedItemLimitFor(String groupPath, int itemCount) {
+    if (_showsFilteredItems) return itemCount;
+    if (!_expandedGroupPaths.contains(groupPath)) return 0;
+    final cap =
+        _expandedGroupItemLimits[groupPath] ?? _expandedGroupInitialItemCap;
+    return cap.clamp(0, itemCount);
   }
 
   void _toggleGroupExpanded(String path) {
     setState(() {
-      if (!_expandedGroupPaths.add(path)) {
+      if (_expandedGroupPaths.contains(path)) {
         _expandedGroupPaths.remove(path);
+        _expandedGroupItemLimits.remove(path);
+      } else {
+        _expandedGroupPaths.add(path);
       }
-      _resultRowsCache = null;
+      _resultListLayout = null;
+    });
+  }
+
+  void _showMoreItemsInGroup(String groupPath, int total) {
+    final current =
+        _expandedGroupItemLimits[groupPath] ?? _expandedGroupInitialItemCap;
+    setState(() {
+      _expandedGroupItemLimits[groupPath] =
+          (current + _expandedGroupItemCapStep).clamp(0, total);
+      _resultListLayout = null;
     });
   }
 
@@ -3378,6 +3721,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   bool _matchesPresentationFilters(AiVerdict item) {
     if (!_matchesResultFilter(item)) return false;
+    if (_useFullCoverage &&
+        _resultFilterMode == _ResultFilterMode.all &&
+        item.verdict == 'keep') {
+      return false;
+    }
     return _matchesResultsQuery(item);
   }
 
@@ -3432,6 +3780,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   String _groupSummaryLabel(_VisibleResultGroup group) {
+    if (_useFullCoverage && group.items.isEmpty) {
+      final full = group.group;
+      if (full.reviewCount == 0 && full.safeCount == 0) {
+        return context.l10n.aiResultsGroupItems(0, _formatBytes(0));
+      }
+    }
     return context.l10n.aiResultsGroupItems(
       group.items.length,
       _formatBytes(group.totalBytes),
@@ -3439,7 +3793,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   List<String> _groupMetadataLabels(_VisibleResultGroup group) {
-    final visibleSafeCount = group.items
+    final full = group.group;
+    final itemSource = group.items.isEmpty && _useFullCoverage
+        ? full.items
+        : group.items;
+    final visibleSafeCount = itemSource
         .where((item) => item.verdict == 'safe_to_remove')
         .length;
     final visibleSelectedCount = group.items
@@ -3447,9 +3805,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         .length;
     return [
       context.l10n.aiResultsGroupSafe(visibleSafeCount),
-      context.l10n.aiResultsGroupReview(_pendingReviewCountFor(group.items)),
+      context.l10n.aiResultsGroupReview(_pendingReviewCountFor(itemSource)),
       context.l10n.aiResultsGroupKeep(
-        group.items.where((item) => item.verdict == 'keep').length,
+        itemSource.where((item) => item.verdict == 'keep').length,
       ),
       if (visibleSelectedCount > 0)
         context.l10n.aiResultsSelectedInGroup(visibleSelectedCount),
@@ -3483,6 +3841,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           summaryLabel: _groupSummaryLabel(visibleGroup),
           metadataLabels: _groupMetadataLabels(visibleGroup),
         ),
+        _ResultListShowMoreRow(:final groupPath, :final shown, :final total) =>
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: row.key,
+              onPressed: () => _showMoreItemsInGroup(groupPath, total),
+              child: Text(
+                context.l10n.aiResultsShowMoreInGroup(
+                  (total - shown).clamp(1, total),
+                ),
+              ),
+            ),
+          ),
         _ResultListItemRow(:final item) => _ResultRow(
           key: row.key,
           item: item,
@@ -3543,7 +3914,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
     final normalizedGroups = _normalizedResultGroups();
     final summary = _overallResultSummaryFor(normalizedGroups);
-    final rows = _cachedResultRows();
+    final visibleGroups = _visibleResultGroups(normalizedGroups);
+    final listLayout = _resultListLayoutFor(visibleGroups);
+    final rowCount = listLayout.rowCount;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 720;
@@ -3555,6 +3928,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             Expanded(
               child: CustomScrollView(
                 controller: _resultsScrollController,
+                scrollCacheExtent: const ScrollCacheExtent.pixels(640),
                 slivers: [
                   SliverPadding(
                     padding: EdgeInsets.fromLTRB(
@@ -3598,7 +3972,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                       ),
                     ),
                   ),
-                  if (rows.isEmpty)
+                  if (rowCount == 0)
                     SliverFillRemaining(
                       child: _buildResultsEmptyState(
                         filtered: normalizedGroups.isNotEmpty,
@@ -3612,9 +3986,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                       sliver: SliverList(
                         key: AiAnalysisWorkspace.resultsListKey,
                         delegate: SliverChildBuilderDelegate(
-                          (context, index) =>
-                              _buildResultStreamRow(rows[index]),
-                          childCount: rows.length,
+                          (context, index) {
+                            final row = listLayout.rowAt(index);
+                            if (row == null) return const SizedBox.shrink();
+                            return _buildResultStreamRow(row);
+                          },
+                          childCount: rowCount,
+                          addRepaintBoundaries: true,
                         ),
                       ),
                     ),
@@ -4073,6 +4451,91 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 }
 
+final class _ResultListLayout {
+  _ResultListLayout({
+    required this.groups,
+    required this.prefixEnds,
+    required this.expandedGroupPaths,
+    required this.showsFilteredItems,
+    required this.itemLimitFor,
+  });
+
+  final List<_VisibleResultGroup> groups;
+  final List<int> prefixEnds;
+  final Set<String> expandedGroupPaths;
+  final bool showsFilteredItems;
+  final int Function(String groupPath, int itemCount) itemLimitFor;
+
+  int get rowCount => prefixEnds.isEmpty ? 0 : prefixEnds.last;
+
+  static _ResultListLayout build({
+    required List<_VisibleResultGroup> groups,
+    required Set<String> expandedGroupPaths,
+    required bool showsFilteredItems,
+    required int Function(String groupPath, int itemCount) itemLimitFor,
+  }) {
+    final prefixEnds = <int>[0];
+    for (final group in groups) {
+      var span = 1;
+      final showItems =
+          expandedGroupPaths.contains(group.group.path) || showsFilteredItems;
+      if (showItems) {
+        final limit = itemLimitFor(group.group.path, group.items.length);
+        span += limit;
+        if (!showsFilteredItems && group.items.length > limit && limit > 0) {
+          span += 1;
+        }
+      }
+      prefixEnds.add(prefixEnds.last + span);
+    }
+    return _ResultListLayout(
+      groups: groups,
+      prefixEnds: prefixEnds,
+      expandedGroupPaths: expandedGroupPaths,
+      showsFilteredItems: showsFilteredItems,
+      itemLimitFor: itemLimitFor,
+    );
+  }
+
+  _ResultListRow? rowAt(int index) {
+    if (index < 0 || index >= rowCount || groups.isEmpty) return null;
+    var lo = 0;
+    var hi = groups.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (prefixEnds[mid] <= index) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    final group = groups[lo];
+    final local = index - prefixEnds[lo];
+    if (local == 0) {
+      return _ResultListRow.group(group);
+    }
+    final showItems =
+        expandedGroupPaths.contains(group.group.path) || showsFilteredItems;
+    if (!showItems) return null;
+    final limit = itemLimitFor(group.group.path, group.items.length);
+    final itemIndex = local - 1;
+    if (itemIndex < limit) {
+      return _ResultListRow.item(group.group, group.items[itemIndex]);
+    }
+    if (itemIndex == limit &&
+        !showsFilteredItems &&
+        group.items.length > limit &&
+        limit > 0) {
+      return _ResultListRow.showMore(
+        groupPath: group.group.path,
+        shown: limit,
+        total: group.items.length,
+      );
+    }
+    return null;
+  }
+}
+
 sealed class _ResultListRow {
   const _ResultListRow();
 
@@ -4080,6 +4543,12 @@ sealed class _ResultListRow {
 
   factory _ResultListRow.item(AiResultGroup group, AiVerdict item) =
       _ResultListItemRow;
+
+  factory _ResultListRow.showMore({
+    required String groupPath,
+    required int shown,
+    required int total,
+  }) = _ResultListShowMoreRow;
 
   Key get key;
 }
@@ -4101,6 +4570,21 @@ final class _ResultListItemRow extends _ResultListRow {
 
   @override
   Key get key => ValueKey<String>('ai-result-item:${item.path}');
+}
+
+final class _ResultListShowMoreRow extends _ResultListRow {
+  const _ResultListShowMoreRow({
+    required this.groupPath,
+    required this.shown,
+    required this.total,
+  });
+
+  final String groupPath;
+  final int shown;
+  final int total;
+
+  @override
+  Key get key => ValueKey<String>('ai-result-show-more:$groupPath');
 }
 
 class _ResultGroupRow extends StatelessWidget {

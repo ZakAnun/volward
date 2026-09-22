@@ -18,6 +18,93 @@ import 'package:volward/volward_session.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test(
+    'debugTryResumePlanForJob returns precheck cache for fresh start job',
+    () async {
+      const plan = CoveragePlanSummary(
+        snapshotId: 'snap-fresh',
+        planVersion: 3,
+        rootPath: '/data',
+        totalUnclassified: 10,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 10,
+        estimatedPages: 1,
+        seedNodeCount: 1,
+      );
+      final coordinator = AiCoverageCoordinator.testing(
+        isCoverageApiReady: (_) => true,
+        resolveProvider: () async => _Provider(),
+      );
+      coordinator.attach(VolwardSession.test());
+      coordinator.debugSetPlanSummaryCache('snap-fresh', plan);
+      const job = CoverageJobState(
+        snapshotId: 'snap-fresh',
+        rootPath: '',
+        planVersion: 1,
+        cursor: 0,
+        totalUnclassified: 0,
+        analyzedFiles: 0,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.running,
+        usedTokens: 0,
+        usedCredits: 0,
+        budgetTokens: 500000,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      );
+      final loaded = await coordinator.debugTryResumePlanForJob(
+        'snap-fresh',
+        job,
+      );
+      expect(loaded, plan);
+    },
+  );
+
+  test(
+    'debugTryResumePlanForJob returns cached plan for matching job',
+    () async {
+      const plan = CoveragePlanSummary(
+        snapshotId: 'snap-resume-cache',
+        planVersion: 3,
+        rootPath: '/data',
+        totalUnclassified: 100,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 100,
+        estimatedPages: 3,
+        seedNodeCount: 1,
+      );
+      final coordinator = AiCoverageCoordinator.testing(
+        isCoverageApiReady: (_) => true,
+        resolveProvider: () async => _Provider(),
+      );
+      coordinator.attach(VolwardSession.test());
+      coordinator.debugSetPlanSummaryCache('snap-resume-cache', plan);
+      final job = CoverageJobState(
+        snapshotId: 'snap-resume-cache',
+        rootPath: '/data',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 100,
+        analyzedFiles: 40,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        usedTokens: 10,
+        usedCredits: 0,
+        budgetTokens: 50,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+        treeQueueCursor: 1,
+      );
+      final loaded = await coordinator.debugTryResumePlanForJob(
+        'snap-resume-cache',
+        job,
+      );
+      expect(loaded, plan);
+    },
+  );
+
   test('precheck flags when configured cap is below estimated buffer', () {
     final fromEstimate = (40 * 1.2).ceil();
     const configured = 20;
@@ -54,7 +141,9 @@ void main() {
       final service = _RecordingStartService();
       final provider = _Provider();
       final coordinator = AiCoverageCoordinator.testing(
-        serviceFactory: ({required session, required provider}) => service,
+        serviceFactory:
+            ({required session, required provider, resumePlanLoader}) async =>
+                service,
         isCoverageApiReady: (_) => true,
         resolveProvider: () async => provider,
       );
@@ -79,7 +168,9 @@ void main() {
     final service = _RecordingStartService();
     final provider = _Provider();
     final coordinator = AiCoverageCoordinator.testing(
-      serviceFactory: ({required session, required provider}) => service,
+      serviceFactory:
+          ({required session, required provider, resumePlanLoader}) async =>
+              service,
       isCoverageApiReady: (_) => true,
       resolveProvider: () async => provider,
     );
@@ -118,7 +209,9 @@ void main() {
       final service = _RecordingStartService();
       final provider = _Provider();
       final coordinator = AiCoverageCoordinator.testing(
-        serviceFactory: ({required session, required provider}) => service,
+        serviceFactory:
+            ({required session, required provider, resumePlanLoader}) async =>
+                service,
         isCoverageApiReady: (_) => true,
         resolveProvider: () async => provider,
       );

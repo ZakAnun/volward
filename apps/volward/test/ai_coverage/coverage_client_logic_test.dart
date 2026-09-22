@@ -198,4 +198,172 @@ void main() {
       );
     },
   );
+
+  test(
+    'coverageResumePlanFromMemoryCache matches snapshot and plan version',
+    () {
+      const plan = CoveragePlanSummary(
+        snapshotId: 'snap-a',
+        planVersion: 3,
+        rootPath: '/root',
+        totalUnclassified: 10,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 10,
+        estimatedPages: 1,
+        seedNodeCount: 1,
+      );
+      final job = CoverageJobState(
+        snapshotId: 'snap-a',
+        rootPath: '/root',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 10,
+        analyzedFiles: 5,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        usedTokens: 1,
+        usedCredits: 0,
+        budgetTokens: 100,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+        treeQueueCursor: 2,
+      );
+      expect(
+        coverageResumePlanFromMemoryCache(
+          snapshotId: 'snap-a',
+          job: job,
+          cachedSnapshotId: 'snap-a',
+          cachedSummary: plan,
+        ),
+        plan,
+      );
+      expect(
+        coverageResumePlanFromMemoryCache(
+          snapshotId: 'snap-a',
+          job: job,
+          cachedSnapshotId: 'snap-b',
+          cachedSummary: plan,
+        ),
+        isNull,
+      );
+      final wrongVersion = CoverageJobState(
+        snapshotId: 'snap-a',
+        rootPath: '/root',
+        planVersion: 2,
+        cursor: 0,
+        totalUnclassified: 10,
+        analyzedFiles: 5,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.paused,
+        usedTokens: 1,
+        usedCredits: 0,
+        budgetTokens: 100,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      );
+      expect(
+        coverageResumePlanFromMemoryCache(
+          snapshotId: 'snap-a',
+          job: wrongVersion,
+          cachedSnapshotId: 'snap-a',
+          cachedSummary: plan,
+        ),
+        isNull,
+      );
+    },
+  );
+
+  test('coverageResumePlanFromMemoryCache rejects fingerprint mismatch', () {
+    const fpA = CoverageSnapshotFingerprint(
+      rootSizeBytes: 1,
+      scannedAtMs: 1,
+      pathsSeen: 1,
+      dirsSeen: 0,
+      filesSeen: 1,
+      filesInSnapshot: 1,
+      pathsSkipped: 0,
+      truncated: false,
+      incompleteReason: null,
+    );
+    const fpB = CoverageSnapshotFingerprint(
+      rootSizeBytes: 2,
+      scannedAtMs: 1,
+      pathsSeen: 1,
+      dirsSeen: 0,
+      filesSeen: 1,
+      filesInSnapshot: 1,
+      pathsSkipped: 0,
+      truncated: false,
+      incompleteReason: null,
+    );
+    const plan = CoveragePlanSummary(
+      snapshotId: 'snap-a',
+      planVersion: 1,
+      rootPath: '/',
+      totalUnclassified: 1,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 1,
+      estimatedPages: 1,
+      fingerprint: fpB,
+    );
+    final job = CoverageJobState(
+      snapshotId: 'snap-a',
+      rootPath: '/',
+      planVersion: 1,
+      cursor: 0,
+      totalUnclassified: 1,
+      analyzedFiles: 1,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.paused,
+      usedTokens: 0,
+      usedCredits: 0,
+      budgetTokens: 1,
+      budgetCredits: 0,
+      updatedAtMs: 0,
+      fingerprint: fpA,
+    );
+    expect(
+      coverageResumePlanFromMemoryCache(
+        snapshotId: 'snap-a',
+        job: job,
+        cachedSnapshotId: 'snap-a',
+        cachedSummary: plan,
+      ),
+      isNull,
+    );
+  });
+
+  test('coverageIgnoreStalePausedJobState drops pre-resume paused emit', () {
+    const paused = CoverageJobState(
+      snapshotId: 's',
+      rootPath: '/',
+      planVersion: 1,
+      cursor: 0,
+      totalUnclassified: 1,
+      analyzedFiles: 0,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.paused,
+      usedTokens: 0,
+      usedCredits: 0,
+      budgetTokens: 1,
+      budgetCredits: 0,
+      updatedAtMs: 42,
+    );
+    expect(
+      coverageIgnoreStalePausedJobState(
+        state: paused,
+        stalePausedUpdatedAtMs: 42,
+      ),
+      isTrue,
+    );
+    expect(
+      coverageIgnoreStalePausedJobState(
+        state: paused.copyWith(updatedAtMs: 99),
+        stalePausedUpdatedAtMs: 42,
+      ),
+      isFalse,
+    );
+  });
 }

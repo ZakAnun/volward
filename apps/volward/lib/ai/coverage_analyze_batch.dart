@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'ai_settings_store.dart';
 import 'ai_coverage_job_controller.dart';
 import 'ai_provider.dart';
@@ -51,6 +53,12 @@ AnalyzeBatch createCoverageAnalyzeBatch({
   CancelToken? cancelToken,
 }) {
   return (rows) async {
+    if (kDebugMode && rows.isNotEmpty) {
+      debugPrint(
+        'Coverage AI: flat batch ${rows.length} row(s), '
+        'first=${rows.first.path}',
+      );
+    }
     final candidates = coverageRowsToCandidates(rows);
     final result = await provider.analyze(candidates, cancelToken: cancelToken);
     if (rows.isNotEmpty && result.verdicts.isEmpty) {

@@ -1369,6 +1369,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiResultsShowMoreInGroup(int count) {
+    return 'Show $count more in this folder';
+  }
+
+  @override
   String aiResultsSelectedForCleanup(int count, String bytes) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

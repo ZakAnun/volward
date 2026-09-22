@@ -36,4 +36,50 @@ void main() {
       throwsA(isA<CoverageEngineException>()),
     );
   });
+
+  test('parseMaterializedCoveragePlanJson rejects error and tree mismatch', () {
+    expect(
+      parseMaterializedCoveragePlanJson(
+        raw: 'error:not_ready',
+        snapshotId: 's1',
+        tree: true,
+      ),
+      isNull,
+    );
+    const flat = '''
+      {"snapshot_id":"s1","plan_version":1,"root_path":"/",
+       "total_unclassified":1,"pre_classified_count":0,
+       "group_rows":0,"file_rows":1,"estimated_pages":1}
+    ''';
+    expect(
+      parseMaterializedCoveragePlanJson(
+        raw: flat,
+        snapshotId: 's1',
+        tree: true,
+      ),
+      isNull,
+    );
+    expect(
+      parseMaterializedCoveragePlanJson(
+        raw: flat,
+        snapshotId: 's1',
+        tree: false,
+      )?.snapshotId,
+      's1',
+    );
+    const tree = '''
+      {"snapshot_id":"s1","plan_version":3,"root_path":"/",
+       "seed_node_count":1,"tail_file_count":0,
+       "local_safe_files":0,"local_keep_files":0,"tail_files":0,"tree_pending_files":0,
+       "estimated_tree_credits":0,"estimated_tail_credits":0}
+    ''';
+    expect(
+      parseMaterializedCoveragePlanJson(
+        raw: tree,
+        snapshotId: 's1',
+        tree: true,
+      )?.isTreePlan,
+      isTrue,
+    );
+  });
 }

@@ -1005,6 +1005,12 @@
       "count": {"type": "int"}
     }
   },
+  "aiResultsShowMoreInGroup": "再显示此文件夹中 {count} 项",
+  "@aiResultsShowMoreInGroup": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "aiResultsSelectedForCleanup": "已选择 {count} 项 · {bytes}",
   "@aiResultsSelectedForCleanup": {
     "placeholders": {

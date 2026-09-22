@@ -7,9 +7,7 @@ String coverageFailedReasonCategory(
   CoveragePauseDetail? detail, {
   String? pauseMessage,
 }) {
-  if (detail == null &&
-      pauseMessage != null &&
-      pauseMessage.trim().isNotEmpty) {
+  if (pauseMessage != null && pauseMessage.trim().isNotEmpty) {
     return _humanizePauseMessage(pauseMessage.trim());
   }
   return switch (detail) {
