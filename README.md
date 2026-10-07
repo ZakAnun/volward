@@ -23,7 +23,7 @@
 | **分类与筛选** | 浏览态按 **Cache / Temp / Media / System** 筛选，支持「仅可删」与 Size/Name 排序 |
 | **安全删除** | 删除前预览；确认后移入系统废纸篓，支持清空废纸篓 |
 | **Home 仪表盘** | 容量概览、当前目标下最大子项、快捷切换 Home / Desktop / Downloads 等 |
-| **AI Analyze** | 基于扫描 catalog 的 AI 覆盖分析（Platform 积分或 BYOK token，需联网）；**plan v3** 先 funnel 本地分流，再树形 BFS + 文件 tail；全量 job 支持预检、后台 worker、pause/resume |
+| **AI Analyze** | 基于扫描结果的 AI 覆盖分析（Platform 积分或自带 API Key，需联网）；先在本机用规则筛出可安全判定的项目，再对其余内容分批请求 AI；支持开始前预检、后台分析、暂停与继续 |
 | **应用内更新** | 检查 GitHub Releases，校验 SHA-256 后安装（可关自动下载） |
 
 Rust 侧还实现了大文件、重复文件、相似照片、清理候选、应用占用、浏览器隐私等 **Capability 分析器**，目前主要通过 Session/FFI 与测试覆盖；**主界面用户入口以浏览 + AI Analyze 为主**。
@@ -33,25 +33,24 @@ Rust 侧还实现了大文件、重复文件、相似照片、清理候选、应
 1. **首次启动**：恢复上次扫描根（或默认 Home）→ 即时预览 → 后台尝试 restore 缓存；若无有效缓存则 **自动开扫**。
 2. 扫描进行中可进入 **Browse** 多列查看；`paths_seen` 等进度会持续更新。
 3. 用筛选栏缩小范围，选中项目 → 删除预览 → 移入废纸篓。
-4. 需要 AI 辅助时进入 **AI Analyze**（Settings 中配置 Platform / BYOK / 关闭）。Platform 全量覆盖预检会展示 funnel 拆分（本地已判定 / 待树 / 待 tail）、**树 + tail 预估积分**、账户余额与本次 run 上限。
+4. 需要 AI 辅助时进入 **AI Analyze**（Settings 中配置 Platform / BYOK / 关闭）。Platform **全量分析**开始前会展示：已在本地判定的数量、仍需 AI 的部分、**预估积分**、账户余额与本次花费上限。
 5. **切换扫描根**（Home 侧栏或设置）：`completed` 目录 restore；`empty` 自动扫；`paused` restore 后增量续扫。
 
 ### AI Analyze 与 Platform 积分
 
 | 规则 | 说明 |
 |------|------|
-| **计费单位** | **1 积分 = 1 次** Platform `/ai/analyze` 请求 |
-| **plan v3（当前默认）** | 扫描 index 经 **funnel** 本地判定（Cache/Temp 前缀、OS 知识库、项目锚点等）后，剩余文件走 **树形 BFS**（每批最多 **80** 目录节点，可 drill-down）+ **tail 队列**（每批最多 **40** 文件路径）；目录 verdict 可向下传播，减少 tail 调用 |
-| **预估积分** | v3 预检：`estimated_tree_credits + estimated_tail_credits`（Rust `ai_coverage_tree.rs`）；若 funnel 后无需 API，则仅本地落盘 |
-| **开始前** | 预检展示 funnel 拆分、预估积分、账户积分、本次 run 上限（`min(⌈预估×1.2⌉, 余额, Settings 上限)`）；Settings 单次上限须 ≥ ⌈预估×1.2⌉ 才能开跑 |
+| **计费单位** | **1 积分 = 1 次** Platform 分析请求 |
+| **分析方式** | 先用扫描分类、缓存/临时目录规则与系统知识在本机标记「可删 / 应保留」；仍不确定的再分批送 AI——先按**目录层级**归纳，再处理零散文件；目录上的结论可覆盖其下未单独分析的文件，以减少请求次数 |
+| **无需联网的情况** | 若预检后所有项目都已在本地判定完毕，可直接得到结果，**不消耗积分** |
+| **开始前** | 预检展示：本地已判定数量、仍需 AI 的数量、预估积分、账户积分、本次花费上限（在预估基础上留约 **20%** 缓冲，并与余额、Settings 上限取较小值）；Settings 中的单次上限若低于缓冲后的预估值，则无法开始 |
 | **单次上限** | Settings「全量覆盖积分预算」默认 **50**；本地若仍为旧默认 **20** 会在读取时自动升到 50 |
 | **积分包** | `trial` 30 / `standard` 50 / `plus` 150 / `max` 400（见 `server/migrations/011_credit_packs.sql`） |
-| **全量 job** | 独立 **worker / isolate** 中运行；可 pause / resume；树/tail **cursor** 续跑；已落盘 verdict 不重复 analyze |
-| **失败与不完整** | API 缺部分 path → 降级 `review_needed` 并落盘；整批 hard fail → 暂停并列出受影响路径；failed 后 Resume 需确认（可能再次扣积分） |
-| **旧 plan** | 无树形 FFI 时回退 flat 分批（每批最多 40 路径）；磁盘上 plan v1/v2 的未完成 job 续跑前可能提示升级 client logic |
-| **BYOK** | 仍按 token 预算；不走 Platform 积分 |
+| **全量分析** | 可在后台进行；可 **暂停 / 继续**；已保存的结论不会重复扣费分析 |
+| **失败与不完整** | 部分路径未返回结果时会标记为**需人工复核**；整批失败会暂停并列出相关路径；从失败状态继续前会提示确认（可能再次消耗积分） |
+| **BYOK** | 按 token 预算计费；不走 Platform 积分 |
 
-> **说明：** 相对旧 flat 分批，v3 对大 home 的 API 次数通常更低；极端目录结构或大量 tail 文件仍可能接近积分上限，可调高 Settings 预算或分批换扫描根。
+> **说明：** 整盘 Home 等大范围扫描时，预估积分仍可能较高；可在 Settings 提高单次上限、缩小扫描根后分次分析，或购买积分包。
 
 ### 安装
 
@@ -112,7 +111,7 @@ Rust 侧还实现了大文件、重复文件、相似照片、清理候选、应
 | `root_records/` | 各 root 状态：`completed` / `paused` / `empty` / `scanning` |
 | `pauses/` | 扫描中途 pause 的截断 baseline |
 | `settings.json` | 主题、语言、增量扫描、自动更新、AI 模式与覆盖预算等 |
-| `ai_coverage_job_<snapshot_id>.json` | 全量 AI job 状态（cursor、已用/上限积分、pause 原因等） |
+| `ai_coverage_job_<snapshot_id>.json` | 全量 AI 分析进度（已用/上限积分、暂停原因等） |
 | `ai_coverage_verdicts_<snapshot_id>.jsonl` | 全量覆盖 verdict 追加记录 |
 
 调试可设 `VOLWARD_CACHE_DIR` 指向临时目录（与 `SnapshotCache.cacheDir()` 一致）。
@@ -283,9 +282,7 @@ cd apps/volward && fvm flutter gen-l10n
 
 ## 当前状态
 
-**近期已在 main 交付：** AI 全量覆盖 **plan v3**（funnel + 树 BFS + tail）、Platform **积分预检 / 扣费 / 积分包**、全量 job **isolate worker**、resume 与 catalog **snapshot 绑定**。
-
-**主路径（已可用）：** 预览 → 扫描或缓存 restore → 多列浏览 → 筛选 → 废纸篓删除 → 按 root 切换与恢复 → 应用内更新 → AI Analyze（v3 预检 + Platform 积分 / BYOK + 全量 job pause/resume，可选）。
+**主路径（已可用）：** 预览 → 扫描或缓存 restore → 多列浏览 → 筛选 → 废纸篓删除 → 按 root 切换与恢复 → 应用内更新 → AI Analyze（Platform 积分预检与全量分析可暂停继续，或 BYOK，可选）。
 
 **扫描分类（`classify.rs` / 筛选栏）：**
 
