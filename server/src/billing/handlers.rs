@@ -9,13 +9,17 @@ use crate::AppState;
 
 use super::checkout_url::validate_paddle_checkout_url;
 use super::paddle::PaddleProvider;
+use super::pricing::pack_list_usd_cents;
 use super::provider::PaymentProvider;
 
 #[derive(Serialize)]
 pub struct PackDto {
     pub id: String,
     pub credits: i64,
+    /// Planning anchor in fen (1/100 CNY). Not shown at checkout.
     pub price_cny: i64,
+    /// Checkout list price in USD cents (Paddle charge currency).
+    pub price_usd_cents: i64,
     pub label_zh: String,
     pub label_en: String,
 }
@@ -25,19 +29,23 @@ pub async fn packs(
     headers: HeaderMap,
 ) -> Result<Json<Vec<PackDto>>, AppError> {
     let _ = require_device(&state, &headers)?;
-    let rows: Vec<(String, i64, i64, String, String)> = sqlx::query_as(
-        "SELECT id, credits, price_cny, label_zh, label_en FROM packs WHERE active = 1",
+    let rows: Vec<(String, i64, i64, Option<i64>, String, String)> = sqlx::query_as(
+        "SELECT id, credits, price_cny, price_usd_cents, label_zh, label_en FROM packs WHERE active = 1",
     )
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(id, credits, price_cny, label_zh, label_en)| PackDto {
-                id,
-                credits,
-                price_cny,
-                label_zh,
-                label_en,
+            .map(|(id, credits, price_cny, stored_usd, label_zh, label_en)| {
+                let price_usd_cents = pack_list_usd_cents(&id, stored_usd);
+                PackDto {
+                    id,
+                    credits,
+                    price_cny,
+                    price_usd_cents,
+                    label_zh,
+                    label_en,
+                }
             })
             .collect(),
     ))

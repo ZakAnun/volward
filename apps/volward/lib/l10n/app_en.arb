@@ -476,8 +476,8 @@
       "count": { "type": "int" }
     }
   },
-  "aiPurchasePriceCny": "¥{price}",
-  "@aiPurchasePriceCny": {
+  "aiPurchasePriceUsd": "${price}",
+  "@aiPurchasePriceUsd": {
     "placeholders": {
       "price": { "type": "String" }
     }
@@ -486,7 +486,7 @@
   "aiPurchaseOpenInBrowser": "Open payment page in browser",
   "aiPurchaseScanQrHint": "Or scan with your phone (WeChat)",
   "aiPurchaseWaitingPayment": "Waiting for payment confirmation…",
-  "aiPurchaseSelectedSummary": "{label} · {credits} credits · ¥{price}",
+  "aiPurchaseSelectedSummary": "{label} · {credits} credits · ${price}",
   "@aiPurchaseSelectedSummary": {
     "placeholders": {
       "label": { "type": "String" },
@@ -634,8 +634,8 @@
       }
     }
   },
-  "aiCoveragePurchaseFooter": "Full analysis typically uses about 30–80 credits. You will see an estimate before starting.",
-  "aiCoveragePurchaseFooterConditional": "Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.",
+  "aiCoveragePurchaseFooter": "A basic Home full run typically uses about 40–80 credits (1 credit = 1 API call). Default run cap is 100. You will see an estimate before starting.",
+  "aiCoveragePurchaseFooterConditional": "Estimated API usage is shown above. Home-folder scans often use about 40–80 credits; tree drill-down may add more.",
   "aiCoverageInsufficientForEstimate": "Need about {needed} credits; you have {available}.",
   "@aiCoverageInsufficientForEstimate": {
     "placeholders": {

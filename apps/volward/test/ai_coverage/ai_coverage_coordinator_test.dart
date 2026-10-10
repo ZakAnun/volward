@@ -122,7 +122,7 @@ void main() {
       final store = AiSettingsStore.instance
         ..settingsFileForTest = settingsFile;
       addTearDown(() => store.settingsFileForTest = null);
-      // Use a non-legacy cap (legacy default 20 migrates to 50 on read).
+      // Use a non-legacy cap (legacy defaults 20 and 50 migrate to 100 on read).
       await store.setCoverageBudgetCredits(15);
 
       AiCoverageCoordinator.debugPlanSummary = (_) async =>

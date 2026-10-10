@@ -161,7 +161,7 @@ void main() {
     },
   );
 
-  test('legacy platform coverage budget 20 migrates to 50 on read', () async {
+  test('legacy platform coverage budget 20 migrates to 100 on read', () async {
     final temp = await Directory.systemTemp.createTemp(
       'volward-ai-budget-migrate',
     );
@@ -173,11 +173,30 @@ void main() {
     addTearDown(() => store.settingsFileForTest = null);
 
     final budget = await store.coverageBudgetForMode(AiMode.platform);
-    expect(budget.credits, 50);
+    expect(budget.credits, 100);
 
     final saved =
         jsonDecode(settingsFile.readAsStringSync()) as Map<String, dynamic>;
-    expect(saved['ai_full_run_budget_credits'], 50);
+    expect(saved['ai_full_run_budget_credits'], 100);
+  });
+
+  test('legacy platform coverage budget 50 migrates to 100 on read', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-ai-budget-migrate-v2',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+
+    final settingsFile = File('${temp.path}/settings.json')
+      ..writeAsStringSync(jsonEncode({'ai_full_run_budget_credits': 50}));
+    final store = AiSettingsStore.instance..settingsFileForTest = settingsFile;
+    addTearDown(() => store.settingsFileForTest = null);
+
+    final budget = await store.coverageBudgetForMode(AiMode.platform);
+    expect(budget.credits, 100);
+
+    final saved =
+        jsonDecode(settingsFile.readAsStringSync()) as Map<String, dynamic>;
+    expect(saved['ai_full_run_budget_credits'], 100);
   });
 
   test(

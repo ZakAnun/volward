@@ -743,8 +743,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String aiPurchasePriceCny(String price) {
-    return '¥$price';
+  String aiPurchasePriceUsd(String price) {
+    return '\$$price';
   }
 
   @override
@@ -761,7 +761,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String aiPurchaseSelectedSummary(String label, int credits, String price) {
-    return '$label · $credits credits · ¥$price';
+    return '$label · $credits credits · \$$price';
   }
 
   @override
@@ -939,11 +939,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiCoveragePurchaseFooter =>
-      'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.';
+      'A basic Home full run typically uses about 40–80 credits (1 credit = 1 API call). Default run cap is 100. You will see an estimate before starting.';
 
   @override
   String get aiCoveragePurchaseFooterConditional =>
-      'Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.';
+      'Estimated API usage is shown above. Home-folder scans often use about 40–80 credits; tree drill-down may add more.';
 
   @override
   String aiCoverageInsufficientForEstimate(int needed, int available) {

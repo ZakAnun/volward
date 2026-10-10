@@ -1297,11 +1297,11 @@ abstract class AppLocalizations {
   /// **'{count} credits'**
   String aiPurchasePackCredits(int count);
 
-  /// No description provided for @aiPurchasePriceCny.
+  /// No description provided for @aiPurchasePriceUsd.
   ///
   /// In en, this message translates to:
-  /// **'¥{price}'**
-  String aiPurchasePriceCny(String price);
+  /// **'\${price}'**
+  String aiPurchasePriceUsd(String price);
 
   /// No description provided for @aiPurchaseNoPacks.
   ///
@@ -1330,7 +1330,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiPurchaseSelectedSummary.
   ///
   /// In en, this message translates to:
-  /// **'{label} · {credits} credits · ¥{price}'**
+  /// **'{label} · {credits} credits · \${price}'**
   String aiPurchaseSelectedSummary(String label, int credits, String price);
 
   /// No description provided for @aiPurchaseBackToPacks.
@@ -1599,13 +1599,13 @@ abstract class AppLocalizations {
   /// No description provided for @aiCoveragePurchaseFooter.
   ///
   /// In en, this message translates to:
-  /// **'Full analysis typically uses about 30–80 credits. You will see an estimate before starting.'**
+  /// **'A basic Home full run typically uses about 40–80 credits (1 credit = 1 API call). Default run cap is 100. You will see an estimate before starting.'**
   String get aiCoveragePurchaseFooter;
 
   /// No description provided for @aiCoveragePurchaseFooterConditional.
   ///
   /// In en, this message translates to:
-  /// **'Estimated API usage is shown above. Large home-folder scans often use about 30–80 credits.'**
+  /// **'Estimated API usage is shown above. Home-folder scans often use about 40–80 credits; tree drill-down may add more.'**
   String get aiCoveragePurchaseFooterConditional;
 
   /// No description provided for @aiCoverageInsufficientForEstimate.

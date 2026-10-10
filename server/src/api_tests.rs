@@ -353,7 +353,7 @@ async fn billing_webhook_idempotent_purchase() {
         .fetch_one(&ctx.pool)
         .await
         .unwrap();
-    assert_eq!(credits.0, 50);
+    assert_eq!(credits.0, 220);
     let kinds: Vec<(String,)> =
         sqlx::query_as("SELECT kind FROM transactions WHERE user_id = ? ORDER BY created_at")
             .bind(&uid.0)
@@ -537,7 +537,7 @@ async fn packs_lists_new_credit_tiers() {
     assert_eq!(
         packs.len(),
         4,
-        "migration 011 must expose four active credit tiers"
+        "migrations 011–013 must expose four active credit tiers"
     );
     let ids: Vec<&str> = packs.iter().filter_map(|p| p["id"].as_str()).collect();
     assert!(ids.contains(&"trial"));
@@ -549,20 +549,24 @@ async fn packs_lists_new_credit_tiers() {
     assert!(!ids.contains(&"unlimited"));
 
     let standard = packs.iter().find(|p| p["id"] == "standard").unwrap();
-    assert_eq!(standard["credits"], 50);
-    assert_eq!(standard["price_cny"], 990);
+    assert_eq!(standard["credits"], 220);
+    assert_eq!(standard["price_cny"], 2153);
+    assert_eq!(standard["price_usd_cents"], 299);
 
     let trial = packs.iter().find(|p| p["id"] == "trial").unwrap();
-    assert_eq!(trial["credits"], 30);
-    assert_eq!(trial["price_cny"], 690);
+    assert_eq!(trial["credits"], 100);
+    assert_eq!(trial["price_cny"], 1073);
+    assert_eq!(trial["price_usd_cents"], 149);
 
     let plus = packs.iter().find(|p| p["id"] == "plus").unwrap();
-    assert_eq!(plus["credits"], 150);
-    assert_eq!(plus["price_cny"], 2490);
+    assert_eq!(plus["credits"], 550);
+    assert_eq!(plus["price_cny"], 4673);
+    assert_eq!(plus["price_usd_cents"], 649);
 
     let max = packs.iter().find(|p| p["id"] == "max").unwrap();
-    assert_eq!(max["credits"], 400);
-    assert_eq!(max["price_cny"], 5990);
+    assert_eq!(max["credits"], 1200);
+    assert_eq!(max["price_cny"], 9353);
+    assert_eq!(max["price_usd_cents"], 1299);
 }
 
 #[tokio::test]

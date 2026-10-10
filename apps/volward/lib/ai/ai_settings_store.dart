@@ -58,11 +58,15 @@ class AiSettingsStore {
   static const _kCoverageBudgetCredits = 'ai_full_run_budget_credits';
   static const defaultCoverageBudgetTokens = 500000;
 
-  /// Matches the starter pack credit amount in `server/migrations/005_packs.sql`.
-  static const defaultCoverageBudgetCredits = 50;
+  /// Default Platform full-run cap: one basic Home analysis (scheme A, ~80×1.2).
+  static const defaultCoverageBudgetCredits = 100;
 
   /// Platform default before Phase 1 credit redesign (2026-09-04 full-coverage spec).
   static const legacyCoverageBudgetCredits = 20;
+
+  /// Previous default (2026-09). Treat 50 as the old default (not a custom cap)
+  /// so Home full runs are not blocked below scheme A; custom values like 30 stay.
+  static const legacyCoverageBudgetCreditsV2 = 50;
 
   /// Bumped to 2 when Platform mode shipped: paths now transit Volward servers.
   static const kCurrentPrivacyVersion = 2;
@@ -144,7 +148,8 @@ class AiSettingsStore {
 
   Future<int> _coverageBudgetCreditsFromMap(Map<String, dynamic> map) async {
     final raw = (map[_kCoverageBudgetCredits] as num?)?.toInt();
-    if (raw == legacyCoverageBudgetCredits) {
+    if (raw == legacyCoverageBudgetCredits ||
+        raw == legacyCoverageBudgetCreditsV2) {
       map[_kCoverageBudgetCredits] = defaultCoverageBudgetCredits;
       await _writeMap(map);
       return defaultCoverageBudgetCredits;

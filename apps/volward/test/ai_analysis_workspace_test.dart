@@ -804,7 +804,7 @@ void main() {
 
     expect(find.textContaining('Estimated for full analysis'), findsOneWidget);
     expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
-    expect(find.textContaining('30–80 credits'), findsOneWidget);
+    expect(find.textContaining('40–80 credits'), findsOneWidget);
   });
 
   testWidgets('precheck shows run cap from resolveRunBudgetCredits', (

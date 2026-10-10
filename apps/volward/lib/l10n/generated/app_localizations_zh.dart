@@ -710,8 +710,8 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String aiPurchasePriceCny(String price) {
-    return '¥$price';
+  String aiPurchasePriceUsd(String price) {
+    return '\$$price';
   }
 
   @override
@@ -728,7 +728,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String aiPurchaseSelectedSummary(String label, int credits, String price) {
-    return '$label · $credits 积分 · ¥$price';
+    return '$label · $credits 积分 · \$$price';
   }
 
   @override
@@ -894,11 +894,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get aiCoveragePurchaseFooter => '完整分析一次通常约 30–80 积分；开始前会显示预估值。';
+  String get aiCoveragePurchaseFooter =>
+      'Home 级基础完整分析通常约 40–80 积分（1 积分 = 1 次 API）；默认单次上限 100。开始前会显示预估值。';
 
   @override
   String get aiCoveragePurchaseFooterConditional =>
-      '以上已显示 API 预估。整盘/用户目录全量扫描常见约 30–80 积分。';
+      '以上已显示 API 预估。用户目录全量扫描常见约 40–80 积分；目录下钻可能增加消耗。';
 
   @override
   String aiCoverageInsufficientForEstimate(int needed, int available) {

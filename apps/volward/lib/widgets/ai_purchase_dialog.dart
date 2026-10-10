@@ -291,14 +291,17 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(pack.labelFor(context), style: theme.textTheme.titleSmall),
+                Text(
+                  pack.labelFor(context),
+                  style: theme.textTheme.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 Text(l10n.aiPurchasePackCredits(pack.credits)),
               ],
             ),
           ),
-          Text(
-            l10n.aiPurchasePriceCny((pack.priceCny / 100).toStringAsFixed(2)),
-          ),
+          Text(l10n.aiPurchasePriceUsd(pack.displayUsd())),
         ],
       ),
     );
@@ -429,7 +432,7 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
                           l10n.aiPurchaseSelectedSummary(
                             _selectedPack!.labelFor(context),
                             _selectedPack!.credits,
-                            (_selectedPack!.priceCny / 100).toStringAsFixed(2),
+                            _selectedPack!.displayUsd(),
                           ),
                           style: theme.textTheme.titleSmall,
                         ),
@@ -479,19 +482,37 @@ class _AiPurchaseDialogState extends State<_AiPurchaseDialog> {
   }
 }
 
+/// Keep in sync with `server/src/billing/pricing.rs` locked list USD cents.
+int? _lockedListUsdCents(String packId) {
+  switch (packId) {
+    case 'trial':
+      return 149;
+    case 'standard':
+      return 299;
+    case 'plus':
+      return 649;
+    case 'max':
+      return 1299;
+    default:
+      return null;
+  }
+}
+
 class _Pack {
   const _Pack({
     required this.id,
     required this.credits,
-    required this.priceCny,
+    required this.priceUsdCents,
     required this.labelEn,
     required this.labelZh,
   });
   final String id;
   final int credits;
-  final int priceCny;
+  final int priceUsdCents;
   final String labelEn;
   final String labelZh;
+
+  String displayUsd() => (priceUsdCents / 100).toStringAsFixed(2);
 
   String labelFor(BuildContext context) {
     final useZh = Localizations.localeOf(context).languageCode == 'zh';
@@ -499,11 +520,18 @@ class _Pack {
     return labelEn.isNotEmpty ? labelEn : labelZh;
   }
 
-  factory _Pack.fromJson(Map<String, dynamic> j) => _Pack(
-    id: j['id'] as String,
-    credits: (j['credits'] as num).toInt(),
-    priceCny: (j['price_cny'] as num?)?.toInt() ?? 0,
-    labelEn: (j['label_en'] ?? j['id'] ?? '') as String,
-    labelZh: (j['label_zh'] ?? j['label_en'] ?? j['id']) as String,
-  );
+  factory _Pack.fromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String;
+    final stored = (j['price_usd_cents'] as num?)?.toInt();
+    final priceUsdCents = (stored != null && stored > 0)
+        ? stored
+        : (_lockedListUsdCents(id) ?? 0);
+    return _Pack(
+      id: id,
+      credits: (j['credits'] as num).toInt(),
+      priceUsdCents: priceUsdCents,
+      labelEn: (j['label_en'] ?? j['id'] ?? '') as String,
+      labelZh: (j['label_zh'] ?? j['label_en'] ?? j['id']) as String,
+    );
+  }
 }

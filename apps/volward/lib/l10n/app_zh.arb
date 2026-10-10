@@ -476,8 +476,8 @@
       "count": { "type": "int" }
     }
   },
-  "aiPurchasePriceCny": "¥{price}",
-  "@aiPurchasePriceCny": {
+  "aiPurchasePriceUsd": "${price}",
+  "@aiPurchasePriceUsd": {
     "placeholders": {
       "price": { "type": "String" }
     }
@@ -486,7 +486,7 @@
   "aiPurchaseOpenInBrowser": "在本机浏览器打开支付页",
   "aiPurchaseScanQrHint": "或用手机扫码支付（微信）",
   "aiPurchaseWaitingPayment": "正在等待支付确认…",
-  "aiPurchaseSelectedSummary": "{label} · {credits} 积分 · ¥{price}",
+  "aiPurchaseSelectedSummary": "{label} · {credits} 积分 · ${price}",
   "@aiPurchaseSelectedSummary": {
     "placeholders": {
       "label": { "type": "String" },
@@ -634,8 +634,8 @@
       }
     }
   },
-  "aiCoveragePurchaseFooter": "完整分析一次通常约 30–80 积分；开始前会显示预估值。",
-  "aiCoveragePurchaseFooterConditional": "以上已显示 API 预估。整盘/用户目录全量扫描常见约 30–80 积分。",
+  "aiCoveragePurchaseFooter": "Home 级基础完整分析通常约 40–80 积分（1 积分 = 1 次 API）；默认单次上限 100。开始前会显示预估值。",
+  "aiCoveragePurchaseFooterConditional": "以上已显示 API 预估。用户目录全量扫描常见约 40–80 积分；目录下钻可能增加消耗。",
   "aiCoverageInsufficientForEstimate": "预计需要约 {needed} 积分，当前余额 {available}。",
   "@aiCoverageInsufficientForEstimate": {
     "placeholders": {

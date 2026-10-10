@@ -22,11 +22,12 @@ void main() {
 
   const packsJson = [
     {
-      'id': 'starter',
-      'credits': 50,
-      'price_cny': 990,
-      'label_en': 'Starter',
-      'label_zh': '入门包',
+      'id': 'trial',
+      'credits': 100,
+      'price_cny': 1073,
+      'price_usd_cents': 149,
+      'label_en': '100 credits · Trial (~1 basic full run)',
+      'label_zh': '100 积分 · 试用（约 1 次基础完整分析）',
     },
   ];
 
@@ -113,7 +114,7 @@ void main() {
   Future<void> waitForPackList(WidgetTester tester) async {
     for (var i = 0; i < 50; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Starter').evaluate().isNotEmpty) return;
+      if (find.textContaining('Trial').evaluate().isNotEmpty) return;
     }
     final texts = tester
         .widgetList<Text>(find.byType(Text))
@@ -157,6 +158,17 @@ void main() {
     await waitForPackList(tester);
   }
 
+  testWidgets('lists trial pack at locked USD list price', (tester) async {
+    await pumpDialog(
+      tester,
+      client: mockBillingClient(
+        checkoutUrl: 'https://sandbox-buy.paddle.com/checkout?_ptxn=x',
+      ),
+    );
+    expect(find.text(r'$1.49'), findsOneWidget);
+    expect(find.textContaining('¥'), findsNothing);
+  });
+
   test('mock client serves billing packs', () async {
     final client = mockBillingClient(
       checkoutUrl: 'https://sandbox-buy.paddle.com/checkout?_ptxn=x',
@@ -184,7 +196,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Starter'));
+    await tester.tap(find.textContaining('Trial'));
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
       if (find.text(l10n.aiErrorCheckoutUrlInvalid).evaluate().isNotEmpty) {
@@ -204,7 +216,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Starter'));
+    await tester.tap(find.textContaining('Trial'));
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
       if (find.text(l10n.aiPurchaseOpenInBrowser).evaluate().isNotEmpty) {
@@ -224,7 +236,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Starter'));
+    await tester.tap(find.textContaining('Trial'));
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
       if (find.text(l10n.aiPurchaseOpenInBrowser).evaluate().isNotEmpty) {
