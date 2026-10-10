@@ -69,14 +69,37 @@ pub async fn checkout(
     let auth = require_user(&state, &headers)?;
     let uid = auth.require_user()?;
 
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT provider_product_id FROM packs WHERE id = ? AND active = 1")
+    let env = state.config.paddle_env.as_str();
+    let row: Option<(Option<String>,)> = match env {
+        "sandbox" => {
+            sqlx::query_as(
+                "SELECT provider_product_id_sandbox FROM packs WHERE id = ? AND active = 1",
+            )
             .bind(&body.pack_id)
             .fetch_optional(&state.pool)
-            .await?;
+            .await?
+        }
+        "live" => {
+            sqlx::query_as(
+                "SELECT provider_product_id_live FROM packs WHERE id = ? AND active = 1",
+            )
+            .bind(&body.pack_id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        _ => return Err(AppError::Internal("invalid_paddle_env".into())),
+    };
     let Some((product_id,)) = row else {
         tracing::error!(pack_id = %body.pack_id, "checkout requested unknown pack");
         return Err(AppError::BadRequest("unknown_pack".into()));
+    };
+    let Some(product_id) = product_id.filter(|id| !id.is_empty()) else {
+        tracing::error!(
+            pack_id = %body.pack_id,
+            paddle_env = %env,
+            "checkout requested pack with missing price id for environment"
+        );
+        return Err(AppError::Internal("paddle_product_id_unconfigured".into()));
     };
     if product_id.starts_with("FILL_ME") {
         if state.config.paddle_env == "live" {

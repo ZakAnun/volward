@@ -9,6 +9,7 @@ use crate::error::AppError;
 use crate::AppState;
 
 use super::proxy::{debit_one_credit, model_name, refund_one_credit, run_upstream};
+use crate::billing::env_credits::balance_for_env;
 
 #[derive(Deserialize)]
 pub struct AnalyzeRequest {
@@ -35,19 +36,24 @@ pub async fn quota(
 ) -> Result<Json<QuotaResponse>, AppError> {
     let auth = require_user(&state, &headers)?;
     let uid = auth.require_user()?;
-    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE id = ?")
-        .bind(uid)
-        .fetch_one(&state.pool)
-        .await?;
-    let total: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions \
-         WHERE user_id = ? AND kind IN ('purchase', 'topup')",
+    let env = state.config.paddle_env.as_str();
+    let balances: (i64, i64) = sqlx::query_as(
+        "SELECT credits_sandbox, credits_live FROM users WHERE id = ?",
     )
     .bind(uid)
     .fetch_one(&state.pool)
     .await?;
+    let remaining = balance_for_env(balances.0, balances.1, env)?;
+    let total: (i64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(credits_delta), 0) FROM transactions \
+         WHERE user_id = ? AND kind IN ('purchase', 'topup') AND paddle_env = ?",
+    )
+    .bind(uid)
+    .bind(env)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(QuotaResponse {
-        credits_remaining: credits.0,
+        credits_remaining: remaining,
         credits_total: total.0,
     }))
 }
@@ -66,31 +72,36 @@ pub async fn analyze(
         return Err(AppError::BadRequest("candidates_empty".into()));
     }
 
+    let paddle_env = state.config.paddle_env.as_str();
     debit_one_credit(
         &state.pool,
         &uid,
         &auth.device_id,
         body.candidates.len() as i64,
+        paddle_env,
     )
     .await?;
 
     let upstream_result = run_upstream(&state.upstream, &body.candidates).await;
     match upstream_result {
         Ok(entries) => {
-            let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE id = ?")
-                .bind(&uid)
-                .fetch_one(&state.pool)
-                .await?;
+            let balances: (i64, i64) = sqlx::query_as(
+                "SELECT credits_sandbox, credits_live FROM users WHERE id = ?",
+            )
+            .bind(&uid)
+            .fetch_one(&state.pool)
+            .await?;
+            let remaining = balance_for_env(balances.0, balances.1, paddle_env)?;
             Ok(Json(AnalyzeResponse {
                 entries,
                 credits_used: 1,
-                credits_remaining: credits.0,
+                credits_remaining: remaining,
                 model: model_name().to_string(),
             }))
         }
         Err(e) => {
             if let Err(refund_err) =
-                refund_one_credit(&state.pool, &uid, &auth.device_id).await
+                refund_one_credit(&state.pool, &uid, &auth.device_id, paddle_env).await
             {
                 tracing::error!(
                     error = %refund_err,

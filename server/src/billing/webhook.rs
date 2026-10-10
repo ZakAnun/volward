@@ -53,7 +53,16 @@ pub async fn webhook(
 
     let mut conn = state.pool.acquire().await?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
-    let update = sqlx::query("UPDATE users SET credits = credits + ? WHERE id = ?")
+    let paddle_env = state.config.paddle_env.as_str();
+    let update_sql = match paddle_env {
+        "sandbox" => "UPDATE users SET credits_sandbox = credits_sandbox + ? WHERE id = ?",
+        "live" => "UPDATE users SET credits_live = credits_live + ? WHERE id = ?",
+        _ => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            return Err(AppError::Internal("invalid_paddle_env".into()));
+        }
+    };
+    let update = sqlx::query(update_sql)
         .bind(credits.0)
         .bind(&event.user_id)
         .execute(&mut *conn)
@@ -76,7 +85,6 @@ pub async fn webhook(
     }
     let tid = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
-    let paddle_env = state.config.paddle_env.as_str();
     if let Err(e) = sqlx::query(
         r#"
         INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, provider_order_id, paddle_env, created_at)

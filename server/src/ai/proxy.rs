@@ -53,17 +53,28 @@ pub async fn debit_one_credit(
     user_id: &str,
     device_id: &str,
     candidate_count: i64,
+    paddle_env: &str,
 ) -> Result<(), AppError> {
     let mut conn = pool.acquire().await?;
     sqlx::query("BEGIN IMMEDIATE")
         .execute(&mut *conn)
         .await?;
-    let result = sqlx::query(
-        "UPDATE users SET credits = credits - 1 WHERE id = ? AND credits > 0",
-    )
-    .bind(user_id)
-    .execute(&mut *conn)
-    .await;
+    let debit_sql = match paddle_env {
+        "sandbox" => {
+            "UPDATE users SET credits_sandbox = credits_sandbox - 1 WHERE id = ? AND credits_sandbox > 0"
+        }
+        "live" => {
+            "UPDATE users SET credits_live = credits_live - 1 WHERE id = ? AND credits_live > 0"
+        }
+        _ => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            return Err(AppError::Internal("invalid_paddle_env".into()));
+        }
+    };
+    let result = sqlx::query(debit_sql)
+        .bind(user_id)
+        .execute(&mut *conn)
+        .await;
     let result = match result {
         Ok(r) => r,
         Err(e) => {
@@ -79,14 +90,15 @@ pub async fn debit_one_credit(
     let now = chrono::Utc::now().timestamp_millis();
     if let Err(e) = sqlx::query(
         r#"
-        INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, candidate_count, created_at)
-        VALUES (?, ?, ?, 'usage', -1, ?, ?)
+        INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, candidate_count, paddle_env, created_at)
+        VALUES (?, ?, ?, 'usage', -1, ?, ?, ?)
         "#,
     )
     .bind(&tid)
     .bind(user_id)
     .bind(device_id)
     .bind(candidate_count)
+    .bind(paddle_env)
     .bind(now)
     .execute(&mut *conn)
     .await
@@ -102,12 +114,21 @@ pub async fn refund_one_credit(
     pool: &SqlitePool,
     user_id: &str,
     device_id: &str,
+    paddle_env: &str,
 ) -> Result<(), AppError> {
     let mut conn = pool.acquire().await?;
     sqlx::query("BEGIN IMMEDIATE")
         .execute(&mut *conn)
         .await?;
-    if let Err(e) = sqlx::query("UPDATE users SET credits = credits + 1 WHERE id = ?")
+    let refund_sql = match paddle_env {
+        "sandbox" => "UPDATE users SET credits_sandbox = credits_sandbox + 1 WHERE id = ?",
+        "live" => "UPDATE users SET credits_live = credits_live + 1 WHERE id = ?",
+        _ => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            return Err(AppError::Internal("invalid_paddle_env".into()));
+        }
+    };
+    if let Err(e) = sqlx::query(refund_sql)
         .bind(user_id)
         .execute(&mut *conn)
         .await
@@ -119,13 +140,14 @@ pub async fn refund_one_credit(
     let now = chrono::Utc::now().timestamp_millis();
     if let Err(e) = sqlx::query(
         r#"
-        INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, created_at)
-        VALUES (?, ?, ?, 'refund', 1, ?)
+        INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, paddle_env, created_at)
+        VALUES (?, ?, ?, 'refund', 1, ?, ?)
         "#,
     )
     .bind(&tid)
     .bind(user_id)
     .bind(device_id)
+    .bind(paddle_env)
     .bind(now)
     .execute(&mut *conn)
     .await

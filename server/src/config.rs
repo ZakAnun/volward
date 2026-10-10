@@ -18,6 +18,13 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
+        let paddle_api_key = optional("PADDLE_API_KEY");
+        let paddle_env = validate_paddle_env(
+            &env::var("PADDLE_ENV").unwrap_or_else(|_| "sandbox".into()),
+        )?;
+        if let Some(ref key) = paddle_api_key {
+            validate_paddle_key_env(key, &paddle_env)?;
+        }
         Ok(Self {
             database_url: required("DATABASE_URL")?,
             jwt_secret: required("JWT_SECRET")?,
@@ -27,11 +34,9 @@ impl Config {
             allow_log_mailer: env::var("ALLOW_LOG_MAILER")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
-            paddle_api_key: optional("PADDLE_API_KEY"),
+            paddle_api_key,
             paddle_webhook_secret: optional("PADDLE_WEBHOOK_SECRET"),
-            paddle_env: validate_paddle_env(
-                &env::var("PADDLE_ENV").unwrap_or_else(|_| "sandbox".into()),
-            )?,
+            paddle_env,
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
         })
     }
@@ -69,9 +74,22 @@ fn validate_paddle_env(value: &str) -> Result<String, String> {
     }
 }
 
+fn validate_paddle_key_env(api_key: &str, paddle_env: &str) -> Result<(), String> {
+    let key = api_key.to_ascii_lowercase();
+    match paddle_env {
+        "sandbox" if key.contains("live") && !key.contains("sdbx") => Err(
+            "PADDLE_API_KEY appears to be live but PADDLE_ENV is sandbox".into(),
+        ),
+        "live" if key.contains("sdbx") => {
+            Err("PADDLE_API_KEY appears to be sandbox but PADDLE_ENV is live".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_paddle_env;
+    use super::{validate_paddle_env, validate_paddle_key_env};
 
     #[test]
     fn paddle_env_accepts_sandbox_and_live() {
@@ -84,5 +102,13 @@ mod tests {
         assert!(validate_paddle_env("Live").is_err());
         assert!(validate_paddle_env("production").is_err());
         assert!(validate_paddle_env("").is_err());
+    }
+
+    #[test]
+    fn paddle_api_key_prefix_matches_env() {
+        assert!(validate_paddle_key_env("pdl_sdbx_apikey_x", "sandbox").is_ok());
+        assert!(validate_paddle_key_env("pdl_live_apikey_x", "live").is_ok());
+        assert!(validate_paddle_key_env("pdl_live_apikey_x", "sandbox").is_err());
+        assert!(validate_paddle_key_env("pdl_sdbx_apikey_x", "live").is_err());
     }
 }
