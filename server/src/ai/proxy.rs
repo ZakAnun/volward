@@ -7,6 +7,7 @@ use volward_ai::{
     UPSTREAM_ENDPOINT,
 };
 
+use crate::billing::env_credits::{user_credit_debit_sql, user_credit_refund_sql};
 use crate::error::AppError;
 use sqlx::SqlitePool;
 
@@ -59,16 +60,11 @@ pub async fn debit_one_credit(
     sqlx::query("BEGIN IMMEDIATE")
         .execute(&mut *conn)
         .await?;
-    let debit_sql = match paddle_env {
-        "sandbox" => {
-            "UPDATE users SET credits_sandbox = credits_sandbox - 1 WHERE id = ? AND credits_sandbox > 0"
-        }
-        "live" => {
-            "UPDATE users SET credits_live = credits_live - 1 WHERE id = ? AND credits_live > 0"
-        }
-        _ => {
+    let debit_sql = match user_credit_debit_sql(paddle_env) {
+        Ok(sql) => sql,
+        Err(e) => {
             let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-            return Err(AppError::Internal("invalid_paddle_env".into()));
+            return Err(e);
         }
     };
     let result = sqlx::query(debit_sql)
@@ -120,12 +116,11 @@ pub async fn refund_one_credit(
     sqlx::query("BEGIN IMMEDIATE")
         .execute(&mut *conn)
         .await?;
-    let refund_sql = match paddle_env {
-        "sandbox" => "UPDATE users SET credits_sandbox = credits_sandbox + 1 WHERE id = ?",
-        "live" => "UPDATE users SET credits_live = credits_live + 1 WHERE id = ?",
-        _ => {
+    let refund_sql = match user_credit_refund_sql(paddle_env) {
+        Ok(sql) => sql,
+        Err(e) => {
             let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-            return Err(AppError::Internal("invalid_paddle_env".into()));
+            return Err(e);
         }
     };
     if let Err(e) = sqlx::query(refund_sql)

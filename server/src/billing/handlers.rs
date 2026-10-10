@@ -8,6 +8,7 @@ use crate::error::AppError;
 use crate::AppState;
 
 use super::checkout_url::validate_paddle_checkout_url;
+use super::env_credits::pack_price_select_sql;
 use super::paddle::PaddleProvider;
 use super::pricing::pack_list_usd_cents;
 use super::provider::PaymentProvider;
@@ -70,25 +71,11 @@ pub async fn checkout(
     let uid = auth.require_user()?;
 
     let env = state.config.paddle_env.as_str();
-    let row: Option<(Option<String>,)> = match env {
-        "sandbox" => {
-            sqlx::query_as(
-                "SELECT provider_product_id_sandbox FROM packs WHERE id = ? AND active = 1",
-            )
-            .bind(&body.pack_id)
-            .fetch_optional(&state.pool)
-            .await?
-        }
-        "live" => {
-            sqlx::query_as(
-                "SELECT provider_product_id_live FROM packs WHERE id = ? AND active = 1",
-            )
-            .bind(&body.pack_id)
-            .fetch_optional(&state.pool)
-            .await?
-        }
-        _ => return Err(AppError::Internal("invalid_paddle_env".into())),
-    };
+    let select_sql = pack_price_select_sql(env)?;
+    let row: Option<(Option<String>,)> = sqlx::query_as(select_sql)
+        .bind(&body.pack_id)
+        .fetch_optional(&state.pool)
+        .await?;
     let Some((product_id,)) = row else {
         tracing::error!(pack_id = %body.pack_id, "checkout requested unknown pack");
         return Err(AppError::BadRequest("unknown_pack".into()));

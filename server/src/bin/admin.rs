@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use uuid::Uuid;
+use volward_platform_api::billing::env_credits::user_credit_increment_sql;
 use volward_platform_api::db;
 
 #[derive(Parser)]
@@ -68,11 +69,8 @@ async fn main() -> Result<()> {
             };
             let mut conn = pool.acquire().await?;
             sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
-            let update_sql = match paddle_env {
-                "sandbox" => "UPDATE users SET credits_sandbox = credits_sandbox + ? WHERE id = ?",
-                "live" => "UPDATE users SET credits_live = credits_live + ? WHERE id = ?",
-                _ => unreachable!(),
-            };
+            let update_sql = user_credit_increment_sql(paddle_env)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             sqlx::query(update_sql)
                 .bind(credits)
                 .bind(&uid)

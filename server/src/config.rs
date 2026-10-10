@@ -76,13 +76,17 @@ fn validate_paddle_env(value: &str) -> Result<String, String> {
 
 fn validate_paddle_key_env(api_key: &str, paddle_env: &str) -> Result<(), String> {
     let key = api_key.to_ascii_lowercase();
+    if !key.starts_with("pdl_") {
+        return Ok(());
+    }
     match paddle_env {
-        "sandbox" if key.contains("live") && !key.contains("sdbx") => Err(
-            "PADDLE_API_KEY appears to be live but PADDLE_ENV is sandbox".into(),
+        "sandbox" if !key.contains("sdbx") => Err(
+            "PADDLE_API_KEY must be a sandbox key (contains \"sdbx\") when PADDLE_ENV is sandbox"
+                .into(),
         ),
-        "live" if key.contains("sdbx") => {
-            Err("PADDLE_API_KEY appears to be sandbox but PADDLE_ENV is live".into())
-        }
+        "live" if !key.contains("live") => Err(
+            "PADDLE_API_KEY must be a live key (contains \"live\") when PADDLE_ENV is live".into(),
+        ),
         _ => Ok(()),
     }
 }
@@ -110,5 +114,7 @@ mod tests {
         assert!(validate_paddle_key_env("pdl_live_apikey_x", "live").is_ok());
         assert!(validate_paddle_key_env("pdl_live_apikey_x", "sandbox").is_err());
         assert!(validate_paddle_key_env("pdl_sdbx_apikey_x", "live").is_err());
+        assert!(validate_paddle_key_env("test-paddle-key", "live").is_ok());
+        assert!(validate_paddle_key_env("pdl_unknown_apikey_x", "sandbox").is_err());
     }
 }

@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::AppState;
 
+use super::env_credits::user_credit_increment_sql;
 use super::paddle::PaddleProvider;
 use super::provider::PaymentProvider;
 
@@ -54,12 +55,11 @@ pub async fn webhook(
     let mut conn = state.pool.acquire().await?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
     let paddle_env = state.config.paddle_env.as_str();
-    let update_sql = match paddle_env {
-        "sandbox" => "UPDATE users SET credits_sandbox = credits_sandbox + ? WHERE id = ?",
-        "live" => "UPDATE users SET credits_live = credits_live + ? WHERE id = ?",
-        _ => {
+    let update_sql = match user_credit_increment_sql(paddle_env) {
+        Ok(sql) => sql,
+        Err(e) => {
             let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-            return Err(AppError::Internal("invalid_paddle_env".into()));
+            return Err(e);
         }
     };
     let update = sqlx::query(update_sql)
