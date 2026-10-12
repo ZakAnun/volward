@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::AppState;
 
+use super::env_credits::user_credit_increment_sql;
 use super::paddle::PaddleProvider;
 use super::provider::PaymentProvider;
 
@@ -53,7 +54,15 @@ pub async fn webhook(
 
     let mut conn = state.pool.acquire().await?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
-    let update = sqlx::query("UPDATE users SET credits = credits + ? WHERE id = ?")
+    let paddle_env = state.config.paddle_env.as_str();
+    let update_sql = match user_credit_increment_sql(paddle_env) {
+        Ok(sql) => sql,
+        Err(e) => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            return Err(e);
+        }
+    };
+    let update = sqlx::query(update_sql)
         .bind(credits.0)
         .bind(&event.user_id)
         .execute(&mut *conn)
@@ -76,7 +85,6 @@ pub async fn webhook(
     }
     let tid = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
-    let paddle_env = state.config.paddle_env.as_str();
     if let Err(e) = sqlx::query(
         r#"
         INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, provider_order_id, paddle_env, created_at)

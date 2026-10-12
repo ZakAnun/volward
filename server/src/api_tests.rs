@@ -179,7 +179,7 @@ async fn register_and_link(ctx: &TestCtx, device: &str, email: &str, credits: i6
     .await;
     let uid = verified["user_id"].as_str().unwrap().to_string();
     if credits != 0 {
-        sqlx::query("UPDATE users SET credits = ? WHERE id = ?")
+        sqlx::query("UPDATE users SET credits_sandbox = ? WHERE id = ?")
             .bind(credits)
             .bind(&uid)
             .execute(&ctx.pool)
@@ -225,6 +225,42 @@ async fn auth_otp_verify_binds_device_credits_zero() {
 }
 
 #[tokio::test]
+async fn live_analyze_debits_live_credits_only() {
+    let ctx = test_ctx_with_config(
+        Arc::new(MockUpstream {
+            mode: MockMode::OkKeep,
+        }),
+        |config| config.paddle_env = "live".into(),
+    )
+    .await;
+    let token = register_and_link(&ctx, "d-live-ai", "live-ai@example.com", 0).await;
+    let uid: (String,) = sqlx::query_as("SELECT id FROM users WHERE email = ?")
+        .bind("live-ai@example.com")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE users SET credits_sandbox = 99, credits_live = 2 WHERE id = ?",
+    )
+    .bind(&uid.0)
+    .execute(&ctx.pool)
+    .await
+    .unwrap();
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["credits_remaining"], 1);
+    let bal: (i64, i64) = sqlx::query_as(
+        "SELECT credits_sandbox, credits_live FROM users WHERE id = ?",
+    )
+    .bind(&uid.0)
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+    assert_eq!(bal.0, 99);
+    assert_eq!(bal.1, 1);
+}
+
+#[tokio::test]
 async fn analyze_402_when_no_credits() {
     let ctx = test_ctx().await;
     let token = register_and_link(&ctx, "d-402", "u402@example.com", 0).await;
@@ -252,11 +288,12 @@ async fn analyze_refunds_credit_when_upstream_fails() {
     let token = register_and_link(&ctx, "d-fail", "ufail@example.com", 5).await;
     let (status, _) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE email = ?")
-        .bind("ufail@example.com")
-        .fetch_one(&ctx.pool)
-        .await
-        .unwrap();
+    let credits: (i64,) =
+        sqlx::query_as("SELECT credits_sandbox FROM users WHERE email = ?")
+            .bind("ufail@example.com")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
     assert_eq!(credits.0, 5);
     let kinds: Vec<(String,)> = sqlx::query_as(
         "SELECT kind FROM transactions WHERE user_id = (SELECT id FROM users WHERE email = ?) ORDER BY kind",
@@ -268,6 +305,15 @@ async fn analyze_refunds_credit_when_upstream_fails() {
     let kinds: Vec<&str> = kinds.iter().map(|k| k.0.as_str()).collect();
     // Same-ms timestamps make created_at order non-deterministic; assert the set.
     assert_eq!(kinds, vec!["refund", "usage"]);
+    let envs: Vec<(Option<String>,)> = sqlx::query_as(
+        "SELECT paddle_env FROM transactions \
+         WHERE user_id = (SELECT id FROM users WHERE email = ?) ORDER BY kind",
+    )
+    .bind("ufail@example.com")
+    .fetch_all(&ctx.pool)
+    .await
+    .unwrap();
+    assert!(envs.iter().all(|(e,)| e.as_deref() == Some("sandbox")));
 }
 
 #[tokio::test]
@@ -348,12 +394,15 @@ async fn billing_webhook_idempotent_purchase() {
     let s2 = post_signed(&ctx.app, "/v1/billing/webhook", &body, &sig).await;
     assert_eq!(s1, StatusCode::OK);
     assert_eq!(s2, StatusCode::OK);
-    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE email = ?")
-        .bind("bill@example.com")
-        .fetch_one(&ctx.pool)
-        .await
-        .unwrap();
-    assert_eq!(credits.0, 220);
+    let bal: (i64, i64) = sqlx::query_as(
+        "SELECT credits_sandbox, credits_live FROM users WHERE email = ?",
+    )
+    .bind("bill@example.com")
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+    assert_eq!(bal.0, 220);
+    assert_eq!(bal.1, 0);
     let kinds: Vec<(String,)> =
         sqlx::query_as("SELECT kind FROM transactions WHERE user_id = ? ORDER BY created_at")
             .bind(&uid.0)
@@ -405,6 +454,15 @@ async fn billing_webhook_records_live_purchase_env() {
             .await
             .unwrap();
     assert_eq!(env.0.as_deref(), Some("live"));
+    let bal: (i64, i64) = sqlx::query_as(
+        "SELECT credits_sandbox, credits_live FROM users WHERE email = ?",
+    )
+    .bind("live-bill@example.com")
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+    assert_eq!(bal.0, 0);
+    assert_eq!(bal.1, 220);
 }
 
 #[tokio::test]
@@ -434,11 +492,12 @@ async fn billing_webhook_rejects_forged_signature() {
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let credits: (i64,) = sqlx::query_as("SELECT credits FROM users WHERE email = ?")
-        .bind("forge@example.com")
-        .fetch_one(&ctx.pool)
-        .await
-        .unwrap();
+    let credits: (i64,) =
+        sqlx::query_as("SELECT credits_sandbox FROM users WHERE email = ?")
+            .bind("forge@example.com")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
     assert_eq!(credits.0, 0);
 }
 
@@ -496,8 +555,8 @@ async fn quota_total_sums_purchase_and_topup() {
         ("tx-r", "refund", 1),
     ] {
         sqlx::query(
-            "INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, created_at) \
-             VALUES (?, ?, NULL, ?, ?, ?)",
+            "INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, paddle_env, created_at) \
+             VALUES (?, ?, NULL, ?, ?, 'sandbox', ?)",
         )
         .bind(id)
         .bind(&uid.0)
@@ -508,7 +567,7 @@ async fn quota_total_sums_purchase_and_topup() {
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE users SET credits = 60 WHERE id = ?")
+    sqlx::query("UPDATE users SET credits_sandbox = 60 WHERE id = ?")
         .bind(&uid.0)
         .execute(&ctx.pool)
         .await
@@ -605,6 +664,32 @@ async fn live_checkout_rejects_placeholder_product_id() {
 
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body["error"], "internal_error");
+}
+
+#[tokio::test]
+async fn live_checkout_uses_live_price_column() {
+    let ctx = test_ctx_with_config(
+        Arc::new(MockUpstream {
+            mode: MockMode::OkKeep,
+        }),
+        |config| config.paddle_env = "live".into(),
+    )
+    .await;
+    sqlx::query("UPDATE packs SET provider_product_id_live = ? WHERE id = 'standard'")
+        .bind("pri_01bbbbbbbbbbbbbbbbbbbbbbbb")
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let token = register_and_link(&ctx, "d-live-pri", "live-pri@example.com", 0).await;
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/billing/checkout",
+        &token,
+        r#"{"pack_id":"standard"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(body["error"], "upstream_error");
 }
 
 #[tokio::test]

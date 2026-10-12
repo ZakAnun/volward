@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use super::middleware::{issue_token, require_device, require_user};
 use super::otp;
+use crate::billing::env_credits::balance_for_env;
 use crate::error::AppError;
 use crate::AppState;
 
@@ -70,8 +71,8 @@ pub async fn verify_otp(
     let user_id = Uuid::new_v4().to_string();
     sqlx::query(
         r#"
-        INSERT INTO users (id, email, credits, created_at, last_seen_at)
-        VALUES (?, ?, 0, ?, ?)
+        INSERT INTO users (id, email, credits_sandbox, credits_live, created_at, last_seen_at)
+        VALUES (?, ?, 0, 0, ?, ?)
         ON CONFLICT(email) DO UPDATE SET last_seen_at = excluded.last_seen_at
         "#,
     )
@@ -82,11 +83,16 @@ pub async fn verify_otp(
     .execute(&state.pool)
     .await?;
 
-    let (uid, credits): (String, i64) =
-        sqlx::query_as("SELECT id, credits FROM users WHERE email = ?")
+    let (uid, credits_sandbox, credits_live): (String, i64, i64) =
+        sqlx::query_as("SELECT id, credits_sandbox, credits_live FROM users WHERE email = ?")
             .bind(&email)
             .fetch_one(&state.pool)
             .await?;
+    let credits = balance_for_env(
+        credits_sandbox,
+        credits_live,
+        state.config.paddle_env.as_str(),
+    )?;
 
     sqlx::query("UPDATE devices SET user_id = ? WHERE id = ?")
         .bind(&uid)
@@ -116,14 +122,19 @@ pub async fn me(
 ) -> Result<Json<MeResponse>, AppError> {
     let auth = require_user(&state, &headers)?;
     let uid = auth.require_user()?;
-    let row: Option<(String, i64)> =
-        sqlx::query_as("SELECT email, credits FROM users WHERE id = ?")
+    let row: Option<(String, i64, i64)> =
+        sqlx::query_as("SELECT email, credits_sandbox, credits_live FROM users WHERE id = ?")
             .bind(uid)
             .fetch_optional(&state.pool)
             .await?;
-    let Some((email, credits)) = row else {
+    let Some((email, credits_sandbox, credits_live)) = row else {
         return Err(AppError::Unauthorized);
     };
+    let credits = balance_for_env(
+        credits_sandbox,
+        credits_live,
+        state.config.paddle_env.as_str(),
+    )?;
     Ok(Json(MeResponse {
         user_id: uid.to_string(),
         email,
@@ -181,14 +192,19 @@ pub async fn refresh(
         .fetch_one(&state.pool)
         .await?;
 
-    let user_row: Option<(String, i64)> =
-        sqlx::query_as("SELECT email, credits FROM users WHERE id = ?")
+    let user_row: Option<(String, i64, i64)> =
+        sqlx::query_as("SELECT email, credits_sandbox, credits_live FROM users WHERE id = ?")
             .bind(&uid)
             .fetch_optional(&state.pool)
             .await?;
-    let Some((email, credits)) = user_row else {
+    let Some((email, credits_sandbox, credits_live)) = user_row else {
         return Err(AppError::Forbidden("link_account_required"));
     };
+    let credits = balance_for_env(
+        credits_sandbox,
+        credits_live,
+        state.config.paddle_env.as_str(),
+    )?;
     sqlx::query("UPDATE users SET last_seen_at = ? WHERE id = ?")
         .bind(now)
         .bind(&uid)

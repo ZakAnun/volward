@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use uuid::Uuid;
+use volward_platform_api::billing::env_credits::user_credit_increment_sql;
 use volward_platform_api::db;
 
 #[derive(Parser)]
@@ -20,6 +21,9 @@ enum Cmd {
         credits: i64,
         #[arg(long)]
         note: String,
+        /// Credit pool: sandbox or live.
+        #[arg(long, default_value = "sandbox")]
+        env: String,
     },
     /// Show credits and last 20 transactions.
     Show {
@@ -28,6 +32,14 @@ enum Cmd {
     },
     /// Platform-wide credit source totals (live vs sandbox vs topup).
     Stats,
+}
+
+fn parse_paddle_env(env: &str) -> Result<&'static str> {
+    match env.trim() {
+        "sandbox" => Ok("sandbox"),
+        "live" => Ok("live"),
+        _ => bail!("env must be sandbox or live"),
+    }
 }
 
 #[tokio::main]
@@ -41,21 +53,25 @@ async fn main() -> Result<()> {
             email,
             credits,
             note,
+            env,
         } => {
             if credits <= 0 {
                 bail!("credits must be positive");
             }
-            let user: Option<(String, i64)> =
-                sqlx::query_as("SELECT id, credits FROM users WHERE email = ?")
+            let paddle_env = parse_paddle_env(env.trim())?;
+            let user: Option<(String,)> =
+                sqlx::query_as("SELECT id FROM users WHERE email = ?")
                     .bind(email.trim().to_lowercase())
                     .fetch_optional(&pool)
                     .await?;
-            let Some((uid, _)) = user else {
+            let Some((uid,)) = user else {
                 bail!("user not found");
             };
             let mut conn = pool.acquire().await?;
             sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
-            sqlx::query("UPDATE users SET credits = credits + ? WHERE id = ?")
+            let update_sql = user_credit_increment_sql(paddle_env)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            sqlx::query(update_sql)
                 .bind(credits)
                 .bind(&uid)
                 .execute(&mut *conn)
@@ -64,35 +80,43 @@ async fn main() -> Result<()> {
             let now = chrono::Utc::now().timestamp_millis();
             sqlx::query(
                 r#"
-                INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, note, created_at)
-                VALUES (?, ?, NULL, 'topup', ?, ?, ?)
+                INSERT INTO transactions (id, user_id, device_id, kind, credits_delta, note, paddle_env, created_at)
+                VALUES (?, ?, NULL, 'topup', ?, ?, ?, ?)
                 "#,
             )
             .bind(&tid)
             .bind(&uid)
             .bind(credits)
             .bind(&note)
+            .bind(paddle_env)
             .bind(now)
             .execute(&mut *conn)
             .await?;
             sqlx::query("COMMIT").execute(&mut *conn).await?;
-            let (new_credits,): (i64,) = sqlx::query_as("SELECT credits FROM users WHERE id = ?")
-                .bind(&uid)
-                .fetch_one(&pool)
-                .await?;
-            println!("granted {credits} to {email}; balance={new_credits}");
+            let bal: (i64, i64) = sqlx::query_as(
+                "SELECT credits_sandbox, credits_live FROM users WHERE id = ?",
+            )
+            .bind(&uid)
+            .fetch_one(&pool)
+            .await?;
+            println!(
+                "granted {credits} ({paddle_env}) to {email}; credits_sandbox={} credits_live={}",
+                bal.0, bal.1
+            );
         }
         Cmd::Show { email } => {
-            let user: Option<(String, i64)> =
-                sqlx::query_as("SELECT id, credits FROM users WHERE email = ?")
-                    .bind(email.trim().to_lowercase())
-                    .fetch_optional(&pool)
-                    .await?;
-            let Some((uid, credits)) = user else {
+            let user: Option<(String, i64, i64)> = sqlx::query_as(
+                "SELECT id, credits_sandbox, credits_live FROM users WHERE email = ?",
+            )
+            .bind(email.trim().to_lowercase())
+            .fetch_optional(&pool)
+            .await?;
+            let Some((uid, credits_sandbox, credits_live)) = user else {
                 bail!("user not found");
             };
             println!("user_id={uid}");
-            println!("credits={credits}");
+            println!("credits_sandbox={credits_sandbox}");
+            println!("credits_live={credits_live}");
             let rows: Vec<(String, i64, Option<String>, Option<String>, i64)> = sqlx::query_as(
                 r#"
                 SELECT kind, credits_delta, note, paddle_env, created_at
