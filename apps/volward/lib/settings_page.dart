@@ -334,7 +334,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 tokens: v,
                 icon: Icons.auto_awesome_outlined,
                 title: l10n.aiSettingsTitle,
-                featured: true,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -980,27 +979,52 @@ class _AiModePicker extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppleRadius.sm),
         border: Border.all(color: v.hairline),
       ),
-      child: SizedBox(
-        height: 64,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < options.length; i++) ...[
-              if (i > 0) Container(width: 1, color: v.hairline),
-              Expanded(
-                child: _SettingsModeSegment(
-                  label: options[i].$2,
-                  icon: options[i].$3,
-                  selected: value == options[i].$1,
-                  onTap: () => onChanged(options[i].$1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        child: SizedBox(
+          height: _settingsSegmentBarHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < options.length; i++) ...[
+                if (i > 0) Container(width: 1, color: v.hairline),
+                Expanded(
+                  child: _ThemeModeSegment(
+                    label: options[i].$2,
+                    icon: options[i].$3,
+                    selected: value == options[i].$1,
+                    isFirst: i == 0,
+                    isLast: i == options.length - 1,
+                    onTap: () => onChanged(options[i].$1),
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Compact segmented bar (AI mode, theme, language).
+const _settingsSegmentBarHeight = 40.0;
+
+BorderRadius _settingsSegmentHighlightRadius({
+  required bool selected,
+  required bool isFirst,
+  required bool isLast,
+}) {
+  if (!selected) return BorderRadius.zero;
+  final radius = Radius.circular(AppleRadius.sm);
+  if (isFirst && isLast) return BorderRadius.all(radius);
+  if (isFirst) {
+    return BorderRadius.only(topLeft: radius, bottomLeft: radius);
+  }
+  if (isLast) {
+    return BorderRadius.only(topRight: radius, bottomRight: radius);
+  }
+  return BorderRadius.zero;
 }
 
 class _ThemeModePicker extends StatelessWidget {
@@ -1037,68 +1061,28 @@ class _ThemeModePicker extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppleRadius.sm),
         border: Border.all(color: v.hairline),
       ),
-      child: SizedBox(
-        height: 64,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < segments.length; i++) ...[
-              if (i > 0) Container(width: 1, color: v.hairline),
-              Expanded(
-                child: _ThemeModeSegment(
-                  label: segments[i].$2,
-                  icon: segments[i].$3,
-                  selected: value == segments[i].$1,
-                  onTap: () => onChanged(segments[i].$1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        child: SizedBox(
+          height: _settingsSegmentBarHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < segments.length; i++) ...[
+                if (i > 0) Container(width: 1, color: v.hairline),
+                Expanded(
+                  child: _ThemeModeSegment(
+                    label: segments[i].$2,
+                    icon: segments[i].$3,
+                    selected: value == segments[i].$1,
+                    isFirst: i == 0,
+                    isLast: i == segments.length - 1,
+                    onTap: () => onChanged(segments[i].$1),
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SettingsModeSegment extends StatelessWidget {
-  const _SettingsModeSegment({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final v = context.volward;
-    final scheme = Theme.of(context).colorScheme;
-    final bg = selected ? scheme.primary : Colors.transparent;
-    final fg = selected ? scheme.onPrimary : v.inkMuted80;
-
-    return Material(
-      color: bg,
-      child: InkWell(
-        onTap: onTap,
-        splashColor: Colors.transparent,
-        highlightColor: v.dividerSoft,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: fg),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: context.vwFinePrint.copyWith(
-                color: fg,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1139,23 +1123,28 @@ class _LocaleModePicker extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppleRadius.sm),
         border: Border.all(color: v.hairline),
       ),
-      child: SizedBox(
-        height: 64,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < segments.length; i++) ...[
-              if (i > 0) Container(width: 1, color: v.hairline),
-              Expanded(
-                child: _ThemeModeSegment(
-                  label: segments[i].$2,
-                  icon: segments[i].$3,
-                  selected: value == segments[i].$1,
-                  onTap: () => onChanged(segments[i].$1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        child: SizedBox(
+          height: _settingsSegmentBarHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < segments.length; i++) ...[
+                if (i > 0) Container(width: 1, color: v.hairline),
+                Expanded(
+                  child: _ThemeModeSegment(
+                    label: segments[i].$2,
+                    icon: segments[i].$3,
+                    selected: value == segments[i].$1,
+                    isFirst: i == 0,
+                    isLast: i == segments.length - 1,
+                    onTap: () => onChanged(segments[i].$1),
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1167,12 +1156,16 @@ class _ThemeModeSegment extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.selected,
+    required this.isFirst,
+    required this.isLast,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
   final bool selected;
+  final bool isFirst;
+  final bool isLast;
   final VoidCallback onTap;
 
   @override
@@ -1181,26 +1174,43 @@ class _ThemeModeSegment extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final bg = selected ? scheme.primary : Colors.transparent;
     final fg = selected ? scheme.onPrimary : v.inkMuted80;
+    final highlightRadius = _settingsSegmentHighlightRadius(
+      selected: selected,
+      isFirst: isFirst,
+      isLast: isLast,
+    );
 
     return Material(
       color: bg,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: highlightRadius),
       child: InkWell(
         onTap: onTap,
         splashColor: Colors.transparent,
         highlightColor: v.dividerSoft,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: fg),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: context.vwFinePrint.copyWith(
-                color: fg,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppleSpacing.xs),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: fg),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: context.vwFinePrint.copyWith(
+                    color: fg,
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
