@@ -64,10 +64,18 @@ const verdicts = [
 ];
 
 class _ResultProvider implements AiProvider {
-  _ResultProvider(this.verdicts, {this.quota});
+  _ResultProvider(
+    this.verdicts, {
+    this.quota,
+    this.synthesisText = '',
+    this.synthesisError,
+  });
 
   final List<AiVerdict> verdicts;
   final AiQuotaInfo? quota;
+  final String synthesisText;
+  final Object? synthesisError;
+  final synthesisRequests = <AiConclusionSynthesisRequest>[];
   int analyzeCalls = 0;
 
   @override
@@ -86,7 +94,12 @@ class _ResultProvider implements AiProvider {
   Future<AiConclusionSynthesisResponse> synthesizeConclusion(
     AiConclusionSynthesisRequest request, {
     CancelToken? cancelToken,
-  }) async => const AiConclusionSynthesisResponse(text: '');
+  }) async {
+    synthesisRequests.add(request);
+    final error = synthesisError;
+    if (error != null) throw error;
+    return AiConclusionSynthesisResponse(text: synthesisText);
+  }
 }
 
 class _ThrowingProvider implements AiProvider {
@@ -2702,5 +2715,181 @@ void main() {
     expect(find.textContaining('AI:'), findsWidgets);
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.showAllResultsKey), findsOneWidget);
+  });
+  group('conclusion narrative synthesis', () {
+    Future<void> configureNarrative(
+      WidgetTester tester, {
+      required bool enabled,
+      required bool auto,
+    }) async {
+      await tester.runAsync(() async {
+        final store = AiSettingsStore.instance;
+        await store.setConclusionNarrativeEnabled(enabled);
+        await store.setConclusionNarrativeAuto(auto);
+      });
+    }
+
+    Future<void> analyzeToOverview(
+      WidgetTester tester,
+      _FakeGateway gateway,
+    ) async {
+      await tester.pumpWidget(_workspaceShell(gateway));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+      );
+      await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      );
+    }
+
+    testWidgets('auto mode shows synthesized text and caches it', (
+      tester,
+    ) async {
+      await configureNarrative(tester, enabled: true, auto: true);
+      final provider = _ResultProvider(
+        verdicts,
+        synthesisText: 'Narrative from fake provider.',
+      );
+      final gateway = _FakeGateway()
+        ..provider = provider
+        ..candidatesJson = _candidatePayload();
+
+      await analyzeToOverview(tester, gateway);
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
+      );
+
+      expect(find.text('Narrative from fake provider.'), findsOneWidget);
+      expect(provider.synthesisRequests, hasLength(1));
+      expect(provider.synthesisRequests.single.schemaVersion, 2);
+      expect(provider.synthesisRequests.single.analysisSessionId, 'cache-key');
+      final cacheFile = File(
+        '${_workspaceTestCacheDir!.path}/ai_analysis/cache-key.narrative.json',
+      );
+      expect(cacheFile.existsSync(), isTrue);
+      expect(
+        jsonDecode(cacheFile.readAsStringSync())['text'],
+        'Narrative from fake provider.',
+      );
+    });
+
+    testWidgets('synthesis failure silently keeps template overview', (
+      tester,
+    ) async {
+      await configureNarrative(tester, enabled: true, auto: true);
+      final provider = _ResultProvider(
+        verdicts,
+        synthesisError: Exception('boom'),
+      );
+      final gateway = _FakeGateway()
+        ..provider = provider
+        ..candidatesJson = _candidatePayload();
+
+      await analyzeToOverview(tester, gateway);
+      for (var i = 0; i < 60 && provider.synthesisRequests.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
+
+      expect(provider.synthesisRequests, hasLength(1));
+      expect(
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
+        findsNothing,
+      );
+      expect(
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeLoadingKey),
+        findsNothing,
+      );
+      expect(
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
+        findsNothing,
+      );
+      expect(find.byKey(AiAnalysisWorkspace.showAllResultsKey), findsOneWidget);
+    });
+
+    testWidgets('disabled setting never calls synthesis', (tester) async {
+      await configureNarrative(tester, enabled: false, auto: true);
+      final provider = _ResultProvider(verdicts, synthesisText: 'unused');
+      final gateway = _FakeGateway()
+        ..provider = provider
+        ..candidatesJson = _candidatePayload();
+
+      await analyzeToOverview(tester, gateway);
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
+
+      expect(provider.synthesisRequests, isEmpty);
+      expect(
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
+        findsNothing,
+      );
+    });
+
+    testWidgets('manual mode offers a generate button', (tester) async {
+      await configureNarrative(tester, enabled: true, auto: false);
+      final provider = _ResultProvider(
+        verdicts,
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+        synthesisText: 'Manual narrative.',
+      );
+      final gateway = _FakeGateway()
+        ..mode = AiMode.platform
+        ..provider = provider
+        ..candidatesJson = _candidatePayload();
+
+      await analyzeToOverview(tester, gateway);
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
+      );
+      expect(provider.synthesisRequests, isEmpty);
+      expect(find.text('Uses 1 extra credit.'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
+      );
+
+      expect(find.text('Manual narrative.'), findsOneWidget);
+      expect(provider.synthesisRequests, hasLength(1));
+    });
+
+    testWidgets('platform precheck shows +1 credit hint when enabled', (
+      tester,
+    ) async {
+      await configureNarrative(tester, enabled: true, auto: true);
+      final gateway = _FakeGateway()
+        ..mode = AiMode.platform
+        ..provider = _ResultProvider(
+          const [],
+          quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+        )
+        ..candidatesJson = _candidatePayload();
+
+      await tester.pumpWidget(_workspaceShell(gateway));
+      await _pumpUntilFound(
+        tester,
+        find.text('Conclusion summary adds 1 credit.'),
+      );
+    });
   });
 }

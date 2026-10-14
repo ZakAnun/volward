@@ -968,6 +968,10 @@
     }
   },
   "aiConclusionsLead": "以下结论来自本次 AI 分类。先看各目录要点，再打开完整列表调整选中项。",
+  "aiConclusionNarrativeLoading": "正在整理分析结论…",
+  "aiConclusionNarrativeGenerate": "生成 AI 导读",
+  "aiConclusionNarrativePlatformCreditHint": "将额外消耗 1 积分。",
+  "aiPrecheckNarrativeCreditHint": "结论导读将额外消耗 1 积分。",
   "aiConclusionsByDirectory": "按目录",
   "aiConclusionsDirectoryMetrics": "可清理 {safe} · {review} 项待确认 · 占可清理 {share}%",
   "@aiConclusionsDirectoryMetrics": {

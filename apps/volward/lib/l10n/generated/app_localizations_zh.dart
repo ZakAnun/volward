@@ -1248,6 +1248,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiConclusionsLead => '以下结论来自本次 AI 分类。先看各目录要点，再打开完整列表调整选中项。';
 
   @override
+  String get aiConclusionNarrativeLoading => '正在整理分析结论…';
+
+  @override
+  String get aiConclusionNarrativeGenerate => '生成 AI 导读';
+
+  @override
+  String get aiConclusionNarrativePlatformCreditHint => '将额外消耗 1 积分。';
+
+  @override
+  String get aiPrecheckNarrativeCreditHint => '结论导读将额外消耗 1 积分。';
+
+  @override
   String get aiConclusionsByDirectory => '按目录';
 
   @override

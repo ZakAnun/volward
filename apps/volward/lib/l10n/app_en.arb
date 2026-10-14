@@ -968,6 +968,10 @@
     }
   },
   "aiConclusionsLead": "These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.",
+  "aiConclusionNarrativeLoading": "Summarizing conclusions…",
+  "aiConclusionNarrativeGenerate": "Generate AI summary",
+  "aiConclusionNarrativePlatformCreditHint": "Uses 1 extra credit.",
+  "aiPrecheckNarrativeCreditHint": "Conclusion summary adds 1 credit.",
   "aiConclusionsByDirectory": "By folder",
   "aiConclusionsDirectoryMetrics": "{safe} reclaimable · {review} to review · {share}% of reclaimable total",
   "@aiConclusionsDirectoryMetrics": {

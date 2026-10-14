@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../ai/ai_analysis_gateway.dart';
+import '../ai/ai_conclusion_narrative_cache.dart';
+import '../ai/ai_conclusion_synthesis.dart';
 import '../ai/ai_coverage_coordinator.dart';
 import '../ai/ai_provider.dart';
 import '../ai/ai_settings_store.dart';
@@ -567,6 +569,13 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const conclusionsOverviewKey = Key('ai-analysis-conclusions-overview');
   static const showAllResultsKey = Key('ai-analysis-show-all-results');
   static const backToConclusionsKey = Key('ai-analysis-back-to-conclusions');
+  static const conclusionNarrativeKey = Key('ai-analysis-conclusion-narrative');
+  static const conclusionNarrativeLoadingKey = Key(
+    'ai-analysis-conclusion-narrative-loading',
+  );
+  static const conclusionNarrativeGenerateKey = Key(
+    'ai-analysis-conclusion-narrative-generate',
+  );
 
   final String snapshotId;
   final String targetLabel;
@@ -645,6 +654,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   CoveragePlanSummary? _coveragePlanSummary;
   bool _coveragePlanSummaryLoadInFlight = false;
   bool _coveragePlanSummaryBannerLoadAttempted = false;
+
+  // Optional Stage B conclusion narrative (see ai-results-overview-agents spec).
+  bool _narrativeEnabled = false;
+  bool _narrativeAuto = true;
+  bool _narrativeLoading = false;
+  String? _narrativeText;
+  String? _narrativeSignature;
+  int _narrativeGeneration = 0;
 
   /// True after the user starts, resumes, or opens full-coverage results this visit.
   bool _coverageUserEngagedFullRun = false;
@@ -1115,10 +1132,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coverageUiPrefersAnalyzingPhase = false;
       _coverageStalePausedUpdatedAtMs = null;
       _coveragePlanSummaryBannerLoadAttempted = false;
+      _narrativeGeneration++;
+      _narrativeLoading = false;
+      _narrativeText = null;
+      _narrativeSignature = null;
     });
     try {
       final mode = await widget.gateway.getMode();
       if (!_isCurrent(generation)) return;
+      unawaited(_loadNarrativeSettings());
       final provider = await widget.gateway.resolveProvider();
       if (!_isCurrent(generation)) return;
       setState(() {
@@ -1369,6 +1391,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           resetPresentation: _resetResultsPresentation,
         );
         if (!_isCurrent(generation)) return false;
+        unawaited(_maybeRunConclusionNarrative(fresh: false));
         return true;
       }
       setState(() {
@@ -1391,6 +1414,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _error = null;
         _enterResultsPhase();
       });
+      unawaited(_maybeRunConclusionNarrative(fresh: false));
       return true;
     } catch (_) {
       if (!_isCurrent(generation)) return false;
@@ -1547,6 +1571,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _analyzing = false;
         _enterResultsPhase();
       });
+      unawaited(_maybeRunConclusionNarrative(fresh: true, provider: provider));
     } catch (error) {
       if (!byokUsageRecorded && provider is ByokAiProvider) {
         final partialUsage = provider.lastTokenUsage;
@@ -1678,6 +1703,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _error = null;
       _hasExistingResult = true;
     });
+    unawaited(_maybeRunConclusionNarrative(fresh: false));
     return true;
   }
 
@@ -2020,10 +2046,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (terminal) {
           _bumpCoverageVerdictPagesForTerminal(state);
           final inc = incremental;
+          final freshCompleted =
+              state.status == CoverageJobStatus.completed &&
+              _coverageUserEngagedFullRun;
           unawaited(() async {
             await _refreshVerdictsFromCoverageStore(incremental: inc);
             if (mounted) {
               _lastCoverageVerdictRefreshAt = DateTime.now();
+              unawaited(_maybeRunConclusionNarrative(fresh: freshCompleted));
             }
           }());
         } else {
@@ -3222,6 +3252,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         ),
         const SizedBox(height: AppleSpacing.xs),
         ..._buildPrecheckAiEstimateLines(context),
+        if (_mode == AiMode.platform && _narrativeEnabled) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(l10n.aiPrecheckNarrativeCreditHint, style: context.vwCaption),
+        ],
         if (_mode == AiMode.platform &&
             _platformCredits != null &&
             !(_useFullCoverage && _estimatedCoverageCredits != null)) ...[
@@ -4013,24 +4047,179 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return _buildResults();
   }
 
-  AiAnalysisConclusionOverview _buildConclusionOverviewModel() {
+  AiResultOverviewBuildInput _buildConclusionOverviewInput() {
     final groups = _normalizedResultGroups();
     final verdicts = groups.expand((group) => group.items);
     final fingerprint = _coverageJobState?.fingerprint;
-    return buildAiAnalysisConclusionOverview(
-      AiResultOverviewBuildInput(
-        targetLabel: widget.targetLabel,
-        rootPath: _rootPath,
-        verdicts: verdicts,
-        sizeByPath: _sizeByPath,
-        rootSizeBytesHint: fingerprint != null && fingerprint.rootSizeBytes > 0
-            ? fingerprint.rootSizeBytes
-            : null,
-        truncated: _truncated || (fingerprint?.truncated ?? false),
-        fullCoverage: _useFullCoverage,
-        isPendingReview: _isPendingReview,
-      ),
+    return AiResultOverviewBuildInput(
+      targetLabel: widget.targetLabel,
+      rootPath: _rootPath,
+      verdicts: verdicts,
+      sizeByPath: _sizeByPath,
+      rootSizeBytesHint: fingerprint != null && fingerprint.rootSizeBytes > 0
+          ? fingerprint.rootSizeBytes
+          : null,
+      truncated: _truncated || (fingerprint?.truncated ?? false),
+      fullCoverage: _useFullCoverage,
+      isPendingReview: _isPendingReview,
     );
+  }
+
+  AiAnalysisConclusionOverview _buildConclusionOverviewModel() {
+    return buildAiAnalysisConclusionOverview(_buildConclusionOverviewInput());
+  }
+
+  String _narrativeSignatureFor(AiAnalysisConclusionOverview overview) =>
+      '${overview.safeBytes}|${overview.reviewCount}|${overview.keepCount}|'
+      '${overview.analyzedItemCount}|${overview.directories.length}';
+
+  Future<void> _loadNarrativeSettings() async {
+    try {
+      final store = AiSettingsStore.instance;
+      final enabled = await store.conclusionNarrativeEnabled();
+      final auto = await store.conclusionNarrativeAuto();
+      if (!mounted) return;
+      setState(() {
+        _narrativeEnabled = enabled;
+        _narrativeAuto = auto;
+      });
+    } catch (_) {}
+  }
+
+  /// Optional Stage B: restore a cached narrative, or (when [fresh] && auto, or
+  /// [manual]) synthesize one from the finished overview. Failures are silent.
+  Future<void> _maybeRunConclusionNarrative({
+    required bool fresh,
+    bool manual = false,
+    AiProvider? provider,
+  }) async {
+    final narrativeGeneration = _narrativeGeneration;
+    bool stale() => !mounted || narrativeGeneration != _narrativeGeneration;
+    final locale = Localizations.localeOf(context).languageCode == 'zh'
+        ? 'zh-CN'
+        : 'en';
+    try {
+      await _loadNarrativeSettings();
+      if (stale() || !_narrativeEnabled) return;
+      if (_narrativeLoading || _verdicts.isEmpty) return;
+
+      final buildInput = _buildConclusionOverviewInput();
+      final overview = buildAiAnalysisConclusionOverview(buildInput);
+      if (overview.analyzedItemCount == 0) return;
+      final signature = _narrativeSignatureFor(overview);
+      if (_narrativeText != null && _narrativeSignature == signature) return;
+
+      final hash = conclusionContentHash(
+        overview,
+        _normalizedResultGroups().expand((group) => group.items),
+      );
+      final cacheKey = _resultCacheKey.isNotEmpty
+          ? _resultCacheKey
+          : widget.snapshotId;
+      final cache = ConclusionNarrativeCache(SnapshotCache.cacheDir());
+      final cached = await cache.read(cacheKey, hash);
+      if (stale()) return;
+      if (cached != null) {
+        setState(() {
+          _narrativeText = cached;
+          _narrativeSignature = signature;
+        });
+        return;
+      }
+      if (!manual && !(fresh && _narrativeAuto)) return;
+
+      final resolved = provider ?? await widget.gateway.resolveProvider();
+      if (stale() || resolved == null) return;
+      final request = buildConclusionSynthesisRequest(
+        overview: overview,
+        buildInput: buildInput,
+        analysisSessionId: cacheKey,
+        locale: locale,
+      );
+      setState(() => _narrativeLoading = true);
+      try {
+        final response = await resolved.synthesizeConclusion(request);
+        final text = response.text.trim();
+        if (stale()) return;
+        if (text.isEmpty) return;
+        await cache.write(cacheKey, hash, text);
+        if (stale()) return;
+        setState(() {
+          _narrativeText = text;
+          _narrativeSignature = signature;
+        });
+      } finally {
+        if (!stale()) setState(() => _narrativeLoading = false);
+      }
+    } catch (_) {
+      // Narrative is optional; the template-only overview stays as-is.
+    }
+  }
+
+  Widget _buildNarrativeSection(
+    AiAnalysisConclusionOverview overview,
+    AppLocalizations l10n,
+  ) {
+    if (!_narrativeEnabled) return const SizedBox.shrink();
+    final text = _narrativeText;
+    if (text != null &&
+        _narrativeSignature == _narrativeSignatureFor(overview)) {
+      return Padding(
+        padding: const EdgeInsets.only(top: AppleSpacing.xs),
+        child: Text(
+          text,
+          key: AiAnalysisWorkspace.conclusionNarrativeKey,
+          style: context.vwBody,
+        ),
+      );
+    }
+    if (_narrativeLoading) {
+      return Padding(
+        padding: const EdgeInsets.only(top: AppleSpacing.xs),
+        child: Row(
+          key: AiAnalysisWorkspace.conclusionNarrativeLoadingKey,
+          children: [
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: AppleSpacing.xs),
+            Text(l10n.aiConclusionNarrativeLoading, style: context.vwCaption),
+          ],
+        ),
+      );
+    }
+    if (!_narrativeAuto && _hasProvider) {
+      return Padding(
+        padding: const EdgeInsets.only(top: AppleSpacing.xs),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: AppleButton(
+                key: AiAnalysisWorkspace.conclusionNarrativeGenerateKey,
+                label: l10n.aiConclusionNarrativeGenerate,
+                icon: Icons.auto_awesome_outlined,
+                variant: AppleButtonVariant.pearl,
+                onPressed: () => unawaited(
+                  _maybeRunConclusionNarrative(fresh: false, manual: true),
+                ),
+              ),
+            ),
+            if (_mode == AiMode.platform) ...[
+              const SizedBox(height: AppleSpacing.xxs),
+              Text(
+                l10n.aiConclusionNarrativePlatformCreditHint,
+                style: context.vwCaption,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   Widget _buildResultsOverview() {
@@ -4120,6 +4309,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                         ),
                         const SizedBox(height: AppleSpacing.sm),
                         Text(l10n.aiConclusionsLead, style: context.vwBody),
+                        _buildNarrativeSection(overview, l10n),
                         const SizedBox(height: AppleSpacing.md),
                         Text(
                           l10n.aiConclusionsByDirectory,

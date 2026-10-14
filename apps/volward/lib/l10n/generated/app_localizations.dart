@@ -2148,6 +2148,30 @@ abstract class AppLocalizations {
   /// **'These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.'**
   String get aiConclusionsLead;
 
+  /// No description provided for @aiConclusionNarrativeLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Summarizing conclusions…'**
+  String get aiConclusionNarrativeLoading;
+
+  /// No description provided for @aiConclusionNarrativeGenerate.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate AI summary'**
+  String get aiConclusionNarrativeGenerate;
+
+  /// No description provided for @aiConclusionNarrativePlatformCreditHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Uses 1 extra credit.'**
+  String get aiConclusionNarrativePlatformCreditHint;
+
+  /// No description provided for @aiPrecheckNarrativeCreditHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Conclusion summary adds 1 credit.'**
+  String get aiPrecheckNarrativeCreditHint;
+
   /// No description provided for @aiConclusionsByDirectory.
   ///
   /// In en, this message translates to:

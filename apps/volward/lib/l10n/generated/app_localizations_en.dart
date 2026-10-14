@@ -1308,6 +1308,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.';
 
   @override
+  String get aiConclusionNarrativeLoading => 'Summarizing conclusions…';
+
+  @override
+  String get aiConclusionNarrativeGenerate => 'Generate AI summary';
+
+  @override
+  String get aiConclusionNarrativePlatformCreditHint => 'Uses 1 extra credit.';
+
+  @override
+  String get aiPrecheckNarrativeCreditHint =>
+      'Conclusion summary adds 1 credit.';
+
+  @override
   String get aiConclusionsByDirectory => 'By folder';
 
   @override
