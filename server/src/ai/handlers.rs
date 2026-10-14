@@ -12,6 +12,7 @@ use super::proxy::{
     debit_one_credit, model_name, refund_one_credit, run_conclusion_upstream, run_tree_upstream,
     run_upstream,
 };
+use super::synthesize_request::SynthesizeConclusionRequest;
 use crate::billing::env_credits::balance_for_env;
 
 #[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq)]
@@ -82,24 +83,16 @@ pub async fn quota(
 pub async fn synthesize_conclusion(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<SynthesizeConclusionRequest>,
 ) -> Result<Json<SynthesizeConclusionResponse>, AppError> {
     let auth = require_user(&state, &headers)?;
     let uid = auth.require_user()?.to_string();
 
-    if body.get("schema_version").and_then(|v| v.as_i64()) != Some(2) {
-        return Err(AppError::BadRequest("schema_version_must_be_2".into()));
-    }
-    let dir_len = body
-        .get("directories")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
-    if dir_len > 12 {
-        return Err(AppError::BadRequest("directories_exceed_12".into()));
-    }
+    body.validate()?;
+    let dir_len = body.directories.len();
 
-    let user_json = serde_json::to_string(&body).map_err(|_| AppError::BadRequest("invalid_json".into()))?;
+    let user_json =
+        serde_json::to_string(&body).map_err(|_| AppError::BadRequest("invalid_json".into()))?;
     let paddle_env = state.config.paddle_env.as_str();
     debit_one_credit(
         &state.pool,

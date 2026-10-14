@@ -659,6 +659,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   bool _narrativeEnabled = false;
   bool _narrativeAuto = true;
   bool _narrativeLoading = false;
+  bool _narrativeSynthesisInFlight = false;
   String? _narrativeText;
   String? _narrativeSignature;
   int _narrativeGeneration = 0;
@@ -1134,6 +1135,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _coveragePlanSummaryBannerLoadAttempted = false;
       _narrativeGeneration++;
       _narrativeLoading = false;
+      _narrativeSynthesisInFlight = false;
       _narrativeText = null;
       _narrativeSignature = null;
     });
@@ -4069,10 +4071,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return buildAiAnalysisConclusionOverview(_buildConclusionOverviewInput());
   }
 
-  String _narrativeSignatureFor(AiAnalysisConclusionOverview overview) =>
-      '${overview.safeBytes}|${overview.reviewCount}|${overview.keepCount}|'
-      '${overview.analyzedItemCount}|${overview.directories.length}';
-
   Future<void> _loadNarrativeSettings() async {
     try {
       final store = AiSettingsStore.instance;
@@ -4098,21 +4096,21 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final locale = Localizations.localeOf(context).languageCode == 'zh'
         ? 'zh-CN'
         : 'en';
+    if (_verdicts.isEmpty) return;
     try {
       await _loadNarrativeSettings();
       if (stale() || !_narrativeEnabled) return;
-      if (_narrativeLoading || _verdicts.isEmpty) return;
+      if (_narrativeLoading || _narrativeSynthesisInFlight) return;
 
       final buildInput = _buildConclusionOverviewInput();
       final overview = buildAiAnalysisConclusionOverview(buildInput);
       if (overview.analyzedItemCount == 0) return;
-      final signature = _narrativeSignatureFor(overview);
-      if (_narrativeText != null && _narrativeSignature == signature) return;
 
       final hash = conclusionContentHash(
         overview,
         _normalizedResultGroups().expand((group) => group.items),
       );
+      if (_narrativeText != null && _narrativeSignature == hash) return;
       final cacheKey = _resultCacheKey.isNotEmpty
           ? _resultCacheKey
           : widget.snapshotId;
@@ -4122,7 +4120,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (cached != null) {
         setState(() {
           _narrativeText = cached;
-          _narrativeSignature = signature;
+          _narrativeSignature = hash;
         });
         return;
       }
@@ -4130,6 +4128,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
       final resolved = provider ?? await widget.gateway.resolveProvider();
       if (stale() || resolved == null) return;
+      if (_narrativeSynthesisInFlight) return;
+      _narrativeSynthesisInFlight = true;
       final request = buildConclusionSynthesisRequest(
         overview: overview,
         buildInput: buildInput,
@@ -4146,9 +4146,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (stale()) return;
         setState(() {
           _narrativeText = text;
-          _narrativeSignature = signature;
+          _narrativeSignature = hash;
         });
       } finally {
+        _narrativeSynthesisInFlight = false;
         if (!stale()) setState(() => _narrativeLoading = false);
       }
     } catch (_) {
@@ -4162,8 +4163,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   ) {
     if (!_narrativeEnabled) return const SizedBox.shrink();
     final text = _narrativeText;
-    if (text != null &&
-        _narrativeSignature == _narrativeSignatureFor(overview)) {
+    final hash = conclusionContentHash(
+      overview,
+      _normalizedResultGroups().expand((group) => group.items),
+    );
+    if (text != null && _narrativeSignature == hash) {
       return Padding(
         padding: const EdgeInsets.only(top: AppleSpacing.xs),
         child: Text(

@@ -674,6 +674,17 @@ pub unsafe extern "C" fn volward_ai_build_request_json(
     }
 }
 
+/// Build DeepSeek request JSON for conclusion synthesis (Stage B user JSON in, chat body out).
+#[no_mangle]
+pub unsafe extern "C" fn volward_ai_build_conclusion_synthesis_json(
+    user_json: *const c_char,
+) -> *mut c_char {
+    let Some(raw) = cstr_to_string(user_json) else {
+        return to_c_string("error:null user_json".into());
+    };
+    to_c_string(volward_ai::build_conclusion_synthesis_body(&raw))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn volward_ai_parse_response_json(
     response_json: *const c_char,

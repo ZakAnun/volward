@@ -375,6 +375,60 @@ async fn synthesize_conclusion_happy_path() {
 }
 
 #[tokio::test]
+async fn synthesize_conclusion_rejects_empty_directories() {
+    let ctx = test_ctx().await;
+    let token = register_and_link(&ctx, "d-synth-empty", "uempty@example.com", 5).await;
+    let body = r#"{
+      "schema_version": 2,
+      "analysis_session_id": "sess-1",
+      "locale": "en",
+      "root_label": "Home",
+      "scan": {"root_path": "/home", "truncated": false, "full_coverage": true},
+      "totals": {
+        "safe_bytes": 0,
+        "review_count": 0,
+        "keep_count": 0,
+        "analyzed_item_count": 0,
+        "analyzed_total_bytes": 0,
+        "root_size_bytes": 0
+      },
+      "directories": []
+    }"#;
+    let (status, _) = post_auth(
+        &ctx.app,
+        "/v1/ai/synthesize-conclusion",
+        &token,
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn synthesize_conclusion_refunds_credit_when_upstream_fails() {
+    let ctx = test_ctx_with_upstream(Arc::new(MockUpstream {
+        mode: MockMode::Fail,
+    }))
+    .await;
+    let token = register_and_link(&ctx, "d-synth-fail", "usfail@example.com", 5).await;
+    let (status, _) = post_auth(
+        &ctx.app,
+        "/v1/ai/synthesize-conclusion",
+        &token,
+        ONE_SYNTHESIS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    let credits: (i64,) =
+        sqlx::query_as("SELECT credits_sandbox FROM users WHERE email = ?")
+            .bind("usfail@example.com")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(credits.0, 5);
+}
+
+#[tokio::test]
 async fn analyze_refunds_credit_when_upstream_fails() {
     let ctx = test_ctx_with_upstream(Arc::new(MockUpstream {
         mode: MockMode::Fail,

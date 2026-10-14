@@ -39,7 +39,7 @@ Rules:
 - Do NOT introduce new file paths, folders, verdicts, or cleanup actions not implied by the JSON.
 - Do NOT re-classify items or change safe/review/keep judgments.
 - Write 2–4 sentences of plain text (no JSON, no markdown, no bullet lists).
-- Match the language of reason_highlights when possible.
+- Use the JSON "locale" field (e.g. zh-CN, en) for output language when reason_highlights are mixed or empty.
 
 Respond with plain text only.
 "#;
