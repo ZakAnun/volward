@@ -34,17 +34,26 @@ enum MockMode {
     OkKeep,
     Fail,
     Park(Mutex<Option<oneshot::Receiver<()>>>),
+    Capture(Arc<Mutex<Vec<String>>>),
 }
 
 #[async_trait]
 impl UpstreamClient for MockUpstream {
-    async fn complete(&self, _request_body: String) -> Result<String, AppError> {
+    async fn complete(&self, request_body: String) -> Result<String, AppError> {
         match &self.mode {
             MockMode::OkKeep => Ok(r#"{
               "choices":[{
                 "message":{"content":"[{\"path\":\"/a\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"ok\"}]"}
               }]
             }"#.into()),
+            MockMode::Capture(captured) => {
+                captured.lock().unwrap().push(request_body);
+                Ok(r#"{
+                  "choices":[{
+                    "message":{"content":"[{\"path\":\"/Library/Caches\",\"verdict\":\"keep\",\"confidence\":\"high\",\"reason\":\"ok\"}]"}
+                  }]
+                }"#.into())
+            }
             MockMode::Fail => Err(AppError::BadGateway),
             MockMode::Park(rx_slot) => {
                 let rx = rx_slot.lock().unwrap().take();
@@ -191,6 +200,20 @@ async fn register_and_link(ctx: &TestCtx, device: &str, email: &str, credits: i6
 
 const ONE_CANDIDATE: &str = r#"{"candidates":[{"path":"/a","size_bytes":1,"is_dir":false}]}"#;
 
+const ONE_TREE_NODE: &str = r#"{
+  "analysis_kind":"tree",
+  "tree_nodes":[{
+    "path":"/Library/Caches",
+    "size_bytes":1000,
+    "file_count":5,
+    "subdir_count":2,
+    "role":"cache",
+    "markers":["tmp"],
+    "pruned_flags":0,
+    "top_extensions":[["log",3]]
+  }]
+}"#;
+
 const ONE_SYNTHESIS: &str = r#"{
   "schema_version": 2,
   "analysis_session_id": "sess-1",
@@ -302,6 +325,30 @@ async fn ai_analyze_happy_path() {
     assert_eq!(body["credits_used"], 1);
     assert_eq!(body["credits_remaining"], 4);
     assert!(!body["entries"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn ai_analyze_tree_uses_tree_system_prompt() {
+    let captured = Arc::new(Mutex::new(Vec::<String>::new()));
+    let ctx = test_ctx_with_upstream(Arc::new(MockUpstream {
+        mode: MockMode::Capture(Arc::clone(&captured)),
+    }))
+    .await;
+    let token = register_and_link(&ctx, "d-tree", "utree@example.com", 5).await;
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_TREE_NODE).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["entries"].as_array().unwrap()[0]["path"],
+        "/Library/Caches"
+    );
+    let upstream_bodies = captured.lock().unwrap();
+    assert_eq!(upstream_bodies.len(), 1);
+    let upstream: serde_json::Value = serde_json::from_str(&upstream_bodies[0]).unwrap();
+    let system = upstream["messages"][0]["content"].as_str().unwrap();
+    assert_eq!(system, volward_ai::TREE_SYSTEM_PROMPT);
+    let user = upstream["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("/Library/Caches"));
+    assert!(user.contains("role=cache"));
 }
 
 #[tokio::test]

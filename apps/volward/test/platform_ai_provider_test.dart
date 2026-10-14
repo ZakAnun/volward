@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/platform_ai_provider.dart';
 import 'package:volward/ai/platform_auth_store.dart';
 
@@ -314,4 +315,47 @@ void main() {
       expect(candidate.containsKey('member_paths'), isFalse);
     },
   );
+
+  test('analyzeTreeNodes sends analysis_kind tree and tree_nodes', () async {
+    await PlatformAuthStore.instance.debugSetUserToken(validToken);
+    String? body;
+    final client = MockClient((req) async {
+      body = req.body;
+      return http.Response(
+        '{"entries":[{"path":"/Cache","verdict":"keep","confidence":"high","reason":"x"}],'
+        '"credits_used":1,"credits_remaining":1,"model":"m"}',
+        200,
+      );
+    });
+    final p = PlatformAiProvider(
+      token: validToken,
+      client: client,
+      baseUrl: baseUrl,
+    );
+    await p.analyzeTreeNodes([
+      const CoverageTreeNode(
+        path: '/Cache',
+        sizeBytes: 100,
+        fileCount: 3,
+        subdirCount: 1,
+        role: 'cache',
+        markers: ['tmp'],
+        topExtensions: [CoverageTreeTopExtension(extension: 'log', count: 2)],
+      ),
+    ]);
+    expect(body, isNotNull);
+    final decoded = jsonDecode(body!) as Map<String, dynamic>;
+    expect(decoded['analysis_kind'], 'tree');
+    expect(decoded.containsKey('candidates'), isFalse);
+    final nodes = decoded['tree_nodes'] as List;
+    final node = nodes.single as Map<String, dynamic>;
+    expect(node['path'], '/Cache');
+    expect(node['file_count'], 3);
+    expect(node['subdir_count'], 1);
+    expect(node['role'], 'cache');
+    expect(node['markers'], ['tmp']);
+    expect(node['top_extensions'], [
+      ['log', 2],
+    ]);
+  });
 }

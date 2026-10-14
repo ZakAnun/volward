@@ -2,20 +2,34 @@ use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use volward_ai::AnalyzeCandidate;
+use volward_ai::{AnalyzeCandidate, AnalyzeTreeNode};
 
 use crate::auth::middleware::require_user;
 use crate::error::AppError;
 use crate::AppState;
 
 use super::proxy::{
-    debit_one_credit, model_name, refund_one_credit, run_conclusion_upstream, run_upstream,
+    debit_one_credit, model_name, refund_one_credit, run_conclusion_upstream, run_tree_upstream,
+    run_upstream,
 };
 use crate::billing::env_credits::balance_for_env;
 
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisKind {
+    #[default]
+    Candidates,
+    Tree,
+}
+
 #[derive(Deserialize)]
 pub struct AnalyzeRequest {
+    #[serde(default)]
+    pub analysis_kind: AnalysisKind,
+    #[serde(default)]
     pub candidates: Vec<AnalyzeCandidate>,
+    #[serde(default)]
+    pub tree_nodes: Vec<AnalyzeTreeNode>,
 }
 
 #[derive(Serialize)]
@@ -125,24 +139,42 @@ pub async fn analyze(
 ) -> Result<Json<AnalyzeResponse>, AppError> {
     let auth = require_user(&state, &headers)?;
     let uid = auth.require_user()?.to_string();
-    if body.candidates.len() > 150 {
-        return Err(AppError::BadRequest("candidates_exceed_150".into()));
-    }
-    if body.candidates.is_empty() {
-        return Err(AppError::BadRequest("candidates_empty".into()));
-    }
+
+    let item_count = match body.analysis_kind {
+        AnalysisKind::Candidates => {
+            if body.candidates.len() > 150 {
+                return Err(AppError::BadRequest("candidates_exceed_150".into()));
+            }
+            if body.candidates.is_empty() {
+                return Err(AppError::BadRequest("candidates_empty".into()));
+            }
+            body.candidates.len()
+        }
+        AnalysisKind::Tree => {
+            if body.tree_nodes.len() > 150 {
+                return Err(AppError::BadRequest("tree_nodes_exceed_150".into()));
+            }
+            if body.tree_nodes.is_empty() {
+                return Err(AppError::BadRequest("tree_nodes_empty".into()));
+            }
+            body.tree_nodes.len()
+        }
+    };
 
     let paddle_env = state.config.paddle_env.as_str();
     debit_one_credit(
         &state.pool,
         &uid,
         &auth.device_id,
-        body.candidates.len() as i64,
+        item_count as i64,
         paddle_env,
     )
     .await?;
 
-    let upstream_result = run_upstream(&state.upstream, &body.candidates).await;
+    let upstream_result = match body.analysis_kind {
+        AnalysisKind::Candidates => run_upstream(&state.upstream, &body.candidates).await,
+        AnalysisKind::Tree => run_tree_upstream(&state.upstream, &body.tree_nodes).await,
+    };
     match upstream_result {
         Ok(entries) => {
             let balances: (i64, i64) = sqlx::query_as(

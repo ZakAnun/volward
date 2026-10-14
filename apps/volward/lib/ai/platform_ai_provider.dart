@@ -125,12 +125,7 @@ class PlatformAiProvider implements AiProvider, TreeAiProvider {
     List<AiCandidate> candidates, {
     CancelToken? cancelToken,
   }) async {
-    _ensureConfigured();
-    cancelToken?.whenCancelled.then((_) => _abortClient());
-    if (cancelToken?.isCancelled ?? false) {
-      throw const CoverageCancelledException();
-    }
-    final payload = {
+    return _postAnalyze({
       'candidates': candidates
           .map(
             (c) => {
@@ -148,7 +143,18 @@ class PlatformAiProvider implements AiProvider, TreeAiProvider {
             },
           )
           .toList(),
-    };
+    }, cancelToken: cancelToken);
+  }
+
+  Future<AnalyzeResult> _postAnalyze(
+    Map<String, dynamic> payload, {
+    CancelToken? cancelToken,
+  }) async {
+    _ensureConfigured();
+    cancelToken?.whenCancelled.then((_) => _abortClient());
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CoverageCancelledException();
+    }
 
     final http.Response res;
     try {
@@ -242,18 +248,10 @@ class PlatformAiProvider implements AiProvider, TreeAiProvider {
     List<CoverageTreeNode> nodes, {
     CancelToken? cancelToken,
   }) {
-    final candidates = nodes
-        .map(
-          (n) => AiCandidate(
-            path: n.path,
-            sizeBytes: n.sizeBytes,
-            isDir: true,
-            childCount: n.fileCount,
-            cleanupSource: 'tree_role:${n.role}',
-          ),
-        )
-        .toList(growable: false);
-    return analyze(candidates, cancelToken: cancelToken);
+    return _postAnalyze({
+      'analysis_kind': 'tree',
+      'tree_nodes': nodes.map((n) => n.toJson()).toList(growable: false),
+    }, cancelToken: cancelToken);
   }
 
   Future<void> _mapErrorStatus(int status) async {

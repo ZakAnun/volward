@@ -3,8 +3,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use volward_ai::{
-    build_conclusion_synthesis_body, build_request_body, parse_completion_text, parse_response,
-    split_batches, AiVerdict, AnalyzeCandidate, MODEL, UPSTREAM_ENDPOINT,
+    build_conclusion_synthesis_body, build_request_body, build_tree_request_body,
+    parse_completion_text, parse_response, parse_tree_response, split_batches,
+    split_tree_batches, AiVerdict, AnalyzeCandidate, AnalyzeTreeNode, MODEL, UPSTREAM_ENDPOINT,
 };
 
 use crate::billing::env_credits::{user_credit_debit_sql, user_credit_refund_sql};
@@ -172,6 +173,19 @@ pub async fn run_upstream(
         let body = build_request_body(&batch);
         let resp = upstream.complete(body).await?;
         out.extend(parse_response(&resp, &batch));
+    }
+    Ok(out)
+}
+
+pub async fn run_tree_upstream(
+    upstream: &Arc<dyn UpstreamClient>,
+    nodes: &[AnalyzeTreeNode],
+) -> Result<Vec<AiVerdict>, AppError> {
+    let mut out = Vec::new();
+    for batch in split_tree_batches(nodes.to_vec()) {
+        let body = build_tree_request_body(&batch);
+        let resp = upstream.complete(body).await?;
+        out.extend(parse_tree_response(&resp, &batch));
     }
     Ok(out)
 }
