@@ -2,7 +2,7 @@ use crate::config::{
     BATCH_SIZE, MAX_OUTPUT_TOKENS, MODEL, TEMPERATURE, THINKING_DISABLED, TREE_BATCH_SIZE,
     TREE_MAX_OUTPUT_TOKENS,
 };
-use crate::prompt::{SYSTEM_PROMPT, TREE_SYSTEM_PROMPT};
+use crate::prompt::{CONCLUSION_SYNTHESIS_PROMPT, SYSTEM_PROMPT, TREE_SYSTEM_PROMPT};
 use crate::types::{AnalyzeCandidate, AnalyzeTreeNode};
 
 /// Split candidates into batches of [`BATCH_SIZE`].
@@ -98,6 +98,27 @@ pub fn build_tree_request_body(batch: &[AnalyzeTreeNode]) -> String {
         "messages": [
             { "role": "system", "content": TREE_SYSTEM_PROMPT },
             { "role": "user", "content": user_content },
+        ],
+    });
+    serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// Build DeepSeek Chat Completions request body for conclusion narrative synthesis.
+pub fn build_conclusion_synthesis_body(user_json: &str) -> String {
+    let thinking = if THINKING_DISABLED {
+        serde_json::json!({ "type": "disabled" })
+    } else {
+        serde_json::json!({ "type": "enabled" })
+    };
+
+    let body = serde_json::json!({
+        "model": MODEL,
+        "temperature": TEMPERATURE,
+        "max_tokens": MAX_OUTPUT_TOKENS,
+        "thinking": thinking,
+        "messages": [
+            { "role": "system", "content": CONCLUSION_SYNTHESIS_PROMPT },
+            { "role": "user", "content": user_json },
         ],
     });
     serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string())
@@ -233,5 +254,16 @@ mod tests {
         assert!(user.contains("markers=large_unknown"));
         assert!(user.contains("pruned_flags=1"));
         assert!(user.contains("top_ext=.tmp:5"));
+    }
+
+    #[test]
+    fn conclusion_synthesis_body_contains_schema_version() {
+        use crate::prompt::CONCLUSION_SYNTHESIS_PROMPT;
+
+        let body = build_conclusion_synthesis_body(r#"{"schema_version":2}"#);
+        assert!(body.contains("schema_version"));
+        assert!(body.contains(
+            &CONCLUSION_SYNTHESIS_PROMPT.chars().take(20).collect::<String>()
+        ));
     }
 }
