@@ -52,6 +52,8 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _platformBanner;
   bool _platformLoading = false;
   int _platformLoadGeneration = 0;
+  bool _conclusionNarrativeEnabled = false;
+  bool _conclusionNarrativeAuto = true;
 
   @override
   void initState() {
@@ -100,12 +102,16 @@ class _SettingsPageState extends State<SettingsPage> {
       }
       if (!mounted) return;
       await _reloadCoverageBudgetFields();
+      final narrativeEnabled = await store.conclusionNarrativeEnabled();
+      final narrativeAuto = await store.conclusionNarrativeAuto();
       if (!mounted) return;
       setState(() {
         _hasByokKey = key != null && key.isNotEmpty;
         if (_hasByokKey) {
           _apiKeyController.text = '••••••••••••••••';
         }
+        _conclusionNarrativeEnabled = narrativeEnabled;
+        _conclusionNarrativeAuto = narrativeAuto;
       });
     } catch (_) {
       // Keep defaults when settings file / keychain is unavailable.
@@ -556,6 +562,33 @@ class _SettingsPageState extends State<SettingsPage> {
                             unawaited(_saveCoverageBudget(tokens: true)),
                       ),
                     ],
+                    const SizedBox(height: AppleSpacing.md),
+                    _SettingsSwitch(
+                      title: l10n.aiSettingsConclusionNarrativeEnabledTitle,
+                      subtitle:
+                          l10n.aiSettingsConclusionNarrativeEnabledDescription,
+                      value: _conclusionNarrativeEnabled,
+                      enabled: _aiMode != AiMode.off,
+                      onChanged: (value) async {
+                        setState(() => _conclusionNarrativeEnabled = value);
+                        await AiSettingsStore.instance
+                            .setConclusionNarrativeEnabled(value);
+                      },
+                    ),
+                    const Divider(height: AppleSpacing.lg),
+                    _SettingsSwitch(
+                      title: l10n.aiSettingsConclusionNarrativeAutoTitle,
+                      subtitle:
+                          l10n.aiSettingsConclusionNarrativeAutoDescription,
+                      value: _conclusionNarrativeAuto,
+                      enabled:
+                          _aiMode != AiMode.off && _conclusionNarrativeEnabled,
+                      onChanged: (value) async {
+                        setState(() => _conclusionNarrativeAuto = value);
+                        await AiSettingsStore.instance
+                            .setConclusionNarrativeAuto(value);
+                      },
+                    ),
                     const SizedBox(height: AppleSpacing.md),
                     Text(l10n.aiPrivacyTitle, style: context.vwCaptionStrong),
                     const SizedBox(height: AppleSpacing.xs),

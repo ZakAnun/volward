@@ -1169,6 +1169,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiSettingsCoverageBudgetSaved => '覆盖分析预算已保存';
 
   @override
+  String get aiSettingsConclusionNarrativeEnabledTitle => '结论叙述';
+
+  @override
+  String get aiSettingsConclusionNarrativeEnabledDescription =>
+      '分析完成后生成简短的 AI 结论文案。额外消耗 1 点 Platform 积分，不会重新分析。';
+
+  @override
+  String get aiSettingsConclusionNarrativeAutoTitle => '自动生成';
+
+  @override
+  String get aiSettingsConclusionNarrativeAutoDescription =>
+      '分析一结束就生成结论叙述。额外消耗 1 点 Platform 积分，不会重新分析。';
+
+  @override
   String get aiCleanupSourceAiToolCache => 'AI 工具缓存/临时文件';
 
   @override

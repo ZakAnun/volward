@@ -6,6 +6,46 @@ import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/theme/volward_theme_settings.dart';
 
 void main() {
+  test(
+    'conclusion narrative settings default to disabled and auto on',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-ai-conclusion-narrative',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      final f = File('${temp.path}/settings.json')..writeAsStringSync('{}');
+      final store = AiSettingsStore.instance..settingsFileForTest = f;
+      addTearDown(() => store.settingsFileForTest = null);
+
+      expect(await store.conclusionNarrativeEnabled(), isFalse);
+      expect(await store.conclusionNarrativeAuto(), isTrue);
+    },
+  );
+
+  test('conclusion narrative settings persist independently', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'volward-ai-conclusion-narrative-persist',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+
+    final f = File('${temp.path}/settings.json')
+      ..writeAsStringSync(jsonEncode({'ai_mode': 'platform'}));
+    final store = AiSettingsStore.instance..settingsFileForTest = f;
+    addTearDown(() => store.settingsFileForTest = null);
+
+    await store.setConclusionNarrativeEnabled(true);
+    await store.setConclusionNarrativeAuto(false);
+
+    expect(await store.conclusionNarrativeEnabled(), isTrue);
+    expect(await store.conclusionNarrativeAuto(), isFalse);
+
+    final saved = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+    expect(saved['ai_conclusion_narrative_enabled'], isTrue);
+    expect(saved['ai_conclusion_narrative_auto'], isFalse);
+    expect(saved['ai_mode'], 'platform');
+  });
+
   test('getMode defaults to off when unset', () async {
     final temp = await Directory.systemTemp.createTemp('volward-ai-settings');
     addTearDown(() => temp.delete(recursive: true));

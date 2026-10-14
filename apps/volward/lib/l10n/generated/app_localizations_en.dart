@@ -1226,6 +1226,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiSettingsCoverageBudgetSaved => 'Coverage budget saved';
 
   @override
+  String get aiSettingsConclusionNarrativeEnabledTitle =>
+      'Conclusion narrative';
+
+  @override
+  String get aiSettingsConclusionNarrativeEnabledDescription =>
+      'Generate a short AI summary after analysis finishes. Uses 1 extra Platform credit and does not re-run analysis.';
+
+  @override
+  String get aiSettingsConclusionNarrativeAutoTitle => 'Generate automatically';
+
+  @override
+  String get aiSettingsConclusionNarrativeAutoDescription =>
+      'Run conclusion narrative as soon as analysis completes. Uses 1 extra Platform credit and does not re-run analysis.';
+
+  @override
   String get aiCleanupSourceAiToolCache => 'AI tool cache/temp';
 
   @override

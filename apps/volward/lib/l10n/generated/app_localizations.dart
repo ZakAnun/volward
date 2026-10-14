@@ -2010,6 +2010,30 @@ abstract class AppLocalizations {
   /// **'Coverage budget saved'**
   String get aiSettingsCoverageBudgetSaved;
 
+  /// No description provided for @aiSettingsConclusionNarrativeEnabledTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conclusion narrative'**
+  String get aiSettingsConclusionNarrativeEnabledTitle;
+
+  /// No description provided for @aiSettingsConclusionNarrativeEnabledDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate a short AI summary after analysis finishes. Uses 1 extra Platform credit and does not re-run analysis.'**
+  String get aiSettingsConclusionNarrativeEnabledDescription;
+
+  /// No description provided for @aiSettingsConclusionNarrativeAutoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate automatically'**
+  String get aiSettingsConclusionNarrativeAutoTitle;
+
+  /// No description provided for @aiSettingsConclusionNarrativeAutoDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Run conclusion narrative as soon as analysis completes. Uses 1 extra Platform credit and does not re-run analysis.'**
+  String get aiSettingsConclusionNarrativeAutoDescription;
+
   /// No description provided for @aiCleanupSourceAiToolCache.
   ///
   /// In en, this message translates to:

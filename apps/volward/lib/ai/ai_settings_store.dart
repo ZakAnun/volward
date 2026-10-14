@@ -56,6 +56,8 @@ class AiSettingsStore {
   static const _kByokKeyName = 'volward_byok_api_key';
   static const _kCoverageBudgetTokens = 'ai_full_run_budget_tokens';
   static const _kCoverageBudgetCredits = 'ai_full_run_budget_credits';
+  static const _kConclusionNarrativeEnabled = 'ai_conclusion_narrative_enabled';
+  static const _kConclusionNarrativeAuto = 'ai_conclusion_narrative_auto';
   static const defaultCoverageBudgetTokens = 500000;
 
   /// Default Platform full-run cap: one basic Home analysis (scheme A, ~80×1.2).
@@ -197,6 +199,24 @@ class AiSettingsStore {
   Future<void> setCoverageBudgetCredits(int credits) async {
     final map = await _readMap();
     map[_kCoverageBudgetCredits] = credits;
+    await _writeMap(map);
+  }
+
+  Future<bool> conclusionNarrativeEnabled() async =>
+      (await _readMap())[_kConclusionNarrativeEnabled] as bool? ?? false;
+
+  Future<void> setConclusionNarrativeEnabled(bool value) async {
+    final map = await _readMap();
+    map[_kConclusionNarrativeEnabled] = value;
+    await _writeMap(map);
+  }
+
+  Future<bool> conclusionNarrativeAuto() async =>
+      (await _readMap())[_kConclusionNarrativeAuto] as bool? ?? true;
+
+  Future<void> setConclusionNarrativeAuto(bool value) async {
+    final map = await _readMap();
+    map[_kConclusionNarrativeAuto] = value;
     await _writeMap(map);
   }
 
