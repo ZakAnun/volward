@@ -2670,4 +2670,19 @@ void main() {
       );
     },
   );
+
+  testWidgets('conclusions overview shows AI reason before detail list', (
+    tester,
+  ) async {
+    await _openResults(tester, _FakeGateway());
+    await tester.tap(find.byKey(AiAnalysisWorkspace.backToConclusionsKey));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      findsOneWidget,
+    );
+    expect(find.textContaining('AI:'), findsWidgets);
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.showAllResultsKey), findsOneWidget);
+  });
 }
