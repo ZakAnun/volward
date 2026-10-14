@@ -3,8 +3,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use volward_ai::{
-    build_request_body, parse_response, split_batches, AiVerdict, AnalyzeCandidate, MODEL,
-    UPSTREAM_ENDPOINT,
+    build_conclusion_synthesis_body, build_request_body, parse_completion_text, parse_response,
+    split_batches, AiVerdict, AnalyzeCandidate, MODEL, UPSTREAM_ENDPOINT,
 };
 
 use crate::billing::env_credits::{user_credit_debit_sql, user_credit_refund_sql};
@@ -152,6 +152,15 @@ pub async fn refund_one_credit(
     }
     sqlx::query("COMMIT").execute(&mut *conn).await?;
     Ok(())
+}
+
+pub async fn run_conclusion_upstream(
+    upstream: &Arc<dyn UpstreamClient>,
+    user_json: &str,
+) -> Result<String, AppError> {
+    let body = build_conclusion_synthesis_body(user_json);
+    let resp = upstream.complete(body).await?;
+    parse_completion_text(&resp).map_err(|_| AppError::BadGateway)
 }
 
 pub async fn run_upstream(

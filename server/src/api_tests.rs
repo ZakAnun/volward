@@ -191,6 +191,31 @@ async fn register_and_link(ctx: &TestCtx, device: &str, email: &str, credits: i6
 
 const ONE_CANDIDATE: &str = r#"{"candidates":[{"path":"/a","size_bytes":1,"is_dir":false}]}"#;
 
+const ONE_SYNTHESIS: &str = r#"{
+  "schema_version": 2,
+  "analysis_session_id": "sess-1",
+  "locale": "en",
+  "root_label": "Home",
+  "scan": {"root_path": "/home", "truncated": false, "full_coverage": true},
+  "totals": {
+    "safe_bytes": 100,
+    "review_count": 0,
+    "keep_count": 0,
+    "analyzed_item_count": 1,
+    "analyzed_total_bytes": 100,
+    "root_size_bytes": 1000
+  },
+  "directories": [{
+    "path": "/home/Library",
+    "display_label": "Library",
+    "safe_bytes": 100,
+    "review_count": 0,
+    "keep_count": 0,
+    "share_of_safe_pct": 100,
+    "reason_highlights": ["Cache"]
+  }]
+}"#;
+
 #[tokio::test]
 async fn health_ok() {
     let ctx = test_ctx().await;
@@ -277,6 +302,29 @@ async fn ai_analyze_happy_path() {
     assert_eq!(body["credits_used"], 1);
     assert_eq!(body["credits_remaining"], 4);
     assert!(!body["entries"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn synthesize_conclusion_happy_path() {
+    let ctx = test_ctx().await;
+    let token = register_and_link(&ctx, "d-synth", "usynth@example.com", 5).await;
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/ai/synthesize-conclusion",
+        &token,
+        ONE_SYNTHESIS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let text = body["text"].as_str().expect("text");
+    assert!(!text.is_empty());
+    let credits: (i64,) =
+        sqlx::query_as("SELECT credits_sandbox FROM users WHERE email = ?")
+            .bind("usynth@example.com")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(credits.0, 4);
 }
 
 #[tokio::test]

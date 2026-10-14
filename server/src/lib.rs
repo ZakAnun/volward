@@ -52,6 +52,10 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/auth/me", get(auth::handlers::me))
         .route("/v1/ai/quota", get(ai::handlers::quota))
         .route("/v1/ai/analyze", post(ai::handlers::analyze))
+        .route(
+            "/v1/ai/synthesize-conclusion",
+            post(ai::handlers::synthesize_conclusion),
+        )
         .route("/v1/billing/packs", get(billing::handlers::packs))
         .route("/v1/billing/checkout", post(billing::handlers::checkout))
         .route("/v1/billing/webhook", post(billing::webhook::webhook))

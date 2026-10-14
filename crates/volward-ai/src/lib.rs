@@ -15,5 +15,5 @@ pub use request::{
     build_conclusion_synthesis_body, build_request_body, build_tree_request_body, split_batches,
     split_tree_batches,
 };
-pub use response::{parse_response, parse_tree_response};
+pub use response::{parse_completion_text, parse_response, parse_tree_response};
 pub use types::{AiVerdict, AnalyzeCandidate, AnalyzeTreeNode};

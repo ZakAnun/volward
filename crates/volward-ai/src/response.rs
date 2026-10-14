@@ -12,6 +12,31 @@ pub fn parse_response(body: &str, batch: &[AnalyzeCandidate]) -> Vec<AiVerdict> 
     }
 }
 
+/// Extract plain-text narrative from an OpenAI-compatible chat completion body.
+pub fn parse_completion_text(body: &str) -> Result<String, &'static str> {
+    let decoded = serde_json::from_str::<serde_json::Value>(body)
+        .map_err(|_| "AI response is not a JSON object")?;
+    let choices = decoded
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .filter(|c| !c.is_empty())
+        .ok_or("AI response missing choices")?;
+    let choice = choices.first().ok_or("AI response missing choices")?;
+    if choice.get("finish_reason").and_then(|v| v.as_str()) == Some("length") {
+        return Err("AI response was truncated");
+    }
+    let text = choice
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .ok_or("AI response missing message")?;
+    let stripped = strip_markdown_fence(text);
+    if stripped.trim().is_empty() {
+        return Err("AI response empty");
+    }
+    Ok(stripped)
+}
+
 /// Parse a tree batch completion; accepts `drill_down` and other tree verdict strings.
 pub fn parse_tree_response(body: &str, batch: &[AnalyzeTreeNode]) -> Vec<AiVerdict> {
     match parse_verdicts_from_completion(body) {

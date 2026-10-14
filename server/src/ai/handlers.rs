@@ -8,7 +8,9 @@ use crate::auth::middleware::require_user;
 use crate::error::AppError;
 use crate::AppState;
 
-use super::proxy::{debit_one_credit, model_name, refund_one_credit, run_upstream};
+use super::proxy::{
+    debit_one_credit, model_name, refund_one_credit, run_conclusion_upstream, run_upstream,
+};
 use crate::billing::env_credits::balance_for_env;
 
 #[derive(Deserialize)]
@@ -22,6 +24,11 @@ pub struct AnalyzeResponse {
     pub credits_used: i64,
     pub credits_remaining: i64,
     pub model: String,
+}
+
+#[derive(Serialize)]
+pub struct SynthesizeConclusionResponse {
+    pub text: String,
 }
 
 #[derive(Serialize)]
@@ -56,6 +63,59 @@ pub async fn quota(
         credits_remaining: remaining,
         credits_total: total.0,
     }))
+}
+
+pub async fn synthesize_conclusion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<SynthesizeConclusionResponse>, AppError> {
+    let auth = require_user(&state, &headers)?;
+    let uid = auth.require_user()?.to_string();
+
+    if body.get("schema_version").and_then(|v| v.as_i64()) != Some(2) {
+        return Err(AppError::BadRequest("schema_version_must_be_2".into()));
+    }
+    let dir_len = body
+        .get("directories")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    if dir_len > 12 {
+        return Err(AppError::BadRequest("directories_exceed_12".into()));
+    }
+
+    let user_json = serde_json::to_string(&body).map_err(|_| AppError::BadRequest("invalid_json".into()))?;
+    let paddle_env = state.config.paddle_env.as_str();
+    debit_one_credit(
+        &state.pool,
+        &uid,
+        &auth.device_id,
+        dir_len as i64,
+        paddle_env,
+    )
+    .await?;
+
+    let upstream_result = run_conclusion_upstream(&state.upstream, &user_json).await;
+    match upstream_result {
+        Ok(text) => Ok(Json(SynthesizeConclusionResponse { text })),
+        Err(e) => {
+            if let Err(refund_err) =
+                refund_one_credit(&state.pool, &uid, &auth.device_id, paddle_env).await
+            {
+                tracing::error!(
+                    error = %refund_err,
+                    user_id = %uid,
+                    device_id = %auth.device_id,
+                    "failed to refund credit after upstream synthesize error; manual topup required"
+                );
+            }
+            Err(match e {
+                AppError::BadGateway => AppError::BadGateway,
+                other => other,
+            })
+        }
+    }
 }
 
 pub async fn analyze(
