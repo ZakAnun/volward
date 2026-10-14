@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'ai_completion_text.dart';
+import 'ai_conclusion_synthesis.dart';
 import 'ai_contract.dart';
 import 'ai_provider.dart';
 import 'cancel_token.dart';
@@ -86,6 +88,61 @@ class ByokAiProvider implements AiProvider, TreeAiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async {
+    if (apiKey.trim().isEmpty) {
+      throw Exception('empty_api_key');
+    }
+    final contract = _resolveContract();
+    final body = contract.buildConclusionSynthesisJson(
+      jsonEncode(request.toJson()),
+    );
+    final endpoint = contract.upstreamEndpoint();
+    cancelToken?.whenCancelled.then((_) => _abortClient());
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CoverageCancelledException();
+      }
+      late final http.Response response;
+      try {
+        response = await _ensureClient()
+            .post(
+              Uri.parse(endpoint),
+              headers: {
+                'Authorization': 'Bearer $apiKey',
+                'Content-Type': 'application/json',
+              },
+              body: body,
+            )
+            .timeout(requestTimeout);
+      } on TimeoutException {
+        throw Exception('request_timeout');
+      } on http.ClientException catch (e) {
+        if (cancelToken?.isCancelled ?? false) {
+          throw const CoverageCancelledException();
+        }
+        throw Exception('network_error:$e');
+      }
+
+      if (response.statusCode == 429) {
+        await Future.delayed(Duration(seconds: 1 << attempt));
+        continue;
+      }
+      if (response.statusCode == 401) {
+        throw Exception('invalid_api_key');
+      }
+      if (response.statusCode != 200) {
+        throw Exception('api_error:${response.statusCode}');
+      }
+      final text = parseCompletionText(response.body);
+      return AiConclusionSynthesisResponse(text: text);
+    }
+    throw Exception('rate_limited_after_retries');
+  }
 
   @override
   Future<AnalyzeResult> analyze(

@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_coverage_coordinator.dart';
+import 'package:volward/ai/ai_conclusion_synthesis.dart';
+import 'package:volward/ai/ai_conclusion_synthesis_body.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/cancel_token.dart';
@@ -79,6 +81,12 @@ class _ResultProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => quota;
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async => const AiConclusionSynthesisResponse(text: '');
 }
 
 class _ThrowingProvider implements AiProvider {
@@ -94,6 +102,12 @@ class _ThrowingProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async => throw error;
 }
 
 class _UsageByokProvider extends ByokAiProvider {
@@ -193,6 +207,10 @@ class _FakeUsageContract extends AiContract {
 
   @override
   String upstreamEndpoint() => 'https://example.test/v1/chat';
+
+  @override
+  String buildConclusionSynthesisJson(String userJson) =>
+      buildConclusionSynthesisBody(userJson);
 }
 
 String _candidatePayload({

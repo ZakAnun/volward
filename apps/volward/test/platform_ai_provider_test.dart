@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/platform_ai_provider.dart';
 import 'package:volward/ai/platform_auth_store.dart';
@@ -51,6 +52,26 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  const minimalSynthesisRequest = AiConclusionSynthesisRequest(
+    analysisSessionId: 'sess-1',
+    locale: 'en',
+    rootLabel: 'Home',
+    scan: AiConclusionSynthesisScan(
+      rootPath: '/tmp',
+      truncated: false,
+      fullCoverage: true,
+    ),
+    totals: AiConclusionSynthesisTotals(
+      safeBytes: 100,
+      reviewCount: 0,
+      keepCount: 1,
+      analyzedItemCount: 1,
+      analyzedTotalBytes: 200,
+      rootSizeBytes: 500,
+    ),
+    directories: [],
+  );
+
   test('402 maps to insufficient_credits', () async {
     await PlatformAuthStore.instance.debugSetUserToken(validToken);
     final client = MockClient((req) async => http.Response('{}', 402));
@@ -63,6 +84,40 @@ void main() {
       p.analyze([const AiCandidate(path: '/a', sizeBytes: 1, isDir: false)]),
       throwsA(predicate((e) => e.toString().contains('insufficient_credits'))),
     );
+  });
+
+  test('synthesizeConclusion 402 maps to insufficient_credits', () async {
+    await PlatformAuthStore.instance.debugSetUserToken(validToken);
+    final client = MockClient((req) async => http.Response('{}', 402));
+    final p = PlatformAiProvider(
+      token: validToken,
+      client: client,
+      baseUrl: baseUrl,
+    );
+    await expectLater(
+      p.synthesizeConclusion(minimalSynthesisRequest),
+      throwsA(predicate((e) => e.toString().contains('insufficient_credits'))),
+    );
+  });
+
+  test('synthesizeConclusion posts JSON and parses text', () async {
+    await PlatformAuthStore.instance.debugSetUserToken(validToken);
+    String? path;
+    String? body;
+    final client = MockClient((req) async {
+      path = req.url.path;
+      body = req.body;
+      return http.Response('{"text":"Narrative here."}', 200);
+    });
+    final p = PlatformAiProvider(
+      token: validToken,
+      client: client,
+      baseUrl: baseUrl,
+    );
+    final out = await p.synthesizeConclusion(minimalSynthesisRequest);
+    expect(path, endsWith('/ai/synthesize-conclusion'));
+    expect(jsonDecode(body!), containsPair('schema_version', 2));
+    expect(out.text, 'Narrative here.');
   });
 
   test(

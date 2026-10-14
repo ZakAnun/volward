@@ -5,6 +5,7 @@ import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/ai/ai_coverage_service.dart';
 import 'package:volward/ai/ai_coverage_job_controller.dart';
+import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
@@ -25,6 +26,12 @@ class _Provider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async => const AiConclusionSynthesisResponse(text: '');
 }
 
 class _RecordingService extends AiCoverageService {

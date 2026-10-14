@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:volward/ai/ai_conclusion_synthesis.dart';
+import 'package:volward/ai/ai_conclusion_synthesis_body.dart';
 import 'package:volward/ai/ai_contract.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
@@ -29,9 +31,49 @@ class _FakeContract extends AiContract {
         )
         .toList();
   }
+
+  @override
+  String buildConclusionSynthesisJson(String userJson) =>
+      buildConclusionSynthesisBody(userJson);
 }
 
+const _minimalSynthesisRequest = AiConclusionSynthesisRequest(
+  analysisSessionId: 'sess-1',
+  locale: 'en',
+  rootLabel: 'Home',
+  scan: AiConclusionSynthesisScan(
+    rootPath: '/tmp',
+    truncated: false,
+    fullCoverage: true,
+  ),
+  totals: AiConclusionSynthesisTotals(
+    safeBytes: 100,
+    reviewCount: 0,
+    keepCount: 1,
+    analyzedItemCount: 1,
+    analyzedTotalBytes: 200,
+    rootSizeBytes: 500,
+  ),
+  directories: [],
+);
+
 void main() {
+  test('synthesizeConclusion parses completion text', () async {
+    final client = MockClient(
+      (req) async => http.Response(
+        '{"choices":[{"finish_reason":"stop","message":{"content":"Hello summary"}}]}',
+        200,
+      ),
+    );
+    final p = ByokAiProvider(
+      apiKey: 'sk-x',
+      client: client,
+      contract: _FakeContract(),
+    );
+    final out = await p.synthesizeConclusion(_minimalSynthesisRequest);
+    expect(out.text, 'Hello summary');
+  });
+
   test('401 maps to invalid_api_key', () async {
     final client = MockClient((req) async => http.Response('nope', 401));
     final p = ByokAiProvider(

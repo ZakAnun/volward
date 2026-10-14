@@ -134,6 +134,10 @@ typedef VolwardAiBatchSizeNative = Uint32 Function();
 typedef VolwardAiBatchSize = int Function();
 typedef VolwardAiBuildRequestJsonNative = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef VolwardAiBuildRequestJson = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef VolwardAiBuildConclusionSynthesisJsonNative =
+    Pointer<Utf8> Function(Pointer<Utf8>);
+typedef VolwardAiBuildConclusionSynthesisJson =
+    Pointer<Utf8> Function(Pointer<Utf8>);
 typedef VolwardAiParseResponseJsonNative =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiParseResponseJson =
@@ -420,6 +424,8 @@ final class VolwardNativeBridge implements VolwardBridge {
     _aiUpstreamEndpoint = _tryLookupAiUpstreamEndpoint();
     _aiBatchSize = _tryLookupAiBatchSize();
     _aiBuildRequestJson = _tryLookupAiBuildRequestJson();
+    _aiBuildConclusionSynthesisJson =
+        _tryLookupAiBuildConclusionSynthesisJson();
     _aiParseResponseJson = _tryLookupAiParseResponseJson();
     _aiTreeBatchSize = _tryLookupAiTreeBatchSize();
     _aiBuildTreeRequestJson = _tryLookupAiBuildTreeRequestJson();
@@ -670,6 +676,8 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardAiUpstreamEndpoint? _aiUpstreamEndpoint;
   late final VolwardAiBatchSize? _aiBatchSize;
   late final VolwardAiBuildRequestJson? _aiBuildRequestJson;
+  late final VolwardAiBuildConclusionSynthesisJson?
+  _aiBuildConclusionSynthesisJson;
   late final VolwardAiParseResponseJson? _aiParseResponseJson;
   late final VolwardAiTreeBatchSize? _aiTreeBatchSize;
   late final VolwardAiBuildTreeRequestJson? _aiBuildTreeRequestJson;
@@ -1385,6 +1393,23 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  String? aiBuildConclusionSynthesisJson(String userJson) {
+    final fn = _aiBuildConclusionSynthesisJson;
+    if (fn == null) return null;
+    final ptr = userJson.toNativeUtf8();
+    try {
+      final out = fn(ptr);
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
   String? aiParseResponseJson(String upstreamBody, String batchJson) {
     final fn = _aiParseResponseJson;
     if (fn == null) return null;
@@ -1633,6 +1658,19 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardAiBuildRequestJsonNative>>(
             'volward_ai_build_request_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiBuildConclusionSynthesisJson?
+  _tryLookupAiBuildConclusionSynthesisJson() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiBuildConclusionSynthesisJsonNative>>(
+            'volward_ai_build_conclusion_synthesis_json',
           )
           .asFunction();
     } on Object {

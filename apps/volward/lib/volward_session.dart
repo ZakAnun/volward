@@ -2625,6 +2625,13 @@ class VolwardSession extends ChangeNotifier {
     );
   }
 
+  String? aiBuildConclusionSynthesisJson(String userJson) {
+    if (!hasAiContractApi) return null;
+    return VolwardNativeBridge.instance.aiBuildConclusionSynthesisJson(
+      userJson,
+    );
+  }
+
   /// Parse upstream body against the batch that produced it.
   List<AiVerdict>? aiParseResponseJson(
     String upstreamBody,

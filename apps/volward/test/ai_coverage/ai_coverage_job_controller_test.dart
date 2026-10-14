@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_coverage_job_controller.dart';
+import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/coverage_analyze_batch.dart';
@@ -1990,6 +1991,12 @@ class _PartialMissingProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async => const AiConclusionSynthesisResponse(text: '');
 }
 
 class _AppendCountingVerdictStore extends CoverageVerdictStore {

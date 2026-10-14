@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'ai_conclusion_synthesis.dart';
 import 'ai_provider.dart';
 import 'cancel_token.dart';
 import 'coverage_models.dart';
@@ -193,6 +194,47 @@ class PlatformAiProvider implements AiProvider, TreeAiProvider {
     if (baseUrl.trim().isEmpty) {
       throw StateError('platform_api_unconfigured');
     }
+  }
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async {
+    _ensureConfigured();
+    cancelToken?.whenCancelled.then((_) => _abortClient());
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CoverageCancelledException();
+    }
+
+    final http.Response res;
+    try {
+      res = await _authorizedRequest(
+        (token) => _ensureClient()
+            .post(
+              Uri.parse('$baseUrl/ai/synthesize-conclusion'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: jsonEncode(request.toJson()),
+            )
+            .timeout(requestTimeout),
+      );
+    } on http.ClientException {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CoverageCancelledException();
+      }
+      rethrow;
+    }
+
+    await _mapErrorStatus(res.statusCode);
+    if (res.statusCode != 200) {
+      throw Exception('api_error:${res.statusCode}');
+    }
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return AiConclusionSynthesisResponse.fromJson(body);
   }
 
   @override

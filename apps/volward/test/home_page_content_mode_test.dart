@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_conclusion_synthesis.dart';
+import 'package:volward/ai/ai_conclusion_synthesis_body.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
@@ -207,6 +209,12 @@ class _HomeResultProvider implements AiProvider {
 
   @override
   Future<AiQuotaInfo?> queryQuota() async => null;
+
+  @override
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
+    CancelToken? cancelToken,
+  }) async => const AiConclusionSynthesisResponse(text: '');
 }
 
 class _HomePendingByokProvider extends ByokAiProvider {
@@ -245,6 +253,10 @@ class _HomeAiContract extends AiContract {
 
   @override
   String upstreamEndpoint() => 'https://example.test/v1/chat';
+
+  @override
+  String buildConclusionSynthesisJson(String userJson) =>
+      buildConclusionSynthesisBody(userJson);
 }
 
 const _homeDeleteCandidates = '''

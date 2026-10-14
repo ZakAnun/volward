@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'ai_conclusion_synthesis_body.dart';
 import 'ai_provider.dart';
 import 'coverage_models.dart';
 import '../bridge/native_bridge.dart';
@@ -25,6 +26,10 @@ abstract class AiContract {
     List<CoverageTreeNode> batch,
   ) {
     throw UnimplementedError('tree contract unavailable');
+  }
+
+  String buildConclusionSynthesisJson(String userJson) {
+    throw UnimplementedError('conclusion synthesis contract unavailable');
   }
 }
 
@@ -125,6 +130,15 @@ class SessionAiContract implements AiContract {
       throw Exception('ai_tree_contract_unavailable');
     }
     return out;
+  }
+
+  @override
+  String buildConclusionSynthesisJson(String userJson) {
+    final raw = _session.aiBuildConclusionSynthesisJson(userJson);
+    if (raw != null && raw.isNotEmpty && !raw.startsWith('error:')) {
+      return raw;
+    }
+    return buildConclusionSynthesisBody(userJson);
   }
 }
 
@@ -237,5 +251,14 @@ class BridgeAiContract implements AiContract {
     } catch (_) {
       throw Exception('ai_tree_contract_unavailable');
     }
+  }
+
+  @override
+  String buildConclusionSynthesisJson(String userJson) {
+    final raw = _bridge.aiBuildConclusionSynthesisJson(userJson);
+    if (raw != null && raw.isNotEmpty && !raw.startsWith('error:')) {
+      return raw;
+    }
+    return buildConclusionSynthesisBody(userJson);
   }
 }

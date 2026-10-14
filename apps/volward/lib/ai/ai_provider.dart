@@ -1,3 +1,4 @@
+import 'ai_conclusion_synthesis.dart';
 import 'cancel_token.dart';
 import 'coverage_models.dart';
 
@@ -118,6 +119,10 @@ class AiQuotaInfo {
 abstract interface class AiProvider {
   Future<AnalyzeResult> analyze(
     List<AiCandidate> candidates, {
+    CancelToken? cancelToken,
+  });
+  Future<AiConclusionSynthesisResponse> synthesizeConclusion(
+    AiConclusionSynthesisRequest request, {
     CancelToken? cancelToken,
   });
   Future<AiQuotaInfo?> queryQuota();
