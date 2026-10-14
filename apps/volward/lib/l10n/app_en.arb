@@ -937,6 +937,56 @@
   "aiWorkspacePhasePrivacy": "Privacy",
   "aiWorkspacePhaseAnalyzing": "Analyzing",
   "aiWorkspacePhaseReview": "Review",
+  "aiWorkspacePhaseConclusion": "Conclusions",
+  "aiConclusionsScanLine": "Scan: {target} · {count} items analyzed ({bytes})",
+  "@aiConclusionsScanLine": {
+    "placeholders": {
+      "target": {"type": "String"},
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiConclusionsModeFull": "Full coverage analysis",
+  "aiConclusionsModeQuick": "Quick analysis",
+  "aiConclusionsTruncated": "Scan was truncated; conclusions reflect classified items only.",
+  "aiConclusionsReclaimLine": "{bytes} reclaimable{shareRoot} · {review} need review",
+  "@aiConclusionsReclaimLine": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "shareRoot": {"type": "String"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiConclusionsShareRootSuffix": " ({pct}% of scan)",
+  "@aiConclusionsShareRootSuffix": {
+    "placeholders": {
+      "pct": {"type": "String"}
+    }
+  },
+  "aiConclusionsLead": "These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.",
+  "aiConclusionsByDirectory": "By folder",
+  "aiConclusionsDirectoryMetrics": "{safe} reclaimable · {review} to review · {share}% of reclaimable total",
+  "@aiConclusionsDirectoryMetrics": {
+    "placeholders": {
+      "safe": {"type": "String"},
+      "review": {"type": "int"},
+      "share": {"type": "String"}
+    }
+  },
+  "aiConclusionsAiSays": "AI: {reason}",
+  "@aiConclusionsAiSays": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "aiConclusionsShowAll": "View all suggestions",
+  "aiConclusionsBack": "Back to conclusions",
+  "aiConclusionsMoreDirs": "+ {count} more folders in the full list",
+  "@aiConclusionsMoreDirs": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "aiWorkspacePhaseDeleting": "Moving to Trash",
   "aiWorkspacePhaseRecovery": "Recovery",
   "aiWorkspaceLoadPrevious": "Load Previous Result",

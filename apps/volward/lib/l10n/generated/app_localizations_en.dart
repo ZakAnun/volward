@@ -1261,6 +1261,62 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiWorkspacePhaseReview => 'Review';
 
   @override
+  String get aiWorkspacePhaseConclusion => 'Conclusions';
+
+  @override
+  String aiConclusionsScanLine(String target, int count, String bytes) {
+    return 'Scan: $target · $count items analyzed ($bytes)';
+  }
+
+  @override
+  String get aiConclusionsModeFull => 'Full coverage analysis';
+
+  @override
+  String get aiConclusionsModeQuick => 'Quick analysis';
+
+  @override
+  String get aiConclusionsTruncated =>
+      'Scan was truncated; conclusions reflect classified items only.';
+
+  @override
+  String aiConclusionsReclaimLine(String bytes, String shareRoot, int review) {
+    return '$bytes reclaimable$shareRoot · $review need review';
+  }
+
+  @override
+  String aiConclusionsShareRootSuffix(String pct) {
+    return ' ($pct% of scan)';
+  }
+
+  @override
+  String get aiConclusionsLead =>
+      'These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.';
+
+  @override
+  String get aiConclusionsByDirectory => 'By folder';
+
+  @override
+  String aiConclusionsDirectoryMetrics(String safe, int review, String share) {
+    return '$safe reclaimable · $review to review · $share% of reclaimable total';
+  }
+
+  @override
+  String aiConclusionsAiSays(String reason) {
+    return 'AI: $reason';
+  }
+
+  @override
+  String get aiConclusionsShowAll => 'View all suggestions';
+
+  @override
+  String get aiConclusionsBack => 'Back to conclusions';
+
+  @override
+  String aiConclusionsMoreDirs(int count) {
+    return '+ $count more folders in the full list';
+  }
+
+  @override
   String get aiWorkspacePhaseDeleting => 'Moving to Trash';
 
   @override

@@ -2076,6 +2076,90 @@ abstract class AppLocalizations {
   /// **'Review'**
   String get aiWorkspacePhaseReview;
 
+  /// No description provided for @aiWorkspacePhaseConclusion.
+  ///
+  /// In en, this message translates to:
+  /// **'Conclusions'**
+  String get aiWorkspacePhaseConclusion;
+
+  /// No description provided for @aiConclusionsScanLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan: {target} · {count} items analyzed ({bytes})'**
+  String aiConclusionsScanLine(String target, int count, String bytes);
+
+  /// No description provided for @aiConclusionsModeFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Full coverage analysis'**
+  String get aiConclusionsModeFull;
+
+  /// No description provided for @aiConclusionsModeQuick.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick analysis'**
+  String get aiConclusionsModeQuick;
+
+  /// No description provided for @aiConclusionsTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan was truncated; conclusions reflect classified items only.'**
+  String get aiConclusionsTruncated;
+
+  /// No description provided for @aiConclusionsReclaimLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} reclaimable{shareRoot} · {review} need review'**
+  String aiConclusionsReclaimLine(String bytes, String shareRoot, int review);
+
+  /// No description provided for @aiConclusionsShareRootSuffix.
+  ///
+  /// In en, this message translates to:
+  /// **' ({pct}% of scan)'**
+  String aiConclusionsShareRootSuffix(String pct);
+
+  /// No description provided for @aiConclusionsLead.
+  ///
+  /// In en, this message translates to:
+  /// **'These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.'**
+  String get aiConclusionsLead;
+
+  /// No description provided for @aiConclusionsByDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'By folder'**
+  String get aiConclusionsByDirectory;
+
+  /// No description provided for @aiConclusionsDirectoryMetrics.
+  ///
+  /// In en, this message translates to:
+  /// **'{safe} reclaimable · {review} to review · {share}% of reclaimable total'**
+  String aiConclusionsDirectoryMetrics(String safe, int review, String share);
+
+  /// No description provided for @aiConclusionsAiSays.
+  ///
+  /// In en, this message translates to:
+  /// **'AI: {reason}'**
+  String aiConclusionsAiSays(String reason);
+
+  /// No description provided for @aiConclusionsShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'View all suggestions'**
+  String get aiConclusionsShowAll;
+
+  /// No description provided for @aiConclusionsBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to conclusions'**
+  String get aiConclusionsBack;
+
+  /// No description provided for @aiConclusionsMoreDirs.
+  ///
+  /// In en, this message translates to:
+  /// **'+ {count} more folders in the full list'**
+  String aiConclusionsMoreDirs(int count);
+
   /// No description provided for @aiWorkspacePhaseDeleting.
   ///
   /// In en, this message translates to:

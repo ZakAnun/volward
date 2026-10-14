@@ -937,6 +937,56 @@
   "aiWorkspacePhasePrivacy": "隐私确认",
   "aiWorkspacePhaseAnalyzing": "正在分析",
   "aiWorkspacePhaseReview": "确认建议",
+  "aiWorkspacePhaseConclusion": "分析结论",
+  "aiConclusionsScanLine": "扫描：{target} · 已分析 {count} 项（{bytes}）",
+  "@aiConclusionsScanLine": {
+    "placeholders": {
+      "target": {"type": "String"},
+      "count": {"type": "int"},
+      "bytes": {"type": "String"}
+    }
+  },
+  "aiConclusionsModeFull": "全量覆盖分析",
+  "aiConclusionsModeQuick": "快速分析",
+  "aiConclusionsTruncated": "扫描不完整；结论仅针对已分类项。",
+  "aiConclusionsReclaimLine": "可清理 {bytes}{shareRoot} · {review} 项待确认",
+  "@aiConclusionsReclaimLine": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "shareRoot": {"type": "String"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiConclusionsShareRootSuffix": "（占扫描约 {pct}%）",
+  "@aiConclusionsShareRootSuffix": {
+    "placeholders": {
+      "pct": {"type": "String"}
+    }
+  },
+  "aiConclusionsLead": "以下结论来自本次 AI 分类。先看各目录要点，再打开完整列表调整选中项。",
+  "aiConclusionsByDirectory": "按目录",
+  "aiConclusionsDirectoryMetrics": "可清理 {safe} · {review} 项待确认 · 占可清理 {share}%",
+  "@aiConclusionsDirectoryMetrics": {
+    "placeholders": {
+      "safe": {"type": "String"},
+      "review": {"type": "int"},
+      "share": {"type": "String"}
+    }
+  },
+  "aiConclusionsAiSays": "AI：{reason}",
+  "@aiConclusionsAiSays": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "aiConclusionsShowAll": "查看全部建议",
+  "aiConclusionsBack": "返回结论",
+  "aiConclusionsMoreDirs": "完整列表中还有 {count} 个目录",
+  "@aiConclusionsMoreDirs": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "aiWorkspacePhaseDeleting": "正在移到废纸篓",
   "aiWorkspacePhaseRecovery": "恢复",
   "aiWorkspaceLoadPrevious": "加载上次结果",

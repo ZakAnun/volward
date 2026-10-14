@@ -894,32 +894,20 @@ class _SettingsSectionCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.child,
-    this.featured = false,
   });
 
   final VolwardTokens tokens;
   final IconData icon;
   final String title;
   final Widget child;
-  final bool featured;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final tint = scheme.primary.withValues(alpha: 0.06);
-    final bg = featured ? Color.alphaBlend(tint, tokens.canvas) : tokens.canvas;
-    final border = featured
-        ? Color.alphaBlend(
-            scheme.primary.withValues(alpha: 0.18),
-            tokens.hairline,
-          )
-        : tokens.hairline;
-
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: bg,
+        color: tokens.canvas,
         borderRadius: BorderRadius.circular(AppleRadius.lg),
-        border: Border.all(color: border),
+        border: Border.all(color: tokens.hairline),
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppleSpacing.md),
@@ -932,17 +920,11 @@ class _SettingsSectionCard extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: featured ? scheme.primary : tokens.surfacePearl,
+                    color: tokens.surfacePearl,
                     borderRadius: BorderRadius.circular(AppleRadius.sm),
-                    border: Border.all(
-                      color: featured ? scheme.primary : tokens.hairline,
-                    ),
+                    border: Border.all(color: tokens.hairline),
                   ),
-                  child: Icon(
-                    icon,
-                    size: 16,
-                    color: featured ? scheme.onPrimary : tokens.inkMuted80,
-                  ),
+                  child: Icon(icon, size: 16, color: tokens.inkMuted80),
                 ),
                 const SizedBox(width: AppleSpacing.sm),
                 Expanded(child: Text(title, style: context.vwCaptionStrong)),
@@ -1016,13 +998,13 @@ BorderRadius _settingsSegmentHighlightRadius({
   required bool isLast,
 }) {
   if (!selected) return BorderRadius.zero;
-  final radius = Radius.circular(AppleRadius.sm);
-  if (isFirst && isLast) return BorderRadius.all(radius);
+  const radius = Radius.circular(AppleRadius.sm);
+  if (isFirst && isLast) return const BorderRadius.all(radius);
   if (isFirst) {
-    return BorderRadius.only(topLeft: radius, bottomLeft: radius);
+    return const BorderRadius.only(topLeft: radius, bottomLeft: radius);
   }
   if (isLast) {
-    return BorderRadius.only(topRight: radius, bottomRight: radius);
+    return const BorderRadius.only(topRight: radius, bottomRight: radius);
   }
   return BorderRadius.zero;
 }

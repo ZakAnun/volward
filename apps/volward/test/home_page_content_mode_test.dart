@@ -751,6 +751,12 @@ void main() {
     await _pumpUntilFound(tester, find.text('Start AI Analysis'));
     await tester.tap(find.text('Start AI Analysis'));
     await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+    await tester.pumpAndSettle();
     expect(find.byKey(AiAnalysisWorkspace.deleteKey), findsOneWidget);
 
     await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));

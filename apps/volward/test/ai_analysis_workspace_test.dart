@@ -406,6 +406,12 @@ Future<void> _pumpUntilFound(
   fail('Timed out waiting for the expected workspace phase');
 }
 
+Future<void> _goToDetailFromOverview(WidgetTester tester) async {
+  await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.resultsListKey));
+  await tester.pump();
+}
+
 Future<void> _openResults(
   WidgetTester tester,
   _FakeGateway gateway, {
@@ -433,8 +439,11 @@ Future<void> _openResults(
     find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
   );
   await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
-  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.resultsListKey));
-  await tester.pump();
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+  );
+  await _goToDetailFromOverview(tester);
 }
 
 Finder _resultGroup(String path) {
@@ -746,7 +755,7 @@ void main() {
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
       tester,
-      find.byKey(AiAnalysisWorkspace.decisionSummaryKey),
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
     );
 
     expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsNothing);
@@ -954,8 +963,9 @@ void main() {
       await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
       await _pumpUntilFound(
         tester,
-        find.byKey(AiAnalysisWorkspace.resultsListKey),
+        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
       );
+      await _goToDetailFromOverview(tester);
       expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
       expect(validGateway.byokUsageRecords, isEmpty);
 
@@ -1019,6 +1029,11 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+    await _goToDetailFromOverview(tester);
     await _pumpUntilFound(tester, _resultGroup('/Users/x/Library'));
     expect(_resultGroup('/Users/x/Library'), findsOneWidget);
 
@@ -1078,6 +1093,11 @@ void main() {
     await tester.tap(find.text('I understand'));
     await tester.pumpAndSettle();
     expect(provider.analyzeCalls, 1);
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+    await _goToDetailFromOverview(tester);
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
   });
 

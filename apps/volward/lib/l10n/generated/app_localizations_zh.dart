@@ -1204,6 +1204,60 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiWorkspacePhaseReview => '确认建议';
 
   @override
+  String get aiWorkspacePhaseConclusion => '分析结论';
+
+  @override
+  String aiConclusionsScanLine(String target, int count, String bytes) {
+    return '扫描：$target · 已分析 $count 项（$bytes）';
+  }
+
+  @override
+  String get aiConclusionsModeFull => '全量覆盖分析';
+
+  @override
+  String get aiConclusionsModeQuick => '快速分析';
+
+  @override
+  String get aiConclusionsTruncated => '扫描不完整；结论仅针对已分类项。';
+
+  @override
+  String aiConclusionsReclaimLine(String bytes, String shareRoot, int review) {
+    return '可清理 $bytes$shareRoot · $review 项待确认';
+  }
+
+  @override
+  String aiConclusionsShareRootSuffix(String pct) {
+    return '（占扫描约 $pct%）';
+  }
+
+  @override
+  String get aiConclusionsLead => '以下结论来自本次 AI 分类。先看各目录要点，再打开完整列表调整选中项。';
+
+  @override
+  String get aiConclusionsByDirectory => '按目录';
+
+  @override
+  String aiConclusionsDirectoryMetrics(String safe, int review, String share) {
+    return '可清理 $safe · $review 项待确认 · 占可清理 $share%';
+  }
+
+  @override
+  String aiConclusionsAiSays(String reason) {
+    return 'AI：$reason';
+  }
+
+  @override
+  String get aiConclusionsShowAll => '查看全部建议';
+
+  @override
+  String get aiConclusionsBack => '返回结论';
+
+  @override
+  String aiConclusionsMoreDirs(int count) {
+    return '完整列表中还有 $count 个目录';
+  }
+
+  @override
   String get aiWorkspacePhaseDeleting => '正在移到废纸篓';
 
   @override
