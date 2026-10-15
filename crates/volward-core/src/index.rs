@@ -859,6 +859,50 @@ impl SnapshotIndex {
         (total, files)
     }
 
+    /// One pass over unclassified files: calls `visit` for each path, and returns
+    /// `(total_count, largest_by_size_up_to_limit)`.
+    pub fn scan_unclassified_files<F>(
+        &self,
+        limit: usize,
+        mut visit: F,
+    ) -> (usize, Vec<(String, u64)>)
+    where
+        F: FnMut(&str, u64),
+    {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+
+        let limit = limit.max(1);
+        let mut total = 0usize;
+        let mut heap: BinaryHeap<(Reverse<u64>, u32)> = BinaryHeap::new();
+
+        for (path_id, size) in &self.file_size_by_path {
+            if self.entry_id_by_path.contains_key(path_id)
+                || self.directory_by_id.contains_key(path_id)
+            {
+                continue;
+            }
+            total += 1;
+            let path = self.table.resolve(*path_id);
+            visit(path, *size);
+            if heap.len() < limit {
+                heap.push((Reverse(*size), *path_id));
+            } else if let Some((Reverse(smallest), _)) = heap.peek() {
+                if *size > *smallest {
+                    heap.pop();
+                    heap.push((Reverse(*size), *path_id));
+                }
+            }
+        }
+
+        let mut files: Vec<(String, u64)> = heap
+            .into_iter()
+            .map(|(Reverse(size), path_id)| (self.table.resolve(path_id).to_string(), size))
+            .collect();
+        files.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        (total, files)
+    }
+
     /// Returns a bounded page of all flat file records (classified entries
     /// plus unclassified size records), ordered by size descending then path
     /// ascending, continuing after `cursor` (a path string). Used by

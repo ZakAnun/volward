@@ -1085,6 +1085,11 @@ impl VolwardEngine {
             }
         }
 
+        volward_core::unclassified_coverage_cache::invalidate_stale_coverage_cache_sidecar(
+            &snapshot_id,
+            index_version,
+        );
+
         let built = Arc::new(build_unclassified_coverage_cache(
             index,
             kb,
@@ -1243,7 +1248,7 @@ impl VolwardEngine {
         use volward_core::{
             compute_result_cache_key, indexed_local_exclusion_prefixes, AiAnalysisResult,
             AiCandidateBuilder, OsKnowledgeBase, PreClassifiedEntry, DEFAULT_CANDIDATE_CAP,
-            DEFAULT_PRECLASSIFIED_CAP, FUNNEL_UNCLASSIFIED_FILE_BUDGET,
+            DEFAULT_PRECLASSIFIED_CAP,
         };
 
         let kb = OsKnowledgeBase::for_current_platform();
@@ -1260,13 +1265,14 @@ impl VolwardEngine {
                 return format!("error:snapshot_id mismatch: got {}", index.snapshot_id);
             }
             let indexed_prefixes = indexed_local_exclusion_prefixes(&index);
-            self.ensure_unclassified_coverage_cache(&index, &kb, &indexed_prefixes);
+            let cache =
+                self.ensure_unclassified_coverage_cache(&index, &kb, &indexed_prefixes);
             let root_path = index.root_path.clone();
             let stats = index.stats.clone();
             let root_size_bytes = index.summary().root_size_bytes;
             let reclaimable = index.reclaimable_estimate_bytes;
-            let (total_unclassified, files) =
-                index.unclassified_files_largest_n(FUNNEL_UNCLASSIFIED_FILE_BUDGET);
+            let total_unclassified = cache.total_unclassified_file_count;
+            let files = cache.funnel_largest_files.clone();
             let build_artifacts = index
                 .entries_with_category("BuildArtifact")
                 .into_iter()

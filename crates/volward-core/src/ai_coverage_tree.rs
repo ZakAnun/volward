@@ -148,6 +148,9 @@ pub struct UnclassifiedCoverageScan {
     pub funnel_stats: CoverageFunnelStats,
     pub tail_file_paths: Vec<(String, u64)>,
     pub subtree_index: UnclassifiedSubtreeIndex,
+    /// Largest unclassified files by size (up to [`crate::ai_candidates::FUNNEL_UNCLASSIFIED_FILE_BUDGET`]).
+    pub funnel_largest_files: Vec<(String, u64)>,
+    pub total_unclassified_file_count: usize,
 }
 
 /// Build subtree aggregates in one pass (used by expand/drill when plan cache is unavailable).
@@ -175,53 +178,55 @@ pub fn scan_unclassified_for_coverage(
     personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
 ) -> UnclassifiedCoverageScan {
+    use crate::ai_candidates::FUNNEL_UNCLASSIFIED_FILE_BUDGET;
+
     let root = normalize_path(&index.root_path);
     let mut funnel_stats = CoverageFunnelStats::default();
     let mut tail_file_paths: Vec<(String, u64)> = Vec::new();
     let mut subtree_index = UnclassifiedSubtreeIndex::default();
 
-    for (path, size_bytes) in index.unclassified_files() {
-        let resolution = resolve_file(
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            funnel_map,
-            &path,
-            size_bytes,
-        );
-        match &resolution {
-            CoverageFileResolution::LocalSafe(_) => funnel_stats.local_safe_files += 1,
-            CoverageFileResolution::LocalKeep { .. } => funnel_stats.local_keep_files += 1,
-            CoverageFileResolution::TailCandidate { .. } => {
-                funnel_stats.tail_files += 1;
-                tail_file_paths.push((path.clone(), size_bytes));
+    let (total_unclassified_file_count, funnel_largest_files) =
+        index.scan_unclassified_files(FUNNEL_UNCLASSIFIED_FILE_BUDGET, |path, size_bytes| {
+            let resolution = resolve_file(
+                index,
+                kb,
+                protected_prefixes,
+                personal_prefixes,
+                funnel_map,
+                path,
+                size_bytes,
+            );
+            match &resolution {
+                CoverageFileResolution::LocalSafe(_) => funnel_stats.local_safe_files += 1,
+                CoverageFileResolution::LocalKeep { .. } => funnel_stats.local_keep_files += 1,
+                CoverageFileResolution::TailCandidate { .. } => {
+                    funnel_stats.tail_files += 1;
+                    tail_file_paths.push((path.to_string(), size_bytes));
+                }
+                CoverageFileResolution::TreeCandidate => funnel_stats.tree_pending_files += 1,
             }
-            CoverageFileResolution::TreeCandidate => funnel_stats.tree_pending_files += 1,
-        }
 
-        let (is_local, is_ai) = match &resolution {
-            CoverageFileResolution::LocalSafe(_) | CoverageFileResolution::LocalKeep { .. } => {
-                (true, false)
+            let (is_local, is_ai) = match &resolution {
+                CoverageFileResolution::LocalSafe(_)
+                | CoverageFileResolution::LocalKeep { .. } => (true, false),
+                CoverageFileResolution::TailCandidate { .. }
+                | CoverageFileResolution::TreeCandidate => (false, true),
+            };
+            let ext = extension_token(path);
+            for dir in ancestor_directories(path, &root) {
+                let agg = subtree_index.by_dir.entry(dir).or_default();
+                agg.unclassified_files += 1;
+                if is_local {
+                    agg.local_files += 1;
+                }
+                if is_ai {
+                    agg.ai_pending_files += 1;
+                }
+                if let Some(ext) = ext.as_ref() {
+                    *agg.ext_counts.entry(ext.clone()).or_default() += 1;
+                }
             }
-            CoverageFileResolution::TailCandidate { .. }
-            | CoverageFileResolution::TreeCandidate => (false, true),
-        };
-        let ext = extension_token(&path);
-        for dir in ancestor_directories(&path, &root) {
-            let agg = subtree_index.by_dir.entry(dir).or_default();
-            agg.unclassified_files += 1;
-            if is_local {
-                agg.local_files += 1;
-            }
-            if is_ai {
-                agg.ai_pending_files += 1;
-            }
-            if let Some(ext) = ext.as_ref() {
-                *agg.ext_counts.entry(ext.clone()).or_default() += 1;
-            }
-        }
-    }
+        });
 
     tail_file_paths.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
@@ -229,6 +234,8 @@ pub fn scan_unclassified_for_coverage(
         funnel_stats,
         tail_file_paths,
         subtree_index,
+        funnel_largest_files,
+        total_unclassified_file_count,
     }
 }
 

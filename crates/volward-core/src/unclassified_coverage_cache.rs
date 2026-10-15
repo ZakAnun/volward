@@ -21,6 +21,8 @@ pub struct UnclassifiedCoverageCache {
     pub funnel_stats: CoverageFunnelStats,
     pub subtree_index: UnclassifiedSubtreeIndex,
     pub tail_file_paths: Vec<(String, u64)>,
+    pub funnel_largest_files: Vec<(String, u64)>,
+    pub total_unclassified_file_count: usize,
     pub total_unclassified: usize,
 }
 
@@ -85,6 +87,20 @@ pub fn load_coverage_cache_sidecar(path: &Path) -> Option<CoverageCacheSidecarMe
     Some(meta)
 }
 
+/// Removes sidecar metadata when snapshot or index generation no longer matches.
+pub fn invalidate_stale_coverage_cache_sidecar(
+    snapshot_id: &str,
+    index_version: u64,
+) {
+    let path = coverage_cache_sidecar_path(snapshot_id);
+    let Some(meta) = load_coverage_cache_sidecar(&path) else {
+        return;
+    };
+    if meta.snapshot_id != snapshot_id || meta.index_version != index_version {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 pub fn build_unclassified_coverage_cache(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,
@@ -109,6 +125,8 @@ pub fn build_unclassified_coverage_cache(
         funnel_stats: scan.funnel_stats,
         subtree_index: scan.subtree_index,
         tail_file_paths: scan.tail_file_paths,
+        funnel_largest_files: scan.funnel_largest_files,
+        total_unclassified_file_count: scan.total_unclassified_file_count,
         total_unclassified,
     }
 }
@@ -123,6 +141,26 @@ mod tests {
     fn kb_empty() -> OsKnowledgeBase {
         OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
             .unwrap()
+    }
+
+    #[test]
+    fn invalidate_stale_sidecar_removes_mismatched_meta() {
+        let dir = std::env::temp_dir().join("volward-sidecar-stale");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("VOLWARD_SNAPSHOT_CACHE_DIR", dir.to_string_lossy().as_ref());
+        let path = coverage_cache_sidecar_path("snap-a");
+        let meta = CoverageCacheSidecarMeta {
+            version: UNCLASSIFIED_COVERAGE_CACHE_VERSION,
+            snapshot_id: "snap-a".to_string(),
+            index_version: 1,
+            funnel_stats: CoverageFunnelStats::default(),
+            total_unclassified: 0,
+        };
+        save_coverage_cache_sidecar(&path, &meta).unwrap();
+        invalidate_stale_coverage_cache_sidecar("snap-a", 2);
+        assert!(load_coverage_cache_sidecar(&path).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("VOLWARD_SNAPSHOT_CACHE_DIR");
     }
 
     #[test]
@@ -166,5 +204,7 @@ mod tests {
             build_ai_tree_plan_from_coverage_cache(&index, &kb, &[], &[], &cache);
         assert_eq!(plan.funnel_stats.tail_files, cache.funnel_stats.tail_files);
         assert_eq!(cache.total_unclassified, 1);
+        assert_eq!(cache.funnel_largest_files.len(), 1);
+        assert_eq!(cache.funnel_largest_files[0].0, "/root/bucket/large.dat");
     }
 }
