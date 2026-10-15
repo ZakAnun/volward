@@ -54,6 +54,10 @@ pub use unclassified_coverage_cache::{
     save_coverage_cache_sidecar, try_load_coverage_cache_from_disk, CoverageCacheSidecarMeta,
     UnclassifiedCoverageCache, UNCLASSIFIED_COVERAGE_CACHE_VERSION,
 };
+#[cfg(debug_assertions)]
+pub use unclassified_coverage_cache::{
+    debug_reset_unclassified_cache_build_count, debug_unclassified_cache_build_count,
+};
 pub use unclassified_coverage_cache_persist::{
     coverage_cache_bin_path, coverage_cache_meta_path, load_coverage_cache_bin,
     save_coverage_cache_bin, CoverageCachePersistedV1, COVERAGE_CACHE_FILE_MAGIC,

@@ -207,12 +207,29 @@ pub fn try_load_coverage_cache_from_disk(
     Some(coverage_cache_from_persisted(wire))
 }
 
+#[cfg(debug_assertions)]
+static DEBUG_BUILD_UNCLASSIFIED_CACHE_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Test/diagnostic hook (debug builds only): full in-memory cache builds.
+#[cfg(debug_assertions)]
+pub fn debug_unclassified_cache_build_count() -> usize {
+    DEBUG_BUILD_UNCLASSIFIED_CACHE_CALLS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+#[cfg(debug_assertions)]
+pub fn debug_reset_unclassified_cache_build_count() {
+    DEBUG_BUILD_UNCLASSIFIED_CACHE_CALLS.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
 pub fn build_unclassified_coverage_cache(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,
     protected_prefixes: &[String],
     personal_prefixes: &[String],
 ) -> UnclassifiedCoverageCache {
+    #[cfg(debug_assertions)]
+    DEBUG_BUILD_UNCLASSIFIED_CACHE_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
     let classified = index.classified_paths();
     let scan = scan_unclassified_for_coverage(

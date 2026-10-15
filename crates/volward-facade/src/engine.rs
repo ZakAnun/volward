@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -113,6 +113,8 @@ pub struct VolwardEngine {
     local_coverage_funnel_cache: Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
     unclassified_subtree_index_cache: Arc<Mutex<Option<UnclassifiedSubtreeIndexCache>>>,
     unclassified_coverage_cache: Arc<Mutex<Option<UnclassifiedCoverageCacheSlot>>>,
+    /// Per `(snapshot_id, index_version)` mutex so concurrent ensure only builds once.
+    coverage_cache_build_flights: Arc<Mutex<HashMap<(String, u64), Arc<Mutex<()>>>>>,
     ai_coverage_plan: Arc<Mutex<Option<AiCoveragePlan>>>,
     ai_tree_coverage_plan: Arc<Mutex<Option<AiTreePlan>>>,
     capability_registry: Arc<Mutex<CapabilityRegistry>>,
@@ -172,6 +174,7 @@ impl VolwardEngine {
             local_coverage_funnel_cache: Arc::new(Mutex::new(None)),
             unclassified_subtree_index_cache: Arc::new(Mutex::new(None)),
             unclassified_coverage_cache: Arc::new(Mutex::new(None)),
+            coverage_cache_build_flights: Arc::new(Mutex::new(HashMap::new())),
             ai_coverage_plan: Arc::new(Mutex::new(None)),
             ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(capability_registry)),
@@ -1069,6 +1072,39 @@ impl VolwardEngine {
         }
     }
 
+    fn peek_unclassified_coverage_cache(
+        &self,
+        snapshot_id: &str,
+        index_version: u64,
+    ) -> Option<Arc<UnclassifiedCoverageCache>> {
+        let guard = self.unclassified_coverage_cache.lock().ok()?;
+        let slot = guard.as_ref()?;
+        if slot.snapshot_id == snapshot_id && slot.index_version == index_version {
+            Some(slot.cache.clone())
+        } else {
+            None
+        }
+    }
+
+    fn coverage_cache_build_flight(
+        &self,
+        snapshot_id: &str,
+        index_version: u64,
+    ) -> Arc<Mutex<()>> {
+        let key = (snapshot_id.to_string(), index_version);
+        let mut map = self
+            .coverage_cache_build_flights
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.entry(key)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    fn log_coverage_cache_persist_error(context: &str, err: std::io::Error) {
+        eprintln!("Volward AI: coverage cache {context} failed: {err}");
+    }
+
     fn ensure_unclassified_coverage_cache(
         &self,
         index: &SnapshotIndex,
@@ -1077,12 +1113,17 @@ impl VolwardEngine {
     ) -> Arc<UnclassifiedCoverageCache> {
         let snapshot_id = index.snapshot_id.clone();
         let index_version = self.index_version.load(Ordering::Relaxed);
-        if let Ok(guard) = self.unclassified_coverage_cache.lock() {
-            if let Some(slot) = guard.as_ref() {
-                if slot.snapshot_id == snapshot_id && slot.index_version == index_version {
-                    return slot.cache.clone();
-                }
-            }
+        if let Some(cache) = self.peek_unclassified_coverage_cache(&snapshot_id, index_version) {
+            return cache;
+        }
+
+        let flight = self.coverage_cache_build_flight(&snapshot_id, index_version);
+        let _flight_guard = flight
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        if let Some(cache) = self.peek_unclassified_coverage_cache(&snapshot_id, index_version) {
+            return cache;
         }
 
         volward_core::unclassified_coverage_cache::invalidate_stale_coverage_cache_sidecar(
@@ -1122,22 +1163,28 @@ impl VolwardEngine {
                 &snapshot_id,
                 index_version,
             );
-            let _ = volward_core::save_coverage_cache_bin(
-                &volward_core::coverage_cache_bin_path(&snapshot_id),
-                &wire,
-            );
+            let bin_path = volward_core::coverage_cache_bin_path(&snapshot_id);
+            if let Err(err) = volward_core::save_coverage_cache_bin(&bin_path, &wire) {
+                Self::log_coverage_cache_persist_error("bin save", err);
+                let _ = std::fs::remove_file(bin_path);
+            }
         }
-        let sidecar = volward_core::unclassified_coverage_cache::CoverageCacheSidecarMeta::from_cache(
-            &snapshot_id,
-            index_version,
-            built.as_ref(),
-        );
         let sidecar_path =
             volward_core::unclassified_coverage_cache::coverage_cache_sidecar_path(&snapshot_id);
-        let _ = volward_core::unclassified_coverage_cache::save_coverage_cache_sidecar(
-            &sidecar_path,
-            &sidecar,
-        );
+        if built_fresh || !sidecar_path.exists() {
+            let sidecar =
+                volward_core::unclassified_coverage_cache::CoverageCacheSidecarMeta::from_cache(
+                    &snapshot_id,
+                    index_version,
+                    built.as_ref(),
+                );
+            if let Err(err) = volward_core::unclassified_coverage_cache::save_coverage_cache_sidecar(
+                &sidecar_path,
+                &sidecar,
+            ) {
+                Self::log_coverage_cache_persist_error("meta save", err);
+            }
+        }
         built
     }
 
@@ -1480,6 +1527,7 @@ impl VolwardEngine {
         let local_coverage_funnel_cache = self.local_coverage_funnel_cache.clone();
         let unclassified_subtree_index_cache = self.unclassified_subtree_index_cache.clone();
         let unclassified_coverage_cache = self.unclassified_coverage_cache.clone();
+        let coverage_cache_build_flights = self.coverage_cache_build_flights.clone();
         let index_version = self.index_version.clone();
         let result_slot = self.ai_candidates_json.clone();
         let spill_slot = self.ai_candidates_spill_path.clone();
@@ -1512,6 +1560,7 @@ impl VolwardEngine {
                 local_coverage_funnel_cache,
                 unclassified_subtree_index_cache,
                 unclassified_coverage_cache,
+                coverage_cache_build_flights,
                 index_version,
             );
 
@@ -1569,6 +1618,7 @@ impl VolwardEngine {
         local_coverage_funnel_cache: Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
         unclassified_subtree_index_cache: Arc<Mutex<Option<UnclassifiedSubtreeIndexCache>>>,
         unclassified_coverage_cache: Arc<Mutex<Option<UnclassifiedCoverageCacheSlot>>>,
+        coverage_cache_build_flights: Arc<Mutex<HashMap<(String, u64), Arc<Mutex<()>>>>>,
         index_version: Arc<std::sync::atomic::AtomicU64>,
     ) -> String {
         // Temporary engine shell so we reuse the same method body without
@@ -1598,6 +1648,7 @@ impl VolwardEngine {
             local_coverage_funnel_cache,
             unclassified_subtree_index_cache,
             unclassified_coverage_cache,
+            coverage_cache_build_flights,
             ai_coverage_plan: Arc::new(Mutex::new(None)),
             ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
@@ -1651,6 +1702,7 @@ impl VolwardEngine {
         let local_coverage_funnel_cache = self.local_coverage_funnel_cache.clone();
         let unclassified_subtree_index_cache = self.unclassified_subtree_index_cache.clone();
         let unclassified_coverage_cache = self.unclassified_coverage_cache.clone();
+        let coverage_cache_build_flights = self.coverage_cache_build_flights.clone();
         let index_version = self.index_version.clone();
         let result_slot = self.ai_coverage_plan_preview_json.clone();
         let building = self.is_ai_coverage_plan_building.clone();
@@ -1665,6 +1717,7 @@ impl VolwardEngine {
                     &local_coverage_funnel_cache,
                     &unclassified_subtree_index_cache,
                     &unclassified_coverage_cache,
+                    coverage_cache_build_flights.clone(),
                     index_version,
                     &snapshot_id,
                 )
@@ -1675,6 +1728,7 @@ impl VolwardEngine {
                     &ai_coverage_plan,
                     &local_coverage_funnel_cache,
                     &unclassified_coverage_cache,
+                    coverage_cache_build_flights,
                     index_version,
                     &snapshot_id,
                 )
@@ -1696,6 +1750,7 @@ impl VolwardEngine {
         ai_coverage_plan: &Arc<Mutex<Option<AiCoveragePlan>>>,
         local_coverage_funnel_cache: &Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
         unclassified_coverage_cache: &Arc<Mutex<Option<UnclassifiedCoverageCacheSlot>>>,
+        coverage_cache_build_flights: Arc<Mutex<HashMap<(String, u64), Arc<Mutex<()>>>>>,
         index_version: Arc<std::sync::atomic::AtomicU64>,
         snapshot_id: &str,
     ) -> String {
@@ -1724,6 +1779,7 @@ impl VolwardEngine {
             local_coverage_funnel_cache: local_coverage_funnel_cache.clone(),
             unclassified_subtree_index_cache: Arc::new(Mutex::new(None)),
             unclassified_coverage_cache: unclassified_coverage_cache.clone(),
+            coverage_cache_build_flights,
             ai_coverage_plan: ai_coverage_plan.clone(),
             ai_tree_coverage_plan: Arc::new(Mutex::new(None)),
             capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
@@ -1739,6 +1795,7 @@ impl VolwardEngine {
         local_coverage_funnel_cache: &Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
         unclassified_subtree_index_cache: &Arc<Mutex<Option<UnclassifiedSubtreeIndexCache>>>,
         unclassified_coverage_cache: &Arc<Mutex<Option<UnclassifiedCoverageCacheSlot>>>,
+        coverage_cache_build_flights: Arc<Mutex<HashMap<(String, u64), Arc<Mutex<()>>>>>,
         index_version: Arc<std::sync::atomic::AtomicU64>,
         snapshot_id: &str,
     ) -> String {
@@ -1767,6 +1824,7 @@ impl VolwardEngine {
             local_coverage_funnel_cache: local_coverage_funnel_cache.clone(),
             unclassified_subtree_index_cache: unclassified_subtree_index_cache.clone(),
             unclassified_coverage_cache: unclassified_coverage_cache.clone(),
+            coverage_cache_build_flights,
             ai_coverage_plan: Arc::new(Mutex::new(None)),
             ai_tree_coverage_plan: ai_tree_coverage_plan.clone(),
             capability_registry: Arc::new(Mutex::new(CapabilityRegistry::new())),
@@ -3306,6 +3364,44 @@ mod tests {
         assert!(parsed["local_keep_files"].as_u64().unwrap_or(0) >= 1);
         assert!(parsed["tail_files"].as_u64().unwrap_or(0) >= 1);
         assert!(parsed["tree_pending_files"].as_u64().unwrap_or(0) >= 1);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn concurrent_tree_plan_builds_unclassified_cache_once() {
+        use std::sync::Arc;
+        use std::thread;
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let dir = std::env::temp_dir().join("volward-facade-concurrent-cache");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("VOLWARD_CACHE_DIR", dir.to_string_lossy().as_ref());
+
+        volward_core::debug_reset_unclassified_cache_build_count();
+        let engine = Arc::new(VolwardEngine::new());
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.record_file_size("/root/a.dat", 100);
+        builder.record_file_size("/root/b.dat", 200);
+        let index = builder.finish(
+            "concurrent-cache-snap".to_string(),
+            1,
+            9,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+        engine.clear_local_coverage_funnel_cache();
+
+        let e1 = Arc::clone(&engine);
+        let e2 = Arc::clone(&engine);
+        let h1 = thread::spawn(move || e1.build_ai_tree_plan_json("concurrent-cache-snap"));
+        let h2 = thread::spawn(move || e2.build_ai_tree_plan_json("concurrent-cache-snap"));
+        assert!(!h1.join().unwrap().starts_with("error:"));
+        assert!(!h2.join().unwrap().starts_with("error:"));
+        assert_eq!(volward_core::debug_unclassified_cache_build_count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("VOLWARD_CACHE_DIR");
     }
 
     #[test]
