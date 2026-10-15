@@ -12,6 +12,9 @@ pub const BYOK_ANALYZE_BATCH_SIZE: usize = 40;
 pub const DEFAULT_MAX_MEMBER_PATHS: usize = 200;
 /// Max Tier-2 / KB pre-classified rows shown in the pre-check UI.
 pub const DEFAULT_PRECLASSIFIED_CAP: usize = 200;
+/// Max unclassified files run through the funnel per build (largest by size first).
+/// The model/UI list is still capped at [`DEFAULT_CANDIDATE_CAP`].
+pub const FUNNEL_UNCLASSIFIED_FILE_BUDGET: usize = 16_384;
 pub const AI_AGGREGATE_DELETE_TARGET_PREFIX: &str = "volward-ai-aggregate:v1:";
 
 /// App-specific AI tool roots used by `ai_cleanup_hint_for_path` and by the
@@ -338,9 +341,27 @@ impl AiCandidateBuilder {
     }
 
     /// Index-mode entry point: `files` are unclassified `(path, size)` pairs
-    /// (typically from `SnapshotIndex::unclassified_files()`).
+    /// (typically from `SnapshotIndex::unclassified_files_largest_n()`).
     pub fn from_unclassified_files(
         files: &[(String, u64)],
+        classified: &HashSet<String>,
+        kb: &OsKnowledgeBase,
+        indexed_local_prefixes: &[String],
+    ) -> Self {
+        Self::from_unclassified_files_with_total(
+            files,
+            files.len(),
+            classified,
+            kb,
+            indexed_local_prefixes,
+        )
+    }
+
+    /// Like [`Self::from_unclassified_files`], but [`total_unclassified_files`]
+    /// is the full unclassified count when `files` is only a size-ranked sample.
+    pub fn from_unclassified_files_with_total(
+        files: &[(String, u64)],
+        total_unclassified_files: usize,
         classified: &HashSet<String>,
         kb: &OsKnowledgeBase,
         indexed_local_prefixes: &[String],
@@ -381,7 +402,7 @@ impl AiCandidateBuilder {
                 }
             }
         }
-        b.raw_file_count = b.raw_unknown.len();
+        b.raw_file_count = total_unclassified_files.max(files.len());
         b
     }
 
@@ -812,6 +833,27 @@ mod tests {
             .contains(&"/Users/x/huge_dir/file_000.dat".to_string()));
         let encoded = serde_json::to_value(&set.candidates[0]).unwrap();
         assert!(encoded.get("delete_member_paths").is_none());
+    }
+
+    #[test]
+    fn from_unclassified_files_with_total_reports_full_scan_count() {
+        let kb =
+            OsKnowledgeBase::from_yaml("version: 1\nmacos: []\nwindows: []\nlinux: []", "macos")
+                .unwrap();
+        let files: Vec<(String, u64)> = (0..3)
+            .map(|i| (format!("/Users/x/file_{i}.dat"), (i as u64 + 1) * 100))
+            .collect();
+        let set = AiCandidateBuilder::from_unclassified_files_with_total(
+            &files,
+            1_000_000,
+            &HashSet::new(),
+            &kb,
+            &[],
+        )
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build();
+        assert_eq!(set.total_raw_count, 1_000_000);
+        assert_eq!(set.candidates.len(), 3);
     }
 
     #[test]

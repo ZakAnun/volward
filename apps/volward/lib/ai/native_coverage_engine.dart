@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'package:flutter/foundation.dart';
 
 import '../bridge/native_bridge.dart';
+import 'ai_debug_log.dart';
 import 'coverage_engine.dart';
 import 'coverage_models.dart';
 import 'coverage_native_responses.dart';
@@ -61,9 +62,18 @@ class NativeCoverageEngine implements CoverageEngine {
     const timeout = Duration(minutes: 30);
 
     Future<void> waitForPlanBuild() async {
+      var lastHeartbeat = startedAt;
       while (bridge.isAiCoveragePlanBuilding(engine)) {
-        if (DateTime.now().difference(startedAt) > timeout) {
+        final now = DateTime.now();
+        if (now.difference(startedAt) > timeout) {
           throw CoverageEngineException('error:coverage plan build timed out');
+        }
+        if (now.difference(lastHeartbeat) >= const Duration(seconds: 5)) {
+          volwardAiDebugLog(
+            'coverage plan build still running '
+            '${now.difference(startedAt).inSeconds}s snapshot=$snapshotId tree=$tree',
+          );
+          lastHeartbeat = now;
         }
         await Future<void>.delayed(const Duration(milliseconds: 40));
       }

@@ -12,6 +12,8 @@ import 'ai/coverage_models.dart';
 import 'ai/native_coverage_engine.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
+import 'ai/ai_candidates_materialized_cache.dart';
+import 'ai/ai_debug_log.dart';
 import 'bridge/native_bridge.dart';
 import 'bridge/scan_worker.dart';
 import 'capabilities/capability_models.dart';
@@ -789,6 +791,10 @@ class VolwardSession extends ChangeNotifier {
         );
       }
       _ready = true;
+      volwardAiDebugLog(
+        'session ready coverage=$hasAiCoverageApi tree=$hasAiTreeCoverageApi '
+        'sessionApi=$hasAiSessionApi contract=$hasAiContractApi',
+      );
       await loadSessionStateIfNeeded();
       await restoreCachedSnapshotIfNeeded();
     } catch (e, st) {
@@ -2702,6 +2708,16 @@ class VolwardSession extends ChangeNotifier {
   Future<String?> buildAiCandidatesJsonAsync(String snapshotId) async {
     final engine = _engine;
     if (!_ready || engine == null) return null;
+    return AiCandidatesMaterializedCache.instance.loadOrReuse(
+      snapshotId,
+      () => _buildAiCandidatesJsonAsyncImpl(snapshotId, engine),
+    );
+  }
+
+  Future<String?> _buildAiCandidatesJsonAsyncImpl(
+    String snapshotId,
+    Pointer<Void> engine,
+  ) async {
     final bridge = VolwardNativeBridge.instance;
     if (!bridge.hasAsyncAiCandidatesApi) {
       debugPrint(
@@ -2710,30 +2726,50 @@ class VolwardSession extends ChangeNotifier {
       return bridge.buildAiCandidatesJson(engine, snapshotId);
     }
 
-    final startedAt = DateTime.now();
-    const timeout = Duration(minutes: 3);
+    // Native build scales with unclassified volume but uses a size-ranked funnel
+    // sample; do not abort early with a short client timeout on huge scans.
+    const busyStartWatchdog = Duration(minutes: 5);
+    const buildTimeout = Duration(minutes: 30);
+    final busyStartedAt = DateTime.now();
+    volwardAiDebugLog('candidates build start snapshot=$snapshotId');
     while (true) {
-      if (DateTime.now().difference(startedAt) > timeout) {
-        return 'error:ai candidates build timed out';
-      }
       final started = bridge.startBuildAiCandidatesAsync(engine, snapshotId);
       if (started == null) {
+        volwardAiDebugLog('candidates build fallback to sync FFI');
         return bridge.buildAiCandidatesJson(engine, snapshotId);
       }
       if (started.startsWith('error:')) return started;
       if (started.startsWith('busy:')) {
+        if (DateTime.now().difference(busyStartedAt) > busyStartWatchdog) {
+          return 'error:ai candidates build busy (prior build did not finish)';
+        }
         await Future<void>.delayed(const Duration(milliseconds: 50));
         continue;
       }
       break;
     }
 
+    final buildWaitStarted = DateTime.now();
+    var lastHeartbeat = buildWaitStarted;
     while (bridge.isAiCandidatesBuilding(engine)) {
-      if (DateTime.now().difference(startedAt) > timeout) {
-        return 'error:ai candidates build timed out';
+      final now = DateTime.now();
+      if (now.difference(buildWaitStarted) > buildTimeout) {
+        return 'error:ai candidates build timed out after 30 minutes';
+      }
+      if (now.difference(lastHeartbeat) >= const Duration(seconds: 5)) {
+        volwardAiDebugLog(
+          'candidates build still running '
+          '${now.difference(buildWaitStarted).inSeconds}s '
+          '(large index scans can take several minutes)',
+        );
+        lastHeartbeat = now;
       }
       await Future<void>.delayed(const Duration(milliseconds: 40));
     }
+    volwardAiDebugLog(
+      'candidates build native finished in '
+      '${DateTime.now().difference(buildWaitStarted).inSeconds}s',
+    );
     final spillPath = bridge.takeAiCandidatesSpillPath(engine);
     if (spillPath != null &&
         spillPath.isNotEmpty &&

@@ -6,6 +6,7 @@ import 'package:volward/ai/ai_coverage_job_controller.dart';
 import 'package:volward/ai/ai_coverage_service.dart';
 import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/platform_ai_provider.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/coverage_engine.dart';
@@ -165,6 +166,48 @@ void main() {
     },
   );
 
+  test(
+    'startFullCoverage blocked when account balance is below buffered estimate',
+    () async {
+      AiCoverageCoordinator.debugPlanSummary = (_) async =>
+          const CoveragePlanSummary(
+            snapshotId: 'snap-balance',
+            planVersion: 1,
+            rootPath: '/',
+            totalUnclassified: 920,
+            preClassifiedCount: 0,
+            groupRows: 0,
+            fileRows: 920,
+            estimatedPages: 23,
+          );
+      addTearDown(() => AiCoverageCoordinator.debugPlanSummary = null);
+
+      final service = _RecordingStartService();
+      final provider = _TestPlatformProvider(creditsRemaining: 7);
+      final coordinator = AiCoverageCoordinator.testing(
+        serviceFactory:
+            ({
+              required session,
+              required provider,
+              resumePlanLoader,
+              catalogSnapshotId,
+            }) async => service,
+        isCoverageApiReady: (_) => true,
+        resolveProvider: () async => provider,
+      );
+      coordinator.attach(VolwardSession.test());
+
+      final result = await coordinator.startFullCoverage(
+        snapshotId: 'snap-balance',
+        mode: AiMode.platform,
+        provider: provider,
+      );
+
+      expect(result, StartCoverageBlocked.reasonInsufficientAccountBalance);
+      expect(service.startCalls, 0);
+    },
+  );
+
   test('startFullCoverage unavailable when plan summary is missing', () async {
     AiCoverageCoordinator.debugRequirePlanSummary = true;
     addTearDown(() => AiCoverageCoordinator.debugRequirePlanSummary = false);
@@ -272,6 +315,22 @@ void main() {
     final copy = coverageCompleteNotification(l10n, state);
     expect(notifications.single, '${copy.title}::${copy.body}');
   });
+}
+
+class _TestPlatformProvider extends PlatformAiProvider {
+  _TestPlatformProvider({required this.creditsRemaining})
+    : super(token: 'test-token');
+
+  final int creditsRemaining;
+
+  @override
+  Future<AiQuotaInfo?> queryQuota() async {
+    lastCreditsRemaining = creditsRemaining;
+    return AiQuotaInfo(
+      creditsRemaining: creditsRemaining,
+      creditsTotal: creditsRemaining + 20,
+    );
+  }
 }
 
 class _Provider implements AiProvider {

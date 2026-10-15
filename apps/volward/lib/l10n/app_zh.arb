@@ -636,6 +636,29 @@
   },
   "aiCoveragePurchaseFooter": "Home 级基础完整分析通常约 40–80 积分（1 积分 = 1 次 API）；默认单次上限 100。开始前会显示预估值。",
   "aiCoveragePurchaseFooterConditional": "以上已显示 API 预估。用户目录全量扫描常见约 40–80 积分；目录下钻可能增加消耗。",
+  "aiCoverageRunCapBelowBufferedEstimate": "单次运行上限（{cap} 积分）低于建议值（{buffered} 积分，预估 {estimated} + 20% 缓冲）。请在设置中提高上限或点击下方按钮。",
+  "@aiCoverageRunCapBelowBufferedEstimate": {
+    "placeholders": {
+      "cap": {
+        "type": "int"
+      },
+      "buffered": {
+        "type": "int"
+      },
+      "estimated": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBufferedCreditsMinimum": "建议最低（预估 + 20%）：{buffered} 积分",
+  "@aiCoverageBufferedCreditsMinimum": {
+    "placeholders": {
+      "buffered": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPrecheckDataScopeHint": "扫描会建立本地索引。下方列表是本地预判（可选清理），不是 AI 终审。完整 AI 分析会按覆盖计划分批发送目录与大文件，不会原样重放本列表。",
   "aiCoverageInsufficientForEstimate": "预计需要约 {needed} 积分，当前余额 {available}。",
   "@aiCoverageInsufficientForEstimate": {
     "placeholders": {

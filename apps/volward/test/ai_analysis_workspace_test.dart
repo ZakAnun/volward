@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
 import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_candidates_materialized_cache.dart';
 import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_conclusion_synthesis_body.dart';
@@ -551,6 +552,17 @@ const _coveragePlanSummary23 = CoveragePlanSummary(
   estimatedPages: 23,
 );
 
+const _coveragePlanSummary1Credit = CoveragePlanSummary(
+  snapshotId: 'snapshot-1',
+  planVersion: 1,
+  rootPath: '/tmp',
+  totalUnclassified: 50,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 50,
+  estimatedPages: 1,
+);
+
 const _coveragePlanSummaryV3 = CoveragePlanSummary(
   snapshotId: 'snapshot-1',
   planVersion: 3,
@@ -900,7 +912,7 @@ void main() {
         const [],
         quota: const AiQuotaInfo(creditsRemaining: 7, creditsTotal: 20),
       )
-      ..candidatesJson = _candidatePayload();
+      ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
     await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilFound(
@@ -912,10 +924,94 @@ void main() {
       find.textContaining('Need about 23 credits; you have 7.'),
       findsOneWidget,
     );
-    final button = tester.widget<AppleButton>(
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+    final startFinder = find.byWidgetPredicate(
+      (w) =>
+          w is AppleButton &&
+          (w.label == 'Start AI Analysis' || w.label == 'Analyze Again'),
     );
-    expect(button.onPressed, isNull);
+    await tester.scrollUntilVisible(
+      startFinder,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
+    final startButton = tester.widget<AppleButton>(startFinder);
+    expect(startButton.onPressed, isNull);
+  });
+
+  testWidgets(
+    'precheck shows cap-below-buffered copy when run cap is below estimate buffer',
+    (tester) async {
+      late Directory tempDir;
+      await tester.runAsync(() async {
+        tempDir = await Directory.systemTemp.createTemp('volward-ws-cap-buf');
+        final settingsFile = File('${tempDir.path}/settings.json')
+          ..writeAsStringSync('{"ai_full_run_budget_credits":1}');
+        AiSettingsStore.instance.settingsFileForTest = settingsFile;
+      });
+      addTearDown(() async {
+        AiSettingsStore.instance.settingsFileForTest = null;
+        if (tempDir.existsSync()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      AiCoverageCoordinator.debugForceAvailable = true;
+      AiCoverageCoordinator.debugPlanSummary = (_) async =>
+          _coveragePlanSummary1Credit;
+      final gateway = _FakeGateway()
+        ..mode = AiMode.platform
+        ..provider = _ResultProvider(
+          const [],
+          quota: const AiQuotaInfo(creditsRemaining: 28, creditsTotal: 40),
+        )
+        ..candidatesJson = _candidatePayload(hasExistingResult: false);
+
+      await tester.pumpWidget(_workspaceShell(gateway));
+      await _pumpUntilFound(
+        tester,
+        find.textContaining('Single-run limit (1 credits)'),
+      );
+      expect(
+        find.textContaining('suggested minimum (2 credits'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('precheck keeps start enabled while coverage plan is loading', (
+    tester,
+  ) async {
+    final planGate = Completer<CoveragePlanSummary>();
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) => planGate.future;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 100, creditsTotal: 200),
+      )
+      ..candidatesJson = _candidatePayload(hasExistingResult: false);
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Loading coverage job status'),
+    );
+
+    final startFinder = find.byWidgetPredicate(
+      (w) => w is AppleButton && w.label == 'Start AI Analysis',
+    );
+    await tester.scrollUntilVisible(
+      startFinder,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
+    expect(tester.widget<AppleButton>(startFinder).onPressed, isNotNull);
+
+    planGate.complete(_coveragePlanSummary23);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('precheck shows local unknown token truncation and quota data', (
@@ -969,58 +1065,58 @@ void main() {
     );
   });
 
-  testWidgets(
-    'valid cache loads inline and invalid cache remains in precheck',
-    (tester) async {
-      final validGateway = _FakeGateway()
-        ..candidatesJson = _candidatePayload()
-        ..cache['cache-key'] = jsonEncode({
-          'entries': [
-            {
-              'path': '/tmp/safe.cache',
-              'size_bytes': 100,
-              'verdict': 'safe_to_remove',
-              'confidence': 'high',
-              'reason': 'Rebuildable cache',
-            },
-          ],
-        });
-      _writeAnalysisCacheFile('cache-key', validGateway.cache['cache-key']!);
-      await tester.pumpWidget(_workspaceShell(validGateway));
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.loadPreviousKey),
-      );
-      await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      );
-      await _goToDetailFromOverview(tester);
-      expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
-      expect(validGateway.byokUsageRecords, isEmpty);
+  testWidgets('valid cache loads inline and invalid cache remains in precheck', (
+    tester,
+  ) async {
+    final validGateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload()
+      ..cache['cache-key'] = jsonEncode({
+        'entries': [
+          {
+            'path': '/tmp/safe.cache',
+            'size_bytes': 100,
+            'verdict': 'safe_to_remove',
+            'confidence': 'high',
+            'reason': 'Rebuildable cache',
+          },
+        ],
+      });
+    _writeAnalysisCacheFile('cache-key', validGateway.cache['cache-key']!);
+    await tester.pumpWidget(_workspaceShell(validGateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+    await _goToDetailFromOverview(tester);
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+    expect(validGateway.byokUsageRecords, isEmpty);
 
-      final invalidGateway = _FakeGateway()
-        ..candidatesJson = _candidatePayload()
-        ..cache['cache-key'] = 'not-json';
-      _writeAnalysisCacheFile('cache-key', invalidGateway.cache['cache-key']!);
-      await tester.pumpWidget(_workspaceShell(invalidGateway));
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.loadPreviousKey),
-      );
-      await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-      await _pumpUntilFound(
-        tester,
-        find.text('Could not load the previous AI result.'),
-      );
-      expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
-      expect(
-        find.text('Could not load the previous AI result.'),
-        findsOneWidget,
-      );
-    },
-  );
+    final invalidGateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload()
+      ..cache['cache-key'] = 'not-json';
+    _writeAnalysisCacheFile('cache-key', invalidGateway.cache['cache-key']!);
+    // Tear down results-phase state so gateway swap runs a fresh precheck bootstrap.
+    await tester.pumpWidget(MaterialApp(home: const SizedBox.shrink()));
+    await tester.pumpAndSettle();
+    AiCandidatesMaterializedCache.instance.clear('snapshot-1');
+    await tester.pumpWidget(_workspaceShell(invalidGateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.loadPreviousKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
+    await _pumpUntilFound(
+      tester,
+      find.text('Could not load the previous AI result.'),
+    );
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
+    expect(find.text('Could not load the previous AI result.'), findsOneWidget);
+  });
 
   testWidgets('loaded results merge partial cleanup metadata from candidates', (
     tester,
@@ -1970,11 +2066,8 @@ void main() {
     await tester.pumpWidget(
       _workspaceShell(expiredGateway, onOpenSettings: () => settingsCalls++),
     );
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+    await tester.tap(find.text('Start AI Analysis'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
     expect(settingsCalls, 3);

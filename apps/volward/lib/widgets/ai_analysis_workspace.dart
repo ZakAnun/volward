@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../ai/ai_analysis_gateway.dart';
+import '../ai/ai_candidates_materialized_cache.dart';
+import '../ai/ai_debug_log.dart';
 import '../ai/ai_conclusion_narrative_cache.dart';
 import '../ai/ai_conclusion_synthesis.dart';
 import '../ai/ai_coverage_coordinator.dart';
@@ -654,6 +656,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   CoveragePlanSummary? _coveragePlanSummary;
   bool _coveragePlanSummaryLoadInFlight = false;
   bool _coveragePlanSummaryBannerLoadAttempted = false;
+  String? _coveragePlanLoadError;
 
   // Optional Stage B conclusion narrative (see ai-results-overview-agents spec).
   bool _narrativeEnabled = false;
@@ -701,12 +704,41 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   bool get _canStartCoverage {
     if (_mode != AiMode.platform) return true;
-    if (_coverageCapBelowEstimate) return false;
-    if (_useFullCoverage && _coverageHydrating) return false;
     if (_platformCredits == null) return false;
+    if (_useFullCoverage &&
+        _coverageHydrating &&
+        _estimatedCoverageCredits == null) {
+      return true;
+    }
     if (_useFullCoverage && _estimatedCoverageCredits == null) return false;
     if (_estimatedCoverageCredits == null) return true;
-    return _platformCredits! >= _estimatedCoverageCredits!;
+    if (_platformCredits! < _estimatedCoverageCredits!) return false;
+    final cap = _coverageBudgetCredits;
+    if (cap != null &&
+        _estimatedCoverageCredits != null &&
+        evaluateCoverageCapGate(
+              estimatedCredits: _estimatedCoverageCredits!,
+              configuredRunCapCredits: cap,
+              accountBalance: _platformCredits!,
+            ) ==
+            CoverageCapGate.insufficientAccountBalance) {
+      return false;
+    }
+    return true;
+  }
+
+  bool get _runCapBelowBufferedEstimate {
+    if (_mode != AiMode.platform) return false;
+    final estimated = _estimatedCoverageCredits;
+    final cap = _coverageBudgetCredits;
+    final balance = _platformCredits;
+    if (estimated == null || cap == null || balance == null) return false;
+    return evaluateCoverageCapGate(
+          estimatedCredits: estimated,
+          configuredRunCapCredits: cap,
+          accountBalance: balance,
+        ) ==
+        CoverageCapGate.capBelowBufferedEstimate;
   }
 
   bool get _showsCoverageV3PrecheckBreakdown =>
@@ -1075,9 +1107,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   @override
   void didUpdateWidget(covariant AiAnalysisWorkspace oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.gateway != widget.gateway ||
-        oldWidget.snapshotId != widget.snapshotId) {
+    if (oldWidget.snapshotId != widget.snapshotId) {
+      if (oldWidget.snapshotId.isNotEmpty) {
+        AiCandidatesMaterializedCache.instance.clear(oldWidget.snapshotId);
+      }
       unawaited(_bootstrap());
+      return;
+    }
+    if (oldWidget.gateway != widget.gateway) {
+      unawaited(_bootstrapPrecheckContext(_beginOperation()));
     }
   }
 
@@ -1163,17 +1201,31 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!mounted) return;
       final l10n = context.l10n;
       final savedAnalysisOnDisk = _savedAnalysisFileExists(widget.snapshotId);
+      final fullCoverageAvailable = AiCoverageCoordinator.instance.isAvailable;
+      volwardAiDebugLog(
+        'workspace bootstrap pre-candidates snapshot=${widget.snapshotId} '
+        'fullCoverageAvailable=$fullCoverageAvailable '
+        'sessionReady=${VolwardSession.instance?.ready ?? false} '
+        'sessionCoverage=${VolwardSession.instance?.hasAiCoverageApi ?? false}',
+      );
       setState(() {
         _phase = _Phase.precheck;
         _candidatesBootstrapPending = true;
-        _useFullCoverage = AiCoverageCoordinator.instance.isAvailable;
+        _useFullCoverage = fullCoverageAvailable;
         _coverageHydrating = false;
         _coverageHydrated = !_useFullCoverage;
         if (savedAnalysisOnDisk) {
           _hasExistingResult = true;
         }
       });
+      volwardAiDebugLog(
+        'workspace awaiting native buildCandidates snapshot=${widget.snapshotId}',
+      );
       final raw = await widget.gateway.buildCandidates(widget.snapshotId);
+      volwardAiDebugLog(
+        'workspace buildCandidates returned len=${raw?.length ?? 0} '
+        'prefix=${raw == null || raw.isEmpty ? "null" : (raw.length > 48 ? "${raw.substring(0, 48)}…" : raw)}',
+      );
       if (!_isCurrent(generation)) return;
       if (raw == null || raw.isEmpty) {
         setState(() {
@@ -1251,11 +1303,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _useFullCoverage = AiCoverageCoordinator.instance.isAvailable;
         _coverageHydrated = !_useFullCoverage;
       });
+      volwardAiDebugLog(
+        'workspace bootstrap post-candidates useFullCoverage=$_useFullCoverage '
+        'unknown=$_displayUnknownCount preClassified=$_displayPreClassifiedCount '
+        'truncated=$_truncated candidatesError=${raw.startsWith('error:') ? raw : 'none'}',
+      );
       if (!preserveInteractivePhase && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_isCurrent(generation) || !mounted) return;
           final fullCoverageReady = AiCoverageCoordinator.instance.isAvailable;
           if (fullCoverageReady && !_useFullCoverage) {
+            volwardAiDebugLog(
+              'workspace promoting Quick→Full after session became available',
+            );
             setState(() {
               _useFullCoverage = true;
               _coverageHydrated = false;
@@ -1282,6 +1342,55 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _phase = _Phase.error;
         _error = error.toString();
       });
+    }
+  }
+
+  /// Refreshes mode, provider, quota, and coverage plan estimate without rebuilding candidates.
+  Future<void> _bootstrapPrecheckContext(int generation) async {
+    if (!_isCurrent(generation) || !mounted) return;
+    if (_candidatesBootstrapPending) return;
+    try {
+      final mode = await widget.gateway.getMode();
+      if (!_isCurrent(generation)) return;
+      unawaited(_loadNarrativeSettings());
+      final provider = await widget.gateway.resolveProvider();
+      if (!_isCurrent(generation)) return;
+      int? platformCredits;
+      if (mode == AiMode.platform && provider != null) {
+        try {
+          final quota = await provider.queryQuota();
+          if (!_isCurrent(generation)) return;
+          platformCredits = quota?.creditsRemaining;
+        } catch (_) {
+          platformCredits = null;
+        }
+      }
+      if (!mounted || !_isCurrent(generation)) return;
+      if (_phase == _Phase.analyzing ||
+          _phase == _Phase.results ||
+          _phase == _Phase.deleting) {
+        setState(() {
+          _mode = mode;
+          _hasProvider = provider != null;
+          _platformCredits = platformCredits;
+        });
+        return;
+      }
+      setState(() {
+        _mode = mode;
+        _hasProvider = provider != null;
+        _platformCredits = platformCredits;
+      });
+      volwardAiDebugLog(
+        'bootstrapPrecheckContext snapshot=${widget.snapshotId} mode=$mode '
+        'credits=$platformCredits canAnalyzeDeps: bootstrapPending=$_candidatesBootstrapPending '
+        'hydrating=$_coverageHydrating capBelow=$_runCapBelowBufferedEstimate',
+      );
+      if (!AiCoverageCoordinator.instance.isAvailable) return;
+      await _hydrateCoveragePrecheck(generation, mode, platformCredits);
+    } catch (error) {
+      if (!_isCurrent(generation) || !mounted) return;
+      volwardAiDebugLog('bootstrapPrecheckContext error=$error');
     }
   }
 
@@ -1430,12 +1539,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Future<void> _startAnalysis() async {
     if (!_hasProvider || _analyzing) return;
-    if (_useFullCoverage && !_coverageHydrated) return;
     await _ensureUnknownCandidatesLoaded();
     if (!mounted) return;
     if (_useFullCoverage) {
+      volwardAiDebugLog(
+        'startAnalysis → Full coverage snapshot=${widget.snapshotId} '
+        'hydrated=$_coverageHydrated planLocalOnly=$_coveragePlanIsLocalOnly',
+      );
       return _startFullCoverageAnalysis();
     }
+    volwardAiDebugLog(
+      'startAnalysis → Quick analyze snapshot=${widget.snapshotId} '
+      'unknown=${_unknown.length} displayUnknown=$_displayUnknownCount',
+    );
     final generation = _beginOperation();
     if (!await _ensurePrivacyAccepted(generation)) return;
     if (!_isCurrent(generation)) return;
@@ -1818,7 +1934,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _estimatedCoverageCredits = estimatedCredits;
       _runBudgetCredits = runBudgetCredits;
       _coverageHydrating = false;
+      _coverageCapBelowEstimate = _runCapBelowBufferedEstimate;
+      _coveragePlanLoadError = summary == null
+          ? context.l10n.aiCoverageUnavailable
+          : null;
     });
+    volwardAiDebugLog(
+      'hydrateCoveragePrecheck snapshot=${widget.snapshotId} '
+      'estimatedCredits=$estimatedCredits runCap=$_coverageBudgetCredits '
+      'platformCredits=$platformCredits capBelow=$_coverageCapBelowEstimate '
+      'planError=${_coveragePlanLoadError != null}',
+    );
   }
 
   bool _isLightweightAnalyzingUi() {
@@ -2344,6 +2470,18 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final generation = _beginOperation();
     await _ensureUnknownCandidatesLoaded();
     if (!mounted) return;
+    if (_runCapBelowBufferedEstimate) {
+      await _raiseConfiguredCoverageCap();
+      if (!mounted || !_isCurrent(generation)) return;
+      final budget = await AiSettingsStore.instance.coverageBudgetForMode(
+        _mode,
+      );
+      setState(() {
+        _coverageBudgetCredits = budget.credits;
+        _coverageCapBelowEstimate = _runCapBelowBufferedEstimate;
+      });
+      if (_runCapBelowBufferedEstimate) return;
+    }
     if (!await _ensurePrivacyAccepted(generation)) return;
     if (!_isCurrent(generation)) return;
     final provider = await widget.gateway.resolveProvider();
@@ -2392,16 +2530,32 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       preloadedPlanSummary: _coveragePlanSummary,
     );
     if (!mounted || !_isCurrent(generation)) return;
-    if (result is StartCoverageBlocked &&
-        result.reason == StartCoverageBlockedReason.capBelowEstimate) {
-      setState(() {
-        _analyzing = false;
-        _coverageUiPrefersAnalyzingPhase = false;
-        _phase = _Phase.precheck;
-        _error = null;
-        _coverageCapBelowEstimate = true;
-      });
-      return;
+    if (result is StartCoverageBlocked) {
+      if (result.reason == StartCoverageBlockedReason.capBelowEstimate) {
+        setState(() {
+          _analyzing = false;
+          _coverageUiPrefersAnalyzingPhase = false;
+          _phase = _Phase.precheck;
+          _error = null;
+          _coverageCapBelowEstimate = true;
+        });
+        return;
+      }
+      if (result.reason ==
+          StartCoverageBlockedReason.insufficientAccountBalance) {
+        final needed = _estimatedCoverageCredits ?? 0;
+        final available = _platformCredits ?? 0;
+        setState(() {
+          _analyzing = false;
+          _coverageUiPrefersAnalyzingPhase = false;
+          _phase = _Phase.precheck;
+          _error = context.l10n.aiCoverageInsufficientForEstimate(
+            needed,
+            available,
+          );
+        });
+        return;
+      }
     }
     if (result is StartFullCoverageUnavailable) {
       setState(() {
@@ -3231,7 +3385,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_candidatesBootstrapPending &&
         _canStartCoverage &&
         !(_mode == AiMode.platform && (_platformCredits == 0)) &&
-        (!_useFullCoverage || (_coverageHydrated && !_coverageHydrating)) &&
         !_coveragePlanIsLocalOnly;
     final needsSettings =
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
@@ -3253,6 +3406,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           style: context.vwBodyStrong,
         ),
         const SizedBox(height: AppleSpacing.xs),
+        if (_useFullCoverage)
+          Text(l10n.aiPrecheckDataScopeHint, style: context.vwCaption),
+        if (_useFullCoverage) const SizedBox(height: AppleSpacing.xs),
         ..._buildPrecheckAiEstimateLines(context),
         if (_mode == AiMode.platform && _narrativeEnabled) ...[
           const SizedBox(height: AppleSpacing.xs),
@@ -3291,10 +3447,18 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             Text(
               l10n.aiCoverageEstimatedCreditsTotal(_estimatedCoverageCredits!),
             ),
+            Text(
+              l10n.aiCoverageBufferedCreditsMinimum(
+                coverageBufferedEstimate(_estimatedCoverageCredits!),
+              ),
+            ),
           ],
+          if (_coverageBudgetCredits != null)
+            Text(l10n.aiCoverageRunCapConfigured(_coverageBudgetCredits!)),
           if (_platformCredits != null)
             Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
-          if (_runBudgetCredits != null)
+          if (_runBudgetCredits != null &&
+              _runBudgetCredits != _coverageBudgetCredits)
             Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
           if ((_coveragePlanMinApiCalls ?? 0) >= 10)
             Text(
@@ -3303,12 +3467,21 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             ),
         ] else if (_useFullCoverage &&
             _mode == AiMode.platform &&
-            _estimatedCoverageCredits != null) ...[
+            _estimatedCoverageCredits != null &&
+            !_coveragePlanIsLocalOnly) ...[
           const SizedBox(height: AppleSpacing.xs),
           Text(l10n.aiCoverageEstimatedCredits(_estimatedCoverageCredits!)),
+          Text(
+            l10n.aiCoverageBufferedCreditsMinimum(
+              coverageBufferedEstimate(_estimatedCoverageCredits!),
+            ),
+          ),
+          if (_coverageBudgetCredits != null)
+            Text(l10n.aiCoverageRunCapConfigured(_coverageBudgetCredits!)),
           if (_platformCredits != null)
             Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
-          if (_runBudgetCredits != null)
+          if (_runBudgetCredits != null &&
+              _runBudgetCredits != _coverageBudgetCredits)
             Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
           if ((_coveragePlanMinApiCalls ?? _estimatedCoverageCredits!) >= 10)
             Text(
@@ -3331,14 +3504,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         ],
         if (_useFullCoverage &&
             _mode == AiMode.platform &&
-            _coverageCapBelowEstimate &&
+            _runCapBelowBufferedEstimate &&
             _estimatedCoverageCredits != null &&
             _coverageBudgetCredits != null) ...[
           const SizedBox(height: AppleSpacing.xs),
           Text(
-            l10n.aiCoverageBudgetPausedCredits(
-              (_estimatedCoverageCredits! * 1.2).ceil(),
+            l10n.aiCoverageRunCapBelowBufferedEstimate(
               _coverageBudgetCredits!,
+              coverageBufferedEstimate(_estimatedCoverageCredits!),
+              _estimatedCoverageCredits!,
             ),
             style: AppleTypography.caption.copyWith(color: tokens.warning),
           ),
@@ -3374,6 +3548,23 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           if (_coverageHydrating) ...[
             const SizedBox(height: AppleSpacing.xs),
             Text(l10n.aiCoverageHydrating, style: context.vwCaption),
+          ],
+          if (_coveragePlanLoadError != null) ...[
+            const SizedBox(height: AppleSpacing.xs),
+            Text(
+              _coveragePlanLoadError!,
+              style: AppleTypography.caption.copyWith(color: tokens.warning),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: AppleButton(
+                label: l10n.aiActionRetry,
+                icon: Icons.refresh_outlined,
+                variant: AppleButtonVariant.pearl,
+                onPressed: () =>
+                    unawaited(_bootstrapPrecheckContext(_beginOperation())),
+              ),
+            ),
           ],
           if (_candidatesBootstrapPending) ...[
             const SizedBox(height: AppleSpacing.xs),

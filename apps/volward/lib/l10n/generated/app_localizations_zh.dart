@@ -902,6 +902,24 @@ class AppLocalizationsZh extends AppLocalizations {
       '以上已显示 API 预估。用户目录全量扫描常见约 40–80 积分；目录下钻可能增加消耗。';
 
   @override
+  String aiCoverageRunCapBelowBufferedEstimate(
+    int cap,
+    int buffered,
+    int estimated,
+  ) {
+    return '单次运行上限（$cap 积分）低于建议值（$buffered 积分，预估 $estimated + 20% 缓冲）。请在设置中提高上限或点击下方按钮。';
+  }
+
+  @override
+  String aiCoverageBufferedCreditsMinimum(int buffered) {
+    return '建议最低（预估 + 20%）：$buffered 积分';
+  }
+
+  @override
+  String get aiPrecheckDataScopeHint =>
+      '扫描会建立本地索引。下方列表是本地预判（可选清理），不是 AI 终审。完整 AI 分析会按覆盖计划分批发送目录与大文件，不会原样重放本列表。';
+
+  @override
   String aiCoverageInsufficientForEstimate(int needed, int available) {
     return '预计需要约 $needed 积分，当前余额 $available。';
   }

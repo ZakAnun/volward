@@ -8,6 +8,7 @@ import '../analytics/analytics_events.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../snapshot_cache.dart';
 import '../volward_session.dart';
+import 'ai_debug_log.dart';
 import 'ai_coverage_job_controller.dart';
 import 'ai_coverage_service.dart';
 import 'ai_provider.dart';
@@ -33,7 +34,7 @@ typedef CoverageServiceFactory =
       String? catalogSnapshotId,
     });
 
-enum StartCoverageBlockedReason { capBelowEstimate }
+enum StartCoverageBlockedReason { capBelowEstimate, insufficientAccountBalance }
 
 sealed class StartFullCoverageResult {
   const StartFullCoverageResult();
@@ -53,6 +54,10 @@ final class StartCoverageBlocked extends StartFullCoverageResult {
 
   static const reasonCapBelowEstimate = StartCoverageBlocked(
     StartCoverageBlockedReason.capBelowEstimate,
+  );
+
+  static const reasonInsufficientAccountBalance = StartCoverageBlocked(
+    StartCoverageBlockedReason.insufficientAccountBalance,
   );
 }
 
@@ -154,6 +159,11 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   void attach(VolwardSession session) {
     if (identical(_session, session)) return;
     _session = session;
+    volwardAiDebugLog(
+      'coordinator attach isAvailable=$isAvailable '
+      'sessionReady=${session.ready} coverage=${session.hasAiCoverageApi} '
+      'tree=${session.hasAiTreeCoverageApi}',
+    );
     WidgetsBinding.instance.addObserver(this);
     unawaited(_tryAutoResumeSavedJobs());
   }
@@ -200,8 +210,16 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
           : await engine.buildPlan(snapshotId);
       _cachedPlanSnapshotId = snapshotId;
       _cachedPlanSummary = summary;
+      volwardAiDebugLog(
+        'planSummary snapshot=$snapshotId planVersion=${summary.planVersion} '
+        'localSafe=${summary.localSafeFiles} localKeep=${summary.localKeepFiles} '
+        'tailFiles=${summary.tailFiles ?? summary.tailFileCount} '
+        'treePending=${summary.treePendingFiles} '
+        'minApi=${coveragePlanMinApiCalls(summary)}',
+      );
       return summary;
-    } catch (_) {
+    } catch (e) {
+      volwardAiDebugLog('planSummary failed snapshot=$snapshotId error=$e');
       return null;
     }
   }
@@ -317,7 +335,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
       provider,
       catalogSnapshotId: snapshotId,
     );
-    if (service == null) return const StartFullCoverageUnavailable();
+    if (service == null) {
+      volwardAiDebugLog('startFullCoverage unavailable (prepareService null)');
+      return const StartFullCoverageUnavailable();
+    }
     final summary =
         preloadedPlanSummary ??
         (_cachedPlanSnapshotId == snapshotId ? _cachedPlanSummary : null) ??
@@ -326,13 +347,25 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     if (summary == null &&
         (debugRequirePlanSummary ||
             (session != null && session.hasAiTreeCoverageApi))) {
+      volwardAiDebugLog(
+        'startFullCoverage unavailable (plan summary null, treeApi=${session?.hasAiTreeCoverageApi})',
+      );
       return const StartFullCoverageUnavailable();
     }
     if (summary != null &&
         summary.planVersion >= 3 &&
         !coveragePlanRequiresApi(summary)) {
+      volwardAiDebugLog(
+        'startFullCoverage → local-only plan v${summary.planVersion} '
+        'localSafe=${summary.localSafeFiles} localKeep=${summary.localKeepFiles}',
+      );
       return const StartFullCoverageLocalOnly();
     }
+    volwardAiDebugLog(
+      'startFullCoverage starting planVersion=${summary?.planVersion} '
+      'minApi=${summary == null ? "?" : coveragePlanMinApiCalls(summary)} '
+      'treeCredits=${summary?.estimatedTreeCredits} tailCredits=${summary?.estimatedTailCredits}',
+    );
     final budget = await AiSettingsStore.instance.coverageBudgetForMode(mode);
     var budgetTokens = budget.tokens;
     var resolvedBudgetCredits = budgetCredits ?? budget.credits;
@@ -341,16 +374,23 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
       final configured = await AiSettingsStore.instance.coverageBudgetForMode(
         AiMode.platform,
       );
-      final fromEstimate = (estimatedCredits * 1.2).ceil();
-      if (fromEstimate > configured.credits) {
+      var accountBalance = 0;
+      if (provider is PlatformAiProvider) {
+        await provider.queryQuota();
+        accountBalance = provider.lastCreditsRemaining ?? 0;
+      }
+      final gate = evaluateCoverageCapGate(
+        estimatedCredits: estimatedCredits,
+        configuredRunCapCredits: configured.credits,
+        accountBalance: accountBalance,
+      );
+      if (gate == CoverageCapGate.capBelowBufferedEstimate) {
         return StartCoverageBlocked.reasonCapBelowEstimate;
       }
+      if (gate == CoverageCapGate.insufficientAccountBalance) {
+        return StartCoverageBlocked.reasonInsufficientAccountBalance;
+      }
       if (budgetCredits == null) {
-        var accountBalance = 0;
-        if (provider is PlatformAiProvider) {
-          await provider.queryQuota();
-          accountBalance = provider.lastCreditsRemaining ?? 0;
-        }
         resolvedBudgetCredits = await AiSettingsStore.instance
             .resolveRunBudgetCredits(
               estimatedCredits: estimatedCredits,

@@ -111,6 +111,32 @@ bool coverageJobBillingMatchesMode(AiMode mode, CoverageJobState state) {
   };
 }
 
+/// Buffered API credits required for a run (estimate + 20%, same as run budget math).
+int coverageBufferedEstimate(int estimatedCredits) =>
+    (estimatedCredits * 1.2).ceil();
+
+enum CoverageCapGate {
+  ok,
+  capBelowBufferedEstimate,
+  insufficientAccountBalance,
+}
+
+/// Platform precheck gate: account balance vs configured single-run cap vs buffered estimate.
+CoverageCapGate evaluateCoverageCapGate({
+  required int estimatedCredits,
+  required int configuredRunCapCredits,
+  required int accountBalance,
+}) {
+  final buffered = coverageBufferedEstimate(estimatedCredits);
+  if (buffered > configuredRunCapCredits) {
+    return CoverageCapGate.capBelowBufferedEstimate;
+  }
+  if (accountBalance < estimatedCredits) {
+    return CoverageCapGate.insufficientAccountBalance;
+  }
+  return CoverageCapGate.ok;
+}
+
 /// Next token cap when raising budget: prefer Settings when the job snapshot is stale.
 int coverageSuggestedTokenBudgetRaise({
   required int jobBudgetTokens,

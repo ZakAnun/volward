@@ -25,6 +25,7 @@ pub mod scan_tree;
 pub mod similar_photos;
 pub mod snapshot_catalog;
 pub mod string_table;
+pub mod unclassified_coverage_cache;
 
 pub use ai_analysis::{compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
 pub use ai_candidates::{
@@ -32,6 +33,7 @@ pub use ai_candidates::{
     indexed_local_exclusion_prefixes, resolve_unclassified_for_ai, AiCandidate, AiCandidateBuilder,
     AiCandidateSet, PreClassifiedEntry, UnclassifiedAiRouting, AI_AGGREGATE_DELETE_TARGET_PREFIX,
     DEFAULT_CANDIDATE_CAP, DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
+    FUNNEL_UNCLASSIFIED_FILE_BUDGET,
 };
 pub use ai_coverage::{
     build_ai_coverage_plan, coverage_group_member_paths, AiCoveragePlan, AiCoverageRow,
@@ -39,9 +41,16 @@ pub use ai_coverage::{
 };
 pub use ai_coverage_propagate::{apply_dir_verdict, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
-    build_ai_tree_plan, build_unclassified_subtree_index, expand_tree_drill_children,
-    expand_tree_drill_children_with_index, AiTreeNode, AiTreePlan, UnclassifiedSubtreeIndex,
+    build_ai_tree_plan, build_ai_tree_plan_from_coverage_cache,
+    build_unclassified_subtree_index, expand_tree_drill_children,
+    expand_tree_drill_children_with_index, scan_unclassified_for_coverage, AiTreeNode,
+    AiTreePlan, UnclassifiedCoverageScan, UnclassifiedSubtreeIndex,
     AI_COVERAGE_TREE_PLAN_VERSION,
+};
+pub use unclassified_coverage_cache::{
+    build_unclassified_coverage_cache, coverage_cache_sidecar_path,
+    load_coverage_cache_sidecar, save_coverage_cache_sidecar, CoverageCacheSidecarMeta,
+    UnclassifiedCoverageCache, UNCLASSIFIED_COVERAGE_CACHE_VERSION,
 };
 pub use capability::*;
 pub use capability_job::*;

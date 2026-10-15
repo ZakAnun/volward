@@ -82,20 +82,34 @@ pub fn build_ai_tree_plan(
     protected_prefixes: &[String],
     personal_prefixes: &[String],
 ) -> AiTreePlan {
-    let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
-    let scan = scan_unclassified_for_tree_plan(
+    let cache = crate::unclassified_coverage_cache::build_unclassified_coverage_cache(
         index,
         kb,
         protected_prefixes,
         personal_prefixes,
-        &funnel_map,
     );
+    build_ai_tree_plan_from_coverage_cache(
+        index,
+        kb,
+        protected_prefixes,
+        personal_prefixes,
+        &cache,
+    )
+}
+
+pub fn build_ai_tree_plan_from_coverage_cache(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    protected_prefixes: &[String],
+    personal_prefixes: &[String],
+    cache: &crate::unclassified_coverage_cache::UnclassifiedCoverageCache,
+) -> AiTreePlan {
     let seed_nodes = collect_seed_nodes_under(
         index,
         kb,
         protected_prefixes,
         personal_prefixes,
-        &scan.subtree_index,
+        &cache.subtree_index,
         &index.root_path,
     );
 
@@ -104,12 +118,13 @@ pub fn build_ai_tree_plan(
         snapshot_id: index.snapshot_id.clone(),
         root_path: index.root_path.clone(),
         estimated_tree_credits: seed_nodes.len().div_ceil(TREE_NODE_BATCH_SIZE as usize) as u64,
-        estimated_tail_credits: scan.tail_file_paths
+        estimated_tail_credits: cache
+            .tail_file_paths
             .len()
             .div_ceil(TAIL_FILE_BATCH_SIZE as usize) as u64,
         seed_nodes,
-        tail_file_paths: scan.tail_file_paths,
-        funnel_stats: scan.funnel_stats,
+        tail_file_paths: cache.tail_file_paths.clone(),
+        funnel_stats: cache.funnel_stats,
     }
 }
 
@@ -127,10 +142,12 @@ pub struct UnclassifiedSubtreeIndex {
     by_dir: HashMap<String, DirUnclassifiedAgg>,
 }
 
-struct UnclassifiedPlanScan {
-    funnel_stats: CoverageFunnelStats,
-    tail_file_paths: Vec<(String, u64)>,
-    subtree_index: UnclassifiedSubtreeIndex,
+/// One pass over unclassified files: funnel stats, tail queue, directory aggregates.
+#[derive(Debug, Clone)]
+pub struct UnclassifiedCoverageScan {
+    pub funnel_stats: CoverageFunnelStats,
+    pub tail_file_paths: Vec<(String, u64)>,
+    pub subtree_index: UnclassifiedSubtreeIndex,
 }
 
 /// Build subtree aggregates in one pass (used by expand/drill when plan cache is unavailable).
@@ -141,7 +158,7 @@ pub fn build_unclassified_subtree_index(
     personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
 ) -> UnclassifiedSubtreeIndex {
-    scan_unclassified_for_tree_plan(
+    scan_unclassified_for_coverage(
         index,
         kb,
         protected_prefixes,
@@ -151,23 +168,19 @@ pub fn build_unclassified_subtree_index(
     .subtree_index
 }
 
-fn scan_unclassified_for_tree_plan(
+pub fn scan_unclassified_for_coverage(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,
     protected_prefixes: &[String],
     personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
-) -> UnclassifiedPlanScan {
-    let classified = index.classified_paths();
+) -> UnclassifiedCoverageScan {
     let root = normalize_path(&index.root_path);
     let mut funnel_stats = CoverageFunnelStats::default();
     let mut tail_file_paths: Vec<(String, u64)> = Vec::new();
     let mut subtree_index = UnclassifiedSubtreeIndex::default();
 
     for (path, size_bytes) in index.unclassified_files() {
-        if classified.contains(&path) {
-            continue;
-        }
         let resolution = resolve_file(
             index,
             kb,
@@ -212,7 +225,7 @@ fn scan_unclassified_for_tree_plan(
 
     tail_file_paths.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
-    UnclassifiedPlanScan {
+    UnclassifiedCoverageScan {
         funnel_stats,
         tail_file_paths,
         subtree_index,

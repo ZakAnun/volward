@@ -818,11 +818,45 @@ impl SnapshotIndex {
 
     /// Unclassified files with sizes (index `file_size_by_path`).
     pub fn unclassified_files(&self) -> Vec<(String, u64)> {
-        self.file_size_by_path
-            .iter()
-            .filter(|(path_id, _)| !self.entry_id_by_path.contains_key(path_id))
-            .map(|(path_id, size)| (self.table.resolve(*path_id).to_string(), *size))
-            .collect()
+        self.unclassified_files_largest_n(usize::MAX).1
+    }
+
+    /// Returns `(total_unclassified_count, up to limit largest files by size)`.
+    ///
+    /// Single pass over `file_size_by_path` — does not materialize every path when
+    /// `limit` is smaller than the unclassified population (used for AI candidate build).
+    pub fn unclassified_files_largest_n(&self, limit: usize) -> (usize, Vec<(String, u64)>) {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+
+        let limit = limit.max(1);
+        let mut total = 0usize;
+        // Keep path ids in the heap; resolve strings only for the final top-k.
+        let mut heap: BinaryHeap<(Reverse<u64>, u32)> = BinaryHeap::new();
+
+        for (path_id, size) in &self.file_size_by_path {
+            if self.entry_id_by_path.contains_key(path_id)
+                || self.directory_by_id.contains_key(path_id)
+            {
+                continue;
+            }
+            total += 1;
+            if heap.len() < limit {
+                heap.push((Reverse(*size), *path_id));
+            } else if let Some((Reverse(smallest), _)) = heap.peek() {
+                if *size > *smallest {
+                    heap.pop();
+                    heap.push((Reverse(*size), *path_id));
+                }
+            }
+        }
+
+        let mut files: Vec<(String, u64)> = heap
+            .into_iter()
+            .map(|(Reverse(size), path_id)| (self.table.resolve(path_id).to_string(), size))
+            .collect();
+        files.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        (total, files)
     }
 
     /// Returns a bounded page of all flat file records (classified entries
@@ -2116,6 +2150,35 @@ mod tests {
         let catalog = SnapshotIndex::from(&snapshot);
         let result = catalog.query_directory("/root/nonexistent", None, false, "name");
         assert!(result.direct_children.is_empty());
+    }
+
+    #[test]
+    fn unclassified_files_largest_n_returns_total_and_top_by_size() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        for i in 0..20u64 {
+            builder.record_file_size(&format!("/root/file_{i}.dat"), i + 1);
+        }
+        let index = builder.finish(
+            "snap-topk".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats {
+                paths_seen: 21,
+                dirs_seen: 0,
+                files_seen: 20,
+                files_in_snapshot: 0,
+                paths_skipped: 0,
+                truncated: false,
+                incomplete_reason: None,
+            },
+        );
+
+        let (total, top) = index.unclassified_files_largest_n(5);
+        assert_eq!(total, 20);
+        assert_eq!(top.len(), 5);
+        assert_eq!(top[0].1, 20);
+        assert_eq!(top[4].1, 16);
     }
 
     #[test]

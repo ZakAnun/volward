@@ -335,6 +335,32 @@ void main() {
     );
   });
 
+  test(
+    'evaluateCoverageCapGate: est=1 cap=1 balance=28 → capBelowBufferedEstimate',
+    () {
+      expect(
+        evaluateCoverageCapGate(
+          estimatedCredits: 1,
+          configuredRunCapCredits: 1,
+          accountBalance: 28,
+        ),
+        CoverageCapGate.capBelowBufferedEstimate,
+      );
+      expect(coverageBufferedEstimate(1), 2);
+    },
+  );
+
+  test('evaluateCoverageCapGate: est=1 cap=100 balance=28 → ok', () {
+    expect(
+      evaluateCoverageCapGate(
+        estimatedCredits: 1,
+        configuredRunCapCredits: 100,
+        accountBalance: 28,
+      ),
+      CoverageCapGate.ok,
+    );
+  });
+
   test('coverageIgnoreStalePausedJobState drops pre-resume paused emit', () {
     const paused = CoverageJobState(
       snapshotId: 's',

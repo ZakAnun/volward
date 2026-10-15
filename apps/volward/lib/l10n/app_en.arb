@@ -636,6 +636,29 @@
   },
   "aiCoveragePurchaseFooter": "A basic Home full run typically uses about 40–80 credits (1 credit = 1 API call). Default run cap is 100. You will see an estimate before starting.",
   "aiCoveragePurchaseFooterConditional": "Estimated API usage is shown above. Home-folder scans often use about 40–80 credits; tree drill-down may add more.",
+  "aiCoverageRunCapBelowBufferedEstimate": "Single-run limit ({cap} credits) is below the suggested minimum ({buffered} credits, estimate {estimated} + 20% buffer). Raise the limit in Settings or use the button below.",
+  "@aiCoverageRunCapBelowBufferedEstimate": {
+    "placeholders": {
+      "cap": {
+        "type": "int"
+      },
+      "buffered": {
+        "type": "int"
+      },
+      "estimated": {
+        "type": "int"
+      }
+    }
+  },
+  "aiCoverageBufferedCreditsMinimum": "Suggested minimum (estimate + 20%): {buffered} credits",
+  "@aiCoverageBufferedCreditsMinimum": {
+    "placeholders": {
+      "buffered": {
+        "type": "int"
+      }
+    }
+  },
+  "aiPrecheckDataScopeHint": "Scan builds a local index. Items below are local pre-check suggestions (optional cleanup). Full AI analysis uses separate directory and file batches from the coverage plan—not this list as-is.",
   "aiCoverageInsufficientForEstimate": "Need about {needed} credits; you have {available}.",
   "@aiCoverageInsufficientForEstimate": {
     "placeholders": {

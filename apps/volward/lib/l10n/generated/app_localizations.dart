@@ -1608,6 +1608,28 @@ abstract class AppLocalizations {
   /// **'Estimated API usage is shown above. Home-folder scans often use about 40–80 credits; tree drill-down may add more.'**
   String get aiCoveragePurchaseFooterConditional;
 
+  /// No description provided for @aiCoverageRunCapBelowBufferedEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Single-run limit ({cap} credits) is below the suggested minimum ({buffered} credits, estimate {estimated} + 20% buffer). Raise the limit in Settings or use the button below.'**
+  String aiCoverageRunCapBelowBufferedEstimate(
+    int cap,
+    int buffered,
+    int estimated,
+  );
+
+  /// No description provided for @aiCoverageBufferedCreditsMinimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested minimum (estimate + 20%): {buffered} credits'**
+  String aiCoverageBufferedCreditsMinimum(int buffered);
+
+  /// No description provided for @aiPrecheckDataScopeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan builds a local index. Items below are local pre-check suggestions (optional cleanup). Full AI analysis uses separate directory and file batches from the coverage plan—not this list as-is.'**
+  String get aiPrecheckDataScopeHint;
+
   /// No description provided for @aiCoverageInsufficientForEstimate.
   ///
   /// In en, this message translates to:

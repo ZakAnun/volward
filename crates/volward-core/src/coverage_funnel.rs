@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::ai_candidates::{
     ai_cleanup_hint_for_path, hint_source_skips_ai, pre_classified_from_heuristics,
     pre_classified_from_hint, pre_classified_from_kb, pre_classified_under_index_prefix,
@@ -336,7 +338,7 @@ pub fn build_coverage_funnel_context(
     build_funnel_context_for_files(index, &paths, kb, protected_prefixes)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CoverageFunnelStats {
     pub local_safe_files: u64,
     pub local_keep_files: u64,

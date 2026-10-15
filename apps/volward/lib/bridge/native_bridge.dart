@@ -3,6 +3,9 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
+
+import '../ai/ai_debug_log.dart';
 
 typedef VolwardEngineCreateNative = Pointer<Void> Function();
 typedef VolwardEngineCreate = Pointer<Void> Function();
@@ -466,6 +469,41 @@ final class VolwardNativeBridge implements VolwardBridge {
         _aiTreeBatchSize != null &&
         _aiBuildTreeRequestJson != null &&
         _aiParseTreeResponseJson != null;
+    if (kDebugMode) {
+      final missing = <String>[];
+      if (_buildAiCoveragePlanJson == null) {
+        missing.add('volward_ai_build_coverage_plan_json');
+      }
+      if (_nextAiCoveragePageJson == null) {
+        missing.add('volward_ai_next_coverage_page_json');
+      }
+      if (_resolveAiCoverageGroupJson == null) {
+        missing.add('volward_ai_resolve_coverage_group_json');
+      }
+      if (_buildAiTreeCoveragePlanJson == null) {
+        missing.add('volward_ai_build_tree_coverage_plan_json');
+      }
+      if (_nextAiTreeCoveragePageJson == null) {
+        missing.add('volward_ai_next_tree_coverage_page_json');
+      }
+      if (_nextAiTailCoveragePageJson == null) {
+        missing.add('volward_ai_next_tail_coverage_page_json');
+      }
+      if (_expandAiTreeNodeJson == null) {
+        missing.add('volward_ai_expand_tree_node_json');
+      }
+      if (_applyAiDirVerdictJson == null) {
+        missing.add('volward_ai_apply_dir_verdict_json');
+      }
+      if (_listLocalCoverageVerdictsJson == null) {
+        missing.add('volward_ai_list_local_coverage_verdicts_json');
+      }
+      volwardAiDebugLog(
+        'native FFI coverage=$hasAiCoverageApi tree=$hasAiTreeCoverageApi '
+        'session=$hasAiSessionApi asyncCandidates=$hasAsyncAiCandidatesApi '
+        'missing=${missing.isEmpty ? "none" : missing.join(", ")}',
+      );
+    }
     _queryDirectoryJson = _tryLookupQueryDirectoryJson();
     _refreshDirectory = _tryLookupRefreshDirectory();
     _loadIndexFromPath = _tryLookupLoadIndexFromPath();
