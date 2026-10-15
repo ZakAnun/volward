@@ -129,17 +129,17 @@ pub fn build_ai_tree_plan_from_coverage_cache(
 }
 
 #[derive(Debug, Default, Clone)]
-struct DirUnclassifiedAgg {
-    unclassified_files: u64,
-    local_files: u64,
-    ai_pending_files: u64,
-    ext_counts: HashMap<String, u32>,
+pub(crate) struct DirUnclassifiedAgg {
+    pub(crate) unclassified_files: u64,
+    pub(crate) local_files: u64,
+    pub(crate) ai_pending_files: u64,
+    pub(crate) ext_counts: HashMap<String, u32>,
 }
 
 /// Per-directory aggregates for unclassified files (one scan over the unclassified set).
 #[derive(Debug, Default, Clone)]
 pub struct UnclassifiedSubtreeIndex {
-    by_dir: HashMap<String, DirUnclassifiedAgg>,
+    pub(crate) by_dir: HashMap<String, DirUnclassifiedAgg>,
 }
 
 /// One pass over unclassified files: funnel stats, tail queue, directory aggregates.

@@ -1057,7 +1057,7 @@ impl VolwardEngine {
         self.set_last_snapshot_json(&json)
     }
 
-    fn clear_local_coverage_funnel_cache(&self) {
+    pub(crate) fn clear_local_coverage_funnel_cache(&self) {
         if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
             *guard = None;
         }
@@ -1090,37 +1090,42 @@ impl VolwardEngine {
             index_version,
         );
 
-        let built = Arc::new(build_unclassified_coverage_cache(
-            index,
-            kb,
-            protected_prefixes,
-            &[],
-        ));
-        let funnel_map = Arc::new(built.funnel_map.clone());
-        let classified = Arc::new(built.classified.clone());
-        let subtree_index = Arc::new(built.subtree_index.clone());
+        let (built, built_fresh) =
+            if let Some(restored) =
+                volward_core::unclassified_coverage_cache::try_load_coverage_cache_from_disk(
+                    &snapshot_id,
+                    index_version,
+                )
+            {
+                (Arc::new(restored), false)
+            } else {
+                (
+                    Arc::new(build_unclassified_coverage_cache(
+                        index,
+                        kb,
+                        protected_prefixes,
+                        &[],
+                    )),
+                    true,
+                )
+            };
 
-        if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
-            *guard = Some(LocalCoverageFunnelCache {
-                snapshot_id: snapshot_id.clone(),
+        self.store_unclassified_coverage_cache(
+            &snapshot_id,
+            index_version,
+            built.clone(),
+        );
+
+        if built_fresh {
+            let wire = volward_core::coverage_cache_to_persisted(
+                built.as_ref(),
+                &snapshot_id,
                 index_version,
-                funnel_map,
-                classified,
-            });
-        }
-        if let Ok(mut guard) = self.unclassified_subtree_index_cache.lock() {
-            *guard = Some(UnclassifiedSubtreeIndexCache {
-                snapshot_id: snapshot_id.clone(),
-                index_version,
-                subtree_index,
-            });
-        }
-        if let Ok(mut guard) = self.unclassified_coverage_cache.lock() {
-            *guard = Some(UnclassifiedCoverageCacheSlot {
-                snapshot_id: snapshot_id.clone(),
-                index_version,
-                cache: built.clone(),
-            });
+            );
+            let _ = volward_core::save_coverage_cache_bin(
+                &volward_core::coverage_cache_bin_path(&snapshot_id),
+                &wire,
+            );
         }
         let sidecar = volward_core::unclassified_coverage_cache::CoverageCacheSidecarMeta::from_cache(
             &snapshot_id,
@@ -1134,6 +1139,40 @@ impl VolwardEngine {
             &sidecar,
         );
         built
+    }
+
+    fn store_unclassified_coverage_cache(
+        &self,
+        snapshot_id: &str,
+        index_version: u64,
+        built: Arc<UnclassifiedCoverageCache>,
+    ) {
+        let funnel_map = Arc::new(built.funnel_map.clone());
+        let classified = Arc::new(built.classified.clone());
+        let subtree_index = Arc::new(built.subtree_index.clone());
+
+        if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
+            *guard = Some(LocalCoverageFunnelCache {
+                snapshot_id: snapshot_id.to_string(),
+                index_version,
+                funnel_map,
+                classified,
+            });
+        }
+        if let Ok(mut guard) = self.unclassified_subtree_index_cache.lock() {
+            *guard = Some(UnclassifiedSubtreeIndexCache {
+                snapshot_id: snapshot_id.to_string(),
+                index_version,
+                subtree_index,
+            });
+        }
+        if let Ok(mut guard) = self.unclassified_coverage_cache.lock() {
+            *guard = Some(UnclassifiedCoverageCacheSlot {
+                snapshot_id: snapshot_id.to_string(),
+                index_version,
+                cache: built,
+            });
+        }
     }
 
     fn unclassified_subtree_index_for(
@@ -3267,6 +3306,41 @@ mod tests {
         assert!(parsed["local_keep_files"].as_u64().unwrap_or(0) >= 1);
         assert!(parsed["tail_files"].as_u64().unwrap_or(0) >= 1);
         assert!(parsed["tree_pending_files"].as_u64().unwrap_or(0) >= 1);
+    }
+
+    #[test]
+    fn coverage_sidecar_restores_cache_after_memory_clear() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let dir = std::env::temp_dir().join("volward-facade-sidecar-restore");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("VOLWARD_CACHE_DIR", dir.to_string_lossy().as_ref());
+
+        let engine = VolwardEngine::new();
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.record_file_size("/root/a.dat", 100);
+        let index = builder.finish(
+            "sidecar-restore-snap".to_string(),
+            1,
+            7,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+        let first = engine.build_ai_tree_plan_json("sidecar-restore-snap");
+        assert!(!first.starts_with("error:"));
+        assert!(
+            volward_core::coverage_cache_bin_path("sidecar-restore-snap").exists(),
+            "first build should persist sidecar bin"
+        );
+
+        engine.clear_local_coverage_funnel_cache();
+        let second = engine.build_ai_tree_plan_json("sidecar-restore-snap");
+        assert_eq!(first, second);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("VOLWARD_CACHE_DIR");
     }
 
     #[test]

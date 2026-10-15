@@ -979,6 +979,53 @@ void main() {
     },
   );
 
+  testWidgets('raising run cap clears cap-below-buffered and enables start', (
+    tester,
+  ) async {
+    late Directory tempDir;
+    await tester.runAsync(() async {
+      tempDir = await Directory.systemTemp.createTemp('volward-ws-raise-cap');
+      final settingsFile = File('${tempDir.path}/settings.json')
+        ..writeAsStringSync('{"ai_full_run_budget_credits":1}');
+      AiSettingsStore.instance.settingsFileForTest = settingsFile;
+    });
+    addTearDown(() async {
+      AiSettingsStore.instance.settingsFileForTest = null;
+      if (tempDir.existsSync()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    AiCoverageCoordinator.debugForceAvailable = true;
+    AiCoverageCoordinator.debugPlanSummary = (_) async =>
+        _coveragePlanSummary1Credit;
+    final gateway = _FakeGateway()
+      ..mode = AiMode.platform
+      ..provider = _ResultProvider(
+        const [],
+        quota: const AiQuotaInfo(creditsRemaining: 28, creditsTotal: 40),
+      )
+      ..candidatesJson = _candidatePayload(hasExistingResult: false);
+
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(tester, find.text('Raise limit to match estimate'));
+    await tester.tap(find.text('Raise limit to match estimate'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Raise limit & resume'));
+    await tester.pumpAndSettle();
+
+    final startFinder = find.byWidgetPredicate(
+      (w) => w is AppleButton && w.label == 'Start AI Analysis',
+    );
+    await tester.scrollUntilVisible(
+      startFinder,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
+    expect(tester.widget<AppleButton>(startFinder).onPressed, isNotNull);
+  });
+
   testWidgets('precheck keeps start enabled while coverage plan is loading', (
     tester,
   ) async {

@@ -61,10 +61,7 @@ impl CoverageCacheSidecarMeta {
 }
 
 pub fn coverage_cache_sidecar_path(snapshot_id: &str) -> PathBuf {
-    std::env::var("VOLWARD_SNAPSHOT_CACHE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir())
-        .join(format!("{snapshot_id}.coverage_cache.json"))
+    crate::unclassified_coverage_cache_persist::coverage_cache_meta_path(snapshot_id)
 }
 
 pub fn save_coverage_cache_sidecar(
@@ -92,13 +89,122 @@ pub fn invalidate_stale_coverage_cache_sidecar(
     snapshot_id: &str,
     index_version: u64,
 ) {
-    let path = coverage_cache_sidecar_path(snapshot_id);
-    let Some(meta) = load_coverage_cache_sidecar(&path) else {
+    use crate::unclassified_coverage_cache_persist::coverage_cache_bin_path;
+
+    let meta_path = coverage_cache_sidecar_path(snapshot_id);
+    let bin_path = coverage_cache_bin_path(snapshot_id);
+    let Some(meta) = load_coverage_cache_sidecar(&meta_path) else {
         return;
     };
     if meta.snapshot_id != snapshot_id || meta.index_version != index_version {
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(meta_path);
+        let _ = std::fs::remove_file(bin_path);
     }
+}
+
+pub fn coverage_cache_to_persisted(
+    cache: &UnclassifiedCoverageCache,
+    snapshot_id: &str,
+    index_version: u64,
+) -> crate::unclassified_coverage_cache_persist::CoverageCachePersistedV1 {
+    use crate::unclassified_coverage_cache_persist::PersistedDirUnclassifiedAgg;
+    use std::collections::HashMap;
+
+    let subtree_by_dir = cache
+        .subtree_index
+        .by_dir
+        .iter()
+        .map(|(dir, agg)| {
+            (
+                dir.clone(),
+                PersistedDirUnclassifiedAgg {
+                    unclassified_files: agg.unclassified_files,
+                    local_files: agg.local_files,
+                    ai_pending_files: agg.ai_pending_files,
+                    ext_counts: agg.ext_counts.clone(),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    crate::unclassified_coverage_cache_persist::CoverageCachePersistedV1 {
+        snapshot_id: snapshot_id.to_string(),
+        index_version,
+        funnel_map: cache.funnel_map.clone(),
+        classified: cache.classified.iter().cloned().collect(),
+        funnel_stats: cache.funnel_stats,
+        subtree_by_dir,
+        tail_file_paths: cache.tail_file_paths.clone(),
+        funnel_largest_files: cache.funnel_largest_files.clone(),
+        total_unclassified_file_count: cache.total_unclassified_file_count,
+    }
+}
+
+pub fn coverage_cache_from_persisted(
+    wire: crate::unclassified_coverage_cache_persist::CoverageCachePersistedV1,
+) -> UnclassifiedCoverageCache {
+    use crate::ai_coverage_tree::DirUnclassifiedAgg;
+    use std::collections::HashSet;
+
+    let mut by_dir = std::collections::HashMap::new();
+    for (dir, agg) in wire.subtree_by_dir {
+        by_dir.insert(
+            dir,
+            DirUnclassifiedAgg {
+                unclassified_files: agg.unclassified_files,
+                local_files: agg.local_files,
+                ai_pending_files: agg.ai_pending_files,
+                ext_counts: agg.ext_counts,
+            },
+        );
+    }
+    let total_unclassified =
+        UnclassifiedCoverageCache::total_unclassified_from_stats(&wire.funnel_stats);
+    UnclassifiedCoverageCache {
+        funnel_map: wire.funnel_map,
+        classified: wire.classified.into_iter().collect::<HashSet<_>>(),
+        funnel_stats: wire.funnel_stats,
+        subtree_index: crate::ai_coverage_tree::UnclassifiedSubtreeIndex { by_dir },
+        tail_file_paths: wire.tail_file_paths,
+        funnel_largest_files: wire.funnel_largest_files,
+        total_unclassified_file_count: wire.total_unclassified_file_count,
+        total_unclassified,
+    }
+}
+
+pub fn try_load_coverage_cache_from_disk(
+    snapshot_id: &str,
+    index_version: u64,
+) -> Option<UnclassifiedCoverageCache> {
+    use crate::unclassified_coverage_cache_persist::{
+        coverage_cache_bin_path, load_coverage_cache_bin,
+    };
+
+    let meta_path = coverage_cache_sidecar_path(snapshot_id);
+    let bin_path = coverage_cache_bin_path(snapshot_id);
+    if let Some(meta) = load_coverage_cache_sidecar(&meta_path) {
+        if meta.snapshot_id != snapshot_id || meta.index_version != index_version {
+            let _ = std::fs::remove_file(meta_path);
+            let _ = std::fs::remove_file(bin_path);
+            return None;
+        }
+    }
+    let wire = load_coverage_cache_bin(&bin_path)?;
+    if wire.snapshot_id != snapshot_id || wire.index_version != index_version {
+        let _ = std::fs::remove_file(bin_path);
+        let _ = std::fs::remove_file(meta_path);
+        return None;
+    }
+    if let Some(meta) = load_coverage_cache_sidecar(&meta_path) {
+        if meta.funnel_stats != wire.funnel_stats
+            || meta.total_unclassified
+                != UnclassifiedCoverageCache::total_unclassified_from_stats(&wire.funnel_stats)
+        {
+            let _ = std::fs::remove_file(bin_path);
+            let _ = std::fs::remove_file(meta_path);
+            return None;
+        }
+    }
+    Some(coverage_cache_from_persisted(wire))
 }
 
 pub fn build_unclassified_coverage_cache(
@@ -147,7 +253,7 @@ mod tests {
     fn invalidate_stale_sidecar_removes_mismatched_meta() {
         let dir = std::env::temp_dir().join("volward-sidecar-stale");
         let _ = std::fs::remove_dir_all(&dir);
-        std::env::set_var("VOLWARD_SNAPSHOT_CACHE_DIR", dir.to_string_lossy().as_ref());
+        std::env::set_var("VOLWARD_CACHE_DIR", dir.to_string_lossy().as_ref());
         let path = coverage_cache_sidecar_path("snap-a");
         let meta = CoverageCacheSidecarMeta {
             version: UNCLASSIFIED_COVERAGE_CACHE_VERSION,
@@ -160,7 +266,37 @@ mod tests {
         invalidate_stale_coverage_cache_sidecar("snap-a", 2);
         assert!(load_coverage_cache_sidecar(&path).is_none());
         let _ = std::fs::remove_dir_all(&dir);
-        std::env::remove_var("VOLWARD_SNAPSHOT_CACHE_DIR");
+        std::env::remove_var("VOLWARD_CACHE_DIR");
+    }
+
+    #[test]
+    fn try_load_coverage_cache_roundtrips_via_disk() {
+        let dir = std::env::temp_dir().join("volward-sidecar-load");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("VOLWARD_CACHE_DIR", dir.to_string_lossy().as_ref());
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.record_file_size("/root/f.dat", 50);
+        let index = builder.finish(
+            "snap-load".into(),
+            1,
+            4,
+            "Done".into(),
+            ScanStats::default(),
+        );
+        let kb = kb_empty();
+        let cache = build_unclassified_coverage_cache(&index, &kb, &[], &[]);
+        let wire = coverage_cache_to_persisted(&cache, "snap-load", 4);
+        let meta = CoverageCacheSidecarMeta::from_cache("snap-load", 4, &cache);
+        let bin_path =
+            crate::unclassified_coverage_cache_persist::coverage_cache_bin_path("snap-load");
+        crate::unclassified_coverage_cache_persist::save_coverage_cache_bin(&bin_path, &wire)
+            .unwrap();
+        save_coverage_cache_sidecar(&coverage_cache_sidecar_path("snap-load"), &meta).unwrap();
+        let loaded = try_load_coverage_cache_from_disk("snap-load", 4).expect("load");
+        assert_eq!(loaded.funnel_stats, cache.funnel_stats);
+        assert_eq!(loaded.funnel_largest_files, cache.funnel_largest_files);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("VOLWARD_CACHE_DIR");
     }
 
     #[test]

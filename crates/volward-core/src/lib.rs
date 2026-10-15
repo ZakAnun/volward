@@ -26,6 +26,7 @@ pub mod similar_photos;
 pub mod snapshot_catalog;
 pub mod string_table;
 pub mod unclassified_coverage_cache;
+pub mod unclassified_coverage_cache_persist;
 
 pub use ai_analysis::{compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
 pub use ai_candidates::{
@@ -48,9 +49,15 @@ pub use ai_coverage_tree::{
     AI_COVERAGE_TREE_PLAN_VERSION,
 };
 pub use unclassified_coverage_cache::{
-    build_unclassified_coverage_cache, coverage_cache_sidecar_path,
-    load_coverage_cache_sidecar, save_coverage_cache_sidecar, CoverageCacheSidecarMeta,
+    build_unclassified_coverage_cache, coverage_cache_from_persisted,
+    coverage_cache_sidecar_path, coverage_cache_to_persisted, load_coverage_cache_sidecar,
+    save_coverage_cache_sidecar, try_load_coverage_cache_from_disk, CoverageCacheSidecarMeta,
     UnclassifiedCoverageCache, UNCLASSIFIED_COVERAGE_CACHE_VERSION,
+};
+pub use unclassified_coverage_cache_persist::{
+    coverage_cache_bin_path, coverage_cache_meta_path, load_coverage_cache_bin,
+    save_coverage_cache_bin, CoverageCachePersistedV1, COVERAGE_CACHE_FILE_MAGIC,
+    COVERAGE_CACHE_FILE_VERSION,
 };
 pub use capability::*;
 pub use capability_job::*;
