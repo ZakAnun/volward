@@ -17,6 +17,74 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test(
+    'separate store instances on the same directory serialize appends',
+    () async {
+      final other = CoverageVerdictStore(dir);
+      CoverageVerdict row(String path) => CoverageVerdict(
+        path: path,
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'r',
+        coverageSource: 'test',
+        sizeBytes: 1,
+      );
+      await Future.wait([
+        store.appendAll('s', [row('/a/1')]),
+        other.appendAll('s', [row('/b/1')]),
+        store.appendWith('s', (path) async {
+          File(path).writeAsStringSync(
+            '${jsonEncode(row('/c/1').toJson())}\n',
+            mode: FileMode.append,
+          );
+        }),
+      ]);
+      final lines = File(
+        '${dir.path}/ai_coverage_verdicts_s.jsonl',
+      ).readAsLinesSync();
+      expect(lines, hasLength(3));
+      for (final line in lines) {
+        expect(() => jsonDecode(line), returnsNormally);
+      }
+    },
+  );
+
+  test('concurrent appendAll and appendWith never interleave lines', () async {
+    CoverageVerdict row(String path) => CoverageVerdict(
+      path: path,
+      verdict: 'keep',
+      confidence: 'high',
+      reason: 'r' * 200,
+      coverageSource: 'test',
+      sizeBytes: 1,
+    );
+    final writes = <Future<void>>[];
+    for (var b = 0; b < 4; b++) {
+      writes.add(
+        store.appendAll('s', [for (var i = 0; i < 3000; i++) row('/a$b/$i')]),
+      );
+      writes.add(
+        store.appendWith('s', (filePath) async {
+          final sink = File(filePath).openWrite(mode: FileMode.append);
+          for (var i = 0; i < 3000; i++) {
+            sink.writeln(jsonEncode(row('/w$b/$i').toJson()));
+          }
+          await sink.close();
+        }),
+      );
+    }
+    await Future.wait(writes);
+
+    final lines = File(
+      '${dir.path}/ai_coverage_verdicts_s.jsonl',
+    ).readAsLinesSync();
+    expect(lines, hasLength(24000));
+    for (final line in lines) {
+      expect(() => jsonDecode(line), returnsNormally);
+    }
+    expect(await store.readAll('s'), hasLength(24000));
+  });
+
   test('readAll tolerates a trailing truncated UTF-8 sequence', () async {
     final file = File('${dir.path}/ai_coverage_verdicts_s.jsonl');
     final line = jsonEncode(const {
@@ -36,6 +104,44 @@ void main() {
     final verdicts = await store.readAll('s');
     expect(verdicts, hasLength(1));
     expect(verdicts.single.path, '/a');
+  });
+
+  test('large files decode off-isolate with same merge and paging', () async {
+    final reason = 'r' * 200;
+    List<CoverageVerdict> batch(int start, int count, String verdict) => [
+      for (var i = start; i < start + count; i++)
+        CoverageVerdict(
+          path: '/f/${i.toString().padLeft(6, '0')}',
+          verdict: verdict,
+          confidence: 'high',
+          reason: reason,
+          coverageSource: 'file',
+          sizeBytes: i,
+        ),
+    ];
+    await store.appendAll('big', batch(0, 6000, 'keep'));
+    final offset = await store.fileByteLength('big');
+    expect(offset, greaterThan(1024 * 1024));
+
+    await store.appendAll('big', batch(5990, 6000, 'safe_to_remove'));
+
+    final all = await store.readAll('big');
+    expect(all, hasLength(11990));
+
+    final pages = await store.readPages('big', pageCount: 2, pageSize: 5);
+    expect(pages.map((v) => v.path), [
+      for (var i = 0; i < 10; i++) '/f/${i.toString().padLeft(6, '0')}',
+    ]);
+
+    final appended = await store.readAppendedSince('big', offset);
+    expect(appended.fileLength, await store.fileByteLength('big'));
+    expect(appended.appended, hasLength(6000));
+    expect(
+      appended.appended.every((v) => v.verdict == 'safe_to_remove'),
+      isTrue,
+    );
+    final overwritten = all.firstWhere((v) => v.path == '/f/005995');
+    expect(overwritten.verdict, 'safe_to_remove');
   });
 
   test('appendAll then readAll round trips and overwrites by path', () async {

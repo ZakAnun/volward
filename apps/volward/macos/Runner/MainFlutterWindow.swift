@@ -1,5 +1,107 @@
 import Cocoa
 import FlutterMacOS
+import UserNotifications
+
+/// Posts notifications as Volward itself (an `osascript` notification belongs to
+/// Script Editor, so clicking it never reaches the app) and routes clicks back to
+/// Dart as `openCoverageResult(snapshotId)`.
+final class CoverageNotifier: NSObject, UNUserNotificationCenterDelegate {
+  static let shared = CoverageNotifier()
+
+  private static let snapshotKey = "snapshotId"
+  private var channel: FlutterMethodChannel?
+  /// Click that arrived before Dart asked for it (e.g. app launched by the click).
+  private var pendingSnapshotId: String?
+
+  func attach(messenger: FlutterBinaryMessenger) {
+    UNUserNotificationCenter.current().delegate = self
+    let channel = FlutterMethodChannel(
+      name: "com.volward/notifications",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else { return }
+      switch call.method {
+      case "show":
+        let args = call.arguments as? [String: Any] ?? [:]
+        self.show(
+          title: args["title"] as? String ?? "",
+          body: args["body"] as? String ?? "",
+          snapshotId: args["snapshotId"] as? String,
+          result: result
+        )
+      case "takePendingOpen":
+        result(self.pendingSnapshotId)
+        self.pendingSnapshotId = nil
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    self.channel = channel
+  }
+
+  private func show(
+    title: String,
+    body: String,
+    snapshotId: String?,
+    result: @escaping FlutterResult
+  ) {
+    let center = UNUserNotificationCenter.current()
+    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+      guard granted else {
+        DispatchQueue.main.async { result(false) }
+        return
+      }
+      let content = UNMutableNotificationContent()
+      content.title = title
+      content.body = body
+      content.sound = .default
+      if let snapshotId {
+        content.userInfo = [CoverageNotifier.snapshotKey: snapshotId]
+      }
+      let request = UNNotificationRequest(
+        identifier: "coverage-\(snapshotId ?? UUID().uuidString)",
+        content: content,
+        trigger: nil
+      )
+      center.add(request) { error in
+        DispatchQueue.main.async { result(error == nil) }
+      }
+    }
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler:
+      @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .sound])
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let snapshotId =
+      response.notification.request.content.userInfo[CoverageNotifier.snapshotKey]
+      as? String
+    DispatchQueue.main.async {
+      NSApp.activate(ignoringOtherApps: true)
+      NSApp.windows.first { $0 is MainFlutterWindow }?.makeKeyAndOrderFront(nil)
+      if let snapshotId {
+        self.pendingSnapshotId = snapshotId
+        self.channel?.invokeMethod("openCoverageResult", arguments: snapshotId) { reply in
+          if reply is Bool, reply as? Bool == true {
+            self.pendingSnapshotId = nil
+          }
+        }
+      }
+      completionHandler()
+    }
+  }
+}
 
 private enum MacSettings {
   private static func protectedProbeURLs() -> [URL] {
@@ -231,6 +333,8 @@ class MainFlutterWindow: NSWindow {
           ))
       }
     }
+
+    CoverageNotifier.shared.attach(messenger: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()
 

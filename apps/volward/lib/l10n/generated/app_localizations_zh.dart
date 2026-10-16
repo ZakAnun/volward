@@ -1099,25 +1099,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiCoverageRaiseBudgetTitle => '提高覆盖分析预算';
 
   @override
-  String get aiCoverageNotifyTitle => 'Volward AI';
+  String get aiCoverageNotifyTitle => 'AI 清理分析';
 
   @override
-  String aiCoverageNotifyComplete(int analyzed, int total) {
-    return '覆盖分析完成：已分析 $analyzed/$total 个文件。';
+  String aiCoverageNotifyComplete(int analyzed) {
+    return '分析完成，共处理 $analyzed 个文件。打开 Volward 查看清理建议。';
   }
 
   @override
   String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
-    return '已达本次积分预算，覆盖分析已暂停：已用 $used/$budget 积分。';
+    return '已用完本次设定的积分上限（$used/$budget），分析已暂停。打开 Volward 可提高上限后继续。';
   }
 
   @override
   String aiCoverageNotifyBudgetPausedTokens(int used, int budget) {
-    return '已达本次 token 预算，覆盖分析已暂停：已用 $used/$budget token。';
+    return '已用完本次设定的 token 上限（$used/$budget），分析已暂停。打开 Volward 可提高上限后继续。';
   }
 
   @override
-  String get aiCoverageNotifyFailed => '覆盖分析因错误暂停，请打开 AI 结果页重试。';
+  String get aiCoverageNotifyFailed => '分析过程中出错，已暂停。打开 Volward 重试。';
 
   @override
   String get aiCoverageBudgetInvalid => '请输入高于当前上限的预算值。';

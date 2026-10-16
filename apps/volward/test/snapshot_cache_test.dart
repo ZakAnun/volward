@@ -320,4 +320,34 @@ void main() {
       );
     },
   );
+
+  test(
+    'catalogPathForSnapshotId matches snapshot_id in a hash-named manifest',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('volward-cache-test');
+      addTearDown(() {
+        SnapshotCache.cacheDirForTest = null;
+        temp.delete(recursive: true);
+      });
+      SnapshotCache.cacheDirForTest = temp;
+
+      const snapshotId = 'cc00708c-aa06-45a0-92b6-4cdd78b1815f';
+      const hash = '6ebebdc2565f9c02';
+      final manifests = Directory('${temp.path}/manifests')..createSync();
+      final snapshots = Directory('${temp.path}/snapshots')..createSync();
+      final pb = File('${snapshots.path}/$hash.pb')
+        ..writeAsBytesSync([0x08, 0x01]);
+      File('${manifests.path}/$hash.json').writeAsStringSync(
+        jsonEncode({
+          'root': '/Users/test',
+          'scanned_at_ms': 1000,
+          'snapshot_id': snapshotId,
+          'snapshot_path': pb.path,
+          'dir_fingerprints': {'/Users/test/a': 'x'},
+        }),
+      );
+
+      expect(await SnapshotCache.catalogPathForSnapshotId(snapshotId), pb.path);
+    },
+  );
 }

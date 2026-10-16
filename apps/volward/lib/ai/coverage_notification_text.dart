@@ -13,10 +13,7 @@ AppLocalizations coverageNotifyLocalizations() {
   CoverageJobState state,
 ) => (
   title: l10n.aiCoverageNotifyTitle,
-  body: l10n.aiCoverageNotifyComplete(
-    state.analyzedFiles,
-    state.totalUnclassified,
-  ),
+  body: l10n.aiCoverageNotifyComplete(state.analyzedFiles),
 );
 
 ({String title, String body}) coverageBudgetPausedNotification(

@@ -851,19 +851,16 @@
   "aiCoverageCancel": "停止覆盖分析",
   "aiCoverageRaiseBudget": "提高上限并继续",
   "aiCoverageRaiseBudgetTitle": "提高覆盖分析预算",
-  "aiCoverageNotifyTitle": "Volward AI",
-  "aiCoverageNotifyComplete": "覆盖分析完成：已分析 {analyzed}/{total} 个文件。",
+  "aiCoverageNotifyTitle": "AI 清理分析",
+  "aiCoverageNotifyComplete": "分析完成，共处理 {analyzed} 个文件。打开 Volward 查看清理建议。",
   "@aiCoverageNotifyComplete": {
     "placeholders": {
       "analyzed": {
         "type": "int"
-      },
-      "total": {
-        "type": "int"
       }
     }
   },
-  "aiCoverageNotifyBudgetPausedCredits": "已达本次积分预算，覆盖分析已暂停：已用 {used}/{budget} 积分。",
+  "aiCoverageNotifyBudgetPausedCredits": "已用完本次设定的积分上限（{used}/{budget}），分析已暂停。打开 Volward 可提高上限后继续。",
   "@aiCoverageNotifyBudgetPausedCredits": {
     "placeholders": {
       "used": {
@@ -874,7 +871,7 @@
       }
     }
   },
-  "aiCoverageNotifyBudgetPausedTokens": "已达本次 token 预算，覆盖分析已暂停：已用 {used}/{budget} token。",
+  "aiCoverageNotifyBudgetPausedTokens": "已用完本次设定的 token 上限（{used}/{budget}），分析已暂停。打开 Volward 可提高上限后继续。",
   "@aiCoverageNotifyBudgetPausedTokens": {
     "placeholders": {
       "used": {
@@ -885,7 +882,7 @@
       }
     }
   },
-  "aiCoverageNotifyFailed": "覆盖分析因错误暂停，请打开 AI 结果页重试。",
+  "aiCoverageNotifyFailed": "分析过程中出错，已暂停。打开 Volward 重试。",
   "aiCoverageBudgetInvalid": "请输入高于当前上限的预算值。",
   "aiCoverageJobBillingModeMismatchTitle": "本次任务与当前 AI 模式计费方式不一致",
   "aiCoverageJobBillingModeMismatchPlatform": "本次任务在 BYOK 下启动，Token 上限为 {budget}（已用 {used}）。当前为平台模式，按 credits 计费。请「重新开始全量覆盖」以平台模式运行，或切回 BYOK 以继续本任务。",

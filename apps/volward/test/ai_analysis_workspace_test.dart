@@ -1148,7 +1148,7 @@ void main() {
       ..cache['cache-key'] = 'not-json';
     _writeAnalysisCacheFile('cache-key', invalidGateway.cache['cache-key']!);
     // Tear down results-phase state so gateway swap runs a fresh precheck bootstrap.
-    await tester.pumpWidget(MaterialApp(home: const SizedBox.shrink()));
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
     await tester.pumpAndSettle();
     AiCandidatesMaterializedCache.instance.clear('snapshot-1');
     await tester.pumpWidget(_workspaceShell(invalidGateway));

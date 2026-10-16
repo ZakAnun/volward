@@ -481,16 +481,22 @@ fn path_matches_common_regeneratable_build(path: &str) -> bool {
     GENERIC_BUILD_MARKERS.iter().any(|marker| lower.contains(marker))
 }
 
-fn path_under_indexed_prefix(path: &str, prefixes: &[String]) -> bool {
+pub(crate) fn path_under_indexed_prefix(path: &str, prefixes: &[String]) -> bool {
     let normalized = path.replace('\\', "/");
     prefixes.iter().any(|prefix| {
-        let prefix = prefix.replace('\\', "/");
         if prefix.is_empty() {
             return false;
         }
+        let owned;
+        let prefix = if prefix.contains('\\') {
+            owned = prefix.replace('\\', "/");
+            owned.as_str()
+        } else {
+            prefix.as_str()
+        };
         normalized == prefix
             || normalized
-                .strip_prefix(&prefix)
+                .strip_prefix(prefix)
                 .is_some_and(|rest| rest.starts_with('/'))
     })
 }
@@ -558,25 +564,20 @@ pub(crate) fn pre_classified_from_heuristics(path: &str, size_bytes: u64) -> Opt
     None
 }
 
-pub(crate) fn pre_classified_under_index_prefix(
+/// Entry for a file already known to sit under an indexed cache/temp/build prefix.
+pub(crate) fn pre_classified_for_index_prefix_hit(
     path: &str,
     size_bytes: u64,
-    prefixes: &[String],
     kb: &OsKnowledgeBase,
-) -> Option<PreClassifiedEntry> {
-    if !path_under_indexed_prefix(path, prefixes) {
-        return None;
-    }
-    pre_classified_from_kb(path, size_bytes, kb).or_else(|| {
-        Some(PreClassifiedEntry {
-            path: path.to_string(),
-            size_bytes,
-            is_dir: false,
-            category: EntryCategory::BuildArtifact,
-            confidence: "high".to_string(),
-            reason: "Under a locally classified cache, temp, or build path from scan index.".to_string(),
-            deletable: true,
-        })
+) -> PreClassifiedEntry {
+    pre_classified_from_kb(path, size_bytes, kb).unwrap_or_else(|| PreClassifiedEntry {
+        path: path.to_string(),
+        size_bytes,
+        is_dir: false,
+        category: EntryCategory::BuildArtifact,
+        confidence: "high".to_string(),
+        reason: "Under a locally classified cache, temp, or build path from scan index.".to_string(),
+        deletable: true,
     })
 }
 

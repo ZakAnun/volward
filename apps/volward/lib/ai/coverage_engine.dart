@@ -36,6 +36,18 @@ abstract interface class CoverageEngine {
     String roleSnakeCase,
   );
 
+  /// Appends the same verdicts as [applyDirVerdict] straight to the JSONL file
+  /// at [outPath] and returns how many were written, or `null` when the engine
+  /// cannot write files (callers fall back to [applyDirVerdict]).
+  Future<int?> applyDirVerdictToFile(
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+    String outPath,
+  );
+
   Future<List<Map<String, dynamic>>> resolveGroupMembers(
     String snapshotId,
     String groupPath,
@@ -83,6 +95,7 @@ class FakeCoverageEngine implements CoverageEngine {
     this.onBuildTreePlan,
     this.localVerdictFetcher,
     this.applyDirVerdictHandler,
+    this.applyDirVerdictToFileHandler,
     this.treePagesByCursor = const {},
   });
 
@@ -103,6 +116,8 @@ class FakeCoverageEngine implements CoverageEngine {
     String roleSnakeCase,
   )?
   applyDirVerdictHandler;
+  final Future<int?> Function(String dirPath, String verdict, String outPath)?
+  applyDirVerdictToFileHandler;
   final Map<int, CoverageTreePage> treePagesByCursor;
 
   @override
@@ -193,6 +208,16 @@ class FakeCoverageEngine implements CoverageEngine {
     }
     return const [];
   }
+
+  @override
+  Future<int?> applyDirVerdictToFile(
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+    String outPath,
+  ) async => applyDirVerdictToFileHandler?.call(dirPath, verdict, outPath);
 
   @override
   Future<List<Map<String, dynamic>>> resolveGroupMembers(

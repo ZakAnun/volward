@@ -2729,7 +2729,8 @@ class VolwardSession extends ChangeNotifier {
     // Native build scales with unclassified volume but uses a size-ranked funnel
     // sample; do not abort early with a short client timeout on huge scans.
     const busyStartWatchdog = Duration(minutes: 5);
-    const buildTimeout = Duration(minutes: 30);
+    // Funnel-sample candidates build is one index pass; allow headroom on huge indexes.
+    const buildTimeout = Duration(minutes: 60);
     final busyStartedAt = DateTime.now();
     volwardAiDebugLog('candidates build start snapshot=$snapshotId');
     while (true) {
@@ -2754,7 +2755,7 @@ class VolwardSession extends ChangeNotifier {
     while (bridge.isAiCandidatesBuilding(engine)) {
       final now = DateTime.now();
       if (now.difference(buildWaitStarted) > buildTimeout) {
-        return 'error:ai candidates build timed out after 30 minutes';
+        return 'error:ai candidates build timed out after ${buildTimeout.inMinutes} minutes';
       }
       if (now.difference(lastHeartbeat) >= const Duration(seconds: 5)) {
         volwardAiDebugLog(

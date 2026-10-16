@@ -231,6 +231,26 @@ typedef VolwardAiApplyDirVerdictJson =
       Pointer<Utf8>,
       Pointer<Utf8>,
     );
+typedef VolwardAiApplyDirVerdictToFileNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
+typedef VolwardAiApplyDirVerdictToFile =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+    );
 
 // ---------------------------------------------------------------------------
 // Catalog index API typedefs (Design §5.3)
@@ -344,7 +364,7 @@ abstract interface class VolwardBridge {
 }
 
 final class VolwardNativeBridge implements VolwardBridge {
-  VolwardNativeBridge._(this._lib) {
+  VolwardNativeBridge._(this._lib, {bool logCapabilities = false}) {
     _create = _lib
         .lookup<NativeFunction<VolwardEngineCreateNative>>(
           'volward_engine_create',
@@ -446,6 +466,7 @@ final class VolwardNativeBridge implements VolwardBridge {
     _nextAiTailCoveragePageJson = _tryLookupAiNextTailCoveragePageJson();
     _expandAiTreeNodeJson = _tryLookupAiExpandTreeNodeJson();
     _applyAiDirVerdictJson = _tryLookupAiApplyDirVerdictJson();
+    _applyAiDirVerdictToFile = _tryLookupAiApplyDirVerdictToFile();
     hasAiCoverageApi =
         _buildAiCoveragePlanJson != null &&
         _nextAiCoveragePageJson != null &&
@@ -498,11 +519,13 @@ final class VolwardNativeBridge implements VolwardBridge {
       if (_listLocalCoverageVerdictsJson == null) {
         missing.add('volward_ai_list_local_coverage_verdicts_json');
       }
-      volwardAiDebugLog(
-        'native FFI coverage=$hasAiCoverageApi tree=$hasAiTreeCoverageApi '
-        'session=$hasAiSessionApi asyncCandidates=$hasAsyncAiCandidatesApi '
-        'missing=${missing.isEmpty ? "none" : missing.join(", ")}',
-      );
+      if (logCapabilities || missing.isNotEmpty) {
+        volwardAiDebugLog(
+          'native FFI coverage=$hasAiCoverageApi tree=$hasAiTreeCoverageApi '
+          'session=$hasAiSessionApi asyncCandidates=$hasAsyncAiCandidatesApi '
+          'missing=${missing.isEmpty ? "none" : missing.join(", ")}',
+        );
+      }
     }
     _queryDirectoryJson = _tryLookupQueryDirectoryJson();
     _refreshDirectory = _tryLookupRefreshDirectory();
@@ -668,7 +691,10 @@ final class VolwardNativeBridge implements VolwardBridge {
   static VolwardNativeBridge? _instance;
 
   static VolwardNativeBridge get instance {
-    return _instance ??= open();
+    return _instance ??= VolwardNativeBridge._(
+      _openLibrary(),
+      logCapabilities: true,
+    );
   }
 
   /// Independent bridge instance (e.g. for [Isolate.run] workers).
@@ -734,6 +760,9 @@ final class VolwardNativeBridge implements VolwardBridge {
   late final VolwardAiNextTailCoveragePageJson? _nextAiTailCoveragePageJson;
   late final VolwardAiExpandTreeNodeJson? _expandAiTreeNodeJson;
   late final VolwardAiApplyDirVerdictJson? _applyAiDirVerdictJson;
+  late final VolwardAiApplyDirVerdictToFile? _applyAiDirVerdictToFile;
+
+  bool get hasApplyDirVerdictToFileApi => _applyAiDirVerdictToFile != null;
 
   // Catalog index API fields
   late final VolwardQueryDirectoryJson? _queryDirectoryJson;
@@ -1360,6 +1389,50 @@ final class VolwardNativeBridge implements VolwardBridge {
     }
   }
 
+  /// Appends propagated verdicts to [outPath]; returns `{"count":N}` or `error:…`.
+  String? applyAiDirVerdictToFile(
+    Pointer<Void> engine,
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+    String outPath,
+  ) {
+    final fn = _applyAiDirVerdictToFile;
+    if (fn == null) return null;
+    final snapPtr = snapshotId.toNativeUtf8();
+    final dirPtr = dirPath.toNativeUtf8();
+    final verdictPtr = verdict.toNativeUtf8();
+    final confidencePtr = confidence.toNativeUtf8();
+    final rolePtr = roleSnakeCase.toNativeUtf8();
+    final outPtr = outPath.toNativeUtf8();
+    try {
+      final out = fn(
+        engine,
+        snapPtr,
+        dirPtr,
+        verdictPtr,
+        confidencePtr,
+        rolePtr,
+        outPtr,
+      );
+      if (out == nullptr) return null;
+      try {
+        return out.toDartString();
+      } finally {
+        _freeString(out);
+      }
+    } finally {
+      calloc.free(snapPtr);
+      calloc.free(dirPtr);
+      calloc.free(verdictPtr);
+      calloc.free(confidencePtr);
+      calloc.free(rolePtr);
+      calloc.free(outPtr);
+    }
+  }
+
   bool saveAiResultJson(
     Pointer<Void> engine,
     String snapshotId,
@@ -1903,6 +1976,18 @@ final class VolwardNativeBridge implements VolwardBridge {
       return _lib
           .lookup<NativeFunction<VolwardAiApplyDirVerdictJsonNative>>(
             'volward_ai_apply_dir_verdict_json',
+          )
+          .asFunction();
+    } on Object {
+      return null;
+    }
+  }
+
+  VolwardAiApplyDirVerdictToFile? _tryLookupAiApplyDirVerdictToFile() {
+    try {
+      return _lib
+          .lookup<NativeFunction<VolwardAiApplyDirVerdictToFileNative>>(
+            'volward_ai_apply_dir_verdict_to_file',
           )
           .asFunction();
     } on Object {

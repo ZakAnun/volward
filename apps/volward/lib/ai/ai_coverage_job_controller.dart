@@ -865,18 +865,41 @@ class CoverageJobController {
           if ((dirVerdict.verdict == 'keep' ||
                   dirVerdict.verdict == 'safe_to_remove') &&
               dirVerdict.confidence == 'high') {
-            final propagated = await engine.applyDirVerdict(
-              snapshotId,
-              node.path,
-              dirVerdict.verdict,
-              dirVerdict.confidence,
-              node.role,
-            );
-            if (propagated.isNotEmpty) {
-              await verdictStore.appendAll(snapshotId, propagated);
-              localResolved += propagated.length;
-              analyzedFiles += propagated.length;
+            var propagatedCount = 0;
+            try {
+              final written = await verdictStore.appendWith(
+                snapshotId,
+                (filePath) => engine.applyDirVerdictToFile(
+                  snapshotId,
+                  node.path,
+                  dirVerdict.verdict,
+                  dirVerdict.confidence,
+                  node.role,
+                  filePath,
+                ),
+              );
+              if (written != null) {
+                propagatedCount = written;
+              } else {
+                propagatedCount = await _propagateDirVerdictViaJson(
+                  snapshotId: snapshotId,
+                  node: node,
+                  dirVerdict: dirVerdict,
+                );
+              }
+            } on CoverageEngineException catch (e) {
+              debugPrint(
+                'CoverageJobController: dir verdict file write failed, '
+                'fallback to JSON ($e)',
+              );
+              propagatedCount = await _propagateDirVerdictViaJson(
+                snapshotId: snapshotId,
+                node: node,
+                dirVerdict: dirVerdict,
+              );
             }
+            localResolved += propagatedCount;
+            analyzedFiles += propagatedCount;
           } else if (dirVerdict.verdict == 'drill_down') {
             final expanded = await engine.expandTreeNode(snapshotId, node.path);
             children.addAll(expanded);
@@ -925,6 +948,24 @@ class CoverageJobController {
       analyzedFiles: 0,
       childrenToEnqueue: const <CoverageTreeNode>[],
     );
+  }
+
+  Future<int> _propagateDirVerdictViaJson({
+    required String snapshotId,
+    required CoverageTreeNode node,
+    required CoverageVerdict dirVerdict,
+  }) async {
+    final propagated = await engine.applyDirVerdict(
+      snapshotId,
+      node.path,
+      dirVerdict.verdict,
+      dirVerdict.confidence,
+      node.role,
+    );
+    if (propagated.isNotEmpty) {
+      await verdictStore.appendAll(snapshotId, propagated);
+    }
+    return propagated.length;
   }
 
   Future<void> _recordFailedTreeBatch(

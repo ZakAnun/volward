@@ -482,6 +482,18 @@ impl SnapshotIndex {
         self.reclaimable_estimate_bytes
     }
 
+    /// Cheap identity of index contents for validating derived on-disk caches.
+    pub fn content_fingerprint(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}",
+            self.root_path,
+            self.scanned_at_ms,
+            self.file_size_by_path.len(),
+            self.entry_by_id.len(),
+            self.directory_by_id.len(),
+        )
+    }
+
     pub fn summary(&self) -> SnapshotIndexSummary {
         SnapshotIndexSummary {
             snapshot_id: self.snapshot_id.clone(),
@@ -859,8 +871,60 @@ impl SnapshotIndex {
         (total, files)
     }
 
+    /// Visits unclassified files in the index's stable internal order, starting at raw
+    /// position `start` (an opaque cursor over all sized paths). `visit` returns `false`
+    /// to stop; the result is the raw position to resume from, or `None` when exhausted.
+    /// Order is stable only while this index instance is unchanged.
+    pub fn visit_unclassified_files_from<F>(&self, start: usize, mut visit: F) -> Option<usize>
+    where
+        F: FnMut(&str, u64) -> bool,
+    {
+        for (pos, (path_id, size)) in self.file_size_by_path.iter().enumerate().skip(start) {
+            if self.entry_id_by_path.contains_key(path_id)
+                || self.directory_by_id.contains_key(path_id)
+            {
+                continue;
+            }
+            if !visit(self.table.resolve(*path_id), *size) {
+                return Some(pos + 1);
+            }
+        }
+        None
+    }
+
+    /// Visits unclassified files at or under `path` by walking only that subtree.
+    pub fn visit_unclassified_files_under<F>(&self, path: &str, mut visit: F)
+    where
+        F: FnMut(&str, u64),
+    {
+        let canonical_path = if path_is_at_or_below(path, &self.root_path) {
+            canonicalize_under_root(path, &self.root_path)
+        } else {
+            normalize_path(path)
+        };
+        let Some(start_id) = self.table.get_id(&canonical_path) else {
+            return;
+        };
+        let mut pending = vec![start_id];
+        while let Some(id) = pending.pop() {
+            if self.directory_by_id.contains_key(&id) {
+                if let Some(children) = self.children_by_id.get(&id) {
+                    pending.extend(children.iter().copied());
+                }
+                continue;
+            }
+            if self.entry_id_by_path.contains_key(&id) {
+                continue;
+            }
+            if let Some(size) = self.file_size_by_path.get(&id) {
+                visit(self.table.resolve(id), *size);
+            }
+        }
+    }
+
     /// One pass over unclassified files: calls `visit` for each path, and returns
     /// `(total_count, largest_by_size_up_to_limit)`.
+
     pub fn scan_unclassified_files<F>(
         &self,
         limit: usize,

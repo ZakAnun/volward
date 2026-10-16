@@ -40,7 +40,7 @@ pub use ai_coverage::{
     build_ai_coverage_plan, coverage_group_member_paths, AiCoveragePlan, AiCoverageRow,
     AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION,
 };
-pub use ai_coverage_propagate::{apply_dir_verdict, CoverageLocalVerdict};
+pub use ai_coverage_propagate::{apply_dir_verdict, write_dir_verdict_jsonl, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
     build_ai_tree_plan, build_ai_tree_plan_from_coverage_cache,
     build_unclassified_subtree_index, expand_tree_drill_children,
@@ -49,10 +49,11 @@ pub use ai_coverage_tree::{
     AI_COVERAGE_TREE_PLAN_VERSION,
 };
 pub use unclassified_coverage_cache::{
-    build_unclassified_coverage_cache, coverage_cache_from_persisted,
-    coverage_cache_sidecar_path, coverage_cache_to_persisted, load_coverage_cache_sidecar,
-    save_coverage_cache_sidecar, try_load_coverage_cache_from_disk, CoverageCacheSidecarMeta,
-    UnclassifiedCoverageCache, UNCLASSIFIED_COVERAGE_CACHE_VERSION,
+    build_unclassified_coverage_cache, build_unclassified_coverage_cache_funnel_sample,
+    cache_meets_depth, coverage_cache_from_persisted, coverage_cache_sidecar_path,
+    coverage_cache_to_persisted, load_coverage_cache_sidecar, save_coverage_cache_sidecar,
+    try_load_coverage_cache_from_disk, CoverageCacheSidecarMeta, UnclassifiedCoverageCache,
+    UnclassifiedCoverageCacheDepth, UNCLASSIFIED_COVERAGE_CACHE_VERSION,
 };
 #[cfg(debug_assertions)]
 pub use unclassified_coverage_cache::{

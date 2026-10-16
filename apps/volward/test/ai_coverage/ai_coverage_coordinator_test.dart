@@ -287,8 +287,8 @@ void main() {
   test('coordinator emits desktop notify on completion', () async {
     final notifications = <String>[];
     final coordinator = AiCoverageCoordinator.testing(
-      desktopNotify: ({required title, required body}) async {
-        notifications.add('$title::$body');
+      desktopNotify: ({required title, required body, snapshotId}) async {
+        notifications.add('$title::$body::$snapshotId');
       },
     );
 
@@ -313,7 +313,7 @@ void main() {
 
     expect(notifications, hasLength(1));
     final copy = coverageCompleteNotification(l10n, state);
-    expect(notifications.single, '${copy.title}::${copy.body}');
+    expect(notifications.single, '${copy.title}::${copy.body}::s1');
   });
 }
 

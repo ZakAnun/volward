@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::coverage_funnel::{
-    build_coverage_funnel_context, coverage_funnel_context_for_path,
-    resolve_unclassified_for_coverage, CoverageFileResolution, CoverageFunnelContextMap,
-    CoverageFunnelStats,
+    build_coverage_funnel_context, resolve_unclassified_for_coverage, CoverageFileResolution,
+    CoverageFunnelContext, CoverageFunnelContextMap, CoverageFunnelStats,
 };
 use crate::directory_role::{classify_directory_role, DirectoryRole};
 use crate::index::SnapshotIndex;
@@ -184,18 +183,12 @@ pub fn scan_unclassified_for_coverage(
     let mut funnel_stats = CoverageFunnelStats::default();
     let mut tail_file_paths: Vec<(String, u64)> = Vec::new();
     let mut subtree_index = UnclassifiedSubtreeIndex::default();
+    let mut ctx = CoverageFunnelContext::for_index(index, protected_prefixes, personal_prefixes);
 
     let (total_unclassified_file_count, funnel_largest_files) =
         index.scan_unclassified_files(FUNNEL_UNCLASSIFIED_FILE_BUDGET, |path, size_bytes| {
-            let resolution = resolve_file(
-                index,
-                kb,
-                protected_prefixes,
-                personal_prefixes,
-                funnel_map,
-                path,
-                size_bytes,
-            );
+            ctx.project_ancestor = funnel_map.get(path).cloned().flatten();
+            let resolution = resolve_unclassified_for_coverage(path, size_bytes, kb, &ctx);
             match &resolution {
                 CoverageFileResolution::LocalSafe(_) => funnel_stats.local_safe_files += 1,
                 CoverageFileResolution::LocalKeep { .. } => funnel_stats.local_keep_files += 1,
@@ -213,8 +206,21 @@ pub fn scan_unclassified_for_coverage(
                 | CoverageFileResolution::TreeCandidate => (false, true),
             };
             let ext = extension_token(path);
-            for dir in ancestor_directories(path, &root) {
-                let agg = subtree_index.by_dir.entry(dir).or_default();
+            let normalized;
+            let path = if path.contains('\\') || (path.len() > 1 && path.ends_with('/')) {
+                normalized = normalize_path(path);
+                normalized.as_str()
+            } else {
+                path
+            };
+            let by_dir = &mut subtree_index.by_dir;
+            for dir in AncestorDirsUnderRoot::new(path, &root) {
+                if !by_dir.contains_key(dir) {
+                    by_dir.insert(dir.to_string(), DirUnclassifiedAgg::default());
+                }
+                let Some(agg) = by_dir.get_mut(dir) else {
+                    continue;
+                };
                 agg.unclassified_files += 1;
                 if is_local {
                     agg.local_files += 1;
@@ -222,8 +228,12 @@ pub fn scan_unclassified_for_coverage(
                 if is_ai {
                     agg.ai_pending_files += 1;
                 }
-                if let Some(ext) = ext.as_ref() {
-                    *agg.ext_counts.entry(ext.clone()).or_default() += 1;
+                if let Some(ext) = ext.as_deref() {
+                    if let Some(count) = agg.ext_counts.get_mut(ext) {
+                        *count += 1;
+                    } else {
+                        agg.ext_counts.insert(ext.to_string(), 1);
+                    }
                 }
             }
         });
@@ -368,37 +378,46 @@ fn subtree_all_local_resolved(subtree_index: &UnclassifiedSubtreeIndex, dir_path
         .is_some_and(|agg| agg.unclassified_files > 0 && agg.ai_pending_files == 0)
 }
 
-fn ancestor_directories(file_path: &str, root: &str) -> Vec<String> {
-    let root = normalize_path(root);
-    let mut dirs = Vec::new();
-    let mut current = normalize_path(file_path);
-    loop {
-        let Some(parent) = parent_directory(&current) else {
-            break;
-        };
-        if !path_is_at_or_under(&parent, &root) {
-            break;
-        }
-        dirs.push(parent.clone());
-        if parent == root {
-            break;
-        }
-        current = parent;
-    }
-    dirs
+/// Parent directories of a normalized file path, deepest first, stopping at `root`
+/// (inclusive) or at the first parent outside `root`. Borrows; no allocation.
+struct AncestorDirsUnderRoot<'a> {
+    current: Option<&'a str>,
+    root: &'a str,
 }
 
-fn parent_directory(path: &str) -> Option<String> {
-    let path = normalize_path(path);
-    if path.is_empty() {
-        return None;
+impl<'a> AncestorDirsUnderRoot<'a> {
+    fn new(file_path: &'a str, root: &'a str) -> Self {
+        Self {
+            current: Some(file_path),
+            root,
+        }
     }
-    let slash = path.rfind('/')?;
-    if slash == 0 {
-        Some("/".to_string())
-    } else {
-        Some(path[..slash].to_string())
+}
+
+impl<'a> Iterator for AncestorDirsUnderRoot<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        let current = self.current.take()?;
+        if current.is_empty() {
+            return None;
+        }
+        let slash = current.rfind('/')?;
+        let parent = if slash == 0 { "/" } else { &current[..slash] };
+        if !normalized_path_is_at_or_under(parent, self.root) {
+            return None;
+        }
+        if parent != self.root && slash != 0 {
+            self.current = Some(parent);
+        }
+        Some(parent)
     }
+}
+
+fn normalized_path_is_at_or_under(path: &str, root: &str) -> bool {
+    !root.is_empty()
+        && (path == root
+            || (path.starts_with(root) && path.as_bytes().get(root.len()) == Some(&b'/')))
 }
 
 fn count_subdirs(index: &SnapshotIndex, dir_path: &str) -> u64 {
@@ -432,34 +451,6 @@ fn extension_token(path: &str) -> Option<String> {
     Some(format!(".{ext}"))
 }
 
-fn resolve_file(
-    index: &SnapshotIndex,
-    kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
-    funnel_map: &CoverageFunnelContextMap,
-    path: &str,
-    size_bytes: u64,
-) -> CoverageFileResolution {
-    let project_ancestor = funnel_map.get(path).cloned().flatten();
-    let ctx = coverage_funnel_context_for_path(
-        project_ancestor,
-        index,
-        protected_prefixes,
-        personal_prefixes,
-    );
-    resolve_unclassified_for_coverage(path, size_bytes, kb, &ctx)
-}
-
-fn path_is_at_or_under(path: &str, root: &str) -> bool {
-    let path = normalize_path(path);
-    let root = normalize_path(root);
-    if root.is_empty() {
-        return false;
-    }
-    path == root || (path.starts_with(&root) && path.as_bytes().get(root.len()) == Some(&b'/'))
-}
-
 fn normalize_path(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     if normalized.len() > 1 && normalized.ends_with('/') {
@@ -488,6 +479,16 @@ mod tests {
             "Done".to_string(),
             ScanStats::default(),
         )
+    }
+
+    #[test]
+    fn ancestor_dirs_under_root_stops_at_root() {
+        let dirs: Vec<&str> = AncestorDirsUnderRoot::new("/root/a/b/f.txt", "/root").collect();
+        assert_eq!(dirs, vec!["/root/a/b", "/root/a", "/root"]);
+        let outside: Vec<&str> = AncestorDirsUnderRoot::new("/other/f.txt", "/root").collect();
+        assert!(outside.is_empty());
+        let sibling: Vec<&str> = AncestorDirsUnderRoot::new("/rootx/f.txt", "/root").collect();
+        assert!(sibling.is_empty());
     }
 
     #[test]

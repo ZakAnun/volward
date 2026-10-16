@@ -1891,31 +1891,31 @@ abstract class AppLocalizations {
   /// No description provided for @aiCoverageNotifyTitle.
   ///
   /// In en, this message translates to:
-  /// **'Volward AI'**
+  /// **'AI cleanup analysis'**
   String get aiCoverageNotifyTitle;
 
   /// No description provided for @aiCoverageNotifyComplete.
   ///
   /// In en, this message translates to:
-  /// **'Coverage complete: {analyzed}/{total} files analyzed.'**
-  String aiCoverageNotifyComplete(int analyzed, int total);
+  /// **'Analysis finished for {analyzed} files. Open Volward to review cleanup suggestions.'**
+  String aiCoverageNotifyComplete(int analyzed);
 
   /// No description provided for @aiCoverageNotifyBudgetPausedCredits.
   ///
   /// In en, this message translates to:
-  /// **'Coverage paused at run budget: {used}/{budget} credits used.'**
+  /// **'Paused at this run\'s credit limit ({used}/{budget}). Open Volward to raise the limit and continue.'**
   String aiCoverageNotifyBudgetPausedCredits(int used, int budget);
 
   /// No description provided for @aiCoverageNotifyBudgetPausedTokens.
   ///
   /// In en, this message translates to:
-  /// **'Coverage paused at run budget: {used}/{budget} tokens used.'**
+  /// **'Paused at this run\'s token limit ({used}/{budget}). Open Volward to raise the limit and continue.'**
   String aiCoverageNotifyBudgetPausedTokens(int used, int budget);
 
   /// No description provided for @aiCoverageNotifyFailed.
   ///
   /// In en, this message translates to:
-  /// **'Coverage paused due to an error. Open AI results to retry.'**
+  /// **'Analysis hit an error and paused. Open Volward to retry.'**
   String get aiCoverageNotifyFailed;
 
   /// No description provided for @aiCoverageBudgetInvalid.

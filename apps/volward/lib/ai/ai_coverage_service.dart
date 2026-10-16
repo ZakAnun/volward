@@ -101,6 +101,10 @@ class AiCoverageService {
           isolateCatalogSnapshotId: targetSnapshotId,
         );
       }
+      debugPrint(
+        'AiCoverageService: no catalog for snapshot=$targetSnapshotId; '
+        'running full coverage job on the UI isolate',
+      );
     }
 
     AnalyzeTreeBatch? treeBatch;

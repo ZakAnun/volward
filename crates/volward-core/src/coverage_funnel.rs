@@ -1,13 +1,13 @@
 //! Pre-AI coverage funnel helpers (Phase 2). See `docs/superpowers/specs/2026-09-20-ai-coverage-phase2-tree-design.md`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::ai_candidates::{
-    ai_cleanup_hint_for_path, hint_source_skips_ai, pre_classified_from_heuristics,
-    pre_classified_from_hint, pre_classified_from_kb, pre_classified_under_index_prefix,
-    AiCleanupHint, PreClassifiedEntry,
+    ai_cleanup_hint_for_path, hint_source_skips_ai, path_under_indexed_prefix,
+    pre_classified_for_index_prefix_hit, pre_classified_from_heuristics,
+    pre_classified_from_hint, pre_classified_from_kb, AiCleanupHint, PreClassifiedEntry,
 };
 use crate::ai_coverage_propagate::CoverageLocalVerdict;
 use crate::directory_role::collect_project_anchor_paths;
@@ -41,18 +41,37 @@ const EXCLUSION_DIR_NAMES: &[&str] = &[
 
 /// Directory prefixes under which unclassified files are treated as locally safe (scan Tier-1/2 hits).
 pub fn coverage_local_exclusion_prefixes(index: &SnapshotIndex) -> Vec<String> {
-    let mut prefixes: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     for category in ["BuildArtifact", "Cache", "Temp"] {
         for entry in index.entries_with_category(category) {
-            for ancestor in exclusion_prefix_chain(&entry.path) {
-                if !prefixes.iter().any(|p| p == &ancestor) {
-                    prefixes.push(ancestor);
-                }
+            let is_dir = index.is_directory(&entry.path);
+            for ancestor in exclusion_prefix_chain(&entry.path, is_dir) {
+                seen.insert(ancestor);
             }
         }
     }
+    let mut prefixes: Vec<String> = seen.into_iter().collect();
     prefixes.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
     prefixes
+}
+
+/// Returns `path` or its deepest ancestor directory for which `hit` is true.
+/// Ancestors are proper `/`-separated prefixes; bare `/` is never probed.
+fn find_self_or_ancestor<'a>(path: &'a str, mut hit: impl FnMut(&str) -> bool) -> Option<&'a str> {
+    let mut current = path;
+    loop {
+        if !current.is_empty() && hit(current) {
+            return Some(current);
+        }
+        match current.rfind('/') {
+            Some(idx) if idx > 0 => current = &current[..idx],
+            _ => return None,
+        }
+    }
+}
+
+fn needs_normalize(path: &str) -> bool {
+    path.contains('\\') || (path.len() > 1 && path.ends_with('/'))
 }
 
 /// Longest matching exclusion prefix for `path`, if any. `prefixes` should be sorted len-desc (see [`coverage_local_exclusion_prefixes`]).
@@ -66,15 +85,26 @@ pub fn path_under_longest_prefix<'a>(path: &str, prefixes: &'a [String]) -> Opti
     None
 }
 
-fn exclusion_prefix_chain(classified_path: &str) -> Vec<String> {
+/// Directories that may be treated as wholly local-safe because of one classified entry.
+///
+/// A directory entry contributes itself. Beyond that, only cache-like directories are
+/// added, walking upward; the first non-cache-like ancestor stops the walk and is
+/// never included (otherwise e.g. `~/.cache/x` would exclude all of `~`).
+fn exclusion_prefix_chain(classified_path: &str, is_dir: bool) -> Vec<String> {
     let mut chain = Vec::new();
-    let mut current = parent_dir(classified_path);
-    while let Some(dir) = current {
+    let mut current = if is_dir {
+        let dir = normalize_path(classified_path);
         chain.push(dir.clone());
+        parent_dir(&dir)
+    } else {
+        parent_dir(classified_path)
+    };
+    while let Some(dir) = current {
         if !should_extend_exclusion_chain(&dir) {
             break;
         }
         current = parent_dir(&dir);
+        chain.push(dir);
     }
     chain
 }
@@ -138,6 +168,8 @@ pub enum CoverageFileResolution {
 #[derive(Debug, Clone, Default)]
 pub struct CoverageFunnelContext {
     pub exclusion_prefixes: Vec<String>,
+    /// Same entries as `exclusion_prefixes`; when non-empty, prefix checks are O(path depth).
+    pub exclusion_prefix_set: HashSet<String>,
     pub protected_prefixes: Vec<String>,
     pub personal_prefixes: Vec<String>,
     pub project_ancestor: Option<String>,
@@ -149,6 +181,37 @@ impl CoverageFunnelContext {
             exclusion_prefixes: prefixes.to_vec(),
             ..Default::default()
         }
+    }
+
+    /// Index-level context for a whole scan; set `project_ancestor` per file.
+    pub fn for_index(
+        index: &SnapshotIndex,
+        protected_prefixes: &[String],
+        personal_prefixes: &[String],
+    ) -> Self {
+        let exclusion_prefixes = coverage_local_exclusion_prefixes(index);
+        let exclusion_prefix_set = exclusion_prefixes.iter().cloned().collect();
+        Self {
+            exclusion_prefixes,
+            exclusion_prefix_set,
+            protected_prefixes: protected_prefixes.to_vec(),
+            personal_prefixes: personal_prefixes.to_vec(),
+            project_ancestor: None,
+        }
+    }
+
+    fn path_under_exclusion_prefix(&self, path: &str) -> bool {
+        if self.exclusion_prefix_set.is_empty() {
+            return path_under_indexed_prefix(path, &self.exclusion_prefixes);
+        }
+        let normalized;
+        let path = if needs_normalize(path) {
+            normalized = normalize_path(path);
+            normalized.as_str()
+        } else {
+            path
+        };
+        find_self_or_ancestor(path, |p| self.exclusion_prefix_set.contains(p)).is_some()
     }
 }
 
@@ -201,10 +264,10 @@ pub fn resolve_unclassified_for_coverage(
             };
         }
     }
-    if let Some(entry) =
-        pre_classified_under_index_prefix(path, size_bytes, &ctx.exclusion_prefixes, kb)
-    {
-        return CoverageFileResolution::LocalSafe(entry);
+    if ctx.path_under_exclusion_prefix(path) {
+        return CoverageFileResolution::LocalSafe(pre_classified_for_index_prefix_hit(
+            path, size_bytes, kb,
+        ));
     }
     if let Some(hint) = ai_cleanup_hint_for_path(path) {
         if hint_source_skips_ai(hint.source) {
@@ -282,28 +345,22 @@ fn path_is_at_or_under(path: &str, root: &str) -> bool {
 
 /// Deepest project anchor on `sorted_anchors` that contains `path` (lex-sorted anchors).
 pub fn deepest_project_ancestor_for_path(path: &str, sorted_anchors: &[String]) -> Option<String> {
-    let path = normalize_path(path);
     if sorted_anchors.is_empty() {
         return None;
     }
-    let mut lo = 0usize;
-    let mut hi = sorted_anchors.len();
-    while lo < hi {
-        let mid = lo + (hi - lo) / 2;
-        if sorted_anchors[mid].as_str() <= path.as_str() {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    let mut idx = lo;
-    while idx > 0 {
-        idx -= 1;
-        if path_is_at_or_under(&path, &sorted_anchors[idx]) {
-            return Some(sorted_anchors[idx].clone());
-        }
-    }
-    None
+    let normalized;
+    let path = if needs_normalize(path) {
+        normalized = normalize_path(path);
+        normalized.as_str()
+    } else {
+        path
+    };
+    find_self_or_ancestor(path, |p| {
+        sorted_anchors
+            .binary_search_by(|anchor| anchor.as_str().cmp(p))
+            .is_ok()
+    })
+    .map(str::to_string)
 }
 
 /// Map each file path to its deepest project anchor (one pass over sorted paths + anchors).
@@ -314,12 +371,10 @@ pub fn build_funnel_context_for_files(
     _protected_prefixes: &[String],
 ) -> CoverageFunnelContextMap {
     let anchors = collect_project_anchor_paths(index);
-    let mut sorted_paths: Vec<String> = file_paths.to_vec();
-    sorted_paths.sort();
-    let mut map = CoverageFunnelContextMap::new();
-    for path in sorted_paths {
-        let ancestor = deepest_project_ancestor_for_path(&path, &anchors);
-        map.insert(path, ancestor);
+    let mut map = CoverageFunnelContextMap::with_capacity(file_paths.len());
+    for path in file_paths {
+        let ancestor = deepest_project_ancestor_for_path(path, &anchors);
+        map.insert(path.clone(), ancestor);
     }
     map
 }
@@ -327,15 +382,16 @@ pub fn build_funnel_context_for_files(
 /// Project ancestry map for all unclassified files in `index`.
 pub fn build_coverage_funnel_context(
     index: &SnapshotIndex,
-    kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
+    _kb: &OsKnowledgeBase,
+    _protected_prefixes: &[String],
 ) -> CoverageFunnelContextMap {
-    let paths: Vec<String> = index
-        .unclassified_files()
-        .into_iter()
-        .map(|(path, _)| path)
-        .collect();
-    build_funnel_context_for_files(index, &paths, kb, protected_prefixes)
+    let anchors = collect_project_anchor_paths(index);
+    let mut map = CoverageFunnelContextMap::new();
+    index.scan_unclassified_files(1, |path, _| {
+        let ancestor = deepest_project_ancestor_for_path(path, &anchors);
+        map.insert(path.to_string(), ancestor);
+    });
+    map
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -356,17 +412,12 @@ pub fn compute_coverage_funnel_stats(
     let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
     let classified = index.classified_paths();
     let mut stats = CoverageFunnelStats::default();
+    let mut ctx = CoverageFunnelContext::for_index(index, protected_prefixes, personal_prefixes);
     for (path, size_bytes) in index.unclassified_files() {
         if classified.contains(&path) {
             continue;
         }
-        let project_ancestor = funnel_map.get(&path).cloned().flatten();
-        let ctx = coverage_funnel_context_for_path(
-            project_ancestor,
-            index,
-            protected_prefixes,
-            personal_prefixes,
-        );
+        ctx.project_ancestor = funnel_map.get(&path).cloned().flatten();
         match resolve_unclassified_for_coverage(&path, size_bytes, kb, &ctx) {
             CoverageFileResolution::LocalSafe(_) => stats.local_safe_files += 1,
             CoverageFileResolution::LocalKeep { .. } => stats.local_keep_files += 1,
@@ -416,20 +467,12 @@ fn local_verdict_from_keep(
 fn local_verdict_for_unclassified(
     path: String,
     size_bytes: u64,
-    index: &SnapshotIndex,
     kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
+    ctx: &mut CoverageFunnelContext,
 ) -> Option<CoverageLocalVerdict> {
-    let project_ancestor = funnel_map.get(&path).cloned().flatten();
-    let ctx = coverage_funnel_context_for_path(
-        project_ancestor,
-        index,
-        protected_prefixes,
-        personal_prefixes,
-    );
-    match resolve_unclassified_for_coverage(&path, size_bytes, kb, &ctx) {
+    ctx.project_ancestor = funnel_map.get(&path).cloned().flatten();
+    match resolve_unclassified_for_coverage(&path, size_bytes, kb, ctx) {
         CoverageFileResolution::LocalSafe(entry) => Some(local_verdict_from_safe(entry, kb)),
         CoverageFileResolution::LocalKeep { reason, confidence } => Some(local_verdict_from_keep(
             path, size_bytes, reason, confidence, kb,
@@ -440,52 +483,38 @@ fn local_verdict_for_unclassified(
 
 /// Page funnel-resolved local verdicts without building the full list.
 ///
-/// `unclassified_cursor` is the number of unclassified file slots already
-/// consumed (including tail/tree candidates). `next_cursor` continues from
-/// the next unclassified slot so paging is O(total_unclassified) across all
-/// pages, not O(n × pages).
+/// `cursor` is opaque: pass `0` first, then the returned `next_cursor` (`None` when
+/// done). It is a position in the index's internal order, so no page sorts or
+/// re-resolves earlier files; it is only valid for the same index instance.
+///
+/// `base_ctx` comes from [`CoverageFunnelContext::for_index`]; building it scans every
+/// classified entry, so callers paging a large index should build it once and reuse it.
 pub fn page_local_coverage_verdicts(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,
-    protected_prefixes: &[String],
-    personal_prefixes: &[String],
+    base_ctx: &CoverageFunnelContext,
     funnel_map: &CoverageFunnelContextMap,
     classified: &std::collections::HashSet<String>,
-    unclassified_cursor: u64,
+    cursor: u64,
     limit: usize,
 ) -> (Vec<CoverageLocalVerdict>, Option<u64>) {
     if limit == 0 {
-        return (Vec::new(), Some(unclassified_cursor));
+        return (Vec::new(), Some(cursor));
     }
     let mut out = Vec::new();
-    let mut unclassified_seen = 0u64;
-    for (path, size_bytes) in index.unclassified_files() {
-        if classified.contains(&path) {
-            continue;
+    let mut ctx = base_ctx.clone();
+    let next = index.visit_unclassified_files_from(cursor as usize, |path, size_bytes| {
+        if classified.contains(path) {
+            return true;
         }
-        if unclassified_seen < unclassified_cursor {
-            unclassified_seen += 1;
-            continue;
-        }
-        if let Some(verdict) = local_verdict_for_unclassified(
-            path,
-            size_bytes,
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            funnel_map,
-        ) {
+        if let Some(verdict) =
+            local_verdict_for_unclassified(path.to_string(), size_bytes, kb, funnel_map, &mut ctx)
+        {
             out.push(verdict);
-            unclassified_seen += 1;
-            if out.len() >= limit {
-                return (out, Some(unclassified_seen));
-            }
-            continue;
         }
-        unclassified_seen += 1;
-    }
-    (out, None)
+        out.len() < limit
+    });
+    (out, next.map(|pos| pos as u64))
 }
 
 /// Collect funnel-resolved local verdicts for all unclassified files (single pass).
@@ -498,19 +527,14 @@ pub fn collect_local_coverage_verdicts(
     let funnel_map = build_coverage_funnel_context(index, kb, protected_prefixes);
     let classified = index.classified_paths();
     let mut out = Vec::new();
+    let mut ctx = CoverageFunnelContext::for_index(index, protected_prefixes, personal_prefixes);
     for (path, size_bytes) in index.unclassified_files() {
         if classified.contains(&path) {
             continue;
         }
-        if let Some(verdict) = local_verdict_for_unclassified(
-            path,
-            size_bytes,
-            index,
-            kb,
-            protected_prefixes,
-            personal_prefixes,
-            &funnel_map,
-        ) {
+        if let Some(verdict) =
+            local_verdict_for_unclassified(path, size_bytes, kb, &funnel_map, &mut ctx)
+        {
             out.push(verdict);
         }
     }
@@ -518,19 +542,17 @@ pub fn collect_local_coverage_verdicts(
     out
 }
 
-/// Build per-file [`CoverageFunnelContext`] using shared index-level prefix lists.
+/// Build a single-file [`CoverageFunnelContext`]. Recomputes index-level prefixes,
+/// so loops must use [`CoverageFunnelContext::for_index`] once instead.
 pub fn coverage_funnel_context_for_path(
     project_ancestor: Option<String>,
     index: &SnapshotIndex,
     protected_prefixes: &[String],
     personal_prefixes: &[String],
 ) -> CoverageFunnelContext {
-    CoverageFunnelContext {
-        exclusion_prefixes: coverage_local_exclusion_prefixes(index),
-        protected_prefixes: protected_prefixes.to_vec(),
-        personal_prefixes: personal_prefixes.to_vec(),
-        project_ancestor,
-    }
+    let mut ctx = CoverageFunnelContext::for_index(index, protected_prefixes, personal_prefixes);
+    ctx.project_ancestor = project_ancestor;
+    ctx
 }
 
 #[cfg(test)]
@@ -636,6 +658,127 @@ mod tests {
     }
 
     #[test]
+    fn for_index_prefix_set_matches_linear_prefix_scan() {
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.ensure_dir("/root/app/node_modules/pkg");
+        builder.insert_entry(classified_entry(
+            "/root/app/node_modules/pkg/index.js",
+            100,
+            EntryCategory::BuildArtifact,
+        ));
+        builder.insert_entry(classified_entry(
+            "/root/Library/Caches/a/blob",
+            100,
+            EntryCategory::Cache,
+        ));
+        let index = finish(builder);
+        let ctx = CoverageFunnelContext::for_index(&index, &[], &[]);
+        assert!(!ctx.exclusion_prefix_set.is_empty());
+        for path in [
+            "/root/app/node_modules/other/x.js",
+            "/root/app/node_modules",
+            "/root/app/src/main.rs",
+            "/root/Library/Caches/b/c.dat",
+            "/root/Library/CachesX/c.dat",
+            "/root/x.dat",
+            "/elsewhere/a",
+        ] {
+            assert_eq!(
+                ctx.path_under_exclusion_prefix(path),
+                path_under_indexed_prefix(path, &ctx.exclusion_prefixes),
+                "path={path}"
+            );
+        }
+    }
+
+    #[test]
+    fn deepest_project_ancestor_picks_longest_and_ignores_sibling_prefix() {
+        let mut anchors = vec![
+            "/root/a".to_string(),
+            "/root/a/pkg".to_string(),
+            "/root/ab".to_string(),
+            "/root/z".to_string(),
+        ];
+        anchors.sort();
+        assert_eq!(
+            deepest_project_ancestor_for_path("/root/a/pkg/src/x.rs", &anchors),
+            Some("/root/a/pkg".to_string())
+        );
+        assert_eq!(
+            deepest_project_ancestor_for_path("/root/abc/x.rs", &anchors),
+            None
+        );
+        assert_eq!(
+            deepest_project_ancestor_for_path("/root/a", &anchors),
+            Some("/root/a".to_string())
+        );
+        assert_eq!(deepest_project_ancestor_for_path("/other/x", &anchors), None);
+    }
+
+    #[test]
+    fn exclusion_prefixes_never_climb_past_cache_like_dirs() {
+        let mut builder = SnapshotIndexBuilder::new("/Users/me");
+        builder.insert_entry(classified_entry(
+            "/Users/me/.cache/uv/wheels/a.whl",
+            10,
+            EntryCategory::Cache,
+        ));
+        builder.insert_entry(classified_entry(
+            "/Users/me/Library/Caches/com.app/blob",
+            10,
+            EntryCategory::Cache,
+        ));
+        builder.insert_entry(classified_entry(
+            "/Users/me/Downloads/setup.tmp",
+            10,
+            EntryCategory::Temp,
+        ));
+        builder.ensure_dir("/Users/me/code/app/node_modules");
+        let mut node_modules = classified_entry(
+            "/Users/me/code/app/node_modules",
+            10,
+            EntryCategory::BuildArtifact,
+        );
+        node_modules.source_type = SourceType::Directory;
+        builder.insert_entry(node_modules);
+        builder.record_file_size("/Users/me/Movies/clip.mov", 1_000);
+        builder.record_file_size("/Users/me/code/app/node_modules/x/i.js", 5);
+        let index = finish(builder);
+
+        let prefixes = coverage_local_exclusion_prefixes(&index);
+        for forbidden in [
+            "/Users/me",
+            "/Users/me/Library",
+            "/Users/me/Downloads",
+            "/Users/me/code/app",
+        ] {
+            assert!(
+                !prefixes.iter().any(|p| p == forbidden),
+                "{forbidden} must not be an exclusion prefix: {prefixes:?}"
+            );
+        }
+        for expected in [
+            "/Users/me/.cache",
+            "/Users/me/Library/Caches",
+            "/Users/me/code/app/node_modules",
+        ] {
+            assert!(
+                prefixes.iter().any(|p| p == expected),
+                "{expected} missing: {prefixes:?}"
+            );
+        }
+
+        let ctx = CoverageFunnelContext::for_index(&index, &[], &[]);
+        assert!(!ctx.path_under_exclusion_prefix("/Users/me/Movies/clip.mov"));
+        assert!(ctx.path_under_exclusion_prefix("/Users/me/code/app/node_modules/x/i.js"));
+        let stats = compute_coverage_funnel_stats(&index, &test_kb(), &[], &[]);
+        assert!(
+            stats.tree_pending_files + stats.tail_files >= 1,
+            "home media must still need AI: {stats:?}"
+        );
+    }
+
+    #[test]
     fn siblings_under_node_modules_both_match_parent_prefix() {
         let mut builder = SnapshotIndexBuilder::new("/root");
         builder.ensure_dir("/root/app/node_modules/pkg");
@@ -686,14 +829,14 @@ mod tests {
         let funnel_map = build_coverage_funnel_context(&index, &kb, &[]);
         let classified = index.classified_paths();
         let all = collect_local_coverage_verdicts(&index, &kb, &[], &[]);
+        let base_ctx = CoverageFunnelContext::for_index(&index, &[], &[]);
         let mut cursor = 0u64;
         let mut paged = Vec::new();
         loop {
             let (page, next) = page_local_coverage_verdicts(
                 &index,
                 &kb,
-                &[],
-                &[],
+                &base_ctx,
                 &funnel_map,
                 &classified,
                 cursor,
@@ -705,7 +848,12 @@ mod tests {
                 None => break,
             }
         }
-        assert_eq!(paged.len(), all.len());
+        let mut paged_paths: Vec<_> = paged.iter().map(|v| v.path.clone()).collect();
+        let mut all_paths: Vec<_> = all.iter().map(|v| v.path.clone()).collect();
+        paged_paths.sort();
+        all_paths.sort();
+        assert!(!all_paths.is_empty());
+        assert_eq!(paged_paths, all_paths, "paging must cover each local verdict once");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Directory role classification for AI coverage tree (Phase 2 §4.4).
 
-use crate::index::SnapshotIndex;
+use crate::index::{SnapshotIndex, SnapshotNodeRecord};
 
 /// Bit on [`crate::index::DirectoryRecord::pruned_child_flags`] when walk pruned a VCS child (`.git`, etc.).
 pub const PRUNED_VCS: u32 = 1;
@@ -55,11 +55,17 @@ pub fn classify_directory_role(
     }
 
     let query = index.query_directory(dir_path, None, false, "name");
+    classify_directory_role_from_children(&query.direct_children)
+}
+
+fn classify_directory_role_from_children(
+    children: &[SnapshotNodeRecord],
+) -> (DirectoryRole, Vec<String>) {
     let mut manifest_markers: Vec<String> = Vec::new();
     let mut doc_markers: Vec<String> = Vec::new();
     let mut subdir_markers: Vec<String> = Vec::new();
 
-    for child in &query.direct_children {
+    for child in children {
         if child.is_directory {
             if PROJECT_SUBDIR_NAMES.iter().any(|&n| n == child.name) {
                 subdir_markers.push(child.name.clone());
@@ -96,14 +102,18 @@ pub fn collect_project_anchor_paths(index: &SnapshotIndex) -> Vec<String> {
     let mut anchors = Vec::new();
     let mut stack = vec![index.root_path.clone()];
     while let Some(dir) = stack.pop() {
-        let (role, _) = classify_directory_role(index, &dir);
+        let query = index.query_directory(&dir, None, false, "name");
+        let role = if index.directory_pruned_child_flags(&dir) & PRUNED_VCS != 0 {
+            DirectoryRole::ProjectRoot
+        } else {
+            classify_directory_role_from_children(&query.direct_children).0
+        };
         if matches!(
             role,
             DirectoryRole::ProjectRoot | DirectoryRole::ProjectLike
         ) {
             anchors.push(dir.clone());
         }
-        let query = index.query_directory(&dir, None, false, "name");
         for child in query.direct_children {
             if child.is_directory {
                 stack.push(child.path);

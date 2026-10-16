@@ -1149,26 +1149,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiCoverageRaiseBudgetTitle => 'Raise coverage budget';
 
   @override
-  String get aiCoverageNotifyTitle => 'Volward AI';
+  String get aiCoverageNotifyTitle => 'AI cleanup analysis';
 
   @override
-  String aiCoverageNotifyComplete(int analyzed, int total) {
-    return 'Coverage complete: $analyzed/$total files analyzed.';
+  String aiCoverageNotifyComplete(int analyzed) {
+    return 'Analysis finished for $analyzed files. Open Volward to review cleanup suggestions.';
   }
 
   @override
   String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
-    return 'Coverage paused at run budget: $used/$budget credits used.';
+    return 'Paused at this run\'s credit limit ($used/$budget). Open Volward to raise the limit and continue.';
   }
 
   @override
   String aiCoverageNotifyBudgetPausedTokens(int used, int budget) {
-    return 'Coverage paused at run budget: $used/$budget tokens used.';
+    return 'Paused at this run\'s token limit ($used/$budget). Open Volward to raise the limit and continue.';
   }
 
   @override
   String get aiCoverageNotifyFailed =>
-      'Coverage paused due to an error. Open AI results to retry.';
+      'Analysis hit an error and paused. Open Volward to retry.';
 
   @override
   String get aiCoverageBudgetInvalid =>

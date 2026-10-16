@@ -60,7 +60,11 @@ Future<void> _coverageJobWorkerMain(
   }
 
   final cacheDir = SnapshotCache.cacheDir();
-  final engine = NativeCoverageEngine(bridge: bridge, engine: enginePtr);
+  final engine = NativeCoverageEngine(
+    bridge: bridge,
+    engine: enginePtr,
+    offloadHeavyCalls: false,
+  );
   final cancelToken = CancelToken();
   CoveragePlanSummary? resumePlanCache;
   CoverageJobController? controller;

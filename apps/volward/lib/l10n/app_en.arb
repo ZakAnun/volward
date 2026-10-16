@@ -851,19 +851,16 @@
   "aiCoverageCancel": "Stop coverage",
   "aiCoverageRaiseBudget": "Raise limit & resume",
   "aiCoverageRaiseBudgetTitle": "Raise coverage budget",
-  "aiCoverageNotifyTitle": "Volward AI",
-  "aiCoverageNotifyComplete": "Coverage complete: {analyzed}/{total} files analyzed.",
+  "aiCoverageNotifyTitle": "AI cleanup analysis",
+  "aiCoverageNotifyComplete": "Analysis finished for {analyzed} files. Open Volward to review cleanup suggestions.",
   "@aiCoverageNotifyComplete": {
     "placeholders": {
       "analyzed": {
         "type": "int"
-      },
-      "total": {
-        "type": "int"
       }
     }
   },
-  "aiCoverageNotifyBudgetPausedCredits": "Coverage paused at run budget: {used}/{budget} credits used.",
+  "aiCoverageNotifyBudgetPausedCredits": "Paused at this run's credit limit ({used}/{budget}). Open Volward to raise the limit and continue.",
   "@aiCoverageNotifyBudgetPausedCredits": {
     "placeholders": {
       "used": {
@@ -874,7 +871,7 @@
       }
     }
   },
-  "aiCoverageNotifyBudgetPausedTokens": "Coverage paused at run budget: {used}/{budget} tokens used.",
+  "aiCoverageNotifyBudgetPausedTokens": "Paused at this run's token limit ({used}/{budget}). Open Volward to raise the limit and continue.",
   "@aiCoverageNotifyBudgetPausedTokens": {
     "placeholders": {
       "used": {
@@ -885,7 +882,7 @@
       }
     }
   },
-  "aiCoverageNotifyFailed": "Coverage paused due to an error. Open AI results to retry.",
+  "aiCoverageNotifyFailed": "Analysis hit an error and paused. Open Volward to retry.",
   "aiCoverageBudgetInvalid": "Enter a budget higher than the current limit.",
   "aiCoverageJobBillingModeMismatchTitle": "Coverage run uses a different billing mode",
   "aiCoverageJobBillingModeMismatchPlatform": "This run was started with a BYOK token limit ({budget} tokens, {used} used). You are in Platform mode, which bills credits. Restart full coverage to start a Platform run, or switch back to BYOK to resume this job.",

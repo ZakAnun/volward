@@ -139,6 +139,90 @@ void main() {
     },
   );
 
+  test(
+    'v3 tree keep propagation writes straight to the verdict file',
+    () async {
+      const nodePath = '/root/cache';
+      const node = CoverageTreeNode(
+        path: nodePath,
+        sizeBytes: 300,
+        fileCount: 3,
+        subdirCount: 0,
+        role: 'cache_like',
+      );
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 'v3-direct',
+          planVersion: 3,
+          rootPath: '/root',
+          totalUnclassified: 3,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          seedNodeCount: 1,
+        ),
+        pages: const [],
+        treePagesByCursor: {
+          0: const CoverageTreePage(
+            snapshotId: 'v3-direct',
+            planVersion: 3,
+            nextCursor: null,
+            nodes: [node],
+          ),
+        },
+        applyDirVerdictHandler: (_, __, ___, ____) async =>
+            throw StateError('JSON fallback must not run'),
+        applyDirVerdictToFileHandler: (dirPath, verdict, outPath) async {
+          final sink = File(outPath).openWrite(mode: FileMode.append);
+          for (var i = 0; i < 3; i++) {
+            sink.writeln(
+              '{"path":"$dirPath/f$i","verdict":"$verdict",'
+              '"confidence":"high","reason":"inherited",'
+              '"coverage_source":"dir_propagate:$dirPath","size_bytes":100}',
+            );
+          }
+          await sink.close();
+          return 3;
+        },
+      );
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: (_) async => throw StateError('tail unused'),
+        preferTreeCoveragePlan: true,
+        analyzeTreeBatch: (nodes) async => BatchOutcome(
+          usage: const BatchUsage(tokens: 1, credits: 1),
+          verdicts: [
+            CoverageVerdict(
+              path: nodePath,
+              verdict: 'keep',
+              confidence: 'high',
+              reason: 'cache',
+              coverageSource: 'dir:$nodePath',
+              sizeBytes: node.sizeBytes,
+            ),
+          ],
+        ),
+      );
+
+      final done = await controller.start(
+        'v3-direct',
+        budgetTokens: 100000,
+        budgetCredits: 10,
+      );
+
+      expect(done.status, CoverageJobStatus.completed);
+      expect(done.analyzedFiles, 3);
+      final saved = await verdictStore.readAll('v3-direct');
+      expect(
+        saved.where((v) => v.coverageSource == 'dir_propagate:$nodePath'),
+        hasLength(3),
+      );
+    },
+  );
+
   test('v3 start flushes local verdicts in chunks of 1000', () async {
     final localVerdicts = List.generate(
       2500,

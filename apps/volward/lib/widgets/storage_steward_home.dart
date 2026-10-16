@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../ai/ai_analysis_gateway.dart';
+import '../ai/coverage_desktop_notify.dart';
 import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
@@ -178,8 +180,29 @@ class _StorageStewardHomeState extends State<StorageStewardHome> {
     debugLabel: 'home-ai-action',
   );
 
+  StreamSubscription<String>? _notificationOpens;
+
   FocusNode get _aiActionFocusNode =>
       widget.aiActionFocusNode ?? _ownedAiActionFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationOpens = coverageNotificationOpens.listen(
+      _openAiFromNotification,
+    );
+    unawaited(
+      CoverageNotificationChannel.takePendingOpen().then((snapshotId) {
+        if (snapshotId != null) _openAiFromNotification(snapshotId);
+      }),
+    );
+  }
+
+  void _openAiFromNotification(String snapshotId) {
+    if (!mounted || _activeAiSnapshotId == snapshotId) return;
+    if (widget.aiSnapshotId != snapshotId) return;
+    _openAi();
+  }
 
   bool get _aiAvailable =>
       widget.aiSnapshotId != null &&
@@ -202,6 +225,7 @@ class _StorageStewardHomeState extends State<StorageStewardHome> {
 
   @override
   void dispose() {
+    _notificationOpens?.cancel();
     _ownedAiActionFocusNode.dispose();
     super.dispose();
   }

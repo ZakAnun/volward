@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
@@ -15,6 +18,7 @@ class NativeCoverageEngine implements CoverageEngine {
     required this.bridge,
     required this.engine,
     this.pageSize = 200,
+    this.offloadHeavyCalls = true,
   });
 
   static final Map<String, Future<String>> _inFlightPlanJson = {};
@@ -22,6 +26,11 @@ class NativeCoverageEngine implements CoverageEngine {
   final VolwardNativeBridge bridge;
   final Pointer<Void> engine;
   final int pageSize;
+
+  /// Run per-file native scans (and their JSON decode) on a short-lived isolate.
+  /// On large indexes each call takes long enough to freeze the UI isolate; set
+  /// `false` when this engine already lives on a background isolate.
+  final bool offloadHeavyCalls;
 
   String _requireJson(String? raw, String operation) {
     if (raw == null || raw.isEmpty) {
@@ -59,7 +68,8 @@ class NativeCoverageEngine implements CoverageEngine {
     }
 
     final startedAt = DateTime.now();
-    const timeout = Duration(minutes: 30);
+    // Full cache build walks every unclassified file on large scans (70GB+).
+    const timeout = Duration(minutes: 120);
 
     Future<void> waitForPlanBuild() async {
       var lastHeartbeat = startedAt;
@@ -251,17 +261,162 @@ class NativeCoverageEngine implements CoverageEngine {
     String confidence,
     String roleSnakeCase,
   ) async {
-    final raw = _requireJson(
-      bridge.applyAiDirVerdictJson(
+    if (!offloadHeavyCalls) {
+      return _applyDirVerdict(
+        bridge,
         engine,
         snapshotId,
         dirPath,
         verdict,
         confidence,
         roleSnakeCase,
+      );
+    }
+    return Isolate.run(
+      _applyDirVerdictTask(
+        engine.address,
+        snapshotId,
+        dirPath,
+        verdict,
+        confidence,
+        roleSnakeCase,
       ),
-      'apply dir verdict',
+      debugName: 'volward-apply-dir-verdict',
     );
+  }
+
+  @override
+  Future<int?> applyDirVerdictToFile(
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+    String outPath,
+  ) async {
+    if (!bridge.hasApplyDirVerdictToFileApi) return null;
+    if (!offloadHeavyCalls) {
+      return _applyDirVerdictToFile(
+        bridge,
+        engine,
+        snapshotId,
+        dirPath,
+        verdict,
+        confidence,
+        roleSnakeCase,
+        outPath,
+      );
+    }
+    return Isolate.run(
+      _applyDirVerdictToFileTask(
+        engine.address,
+        snapshotId,
+        dirPath,
+        verdict,
+        confidence,
+        roleSnakeCase,
+        outPath,
+      ),
+      debugName: 'volward-apply-dir-verdict-file',
+    );
+  }
+
+  static int Function() _applyDirVerdictToFileTask(
+    int engineAddress,
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+    String outPath,
+  ) {
+    return () => _applyDirVerdictToFile(
+      VolwardNativeBridge.open(),
+      Pointer<Void>.fromAddress(engineAddress),
+      snapshotId,
+      dirPath,
+      verdict,
+      confidence,
+      roleSnakeCase,
+      outPath,
+    );
+  }
+
+  static int _applyDirVerdictToFile(
+    VolwardNativeBridge bridge,
+    Pointer<Void> engine,
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+    String outPath,
+  ) {
+    final raw = bridge.applyAiDirVerdictToFile(
+      engine,
+      snapshotId,
+      dirPath,
+      verdict,
+      confidence,
+      roleSnakeCase,
+      outPath,
+    );
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) {
+      throw CoverageEngineException(
+        raw == null || raw.isEmpty
+            ? 'error:native apply dir verdict to file unavailable'
+            : raw,
+      );
+    }
+    final decoded = jsonDecode(raw);
+    final count = decoded is Map ? decoded['count'] : null;
+    if (count is! num) {
+      throw CoverageEngineException('error:apply dir verdict to file: $raw');
+    }
+    return count.toInt();
+  }
+
+  static List<CoverageVerdict> Function() _applyDirVerdictTask(
+    int engineAddress,
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+  ) {
+    return () => _applyDirVerdict(
+      VolwardNativeBridge.open(),
+      Pointer<Void>.fromAddress(engineAddress),
+      snapshotId,
+      dirPath,
+      verdict,
+      confidence,
+      roleSnakeCase,
+    );
+  }
+
+  static List<CoverageVerdict> _applyDirVerdict(
+    VolwardNativeBridge bridge,
+    Pointer<Void> engine,
+    String snapshotId,
+    String dirPath,
+    String verdict,
+    String confidence,
+    String roleSnakeCase,
+  ) {
+    final raw = bridge.applyAiDirVerdictJson(
+      engine,
+      snapshotId,
+      dirPath,
+      verdict,
+      confidence,
+      roleSnakeCase,
+    );
+    if (raw == null || raw.isEmpty) {
+      throw CoverageEngineException(
+        'error:native apply dir verdict unavailable',
+      );
+    }
     return parseApplyDirVerdictResponse(raw);
   }
 
@@ -271,15 +426,114 @@ class NativeCoverageEngine implements CoverageEngine {
     int cursor = 0,
     int limit = 5000,
   }) async {
-    final raw = _requireJson(
-      bridge.listLocalCoverageVerdictsJson(
+    if (!offloadHeavyCalls) {
+      return _fetchLocalVerdictsPage(bridge, engine, snapshotId, cursor, limit);
+    }
+    return Isolate.run(
+      _localVerdictsPageTask(engine.address, snapshotId, cursor, limit),
+      debugName: 'volward-local-verdicts',
+    );
+  }
+
+  /// Writes every native local verdict page into the verdict store at
+  /// [storeDirectory] without materializing them on the calling isolate.
+  /// Returns how many verdicts were written.
+  Future<int> backfillLocalVerdictsToStore(
+    String snapshotId,
+    String storeDirectory, {
+    int pageLimit = 5000,
+  }) {
+    if (!offloadHeavyCalls) {
+      return _backfillLocalVerdicts(
+        bridge,
+        engine,
+        snapshotId,
+        storeDirectory,
+        pageLimit,
+      );
+    }
+    return Isolate.run(
+      _backfillTask(engine.address, snapshotId, storeDirectory, pageLimit),
+      debugName: 'volward-local-verdict-backfill',
+    );
+  }
+
+  static Future<int> Function() _backfillTask(
+    int engineAddress,
+    String snapshotId,
+    String storeDirectory,
+    int pageLimit,
+  ) {
+    return () => _backfillLocalVerdicts(
+      VolwardNativeBridge.open(),
+      Pointer<Void>.fromAddress(engineAddress),
+      snapshotId,
+      storeDirectory,
+      pageLimit,
+    );
+  }
+
+  static Future<int> _backfillLocalVerdicts(
+    VolwardNativeBridge bridge,
+    Pointer<Void> engine,
+    String snapshotId,
+    String storeDirectory,
+    int pageLimit,
+  ) async {
+    final store = CoverageVerdictStore(Directory(storeDirectory));
+    var written = 0;
+    int? cursor = 0;
+    while (cursor != null) {
+      final page = _fetchLocalVerdictsPage(
+        bridge,
         engine,
         snapshotId,
         cursor,
-        limit: limit,
-      ),
-      'list local coverage verdicts',
+        pageLimit,
+      );
+      if (page.verdicts.isEmpty) break;
+      await store.appendAll(snapshotId, page.verdicts);
+      written += page.verdicts.length;
+      final next = page.nextCursor;
+      cursor = next != null && next > cursor ? next : null;
+    }
+    return written;
+  }
+
+  /// Built in a static scope so the isolate closure captures only sendable values.
+  static LocalCoverageVerdictPage Function() _localVerdictsPageTask(
+    int engineAddress,
+    String snapshotId,
+    int cursor,
+    int limit,
+  ) {
+    return () => _fetchLocalVerdictsPage(
+      VolwardNativeBridge.open(),
+      Pointer<Void>.fromAddress(engineAddress),
+      snapshotId,
+      cursor,
+      limit,
     );
+  }
+
+  static LocalCoverageVerdictPage _fetchLocalVerdictsPage(
+    VolwardNativeBridge bridge,
+    Pointer<Void> engine,
+    String snapshotId,
+    int cursor,
+    int limit,
+  ) {
+    final raw = bridge.listLocalCoverageVerdictsJson(
+      engine,
+      snapshotId,
+      cursor,
+      limit: limit,
+    );
+    if (raw == null || raw.isEmpty) {
+      throw CoverageEngineException(
+        'error:native list local coverage verdicts unavailable',
+      );
+    }
     return parseLocalCoverageVerdictPage(raw);
   }
 

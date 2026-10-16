@@ -197,11 +197,13 @@ abstract final class SnapshotCache {
       final root = _extractJsonStringField(header, 'root');
       final snapshotPath = _extractJsonStringField(header, 'snapshot_path');
       final scannedAt = _extractJsonIntField(header, 'scanned_at_ms');
+      final snapshotId = _extractJsonStringField(header, 'snapshot_id');
       if (root != null || snapshotPath != null || scannedAt != null) {
         return <String, dynamic>{
           if (root != null) 'root': root,
           if (snapshotPath != null) 'snapshot_path': snapshotPath,
           if (scannedAt != null) 'scanned_at_ms': scannedAt,
+          if (snapshotId != null) 'snapshot_id': snapshotId,
         };
       }
 

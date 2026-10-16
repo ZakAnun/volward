@@ -22,11 +22,10 @@ use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, apply_dir_verdict, build_ai_coverage_plan,
-    build_ai_tree_plan, build_ai_tree_plan_from_coverage_cache,
-    build_coverage_funnel_context, build_unclassified_coverage_cache,
-    build_unclassified_subtree_index,
-    compute_coverage_funnel_stats, coverage_group_member_paths,
-    expand_tree_drill_children_with_index, page_local_coverage_verdicts, CoverageFunnelContextMap,
+    write_dir_verdict_jsonl,
+    build_ai_tree_plan_from_coverage_cache,
+    coverage_group_member_paths,
+    expand_tree_drill_children_with_index, page_local_coverage_verdicts, CoverageFunnelContext, CoverageFunnelContextMap,
     DirectoryRole, UnclassifiedCoverageCache, UnclassifiedSubtreeIndex,
     AiCandidateBuilder,
     AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
@@ -46,6 +45,8 @@ struct LocalCoverageFunnelCache {
     index_version: u64,
     funnel_map: Arc<CoverageFunnelContextMap>,
     classified: Arc<HashSet<String>>,
+    /// Built lazily on the first local-verdict page and reused by later pages.
+    base_ctx: Option<Arc<CoverageFunnelContext>>,
 }
 
 struct UnclassifiedSubtreeIndexCache {
@@ -93,7 +94,9 @@ pub struct VolwardEngine {
     last_snapshot: Arc<Mutex<Option<StorageSnapshot>>>,
     /// Authoritative path-keyed index rebuilt whenever a new snapshot is set.
     /// Dart queries this via FFI instead of hydrating the full snapshot.
-    last_index: Arc<Mutex<Option<SnapshotIndex>>>,
+    /// `Arc` so readers take a cheap handle and release the lock immediately;
+    /// cloning the index itself under the lock stalls UI-thread queries on large scans.
+    last_index: Arc<Mutex<Option<Arc<SnapshotIndex>>>>,
     is_index_loading: Arc<AtomicBool>,
     last_index_load_error: Arc<Mutex<Option<String>>>,
     last_pause_error: Arc<Mutex<Option<String>>>,
@@ -212,7 +215,7 @@ impl VolwardEngine {
         let version = self.index_version.fetch_add(1, Ordering::Relaxed) + 1;
         let index = SnapshotIndex::from_snapshot_with_version(&snapshot, version);
         if let Ok(mut g) = self.last_index.lock() {
-            *g = Some(index);
+            *g = Some(Arc::new(index));
         }
         if let Ok(mut g) = self.last_snapshot.lock() {
             *g = Some(snapshot);
@@ -223,7 +226,7 @@ impl VolwardEngine {
         self.clear_local_coverage_funnel_cache();
         let version = self.index_version.fetch_add(1, Ordering::Relaxed) + 1;
         if let Ok(mut g) = self.last_index.lock() {
-            *g = Some(index);
+            *g = Some(Arc::new(index));
         }
         let _ = version;
     }
@@ -441,7 +444,7 @@ impl VolwardEngine {
         self.capability_jobs.cancel(job_id)
     }
 
-    fn current_index(&self) -> Option<SnapshotIndex> {
+    fn current_index(&self) -> Option<Arc<SnapshotIndex>> {
         self.last_index.lock().ok().and_then(|guard| guard.clone())
     }
 
@@ -498,6 +501,7 @@ impl VolwardEngine {
         let mut guard = self.last_index.lock().map_err(|e| format!("lock: {e}"))?;
         let index = guard
             .as_mut()
+            .map(Arc::make_mut)
             .ok_or_else(|| "error:no index loaded".to_string())?;
         let new_version =
             index.replace_directory_with_subtree(target_path, &payload.tree, &payload.entries)?;
@@ -540,7 +544,7 @@ impl VolwardEngine {
     fn set_loaded_index(&self, index: SnapshotIndex) {
         self.index_version.store(index.version, Ordering::Relaxed);
         if let Ok(mut g) = self.last_index.lock() {
-            *g = Some(index);
+            *g = Some(Arc::new(index));
         }
         if let Ok(mut g) = self.last_snapshot.lock() {
             *g = None;
@@ -581,7 +585,7 @@ impl VolwardEngine {
                     if index_load_generation.load(Ordering::SeqCst) == load_generation {
                         index_version.store(index.version, Ordering::Relaxed);
                         if let Ok(mut g) = last_index.lock() {
-                            *g = Some(index);
+                            *g = Some(Arc::new(index));
                         }
                         if let Ok(mut g) = last_snapshot.lock() {
                             *g = None;
@@ -641,7 +645,7 @@ impl VolwardEngine {
             if let Some(index) = guard.as_ref() {
                 let file = File::create(path).map_err(|e| format!("error:create index: {e}"))?;
                 let mut writer = BufWriter::new(file);
-                serde_json::to_writer(&mut writer, index)
+                serde_json::to_writer(&mut writer, index.as_ref())
                     .map_err(|e| format!("error:serialize index: {e}"))?;
                 writer
                     .flush()
@@ -784,7 +788,7 @@ impl VolwardEngine {
                         let version = index_version.fetch_add(1, Ordering::Relaxed) + 1;
                         index.version = version;
                         if let Ok(mut g) = last_index.lock() {
-                            *g = Some(index);
+                            *g = Some(Arc::new(index));
                         }
                         if let Ok(mut g) = last_snapshot.lock() {
                             *g = None;
@@ -1110,11 +1114,19 @@ impl VolwardEngine {
         index: &SnapshotIndex,
         kb: &OsKnowledgeBase,
         protected_prefixes: &[String],
+        depth: volward_core::UnclassifiedCoverageCacheDepth,
     ) -> Arc<UnclassifiedCoverageCache> {
+        use volward_core::{
+            build_unclassified_coverage_cache, build_unclassified_coverage_cache_funnel_sample,
+            cache_meets_depth, UnclassifiedCoverageCacheDepth,
+        };
+
         let snapshot_id = index.snapshot_id.clone();
         let index_version = self.index_version.load(Ordering::Relaxed);
         if let Some(cache) = self.peek_unclassified_coverage_cache(&snapshot_id, index_version) {
-            return cache;
+            if cache_meets_depth(cache.as_ref(), depth) {
+                return cache;
+            }
         }
 
         let flight = self.coverage_cache_build_flight(&snapshot_id, index_version);
@@ -1123,7 +1135,9 @@ impl VolwardEngine {
             .unwrap_or_else(|e| e.into_inner());
 
         if let Some(cache) = self.peek_unclassified_coverage_cache(&snapshot_id, index_version) {
-            return cache;
+            if cache_meets_depth(cache.as_ref(), depth) {
+                return cache;
+            }
         }
 
         volward_core::unclassified_coverage_cache::invalidate_stale_coverage_cache_sidecar(
@@ -1131,15 +1145,22 @@ impl VolwardEngine {
             index_version,
         );
 
-        let (built, built_fresh) =
-            if let Some(restored) =
-                volward_core::unclassified_coverage_cache::try_load_coverage_cache_from_disk(
-                    &snapshot_id,
-                    index_version,
-                )
-            {
-                (Arc::new(restored), false)
-            } else {
+        let fingerprint = index.content_fingerprint();
+        // The sample is one cheap index pass; loading the (large) full sidecar for it is slower.
+        let (built, built_fresh) = if depth == UnclassifiedCoverageCacheDepth::FunnelSample {
+            (
+                Arc::new(build_unclassified_coverage_cache_funnel_sample(index)),
+                true,
+            )
+        } else if let Some(restored) =
+            volward_core::unclassified_coverage_cache::try_load_coverage_cache_from_disk(
+                &snapshot_id,
+                index_version,
+                &fingerprint,
+            )
+        {
+            (Arc::new(restored), false)
+        } else {
                 (
                     Arc::new(build_unclassified_coverage_cache(
                         index,
@@ -1157,35 +1178,43 @@ impl VolwardEngine {
             built.clone(),
         );
 
-        if built_fresh {
-            let wire = volward_core::coverage_cache_to_persisted(
-                built.as_ref(),
+        if built_fresh && built.subtree_index_ready {
+            self.persist_unclassified_coverage_cache(
                 &snapshot_id,
                 index_version,
+                &fingerprint,
+                built.as_ref(),
             );
-            let bin_path = volward_core::coverage_cache_bin_path(&snapshot_id);
-            if let Err(err) = volward_core::save_coverage_cache_bin(&bin_path, &wire) {
-                Self::log_coverage_cache_persist_error("bin save", err);
-                let _ = std::fs::remove_file(bin_path);
-            }
-        }
-        let sidecar_path =
-            volward_core::unclassified_coverage_cache::coverage_cache_sidecar_path(&snapshot_id);
-        if built_fresh || !sidecar_path.exists() {
-            let sidecar =
-                volward_core::unclassified_coverage_cache::CoverageCacheSidecarMeta::from_cache(
-                    &snapshot_id,
-                    index_version,
-                    built.as_ref(),
-                );
-            if let Err(err) = volward_core::unclassified_coverage_cache::save_coverage_cache_sidecar(
-                &sidecar_path,
-                &sidecar,
-            ) {
-                Self::log_coverage_cache_persist_error("meta save", err);
-            }
         }
         built
+    }
+
+    /// Writes bin first, then meta; meta is the commit marker that makes the bin loadable.
+    fn persist_unclassified_coverage_cache(
+        &self,
+        snapshot_id: &str,
+        index_version: u64,
+        fingerprint: &str,
+        cache: &UnclassifiedCoverageCache,
+    ) {
+        use volward_core::unclassified_coverage_cache::{
+            coverage_cache_sidecar_path, save_coverage_cache_sidecar, CoverageCacheSidecarMeta,
+        };
+
+        let sidecar_path = coverage_cache_sidecar_path(snapshot_id);
+        let _ = std::fs::remove_file(&sidecar_path);
+        let wire = volward_core::coverage_cache_to_persisted(cache, snapshot_id, index_version);
+        let bin_path = volward_core::coverage_cache_bin_path(snapshot_id);
+        if let Err(err) = volward_core::save_coverage_cache_bin(&bin_path, &wire) {
+            Self::log_coverage_cache_persist_error("bin save", err);
+            let _ = std::fs::remove_file(bin_path);
+            return;
+        }
+        let sidecar =
+            CoverageCacheSidecarMeta::from_cache(snapshot_id, index_version, fingerprint, cache);
+        if let Err(err) = save_coverage_cache_sidecar(&sidecar_path, &sidecar) {
+            Self::log_coverage_cache_persist_error("meta save", err);
+        }
     }
 
     fn store_unclassified_coverage_cache(
@@ -1194,9 +1223,9 @@ impl VolwardEngine {
         index_version: u64,
         built: Arc<UnclassifiedCoverageCache>,
     ) {
-        let funnel_map = Arc::new(built.funnel_map.clone());
-        let classified = Arc::new(built.classified.clone());
-        let subtree_index = Arc::new(built.subtree_index.clone());
+        let funnel_map = Arc::clone(&built.funnel_map);
+        let classified = Arc::clone(&built.classified);
+        let subtree_index = Arc::clone(&built.subtree_index);
 
         if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
             *guard = Some(LocalCoverageFunnelCache {
@@ -1204,6 +1233,7 @@ impl VolwardEngine {
                 index_version,
                 funnel_map,
                 classified,
+                base_ctx: None,
             });
         }
         if let Ok(mut guard) = self.unclassified_subtree_index_cache.lock() {
@@ -1230,10 +1260,17 @@ impl VolwardEngine {
     ) -> Arc<UnclassifiedSubtreeIndex> {
         let snapshot_id = index.snapshot_id.clone();
         let index_version = self.index_version.load(Ordering::Relaxed);
-        self.ensure_unclassified_coverage_cache(index, kb, protected_prefixes);
+        self.ensure_unclassified_coverage_cache(
+            index,
+            kb,
+            protected_prefixes,
+            volward_core::UnclassifiedCoverageCacheDepth::Full,
+        );
         if let Ok(guard) = self.unclassified_subtree_index_cache.lock() {
             if let Some(cache) = guard.as_ref() {
-                return cache.subtree_index.clone();
+                if cache.snapshot_id == snapshot_id && cache.index_version == index_version {
+                    return cache.subtree_index.clone();
+                }
             }
         }
         Arc::new(UnclassifiedSubtreeIndex::default())
@@ -1269,17 +1306,45 @@ impl VolwardEngine {
         index: &SnapshotIndex,
         kb: &OsKnowledgeBase,
         protected_prefixes: &[String],
-    ) -> (Arc<CoverageFunnelContextMap>, Arc<HashSet<String>>) {
-        self.ensure_unclassified_coverage_cache(index, kb, protected_prefixes);
+    ) -> (
+        Arc<CoverageFunnelContextMap>,
+        Arc<HashSet<String>>,
+        Arc<CoverageFunnelContext>,
+    ) {
+        let index_version = self.index_version.load(Ordering::Relaxed);
+        self.ensure_unclassified_coverage_cache(
+            index,
+            kb,
+            protected_prefixes,
+            volward_core::UnclassifiedCoverageCacheDepth::Full,
+        );
+        let mut maps = None;
         if let Ok(guard) = self.local_coverage_funnel_cache.lock() {
             if let Some(cache) = guard.as_ref() {
-                return (cache.funnel_map.clone(), cache.classified.clone());
+                if cache.snapshot_id == index.snapshot_id && cache.index_version == index_version {
+                    if let Some(ctx) = cache.base_ctx.as_ref() {
+                        return (cache.funnel_map.clone(), cache.classified.clone(), ctx.clone());
+                    }
+                    maps = Some((cache.funnel_map.clone(), cache.classified.clone()));
+                }
             }
         }
-        (
-            Arc::new(CoverageFunnelContextMap::new()),
-            Arc::new(HashSet::new()),
-        )
+        let ctx = Arc::new(CoverageFunnelContext::for_index(index, protected_prefixes, &[]));
+        let Some((funnel_map, classified)) = maps else {
+            return (
+                Arc::new(CoverageFunnelContextMap::new()),
+                Arc::new(HashSet::new()),
+                ctx,
+            );
+        };
+        if let Ok(mut guard) = self.local_coverage_funnel_cache.lock() {
+            if let Some(cache) = guard.as_mut() {
+                if cache.snapshot_id == index.snapshot_id && cache.index_version == index_version {
+                    cache.base_ctx = Some(ctx.clone());
+                }
+            }
+        }
+        (funnel_map, classified, ctx)
     }
 
     pub fn delete_entries_json(
@@ -1300,7 +1365,7 @@ impl VolwardEngine {
     /// `last_snapshot`), then falls back to in-memory `last_snapshot`
     /// (tests / legacy). Heavy work: call via
     /// [`Self::start_build_ai_candidates_async`] from the UI path.
-    fn index_for_ai(&self, snapshot_id: &str) -> Result<SnapshotIndex, String> {
+    fn index_for_ai(&self, snapshot_id: &str) -> Result<Arc<SnapshotIndex>, String> {
         if let Ok(guard) = self.last_index.lock() {
             if let Some(index) = guard.as_ref() {
                 if index.snapshot_id != snapshot_id {
@@ -1326,7 +1391,7 @@ impl VolwardEngine {
                 snapshot.snapshot_id
             ));
         }
-        Ok(SnapshotIndex::from_snapshot_with_version(&snapshot, 1))
+        Ok(Arc::new(SnapshotIndex::from_snapshot_with_version(&snapshot, 1)))
     }
 
     pub fn build_ai_candidates_json(&self, snapshot_id: &str) -> String {
@@ -1351,8 +1416,12 @@ impl VolwardEngine {
                 return format!("error:snapshot_id mismatch: got {}", index.snapshot_id);
             }
             let indexed_prefixes = indexed_local_exclusion_prefixes(&index);
-            let cache =
-                self.ensure_unclassified_coverage_cache(&index, &kb, &indexed_prefixes);
+            let cache = self.ensure_unclassified_coverage_cache(
+                &index,
+                &kb,
+                &indexed_prefixes,
+                volward_core::UnclassifiedCoverageCacheDepth::FunnelSample,
+            );
             let root_path = index.root_path.clone();
             let stats = index.stats.clone();
             let root_size_bytes = index.summary().root_size_bytes;
@@ -1612,7 +1681,7 @@ impl VolwardEngine {
     }
 
     fn build_ai_candidates_json_with(
-        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        last_index: &Arc<Mutex<Option<Arc<SnapshotIndex>>>>,
         last_snapshot: &Arc<Mutex<Option<StorageSnapshot>>>,
         snapshot_id: &str,
         local_coverage_funnel_cache: Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
@@ -1745,7 +1814,7 @@ impl VolwardEngine {
     }
 
     fn build_ai_coverage_plan_json_with(
-        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        last_index: &Arc<Mutex<Option<Arc<SnapshotIndex>>>>,
         platform: &Arc<DesktopPlatform>,
         ai_coverage_plan: &Arc<Mutex<Option<AiCoveragePlan>>>,
         local_coverage_funnel_cache: &Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
@@ -1789,7 +1858,7 @@ impl VolwardEngine {
     }
 
     fn build_ai_tree_plan_json_with(
-        last_index: &Arc<Mutex<Option<SnapshotIndex>>>,
+        last_index: &Arc<Mutex<Option<Arc<SnapshotIndex>>>>,
         platform: &Arc<DesktopPlatform>,
         ai_tree_coverage_plan: &Arc<Mutex<Option<AiTreePlan>>>,
         local_coverage_funnel_cache: &Arc<Mutex<Option<LocalCoverageFunnelCache>>>,
@@ -1888,12 +1957,14 @@ impl VolwardEngine {
             Err(error) => return error,
         };
         let plan = build_ai_coverage_plan(&index, &kb);
-        let funnel = compute_coverage_funnel_stats(
-            &index,
-            &kb,
-            self.platform.protected_prefixes(),
-            &[],
-        );
+        let funnel = self
+            .ensure_unclassified_coverage_cache(
+                &index,
+                &kb,
+                self.platform.protected_prefixes(),
+                volward_core::UnclassifiedCoverageCacheDepth::Full,
+            )
+            .funnel_stats;
         let snapshot_id = plan.snapshot_id.clone();
         let root_path = plan.root_path.clone();
         let root_size_bytes = plan.root_size_bytes;
@@ -1940,13 +2011,12 @@ impl VolwardEngine {
         };
         let limit = limit.max(1) as usize;
         let protected = self.platform.protected_prefixes();
-        let (funnel_map, classified) =
+        let (funnel_map, classified, base_ctx) =
             self.local_coverage_funnel_cache_for(&index, &kb, protected);
         let (verdicts, next_cursor) = page_local_coverage_verdicts(
             &index,
             &kb,
-            protected,
-            &[],
+            &base_ctx,
             &funnel_map,
             &classified,
             cursor,
@@ -1995,7 +2065,12 @@ impl VolwardEngine {
             Err(error) => return error,
         };
         let protected = self.platform.protected_prefixes();
-        let cache = self.ensure_unclassified_coverage_cache(&index, &kb, protected);
+        let cache = self.ensure_unclassified_coverage_cache(
+            &index,
+            &kb,
+            protected,
+            volward_core::UnclassifiedCoverageCacheDepth::Full,
+        );
         let plan =
             build_ai_tree_plan_from_coverage_cache(&index, &kb, protected, &[], cache.as_ref());
         if let Ok(mut slot) = self.ai_tree_coverage_plan.lock() {
@@ -2112,6 +2187,53 @@ impl VolwardEngine {
             .unwrap_or(DirectoryRole::Unknown);
         let verdicts = apply_dir_verdict(&index, dir_path, verdict, confidence, role);
         serde_json::json!({ "verdicts": verdicts }).to_string()
+    }
+
+    /// Appends the propagated verdicts for `dir_path` to the JSONL file at
+    /// `out_path` and returns `{"count":N}`; avoids shipping huge subtrees over FFI.
+    pub fn apply_ai_dir_verdict_to_file(
+        &self,
+        snapshot_id: &str,
+        dir_path: &str,
+        verdict: &str,
+        confidence: &str,
+        role_snake_case: &str,
+        out_path: &str,
+    ) -> String {
+        use std::io::Write;
+
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        if index.snapshot_id != snapshot_id {
+            return "error:snapshot mismatch".to_string();
+        }
+        let role: DirectoryRole = serde_json::from_str(&format!("\"{role_snake_case}\""))
+            .unwrap_or(DirectoryRole::Unknown);
+        let file = match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(out_path)
+        {
+            Ok(file) => file,
+            Err(e) => return format!("error:open verdict file: {e}"),
+        };
+        let mut writer = std::io::BufWriter::with_capacity(1 << 20, file);
+        let count = match write_dir_verdict_jsonl(
+            &index,
+            dir_path,
+            verdict,
+            confidence,
+            role,
+            &mut writer,
+        )
+        .and_then(|count| writer.flush().map(|()| count))
+        {
+            Ok(count) => count,
+            Err(e) => return format!("error:write verdict file: {e}"),
+        };
+        serde_json::json!({ "count": count }).to_string()
     }
 
     pub fn resolve_ai_coverage_group_json(&self, snapshot_id: &str, group_path: &str) -> String {
@@ -3558,5 +3680,55 @@ mod tests {
         assert_eq!(verdicts.len(), 1);
         assert_eq!(verdicts[0]["path"].as_str(), Some("/root/storage/a.dat"));
         assert_eq!(verdicts[0]["verdict"].as_str(), Some("safe_to_remove"));
+    }
+
+    #[test]
+    fn apply_dir_verdict_to_file_appends_jsonl_rows() {
+        use volward_core::index::SnapshotIndexBuilder;
+        use volward_core::model::ScanStats;
+
+        let engine = VolwardEngine::new();
+        let mut builder = SnapshotIndexBuilder::new("/root");
+        builder.record_file_size("/root/storage/a.dat", 100);
+        builder.record_file_size("/root/storage/b.dat", 5);
+        builder.record_file_size("/root/other/outside.dat", 10);
+        let index = builder.finish(
+            "apply-dir-file-snap".to_string(),
+            1,
+            1,
+            "Done".to_string(),
+            ScanStats::default(),
+        );
+        engine.set_last_index(index);
+
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("verdicts.jsonl");
+        std::fs::write(&out, "{\"path\":\"/existing\"}\n").unwrap();
+        let raw = engine.apply_ai_dir_verdict_to_file(
+            "apply-dir-file-snap",
+            "/root/storage",
+            "keep",
+            "high",
+            "unknown",
+            out.to_str().unwrap(),
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed["count"].as_u64(), Some(2));
+
+        let text = std::fs::read_to_string(&out).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "{\"path\":\"/existing\"}");
+        let mut paths: Vec<String> = lines[1..]
+            .iter()
+            .map(|line| {
+                let row: serde_json::Value = serde_json::from_str(line).unwrap();
+                assert_eq!(row["verdict"].as_str(), Some("keep"));
+                assert_eq!(row["coverage_source"].as_str(), Some("dir_propagate:/root/storage"));
+                row["path"].as_str().unwrap().to_string()
+            })
+            .collect();
+        paths.sort();
+        assert_eq!(paths, vec!["/root/storage/a.dat", "/root/storage/b.dat"]);
     }
 }

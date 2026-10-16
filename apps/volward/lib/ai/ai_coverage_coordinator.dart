@@ -24,7 +24,11 @@ import 'coverage_notification_text.dart';
 import 'native_coverage_engine.dart';
 
 typedef CoverageDesktopNotify =
-    Future<void> Function({required String title, required String body});
+    Future<void> Function({
+      required String title,
+      required String body,
+      String? snapshotId,
+    });
 
 typedef CoverageServiceFactory =
     Future<AiCoverageService?> Function({
@@ -667,19 +671,32 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
     AppLocalizations? l10n,
   }) async {
     final strings = l10n ?? coverageNotifyLocalizations();
+    final snapshotId = state.snapshotId;
     if (state.status == CoverageJobStatus.completed) {
       final copy = coverageCompleteNotification(strings, state);
-      await _desktopNotify(title: copy.title, body: copy.body);
+      await _desktopNotify(
+        title: copy.title,
+        body: copy.body,
+        snapshotId: snapshotId,
+      );
       return;
     }
     if (state.status == CoverageJobStatus.paused) {
       final reason = state.pauseReason;
       if (reason == CoveragePauseReason.budget) {
         final copy = coverageBudgetPausedNotification(strings, state);
-        await _desktopNotify(title: copy.title, body: copy.body);
+        await _desktopNotify(
+          title: copy.title,
+          body: copy.body,
+          snapshotId: snapshotId,
+        );
       } else if (reason == CoveragePauseReason.failed) {
         final copy = coverageFailedNotification(strings);
-        await _desktopNotify(title: copy.title, body: copy.body);
+        await _desktopNotify(
+          title: copy.title,
+          body: copy.body,
+          snapshotId: snapshotId,
+        );
       }
     }
   }

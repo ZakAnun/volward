@@ -82,29 +82,25 @@ class _AiCandidatesBootstrap {
 const _candidateHeavyListThreshold = 256;
 const _candidateSpillPreviewCap = 32;
 
+/// The spill file is owned by [AiCandidatesMaterializedCache] and reused on
+/// re-entry; do not delete it here.
 _AiCandidatesBootstrap _parseAiCandidatesFromSpillFile(String spillPath) {
   final file = File(spillPath);
-  try {
-    if (spillPath.endsWith('.pb')) {
-      final map = decodeAiCandidatesPb(file.readAsBytesSync());
-      if (map == null) {
-        throw const FormatException('invalid candidates pb');
-      }
-      return _compactCandidatesBootstrap(
-        _bootstrapFromCandidatesMap(map),
-        sourcePath: spillPath,
-      );
+  if (spillPath.endsWith('.pb')) {
+    final map = decodeAiCandidatesPb(file.readAsBytesSync());
+    if (map == null) {
+      throw const FormatException('invalid candidates pb');
     }
-    final raw = file.readAsStringSync();
     return _compactCandidatesBootstrap(
-      _parseAiCandidatesPayload(raw),
+      _bootstrapFromCandidatesMap(map),
       sourcePath: spillPath,
     );
-  } finally {
-    if (file.existsSync()) {
-      file.deleteSync();
-    }
   }
+  final raw = file.readAsStringSync();
+  return _compactCandidatesBootstrap(
+    _parseAiCandidatesPayload(raw),
+    sourcePath: spillPath,
+  );
 }
 
 _AiCandidatesBootstrap _parseAndCompactCandidatesRaw(String raw) {
@@ -2224,26 +2220,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     _scheduleCoveragePlanSummaryForBannerIfNeeded();
   }
 
-  Future<List<CoverageVerdict>>
-  _fetchAllLocalCoverageVerdictsFromEngine() async {
+  /// Streams native local verdicts into [store] off the UI isolate; returns the count.
+  Future<int> _backfillLocalCoverageVerdictsFromEngine(
+    CoverageVerdictStore store,
+  ) async {
     final session = VolwardSession.instance;
     final engine = session?.treeCoverageEngine ?? session?.coverageEngine;
-    if (engine == null) return const [];
-    final rows = <CoverageVerdict>[];
-    var cursor = 0;
-    for (var pageIndex = 0; pageIndex < 256; pageIndex++) {
-      final page = await engine.fetchLocalVerdictsPage(
-        widget.snapshotId,
-        cursor: cursor,
-        limit: 5000,
-      );
-      if (page.verdicts.isEmpty) break;
-      rows.addAll(page.verdicts);
-      final next = page.nextCursor;
-      if (next == null || next <= cursor) break;
-      cursor = next;
-    }
-    return rows;
+    if (engine == null) return 0;
+    return engine.backfillLocalVerdictsToStore(
+      widget.snapshotId,
+      store.directory.path,
+    );
   }
 
   Future<void> _refreshVerdictsFromCoverageStore({
@@ -2294,11 +2281,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           if (localExpected > 0 ||
               jobExpectsLocal ||
               _displayPreClassifiedCount > 0) {
-            final nativeLocal =
-                await _fetchAllLocalCoverageVerdictsFromEngine();
-            if (nativeLocal.isNotEmpty) {
-              coverageVerdicts = nativeLocal;
-              await store.appendAll(widget.snapshotId, nativeLocal);
+            final written = await _backfillLocalCoverageVerdictsFromEngine(
+              store,
+            );
+            if (written > 0) {
+              coverageVerdicts = await store.readPages(
+                widget.snapshotId,
+                pageCount: _coverageVerdictPageCount,
+                pageSize: _coverageVerdictPageSize,
+              );
               _coverageVerdictByteOffset = await store.fileByteLength(
                 widget.snapshotId,
               );
