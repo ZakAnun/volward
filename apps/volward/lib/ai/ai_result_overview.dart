@@ -71,6 +71,8 @@ class AiResultOverviewBuildInput {
     this.fullCoverage = false,
     this.maxDirectories = 8,
     this.isPendingReview,
+    this.analyzedItemCountOverride,
+    this.analyzedTotalBytesOverride,
   });
 
   final String targetLabel;
@@ -82,6 +84,136 @@ class AiResultOverviewBuildInput {
   final bool fullCoverage;
   final int maxDirectories;
   final bool Function(AiVerdict verdict)? isPendingReview;
+  final int? analyzedItemCountOverride;
+  final int? analyzedTotalBytesOverride;
+}
+
+int estimateGroupSafeBytes(AiResultGroup group, Map<String, int> sizeByPath) {
+  var fromItems = 0;
+  var visibleSafe = 0;
+  for (final item in group.items) {
+    if (item.verdict != 'safe_to_remove') continue;
+    visibleSafe++;
+    fromItems += sizeByPath[item.path] ?? 0;
+  }
+  if (group.safeCount <= 0) return 0;
+  if (visibleSafe >= group.safeCount) return fromItems;
+  if (visibleSafe > 0) {
+    return (fromItems * group.safeCount / visibleSafe).round();
+  }
+  final classified = group.safeCount + group.reviewCount + group.keepCount;
+  if (classified <= 0 || group.totalBytes <= 0) return 0;
+  return (group.totalBytes * group.safeCount / classified).round();
+}
+
+/// Rollup from pre-grouped results (accurate counts without materializing every item).
+AiAnalysisConclusionOverview buildAiAnalysisConclusionOverviewFromGroups(
+  AiResultOverviewBuildInput input,
+  Iterable<AiResultGroup> groups,
+) {
+  final normalizedRoot = normalizeFsPath(input.rootPath);
+  final pendingReview = input.isPendingReview ?? (_) => true;
+  var safeBytes = 0;
+  var reviewCount = 0;
+  var keepCount = 0;
+  var analyzedTotalBytes = 0;
+  var analyzedItemCount = 0;
+  final directoryRows = <AiDirectoryConclusion>[];
+
+  for (final group in groups) {
+    final dirSafeBytes = estimateGroupSafeBytes(group, input.sizeByPath);
+    safeBytes += dirSafeBytes;
+    var dirReview = 0;
+    for (final item in group.items) {
+      if (item.verdict == 'review_needed' && pendingReview(item)) {
+        dirReview++;
+      }
+    }
+    reviewCount += dirReview;
+    keepCount += group.keepCount;
+    analyzedTotalBytes += group.totalBytes;
+    analyzedItemCount += group.safeCount + group.reviewCount + group.keepCount;
+
+    directoryRows.add(
+      AiDirectoryConclusion(
+        path: group.path,
+        displayLabel: _displayLabelFor(
+          group.path,
+          normalizedRoot,
+          input.targetLabel,
+        ),
+        safeBytes: dirSafeBytes,
+        reviewCount: dirReview,
+        keepCount: group.keepCount,
+        shareOfSafePct: 0,
+        reasonHighlights: extractReasonHighlights(
+          group.items,
+          input.sizeByPath,
+        ),
+      ),
+    );
+  }
+
+  if (input.analyzedItemCountOverride != null &&
+      input.analyzedItemCountOverride! > analyzedItemCount) {
+    analyzedItemCount = input.analyzedItemCountOverride!;
+  }
+  if (input.analyzedTotalBytesOverride != null &&
+      input.analyzedTotalBytesOverride! > analyzedTotalBytes) {
+    analyzedTotalBytes = input.analyzedTotalBytesOverride!;
+  }
+
+  final directories =
+      directoryRows
+          .map(
+            (dir) => AiDirectoryConclusion(
+              path: dir.path,
+              displayLabel: dir.displayLabel,
+              safeBytes: dir.safeBytes,
+              reviewCount: dir.reviewCount,
+              keepCount: dir.keepCount,
+              shareOfSafePct: safeBytes > 0
+                  ? (dir.safeBytes / safeBytes) * 100.0
+                  : 0.0,
+              reasonHighlights: dir.reasonHighlights,
+            ),
+          )
+          .toList()
+        ..sort((a, b) {
+          final safeDiff = b.safeBytes.compareTo(a.safeBytes);
+          if (safeDiff != 0) return safeDiff;
+          final reviewDiff = b.reviewCount.compareTo(a.reviewCount);
+          if (reviewDiff != 0) return reviewDiff;
+          return a.path.compareTo(b.path);
+        });
+
+  final cappedDirs = directories.length > input.maxDirectories
+      ? directories.take(input.maxDirectories).toList(growable: false)
+      : directories;
+
+  final rootSizeBytes = _resolveRootSizeBytes(
+    input.rootSizeBytesHint,
+    input.sizeByPath,
+    normalizedRoot,
+  );
+  final shareOfRootPct = rootSizeBytes > 0
+      ? (safeBytes / rootSizeBytes) * 100.0
+      : null;
+
+  return AiAnalysisConclusionOverview(
+    targetLabel: input.targetLabel,
+    rootPath: input.rootPath,
+    safeBytes: safeBytes,
+    reviewCount: reviewCount,
+    keepCount: keepCount,
+    analyzedItemCount: analyzedItemCount,
+    analyzedTotalBytes: analyzedTotalBytes,
+    rootSizeBytes: rootSizeBytes,
+    shareOfRootPct: shareOfRootPct,
+    truncated: input.truncated,
+    fullCoverage: input.fullCoverage,
+    directories: cappedDirs,
+  );
 }
 
 /// Builds the conclusions overview from the same verdict set as the detail list.

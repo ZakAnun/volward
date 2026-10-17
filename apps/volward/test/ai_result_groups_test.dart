@@ -221,4 +221,26 @@ void main() {
     );
     expect(firstLevelDirectoryUnderRoot('/root/loose.txt', '/root'), '/root');
   });
+
+  test('capAiResultGroupsForDisplay keeps aggregate counts', () {
+    final verdicts = List.generate(
+      20,
+      (i) => AiVerdict(
+        path: '/root/cache/$i.bin',
+        verdict: 'safe_to_remove',
+        confidence: 'high',
+        reason: 'cache',
+      ),
+    );
+    final sizes = {for (var i = 0; i < 20; i++) '/root/cache/$i.bin': i + 1};
+    final groups = groupAiResults(verdicts, sizes, rootPath: '/root');
+    final capped = capAiResultGroupsForDisplay(
+      groups,
+      sizes,
+      maxItemsPerGroup: 5,
+    );
+    expect(capped.single.items, hasLength(5));
+    expect(capped.single.safeCount, 20);
+    expect(capped.single.totalBytes, 210);
+  });
 }

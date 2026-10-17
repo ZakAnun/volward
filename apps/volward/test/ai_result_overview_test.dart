@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/ai_result_groups.dart';
 import 'package:volward/ai/ai_result_overview.dart';
 
 void main() {
@@ -69,5 +70,34 @@ void main() {
     ];
     final highlights = extractReasonHighlights(verdicts, {'/a': 10, '/b': 900});
     expect(highlights.first, 'Large build artifact');
+  });
+
+  test('buildAiAnalysisConclusionOverviewFromGroups uses group aggregates', () {
+    final verdicts = List.generate(
+      10,
+      (i) => AiVerdict(
+        path: '/home/Library/$i.bin',
+        verdict: 'safe_to_remove',
+        confidence: 'high',
+        reason: 'cache',
+      ),
+    );
+    final sizes = {for (var i = 0; i < 10; i++) '/home/Library/$i.bin': 100};
+    var groups = groupAiResults(verdicts, sizes, rootPath: '/home');
+    groups = capAiResultGroupsForDisplay(groups, sizes, maxItemsPerGroup: 2);
+    final overview = buildAiAnalysisConclusionOverviewFromGroups(
+      AiResultOverviewBuildInput(
+        targetLabel: 'Home',
+        rootPath: '/home',
+        verdicts: const [],
+        sizeByPath: sizes,
+        fullCoverage: true,
+        analyzedItemCountOverride: 10,
+      ),
+      groups,
+    );
+    expect(overview.analyzedItemCount, 10);
+    expect(overview.safeBytes, 1000);
+    expect(overview.directories.single.safeBytes, 1000);
   });
 }

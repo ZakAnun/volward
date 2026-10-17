@@ -61,6 +61,29 @@ class _GroupBuilder {
   }
 }
 
+extension AiResultGroupDisplayCap on AiResultGroup {
+  /// Keeps aggregate counts but limits in-memory items for UI list work.
+  AiResultGroup withDisplayItemCap(int maxItems, Map<String, int> sizeByPath) {
+    if (maxItems <= 0 || items.length <= maxItems) return this;
+    final ranked = [...items]
+      ..sort((a, b) {
+        final sizeOrder = (sizeByPath[b.path] ?? 0).compareTo(
+          sizeByPath[a.path] ?? 0,
+        );
+        if (sizeOrder != 0) return sizeOrder;
+        return a.path.compareTo(b.path);
+      });
+    return AiResultGroup._(
+      path: path,
+      items: List.unmodifiable(ranked.take(maxItems).toList(growable: false)),
+      totalBytes: totalBytes,
+      safeCount: safeCount,
+      reviewCount: reviewCount,
+      keepCount: keepCount,
+    );
+  }
+}
+
 List<AiResultGroup> groupAiResults(
   Iterable<AiVerdict> verdicts,
   Map<String, int> sizeByPath, {
@@ -150,6 +173,17 @@ List<AiResultGroup> ensureFirstLevelDirectoryGroups(
   }
   final out = byPath.values.toList()..sort(_compareAiResultGroups);
   return out;
+}
+
+/// Caps each group's [AiResultGroup.items] for UI while preserving counts.
+List<AiResultGroup> capAiResultGroupsForDisplay(
+  List<AiResultGroup> groups,
+  Map<String, int> sizeByPath, {
+  int maxItemsPerGroup = 512,
+}) {
+  return groups
+      .map((g) => g.withDisplayItemCap(maxItemsPerGroup, sizeByPath))
+      .toList(growable: false);
 }
 
 String _groupDirectory(

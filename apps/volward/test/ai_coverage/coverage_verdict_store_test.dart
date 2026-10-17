@@ -17,6 +17,13 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test('fitsInlineReadBudget rejects large verdict files', () async {
+    final file = File('${dir.path}/ai_coverage_verdicts_big.jsonl');
+    await file.writeAsBytes(List.filled(3 * 1024 * 1024, 0x7a));
+    expect(await store.fitsInlineReadBudget('big'), isFalse);
+    expect(await store.fitsInlineReadBudget('missing'), isFalse);
+  });
+
   test(
     'separate store instances on the same directory serialize appends',
     () async {

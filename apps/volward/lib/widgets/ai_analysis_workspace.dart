@@ -81,6 +81,7 @@ class _AiCandidatesBootstrap {
 
 const _candidateHeavyListThreshold = 256;
 const _candidateSpillPreviewCap = 32;
+const _aiResultGroupDisplayItemCap = 512;
 
 /// The spill file is owned by [AiCandidatesMaterializedCache] and reused on
 /// re-entry; do not delete it here.
@@ -1803,10 +1804,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _coverageUserEngagedFullRun = false;
       });
     }
+    final store = CoverageVerdictStore(SnapshotCache.cacheDir());
+    final preferReadAll =
+        hasStoredVerdicts &&
+        await store.fitsInlineReadBudget(widget.snapshotId);
     await _refreshVerdictsFromCoverageStore(
       incremental: false,
       allowNativeLocalBackfill: false,
-      preferReadAll: hasStoredVerdicts,
+      preferReadAll: preferReadAll,
     );
     if (!_isCurrent(generation) || !mounted || _verdicts.isEmpty) {
       return false;
@@ -2251,7 +2256,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         if (chunk.appended.isEmpty) return;
         coverageVerdicts = _mergeCoverageVerdictRows(chunk.appended);
       } else {
-        if (preferReadAll) {
+        if (preferReadAll &&
+            await store.fitsInlineReadBudget(widget.snapshotId)) {
           coverageVerdicts = await store.readAll(widget.snapshotId);
         } else {
           coverageVerdicts = await store.readPages(
@@ -3812,6 +3818,20 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return groups;
   }
 
+  /// Caps in-group item lists for heavy detail views only; aggregates stay full.
+  List<AiResultGroup> _groupsForDetailListPresentation(
+    List<AiResultGroup> groups,
+  ) {
+    final heavy =
+        _useFullCoverage || _verdicts.length >= _heavyResultsLayoutThreshold;
+    if (!heavy) return groups;
+    return capAiResultGroupsForDisplay(
+      groups,
+      _sizeByPath,
+      maxItemsPerGroup: _aiResultGroupDisplayItemCap,
+    );
+  }
+
   Set<String> _scanRootFirstLevelDirectoryPaths() {
     final root = normalizeFsPath(_rootPath);
     if (root.isEmpty) return const {};
@@ -3876,6 +3896,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   List<_VisibleResultGroup> _visibleResultGroups(List<AiResultGroup> groups) {
     final cached = _visibleGroupsCache;
     if (cached != null) return cached;
+    groups = _groupsForDetailListPresentation(groups);
     final requiredFirstLevel = _useFullCoverage
         ? _scanRootFirstLevelDirectoryPaths()
         : const <String>{};
@@ -3899,14 +3920,25 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ? const <AiVerdict>[]
           : _sortedVisibleItems(visibleItems);
       if (sortedItems.isEmpty && !forceGroupRow) continue;
+      final classified = group.safeCount + group.reviewCount + group.keepCount;
+      final listedBytes = visibleItems.fold<int>(
+        0,
+        (total, item) => total + (_sizeByPath[item.path] ?? 0),
+      );
+      final displayBytes =
+          visibleItems.isEmpty ||
+              sortedItems.length < classified ||
+              listedBytes < group.totalBytes
+          ? group.totalBytes
+          : listedBytes;
       visibleGroups.add(
         _VisibleResultGroup(
           group: group,
           items: sortedItems,
-          totalBytes: visibleItems.fold<int>(
-            0,
-            (total, item) => total + (_sizeByPath[item.path] ?? 0),
-          ),
+          totalBytes: displayBytes,
+          actionableCount: _useFullCoverage
+              ? group.safeCount + group.reviewCount
+              : sortedItems.length,
         ),
       );
     }
@@ -3938,6 +3970,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   List<AiVerdict> _sortedVisibleItems(List<AiVerdict> items) {
+    if (_useFullCoverage && items.length > _heavyResultsLayoutThreshold) {
+      final copy = [...items]
+        ..sort((left, right) {
+          final sizeOrder = (_sizeByPath[right.path] ?? 0).compareTo(
+            _sizeByPath[left.path] ?? 0,
+          );
+          if (sizeOrder != 0) return sizeOrder;
+          return left.path.compareTo(right.path);
+        });
+      return copy;
+    }
     if (_resultSortMode == _ResultSortMode.size) {
       return [...items]..sort(_compareVisibleItems);
     }
@@ -4102,15 +4145,23 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     };
   }
 
-  String _groupSummaryLabel(_VisibleResultGroup group) {
-    if (_useFullCoverage && group.items.isEmpty) {
-      final full = group.group;
-      if (full.reviewCount == 0 && full.safeCount == 0) {
-        return context.l10n.aiResultsGroupItems(0, _formatBytes(0));
-      }
+  int _groupSummaryItemCount(_VisibleResultGroup group) {
+    final full = group.group;
+    final listed = group.items.length;
+    final total = full.safeCount + full.reviewCount + full.keepCount;
+    if (listed < total) return total;
+    if (_useFullCoverage) {
+      final actionable = group.actionableCount > 0
+          ? group.actionableCount
+          : full.safeCount + full.reviewCount;
+      return actionable > 0 ? actionable : listed;
     }
+    return listed;
+  }
+
+  String _groupSummaryLabel(_VisibleResultGroup group) {
     return context.l10n.aiResultsGroupItems(
-      group.items.length,
+      _groupSummaryItemCount(group),
       _formatBytes(group.totalBytes),
     );
   }
@@ -4231,10 +4282,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return _buildResults();
   }
 
+  bool get _coverageResultsLoadTruncated {
+    final job = _coverageJobState;
+    if (job == null || job.snapshotId != widget.snapshotId) {
+      return false;
+    }
+    return job.analyzedFiles > _verdicts.length;
+  }
+
   AiResultOverviewBuildInput _buildConclusionOverviewInput() {
     final groups = _normalizedResultGroups();
     final verdicts = groups.expand((group) => group.items);
     final fingerprint = _coverageJobState?.fingerprint;
+    final job = _coverageJobState;
     return AiResultOverviewBuildInput(
       targetLabel: widget.targetLabel,
       rootPath: _rootPath,
@@ -4243,14 +4303,27 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       rootSizeBytesHint: fingerprint != null && fingerprint.rootSizeBytes > 0
           ? fingerprint.rootSizeBytes
           : null,
-      truncated: _truncated || (fingerprint?.truncated ?? false),
+      truncated:
+          _truncated ||
+          (fingerprint?.truncated ?? false) ||
+          _coverageResultsLoadTruncated,
       fullCoverage: _useFullCoverage,
       isPendingReview: _isPendingReview,
+      analyzedItemCountOverride: _coverageResultsLoadTruncated
+          ? job?.analyzedFiles
+          : null,
     );
   }
 
   AiAnalysisConclusionOverview _buildConclusionOverviewModel() {
-    return buildAiAnalysisConclusionOverview(_buildConclusionOverviewInput());
+    final input = _buildConclusionOverviewInput();
+    if (_useFullCoverage && _coverageResultsLoadTruncated) {
+      return buildAiAnalysisConclusionOverviewFromGroups(
+        input,
+        _normalizedResultGroups(),
+      );
+    }
+    return buildAiAnalysisConclusionOverview(input);
   }
 
   Future<void> _loadNarrativeSettings() async {
@@ -4285,7 +4358,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (_narrativeLoading || _narrativeSynthesisInFlight) return;
 
       final buildInput = _buildConclusionOverviewInput();
-      final overview = buildAiAnalysisConclusionOverview(buildInput);
+      final overview = _buildConclusionOverviewModel();
       if (overview.analyzedItemCount == 0) return;
 
       final hash = conclusionContentHash(
@@ -5771,11 +5844,13 @@ class _VisibleResultGroup {
     required this.group,
     required this.items,
     required this.totalBytes,
+    this.actionableCount = 0,
   });
 
   final AiResultGroup group;
   final List<AiVerdict> items;
   final int totalBytes;
+  final int actionableCount;
 }
 
 class _OverallResultSummaryData {

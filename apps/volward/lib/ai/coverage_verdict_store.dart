@@ -123,6 +123,14 @@ class CoverageVerdictStore {
   File _fileFor(String snapshotId) =>
       File('${directory.path}/ai_coverage_verdicts_$snapshotId.jsonl');
 
+  /// Full in-memory reads are only safe for modest JSONL files.
+  static const inlineReadBudgetBytes = 2 * 1024 * 1024;
+
+  Future<bool> fitsInlineReadBudget(String snapshotId) async {
+    final length = await fileByteLength(snapshotId);
+    return length > 0 && length <= inlineReadBudgetBytes;
+  }
+
   /// One append chain per verdict file path (worker, UI, and isolates may each
   /// construct their own [CoverageVerdictStore] for the same cache directory).
   static final Map<String, Future<void>> _globalAppendTailByFile = {};
