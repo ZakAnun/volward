@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../ai/ai_analysis_activity_l10n.dart';
+import '../ai/ai_analysis_activity_model.dart';
 import '../ai/ai_analysis_gateway.dart';
 import '../ai/ai_candidates_materialized_cache.dart';
 import '../ai/ai_debug_log.dart';
@@ -37,6 +39,7 @@ import '../scan_tree.dart';
 import '../snapshot_cache.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
+import 'ai_analysis_activity_card.dart';
 import 'coverage_job_banner.dart';
 import 'apple_widgets.dart';
 import 'top_toast.dart';
@@ -3285,10 +3288,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
-      _Phase.loading => _buildProgressBody(
-        label: context.l10n.aiWorkspacePhaseLoading,
-        candidateCount: 0,
-      ),
+      _Phase.loading => _buildProgressBody(),
       _Phase.precheck || _Phase.privacy => _buildPrecheck(),
       _Phase.analyzing => _wrapScrollHoldForRebuild(_buildAnalyzingBody()),
       _Phase.results ||
@@ -3312,13 +3312,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         !_coverageUiPrefersAnalyzingPhase) {
       return _buildResults();
     }
-    final l10n = context.l10n;
-    final job = _coverageJobState;
-    final useCoverageProgress =
-        _useFullCoverage && job != null && job.snapshotId == widget.snapshotId;
-    final subtitle = useCoverageProgress
-        ? l10n.aiCoverageProgress(job.analyzedFiles, job.totalUnclassified)
-        : '${l10n.scanProgressItems(job?.totalUnclassified ?? _unknown.length)} · ${_modeLabel()}';
+    return _buildActivityListView();
+  }
+
+  Widget _buildProgressBody() => _buildActivityListView();
+
+  /// Optional coverage banner plus the expanded activity card.
+  Widget _buildActivityListView() {
     return ListView(
       padding: const EdgeInsets.all(AppleSpacing.lg),
       children: [
@@ -3326,51 +3326,68 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           banner,
           const SizedBox(height: AppleSpacing.lg),
         ],
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: AppleSpacing.md),
-              Text(l10n.aiWorkspacePhaseAnalyzing, style: context.vwBodyStrong),
-              const SizedBox(height: AppleSpacing.xs),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: context.vwCaption.copyWith(
-                  color: context.volward.inkMuted80,
-                ),
-              ),
-            ],
-          ),
+        _buildActivityExpandedCard(),
+      ],
+    );
+  }
+
+  /// Placeholder while results layout is computed and no verdict rows exist yet.
+  Widget _buildResultsActivityPlaceholder() {
+    return ListView(
+      padding: const EdgeInsets.all(AppleSpacing.lg),
+      children: [
+        _buildActivityExpandedCard(
+          macroPhase: AiActivityMacroPhase.resultsBusy,
         ),
       ],
     );
   }
 
-  Widget _buildProgressBody({
-    required String label,
-    required int candidateCount,
+  AiActivityMacroPhase get _activityMacroPhase => switch (_phase) {
+    _Phase.loading => AiActivityMacroPhase.loading,
+    _Phase.analyzing => AiActivityMacroPhase.analyzing,
+    _ => AiActivityMacroPhase.resultsBusy,
+  };
+
+  /// Maps workspace state to the shared activity model (design spec §3).
+  AiAnalysisActivityModel _buildActivityModelForCurrentPhase({
+    AiActivityMacroPhase? macroPhase,
   }) {
-    final tokens = context.volward;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppleSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: AppleSpacing.md),
-            Text(label, style: context.vwBodyStrong),
-            const SizedBox(height: AppleSpacing.xs),
-            Text(
-              '${context.l10n.scanProgressItems(candidateCount)} · ${_modeLabel()}',
-              textAlign: TextAlign.center,
-              style: AppleTypography.caption.copyWith(color: tokens.inkMuted80),
-            ),
-          ],
-        ),
-      ),
+    final phase = macroPhase ?? _activityMacroPhase;
+    final job = _coverageJobState;
+    final coverageJob =
+        _useFullCoverage && job != null && job.snapshotId == widget.snapshotId
+        ? job
+        : null;
+    final input = AiAnalysisActivityInput(
+      macroPhase: phase,
+      useFullCoverage: _useFullCoverage,
+      candidatesBootstrapPending: _candidatesBootstrapPending,
+      coverageHydrating: _coverageHydrating,
+      coverageHydrated: _coverageHydrated,
+      analyzingQuick:
+          phase != AiActivityMacroPhase.loading && !_useFullCoverage,
+      resultsLayoutPending: _resultsLayoutPending,
+      // Set by Resume/Raise on a paused job until the first fresh job emit.
+      resumingJob: _coverageStalePausedUpdatedAtMs != null,
+      candidateCount: phase == AiActivityMacroPhase.loading
+          ? 0
+          : (job?.totalUnclassified ?? _unknown.length),
+      modeLabel: _modeLabel(),
+      job: coverageJob,
+    );
+    return buildAiAnalysisActivityModel(
+      input,
+      AppLocalizationsAiAnalysisActivityL10n(context.l10n),
+    );
+  }
+
+  Widget _buildActivityExpandedCard({AiActivityMacroPhase? macroPhase}) {
+    final l10n = AppLocalizationsAiAnalysisActivityL10n(context.l10n);
+    return AiAnalysisActivityCard(
+      variant: AiAnalysisActivityCardVariant.expanded,
+      model: _buildActivityModelForCurrentPhase(macroPhase: macroPhase),
+      substageLabel: l10n.substageLabel,
     );
   }
 
@@ -4483,16 +4500,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _buildResultsOverview() {
     if (_resultsLayoutPending && _verdicts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: AppleSpacing.sm),
-            Text(context.l10n.aiWorkspacePhaseReview, style: context.vwCaption),
-          ],
-        ),
-      );
+      return _buildResultsActivityPlaceholder();
     }
 
     final overview = _buildConclusionOverviewModel();
@@ -4670,26 +4678,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   Widget _buildResults() {
     if (_resultsLayoutPending && _verdicts.isEmpty) {
-      final job = _coverageJobState;
-      final loadingLabel =
-          job != null &&
-              job.status == CoverageJobStatus.running &&
-              _useFullCoverage
-          ? context.l10n.aiCoverageProgress(
-              job.analyzedFiles,
-              job.totalUnclassified,
-            )
-          : context.l10n.aiWorkspacePhaseReview;
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: AppleSpacing.sm),
-            Text(loadingLabel, style: context.vwCaption),
-          ],
-        ),
-      );
+      return _buildResultsActivityPlaceholder();
     }
     final normalizedGroups = _normalizedResultGroups();
     final summary = _overallResultSummaryFor(normalizedGroups);

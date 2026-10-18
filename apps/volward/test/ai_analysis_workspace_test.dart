@@ -22,6 +22,7 @@ import 'package:volward/snapshot_cache.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/apple_widgets.dart';
+import 'package:volward/widgets/ai_analysis_activity_card.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
 
 const candidatePayload = '''
@@ -784,6 +785,24 @@ void main() {
     );
     expect(find.byType(AppBar), findsNothing);
     expect(gateway.candidateRequests, ['snapshot-1']);
+  });
+
+  testWidgets('loading phase shows activity card not lone spinner', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()..candidatesJson = _candidatePayload();
+
+    // First frame: bootstrap is still awaiting mode/provider/candidates.
+    await tester.pumpWidget(_workspaceShell(gateway));
+
+    expect(find.byType(AiAnalysisActivityCard), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // Chip caption + active title both use the localized substage label.
+    expect(find.text('Preparing workspace'), findsWidgets);
+
+    // Let bootstrap finish so no async work leaks past the test.
+    await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.settingsKey));
+    expect(find.byType(AiAnalysisActivityCard), findsNothing);
   });
 
   testWidgets('cached result auto-loads on bootstrap', (tester) async {
