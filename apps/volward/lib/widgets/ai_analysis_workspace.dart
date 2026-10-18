@@ -3354,9 +3354,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     AiActivityMacroPhase? macroPhase,
   }) {
     final phase = macroPhase ?? _activityMacroPhase;
-    final job = _coverageJobState;
+    final job = _coverageJobState ?? widget.debugCoverageJobState;
     final coverageJob =
-        _useFullCoverage && job != null && job.snapshotId == widget.snapshotId
+        (_useFullCoverage || widget.debugCoverageJobState != null) &&
+            job != null &&
+            job.snapshotId == widget.snapshotId
         ? job
         : null;
     final input = AiAnalysisActivityInput(
@@ -3379,6 +3381,26 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return buildAiAnalysisActivityModel(
       input,
       AppLocalizationsAiAnalysisActivityL10n(context.l10n),
+    );
+  }
+
+  /// Compact strip above results while a coverage job is still streaming in.
+  bool _shouldShowCompactActivityCard() {
+    if (_isLightweightAnalyzingUi()) return true;
+    final job = widget.debugCoverageJobState ?? _coverageJobState;
+    return job != null &&
+        job.snapshotId == widget.snapshotId &&
+        job.status == CoverageJobStatus.running;
+  }
+
+  Widget _buildActivityCompactCard() {
+    final l10n = AppLocalizationsAiAnalysisActivityL10n(context.l10n);
+    return AiAnalysisActivityCard(
+      variant: AiAnalysisActivityCardVariant.compact,
+      model: _buildActivityModelForCurrentPhase(
+        macroPhase: AiActivityMacroPhase.resultsBusy,
+      ),
+      substageLabel: l10n.substageLabel,
     );
   }
 
@@ -4685,13 +4707,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final visibleGroups = _visibleResultGroups(normalizedGroups);
     final listLayout = _resultListLayoutFor(visibleGroups);
     final rowCount = listLayout.rowCount;
+    final showCompactActivity = _shouldShowCompactActivityCard();
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 720;
         final horizontalPadding = wide ? AppleSpacing.lg : AppleSpacing.md;
         return Column(
           children: [
-            if (_resultsLayoutPending)
+            // The compact card carries its own progress; keep the thin
+            // standalone bar only when the card is absent.
+            if (_resultsLayoutPending && !showCompactActivity)
               const LinearProgressIndicator(minHeight: 2),
             Expanded(
               child: CustomScrollView(
@@ -4733,6 +4758,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                               key: const Key('ai-analysis-coverage-progress'),
                               child: banner,
                             ),
+                            const SizedBox(height: AppleSpacing.sm),
+                          ],
+                          if (showCompactActivity) ...[
+                            _buildActivityCompactCard(),
                             const SizedBox(height: AppleSpacing.sm),
                           ],
                           Text(

@@ -2858,6 +2858,47 @@ void main() {
         find.byKey(const Key('ai-analysis-coverage-progress')),
         findsNothing,
       );
+      expect(find.byKey(AiAnalysisActivityCard.compactKey), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'running coverage job with verdicts shows compact activity card',
+    (tester) async {
+      await _openResults(
+        tester,
+        _FakeGateway(),
+        coverageJobState: const CoverageJobState(
+          snapshotId: 'snapshot-1',
+          rootPath: '/home',
+          planVersion: 1,
+          cursor: 1,
+          totalUnclassified: 4,
+          analyzedFiles: 1,
+          preClassifiedCount: 0,
+          status: CoverageJobStatus.running,
+          usedTokens: 0,
+          usedCredits: 0,
+          budgetTokens: 1000,
+          budgetCredits: 0,
+          updatedAtMs: 1,
+        ),
+      );
+
+      expect(
+        find.byKey(AiAnalysisWorkspace.decisionSummaryKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+      final compact = find.byKey(AiAnalysisActivityCard.compactKey);
+      expect(compact, findsOneWidget);
+      expect(
+        find.descendant(of: compact, matching: find.text('25%')),
+        findsOneWidget,
+      );
+      expect(tester.getSize(compact).height, inInclusiveRange(56, 72));
+      // Expanded card must not cover results.
+      expect(find.byType(AiAnalysisActivityCard), findsOneWidget);
     },
   );
 

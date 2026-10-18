@@ -31,8 +31,120 @@ class AiAnalysisActivityCard extends StatelessWidget {
         model: model,
         substageLabel: _labelFor,
       ),
-      AiAnalysisActivityCardVariant.compact => const SizedBox.shrink(),
+      AiAnalysisActivityCardVariant.compact => _CompactActivityCard(
+        model: model,
+        substageLabel: _labelFor,
+      ),
     };
+  }
+
+  /// Root key of the compact strip (results surface while a job streams in).
+  static const compactKey = Key('ai-analysis-activity-compact');
+}
+
+/// Single-row summary: active stage pill, caption, optional percent, and a
+/// thin progress bar. Height stays within ~56-72dp.
+class _CompactActivityCard extends StatelessWidget {
+  const _CompactActivityCard({
+    required this.model,
+    required this.substageLabel,
+  });
+
+  static const double _maxHeight = 72;
+  static const double _barHeight = 3;
+
+  final AiAnalysisActivityModel model;
+  final String Function(AiActivitySubstage stage) substageLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    final progress = model.progress;
+    final percent = progress != null
+        ? '${(progress.clamp(0.0, 1.0) * 100).round()}%'
+        : null;
+    final caption = model.progressLabel ?? model.subtitle;
+    final stageLabel = substageLabel(model.activeSubstage);
+
+    return Semantics(
+      label: percent != null
+          ? '${model.title}, $percent'
+          : '${model.title}, in progress, no percentage yet',
+      liveRegion: true,
+      child: DecoratedBox(
+        key: AiAnalysisActivityCard.compactKey,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(AppleSpacing.sm),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: 56,
+            maxHeight: _maxHeight,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppleSpacing.md,
+              vertical: AppleSpacing.sm,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppleSpacing.sm,
+                        vertical: AppleSpacing.xxs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: tokens.primary,
+                        borderRadius: BorderRadius.circular(AppleRadius.pill),
+                      ),
+                      child: Text(
+                        stageLabel,
+                        maxLines: 1,
+                        style: AppleTypography.finePrint.copyWith(
+                          color: tokens.onPrimary,
+                          fontWeight: FontWeight.w600,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppleSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.vwCaption,
+                      ),
+                    ),
+                    if (percent != null) ...[
+                      const SizedBox(width: AppleSpacing.sm),
+                      Text(percent, style: context.vwCaptionStrong),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: AppleSpacing.xs),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(_barHeight),
+                  child: LinearProgressIndicator(
+                    value: progress?.clamp(0.0, 1.0),
+                    minHeight: _barHeight,
+                    backgroundColor: tokens.inkMuted48.withValues(alpha: 0.35),
+                    color: tokens.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
