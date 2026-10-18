@@ -1490,4 +1490,70 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeCancelScan => '取消扫描';
+
+  @override
+  String get aiActivitySubstageSession => '准备分析环境';
+
+  @override
+  String get aiActivitySubstageCandidates => '整理待分析项';
+
+  @override
+  String get aiActivitySubstagePlan => '生成本地覆盖计划';
+
+  @override
+  String get aiActivitySubstageTree => '目录级 AI';
+
+  @override
+  String get aiActivitySubstageTail => '文件级 AI';
+
+  @override
+  String get aiActivitySubstageFinalize => '整理结果';
+
+  @override
+  String get aiActivitySubtitleSession => '正在加载目录与分析会话。';
+
+  @override
+  String aiActivitySubtitleCandidates(int count) {
+    return '正在从扫描结果整理 $count 个待 AI 分析的项目。';
+  }
+
+  @override
+  String get aiActivitySubtitlePlan => 'AI 运行前正在生成本地覆盖计划。';
+
+  @override
+  String get aiActivitySubtitleTree => '正在用目录级 AI 分组剩余文件。';
+
+  @override
+  String get aiActivitySubtitleTail => '正在对剩余项目运行文件级 AI。';
+
+  @override
+  String aiActivitySubtitleQuickTail(int count, String mode) {
+    return '正在通过 $mode 分析 $count 个项目。';
+  }
+
+  @override
+  String get aiActivitySubtitleFinalize => '正在分组结果并刷新布局。';
+
+  @override
+  String aiActivityUpdatedAgo(int seconds) {
+    return '更新于 $seconds 秒前';
+  }
+
+  @override
+  String get aiActivityResumingJob => '正在恢复上次分析进度';
+
+  @override
+  String aiActivityMetricAnalyzed(String value) {
+    return '已处理 $value 个文件';
+  }
+
+  @override
+  String aiActivityMetricCredits(String value) {
+    return '已用 $value 积分';
+  }
+
+  @override
+  String aiActivityMetricLocalResolved(String value) {
+    return '本地已判定 $value 个';
+  }
 }

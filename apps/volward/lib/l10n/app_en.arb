@@ -1135,5 +1135,54 @@
   "homeBrowseFiles": "Browse Files",
   "homeStartScan": "Start Scan",
   "homeRescan": "Rescan",
-  "homeCancelScan": "Cancel Scan"
+  "homeCancelScan": "Cancel Scan",
+  "aiActivitySubstageSession": "Preparing workspace",
+  "aiActivitySubstageCandidates": "Building candidate list",
+  "aiActivitySubstagePlan": "Building coverage plan",
+  "aiActivitySubstageTree": "Analyzing folders",
+  "aiActivitySubstageTail": "Analyzing files",
+  "aiActivitySubstageFinalize": "Finalizing results",
+  "aiActivitySubtitleSession": "Loading your catalog and analysis session.",
+  "aiActivitySubtitleCandidates": "Organizing {count} items from your scan for AI review.",
+  "@aiActivitySubtitleCandidates": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiActivitySubtitlePlan": "Building a local coverage plan before AI runs.",
+  "aiActivitySubtitleTree": "Using directory-level AI to group remaining files.",
+  "aiActivitySubtitleTail": "Running file-level AI on remaining items.",
+  "aiActivitySubtitleQuickTail": "Analyzing {count} items via {mode}.",
+  "@aiActivitySubtitleQuickTail": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "mode": {"type": "String"}
+    }
+  },
+  "aiActivitySubtitleFinalize": "Grouping results and refreshing the layout.",
+  "aiActivityUpdatedAgo": "Updated {seconds}s ago",
+  "@aiActivityUpdatedAgo": {
+    "placeholders": {
+      "seconds": {"type": "int"}
+    }
+  },
+  "aiActivityResumingJob": "Resuming your previous analysis",
+  "aiActivityMetricAnalyzed": "{value} files processed",
+  "@aiActivityMetricAnalyzed": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "aiActivityMetricCredits": "{value} credits used",
+  "@aiActivityMetricCredits": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "aiActivityMetricLocalResolved": "{value} resolved locally",
+  "@aiActivityMetricLocalResolved": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  }
 }

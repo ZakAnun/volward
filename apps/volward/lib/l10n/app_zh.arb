@@ -1135,5 +1135,54 @@
   "homeBrowseFiles": "浏览文件",
   "homeStartScan": "开始扫描",
   "homeRescan": "重新扫描",
-  "homeCancelScan": "取消扫描"
+  "homeCancelScan": "取消扫描",
+  "aiActivitySubstageSession": "准备分析环境",
+  "aiActivitySubstageCandidates": "整理待分析项",
+  "aiActivitySubstagePlan": "生成本地覆盖计划",
+  "aiActivitySubstageTree": "目录级 AI",
+  "aiActivitySubstageTail": "文件级 AI",
+  "aiActivitySubstageFinalize": "整理结果",
+  "aiActivitySubtitleSession": "正在加载目录与分析会话。",
+  "aiActivitySubtitleCandidates": "正在从扫描结果整理 {count} 个待 AI 分析的项目。",
+  "@aiActivitySubtitleCandidates": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiActivitySubtitlePlan": "AI 运行前正在生成本地覆盖计划。",
+  "aiActivitySubtitleTree": "正在用目录级 AI 分组剩余文件。",
+  "aiActivitySubtitleTail": "正在对剩余项目运行文件级 AI。",
+  "aiActivitySubtitleQuickTail": "正在通过 {mode} 分析 {count} 个项目。",
+  "@aiActivitySubtitleQuickTail": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "mode": {"type": "String"}
+    }
+  },
+  "aiActivitySubtitleFinalize": "正在分组结果并刷新布局。",
+  "aiActivityUpdatedAgo": "更新于 {seconds} 秒前",
+  "@aiActivityUpdatedAgo": {
+    "placeholders": {
+      "seconds": {"type": "int"}
+    }
+  },
+  "aiActivityResumingJob": "正在恢复上次分析进度",
+  "aiActivityMetricAnalyzed": "已处理 {value} 个文件",
+  "@aiActivityMetricAnalyzed": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "aiActivityMetricCredits": "已用 {value} 积分",
+  "@aiActivityMetricCredits": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "aiActivityMetricLocalResolved": "本地已判定 {value} 个",
+  "@aiActivityMetricLocalResolved": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  }
 }

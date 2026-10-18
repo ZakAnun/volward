@@ -1570,4 +1570,75 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeCancelScan => 'Cancel Scan';
+
+  @override
+  String get aiActivitySubstageSession => 'Preparing workspace';
+
+  @override
+  String get aiActivitySubstageCandidates => 'Building candidate list';
+
+  @override
+  String get aiActivitySubstagePlan => 'Building coverage plan';
+
+  @override
+  String get aiActivitySubstageTree => 'Analyzing folders';
+
+  @override
+  String get aiActivitySubstageTail => 'Analyzing files';
+
+  @override
+  String get aiActivitySubstageFinalize => 'Finalizing results';
+
+  @override
+  String get aiActivitySubtitleSession =>
+      'Loading your catalog and analysis session.';
+
+  @override
+  String aiActivitySubtitleCandidates(int count) {
+    return 'Organizing $count items from your scan for AI review.';
+  }
+
+  @override
+  String get aiActivitySubtitlePlan =>
+      'Building a local coverage plan before AI runs.';
+
+  @override
+  String get aiActivitySubtitleTree =>
+      'Using directory-level AI to group remaining files.';
+
+  @override
+  String get aiActivitySubtitleTail =>
+      'Running file-level AI on remaining items.';
+
+  @override
+  String aiActivitySubtitleQuickTail(int count, String mode) {
+    return 'Analyzing $count items via $mode.';
+  }
+
+  @override
+  String get aiActivitySubtitleFinalize =>
+      'Grouping results and refreshing the layout.';
+
+  @override
+  String aiActivityUpdatedAgo(int seconds) {
+    return 'Updated ${seconds}s ago';
+  }
+
+  @override
+  String get aiActivityResumingJob => 'Resuming your previous analysis';
+
+  @override
+  String aiActivityMetricAnalyzed(String value) {
+    return '$value files processed';
+  }
+
+  @override
+  String aiActivityMetricCredits(String value) {
+    return '$value credits used';
+  }
+
+  @override
+  String aiActivityMetricLocalResolved(String value) {
+    return '$value resolved locally';
+  }
 }

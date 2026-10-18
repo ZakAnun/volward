@@ -2553,6 +2553,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel Scan'**
   String get homeCancelScan;
+
+  /// No description provided for @aiActivitySubstageSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing workspace'**
+  String get aiActivitySubstageSession;
+
+  /// No description provided for @aiActivitySubstageCandidates.
+  ///
+  /// In en, this message translates to:
+  /// **'Building candidate list'**
+  String get aiActivitySubstageCandidates;
+
+  /// No description provided for @aiActivitySubstagePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Building coverage plan'**
+  String get aiActivitySubstagePlan;
+
+  /// No description provided for @aiActivitySubstageTree.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing folders'**
+  String get aiActivitySubstageTree;
+
+  /// No description provided for @aiActivitySubstageTail.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing files'**
+  String get aiActivitySubstageTail;
+
+  /// No description provided for @aiActivitySubstageFinalize.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing results'**
+  String get aiActivitySubstageFinalize;
+
+  /// No description provided for @aiActivitySubtitleSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading your catalog and analysis session.'**
+  String get aiActivitySubtitleSession;
+
+  /// No description provided for @aiActivitySubtitleCandidates.
+  ///
+  /// In en, this message translates to:
+  /// **'Organizing {count} items from your scan for AI review.'**
+  String aiActivitySubtitleCandidates(int count);
+
+  /// No description provided for @aiActivitySubtitlePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Building a local coverage plan before AI runs.'**
+  String get aiActivitySubtitlePlan;
+
+  /// No description provided for @aiActivitySubtitleTree.
+  ///
+  /// In en, this message translates to:
+  /// **'Using directory-level AI to group remaining files.'**
+  String get aiActivitySubtitleTree;
+
+  /// No description provided for @aiActivitySubtitleTail.
+  ///
+  /// In en, this message translates to:
+  /// **'Running file-level AI on remaining items.'**
+  String get aiActivitySubtitleTail;
+
+  /// No description provided for @aiActivitySubtitleQuickTail.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing {count} items via {mode}.'**
+  String aiActivitySubtitleQuickTail(int count, String mode);
+
+  /// No description provided for @aiActivitySubtitleFinalize.
+  ///
+  /// In en, this message translates to:
+  /// **'Grouping results and refreshing the layout.'**
+  String get aiActivitySubtitleFinalize;
+
+  /// No description provided for @aiActivityUpdatedAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated {seconds}s ago'**
+  String aiActivityUpdatedAgo(int seconds);
+
+  /// No description provided for @aiActivityResumingJob.
+  ///
+  /// In en, this message translates to:
+  /// **'Resuming your previous analysis'**
+  String get aiActivityResumingJob;
+
+  /// No description provided for @aiActivityMetricAnalyzed.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} files processed'**
+  String aiActivityMetricAnalyzed(String value);
+
+  /// No description provided for @aiActivityMetricCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} credits used'**
+  String aiActivityMetricCredits(String value);
+
+  /// No description provided for @aiActivityMetricLocalResolved.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} resolved locally'**
+  String aiActivityMetricLocalResolved(String value);
 }
 
 class _AppLocalizationsDelegate
