@@ -27,6 +27,7 @@ import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/scan_column_view.dart';
 import 'package:volward/widgets/scan_filter_bar.dart';
 import 'package:volward/widgets/home/largest_items_panel.dart';
+import 'package:volward/widgets/ai_analysis_activity_card.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 
@@ -834,7 +835,8 @@ void main() {
     await _pumpUntilFound(tester, find.text('Start AI Analysis'));
     await tester.tap(find.text('Start AI Analysis'));
     await tester.pump();
-    expect(find.text('Analyzing'), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(AiAnalysisActivityCard), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('storage-target-downloads')));
     await tester.pumpAndSettle();
