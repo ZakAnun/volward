@@ -6,6 +6,52 @@ import '../theme/volward_tokens.dart';
 
 enum AiAnalysisActivityCardVariant { expanded, compact }
 
+/// Fixed outer height so active/pending/completed chips align in the row.
+const _kSubstageChipOuterHeight = 34.0;
+const _kSubstageTrackHeight = 2.0;
+const _kSubstageIconSlotWidth = 18.0;
+
+/// Compact circular loader for substage chips and inline captions.
+class AiAnalysisActivityInlineSpinner extends StatelessWidget {
+  const AiAnalysisActivityInlineSpinner({
+    super.key,
+    required this.color,
+    this.size = 12,
+    this.strokeWidth = 2,
+    this.animating = true,
+  });
+
+  final Color color;
+  final double size;
+  final double strokeWidth;
+  final bool animating;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!animating) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: color.withValues(alpha: 0.55),
+            width: strokeWidth,
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CircularProgressIndicator(
+        strokeWidth: strokeWidth,
+        valueColor: AlwaysStoppedAnimation<Color>(color),
+      ),
+    );
+  }
+}
+
 /// Unified in-progress analysis surface (design spec §3).
 class AiAnalysisActivityCard extends StatelessWidget {
   const AiAnalysisActivityCard({
@@ -13,6 +59,7 @@ class AiAnalysisActivityCard extends StatelessWidget {
     required this.variant,
     required this.model,
     this.substageLabel,
+    this.freezeActiveMotion = false,
   });
 
   final AiAnalysisActivityCardVariant variant;
@@ -20,6 +67,9 @@ class AiAnalysisActivityCard extends StatelessWidget {
 
   /// Chip captions; defaults to [AiActivitySubstage.name] when null.
   final String Function(AiActivitySubstage stage)? substageLabel;
+
+  /// When true, the active substage chip keeps the same footprint without pulse.
+  final bool freezeActiveMotion;
 
   String _labelFor(AiActivitySubstage stage) =>
       substageLabel?.call(stage) ?? stage.name;
@@ -30,10 +80,12 @@ class AiAnalysisActivityCard extends StatelessWidget {
       AiAnalysisActivityCardVariant.expanded => _ExpandedActivityCard(
         model: model,
         substageLabel: _labelFor,
+        freezeActiveMotion: freezeActiveMotion,
       ),
       AiAnalysisActivityCardVariant.compact => _CompactActivityCard(
         model: model,
         substageLabel: _labelFor,
+        freezeActiveMotion: freezeActiveMotion,
       ),
     };
   }
@@ -48,6 +100,7 @@ class _CompactActivityCard extends StatelessWidget {
   const _CompactActivityCard({
     required this.model,
     required this.substageLabel,
+    this.freezeActiveMotion = false,
   });
 
   static const double _maxHeight = 72;
@@ -55,11 +108,15 @@ class _CompactActivityCard extends StatelessWidget {
 
   final AiAnalysisActivityModel model;
   final String Function(AiActivitySubstage stage) substageLabel;
+  final bool freezeActiveMotion;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
     final progress = model.progress;
+    final barValue = freezeActiveMotion
+        ? (progress ?? 0.0).clamp(0.0, 1.0)
+        : progress?.clamp(0.0, 1.0);
     final percent = progress != null
         ? '${(progress.clamp(0.0, 1.0) * 100).round()}%'
         : null;
@@ -133,7 +190,7 @@ class _CompactActivityCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(_barHeight),
                   child: LinearProgressIndicator(
-                    value: progress?.clamp(0.0, 1.0),
+                    value: barValue,
                     minHeight: _barHeight,
                     backgroundColor: tokens.inkMuted48.withValues(alpha: 0.35),
                     color: tokens.primary,
@@ -152,10 +209,12 @@ class _ExpandedActivityCard extends StatelessWidget {
   const _ExpandedActivityCard({
     required this.model,
     required this.substageLabel,
+    this.freezeActiveMotion = false,
   });
 
   final AiAnalysisActivityModel model;
   final String Function(AiActivitySubstage stage) substageLabel;
+  final bool freezeActiveMotion;
 
   @override
   Widget build(BuildContext context) {
@@ -170,8 +229,12 @@ class _ExpandedActivityCard extends StatelessWidget {
         ? '${(progress.clamp(0.0, 1.0) * 100).round()}%'
         : 'In progress, no percentage yet';
 
+    final subtitlePart = model.subtitle.trim().isEmpty
+        ? ''
+        : '${model.subtitle}, ';
     final semanticsLabel =
-        '${model.title}, stage $stageOrdinal of $stageCount, $semanticsProgress';
+        '${model.title}, $subtitlePart'
+        'stage $stageOrdinal of $stageCount, $semanticsProgress';
 
     return Semantics(
       label: semanticsLabel,
@@ -195,6 +258,7 @@ class _ExpandedActivityCard extends StatelessWidget {
                   activeSubstage: model.activeSubstage,
                   completedSubstages: model.completedSubstages,
                   substageLabel: substageLabel,
+                  freezeActiveMotion: freezeActiveMotion,
                 ),
                 const SizedBox(height: AppleSpacing.md),
                 Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
@@ -216,7 +280,11 @@ class _ExpandedActivityCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppleSpacing.md),
-                _ActivityProgressBar(progress: progress, tokens: tokens),
+                _ActivityProgressBar(
+                  progress: progress,
+                  tokens: tokens,
+                  freezeActiveMotion: freezeActiveMotion,
+                ),
                 if (model.progressLabel != null || progress != null) ...[
                   const SizedBox(height: AppleSpacing.xs),
                   Row(
@@ -257,12 +325,14 @@ class _SubstageChipRow extends StatelessWidget {
     required this.activeSubstage,
     required this.completedSubstages,
     required this.substageLabel,
+    this.freezeActiveMotion = false,
   });
 
   final List<AiActivitySubstage> visibleSubstages;
   final AiActivitySubstage activeSubstage;
   final Set<AiActivitySubstage> completedSubstages;
   final String Function(AiActivitySubstage stage) substageLabel;
+  final bool freezeActiveMotion;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +349,7 @@ class _SubstageChipRow extends StatelessWidget {
             _SubstageChip(
               label: substageLabel(visibleSubstages[i]),
               state: _chipState(visibleSubstages[i]),
+              freezeActiveMotion: freezeActiveMotion,
             ),
           ],
         ],
@@ -299,17 +370,62 @@ class _SubstageChipRow extends StatelessWidget {
 
 enum _SubstageChipState { pending, active, completed }
 
+class _SubstageChipLeading extends StatelessWidget {
+  const _SubstageChipLeading({
+    required this.state,
+    required this.foreground,
+    required this.freezeActiveMotion,
+    required this.reduceMotion,
+  });
+
+  final _SubstageChipState state;
+  final Color foreground;
+  final bool freezeActiveMotion;
+  final bool reduceMotion;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (state) {
+      _SubstageChipState.completed => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_rounded, size: 14, color: foreground),
+          const SizedBox(width: 4),
+        ],
+      ),
+      _SubstageChipState.active => Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: AiAnalysisActivityInlineSpinner(
+          color: foreground,
+          size: 12,
+          strokeWidth: 1.75,
+          animating: !reduceMotion && !freezeActiveMotion,
+        ),
+      ),
+      _SubstageChipState.pending => const SizedBox.shrink(),
+    };
+  }
+}
+
 class _SubstageChip extends StatelessWidget {
-  const _SubstageChip({required this.label, required this.state});
+  const _SubstageChip({
+    required this.label,
+    required this.state,
+    this.freezeActiveMotion = false,
+  });
 
   final String label;
   final _SubstageChipState state;
+  final bool freezeActiveMotion;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final showPulse = state == _SubstageChipState.active && !reduceMotion;
+    final showTrackPulse =
+        state == _SubstageChipState.active &&
+        !reduceMotion &&
+        !freezeActiveMotion;
 
     final Color bg;
     final Color border;
@@ -330,70 +446,88 @@ class _SubstageChip extends StatelessWidget {
     }
 
     return IntrinsicWidth(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppleSpacing.sm,
-              vertical: AppleSpacing.xxs,
-            ),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(AppleRadius.pill),
-              border: Border.all(color: border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (state == _SubstageChipState.completed) ...[
-                  Icon(Icons.check_rounded, size: 14, color: fg),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  label,
-                  style: AppleTypography.finePrint.copyWith(
-                    color: fg,
-                    fontWeight: FontWeight.w600,
-                    height: 1.1,
+      child: SizedBox(
+        height: _kSubstageChipOuterHeight,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppleSpacing.sm,
+                vertical: AppleSpacing.xxs,
+              ),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(AppleRadius.pill),
+                border: Border.all(color: border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: _kSubstageIconSlotWidth,
+                    child: _SubstageChipLeading(
+                      state: state,
+                      foreground: fg,
+                      freezeActiveMotion: freezeActiveMotion,
+                      reduceMotion: reduceMotion,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          if (showPulse)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(1),
-                child: LinearProgressIndicator(
-                  minHeight: 2,
-                  backgroundColor: tokens.primary.withValues(alpha: 0.25),
-                  color: tokens.onPrimary,
-                ),
+                  Text(
+                    label,
+                    style: AppleTypography.finePrint.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
               ),
             ),
-        ],
+            const SizedBox(height: 2),
+            SizedBox(
+              height: _kSubstageTrackHeight,
+              child: showTrackPulse
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(1),
+                      child: LinearProgressIndicator(
+                        minHeight: _kSubstageTrackHeight,
+                        backgroundColor: tokens.primary.withValues(alpha: 0.25),
+                        color: tokens.onPrimary,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _ActivityProgressBar extends StatelessWidget {
-  const _ActivityProgressBar({required this.progress, required this.tokens});
+  const _ActivityProgressBar({
+    required this.progress,
+    required this.tokens,
+    this.freezeActiveMotion = false,
+  });
 
   final double? progress;
   final VolwardTokens tokens;
+  final bool freezeActiveMotion;
 
   @override
   Widget build(BuildContext context) {
     const minHeight = 5.0;
-    if (progress != null) {
+    final value = freezeActiveMotion
+        ? (progress ?? 0.0).clamp(0.0, 1.0)
+        : progress?.clamp(0.0, 1.0);
+    if (value != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(minHeight),
         child: LinearProgressIndicator(
-          value: progress!.clamp(0.0, 1.0),
+          value: value,
           minHeight: minHeight,
           backgroundColor: tokens.inkMuted48.withValues(alpha: 0.35),
           color: tokens.primary,

@@ -120,6 +120,10 @@ class AiCoverageCoordinator with WidgetsBindingObserver {
   Future<void> debugNotify(CoverageJobState state, {AppLocalizations? l10n}) =>
       _maybeNotify(state, l10n: l10n);
 
+  /// Pushes [state] to workspace listeners (tests only; production uses the service stream).
+  @visibleForTesting
+  void debugEmitJobState(CoverageJobState state) => _notifyListeners(state);
+
   final CoverageDesktopNotify _desktopNotify;
   final CoverageServiceFactory _serviceFactory;
   final bool Function(VolwardSession session) _isCoverageApiReady;
