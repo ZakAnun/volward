@@ -1008,6 +1008,64 @@
     }
   },
   "aiConclusionsShowAll": "查看全部建议",
+  "aiResultsPhaseResults": "分析结果",
+  "aiResultsPhaseReviewQueue": "待确认",
+  "aiResultsPhaseDetailList": "完整列表",
+  "aiResultsHeroLine": "可释放 {bytes}，{review} 项需你确认后再删",
+  "@aiResultsHeroLine": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiResultsMetricSafeTitle": "可安全清理",
+  "aiResultsMetricReviewTitle": "待你确认",
+  "aiResultsMetricKeepTitle": "建议保留",
+  "aiResultsMetricCountLine": "{count} 项",
+  "@aiResultsMetricCountLine": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsMetricReviewSubtitle": "待决定",
+  "aiResultsMetricKeepSubtitle": "AI 保留",
+  "aiResultsPendingPreviewTitle": "需要你确认的项目",
+  "aiResultsReviewQueuePrimary": "处理全部 {count} 项待确认",
+  "@aiResultsReviewQueuePrimary": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsViewFullList": "查看完整列表",
+  "aiResultsViewSafeCleanup": "查看可安全清理（{count} 项）",
+  "@aiResultsViewSafeCleanup": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsNoPendingReviewHint": "暂无待确认项。接下来可查看 {count} 项可安全清理内容。",
+  "@aiResultsNoPendingReviewHint": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsBackToResults": "返回分析结果",
+  "aiResultsReviewQueueProgress": "已决定 {decided} / {total}",
+  "@aiResultsReviewQueueProgress": {
+    "placeholders": {
+      "decided": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "aiResultsReviewQueueComplete": "待确认项均已做出决定。",
+  "aiResultsReviewQueueNextDelete": "继续处理已选项目",
+  "aiReviewQueueFilteredDir": "仅显示 {path} 下的项目",
+  "@aiReviewQueueFilteredDir": {
+    "placeholders": {
+      "path": {"type": "String"}
+    }
+  },
+  "aiResultsFilterSafeToRemove": "可安全清理",
   "aiConclusionsBack": "返回结论",
   "aiConclusionsMoreDirs": "完整列表中还有 {count} 个目录",
   "@aiConclusionsMoreDirs": {
@@ -1049,6 +1107,9 @@
   },
   "aiResultsNeedsDecision": "待决定",
   "aiResultsSearchHint": "搜索路径、原因、来源或提示",
+  "aiResultsSearchSortTitle": "搜索和排序",
+  "aiResultsSearchSortDone": "完成",
+  "aiResultsKeepExpandHint": "建议保留的项目需展开目录后才会显示。",
   "aiResultsClearSearch": "清除搜索",
   "aiResultsNoMatches": "没有匹配的结果",
   "aiResultsEmpty": "未发现可清理建议",
@@ -1167,6 +1228,7 @@
     }
   },
   "aiActivityResumingJob": "正在恢复上次分析进度",
+  "aiActivityPausing": "正在暂停分析…",
   "aiActivityMetricAnalyzed": "已处理 {value} 个文件",
   "@aiActivityMetricAnalyzed": {
     "placeholders": {

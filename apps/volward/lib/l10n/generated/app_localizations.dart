@@ -2218,6 +2218,132 @@ abstract class AppLocalizations {
   /// **'View all suggestions'**
   String get aiConclusionsShowAll;
 
+  /// No description provided for @aiResultsPhaseResults.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get aiResultsPhaseResults;
+
+  /// No description provided for @aiResultsPhaseReviewQueue.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs your decision'**
+  String get aiResultsPhaseReviewQueue;
+
+  /// No description provided for @aiResultsPhaseDetailList.
+  ///
+  /// In en, this message translates to:
+  /// **'Full list'**
+  String get aiResultsPhaseDetailList;
+
+  /// No description provided for @aiResultsHeroLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} reclaimable · {review} need your decision before delete'**
+  String aiResultsHeroLine(String bytes, int review);
+
+  /// No description provided for @aiResultsMetricSafeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to remove'**
+  String get aiResultsMetricSafeTitle;
+
+  /// No description provided for @aiResultsMetricReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs decision'**
+  String get aiResultsMetricReviewTitle;
+
+  /// No description provided for @aiResultsMetricKeepTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get aiResultsMetricKeepTitle;
+
+  /// No description provided for @aiResultsMetricCountLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 item} other{{count} items}}'**
+  String aiResultsMetricCountLine(int count);
+
+  /// No description provided for @aiResultsMetricReviewSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get aiResultsMetricReviewSubtitle;
+
+  /// No description provided for @aiResultsMetricKeepSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI kept'**
+  String get aiResultsMetricKeepSubtitle;
+
+  /// No description provided for @aiResultsPendingPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Items needing your decision'**
+  String get aiResultsPendingPreviewTitle;
+
+  /// No description provided for @aiResultsReviewQueuePrimary.
+  ///
+  /// In en, this message translates to:
+  /// **'Review all {count} pending items'**
+  String aiResultsReviewQueuePrimary(int count);
+
+  /// No description provided for @aiResultsViewFullList.
+  ///
+  /// In en, this message translates to:
+  /// **'View full list'**
+  String get aiResultsViewFullList;
+
+  /// No description provided for @aiResultsViewSafeCleanup.
+  ///
+  /// In en, this message translates to:
+  /// **'View safe cleanup ({count} items)'**
+  String aiResultsViewSafeCleanup(int count);
+
+  /// No description provided for @aiResultsNoPendingReviewHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing needs your decision. You can review {count} safe-to-remove items next.'**
+  String aiResultsNoPendingReviewHint(int count);
+
+  /// No description provided for @aiResultsBackToResults.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to results'**
+  String get aiResultsBackToResults;
+
+  /// No description provided for @aiResultsReviewQueueProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Decided {decided} of {total}'**
+  String aiResultsReviewQueueProgress(int decided, int total);
+
+  /// No description provided for @aiResultsReviewQueueComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'All pending items have a decision.'**
+  String get aiResultsReviewQueueComplete;
+
+  /// No description provided for @aiResultsReviewQueueNextDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with selected items'**
+  String get aiResultsReviewQueueNextDelete;
+
+  /// No description provided for @aiReviewQueueFilteredDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing items under {path}'**
+  String aiReviewQueueFilteredDir(String path);
+
+  /// No description provided for @aiResultsFilterSafeToRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to remove'**
+  String get aiResultsFilterSafeToRemove;
+
   /// No description provided for @aiConclusionsBack.
   ///
   /// In en, this message translates to:
@@ -2319,6 +2445,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search path, reason, source, or hint'**
   String get aiResultsSearchHint;
+
+  /// No description provided for @aiResultsSearchSortTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search and sort'**
+  String get aiResultsSearchSortTitle;
+
+  /// No description provided for @aiResultsSearchSortDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get aiResultsSearchSortDone;
+
+  /// No description provided for @aiResultsKeepExpandHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept items appear after you expand a folder.'**
+  String get aiResultsKeepExpandHint;
 
   /// No description provided for @aiResultsClearSearch.
   ///
@@ -2643,6 +2787,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Resuming your previous analysis'**
   String get aiActivityResumingJob;
+
+  /// No description provided for @aiActivityPausing.
+  ///
+  /// In en, this message translates to:
+  /// **'Pausing analysis…'**
+  String get aiActivityPausing;
 
   /// No description provided for @aiActivityMetricAnalyzed.
   ///

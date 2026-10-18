@@ -1008,6 +1008,64 @@
     }
   },
   "aiConclusionsShowAll": "View all suggestions",
+  "aiResultsPhaseResults": "Results",
+  "aiResultsPhaseReviewQueue": "Needs your decision",
+  "aiResultsPhaseDetailList": "Full list",
+  "aiResultsHeroLine": "{bytes} reclaimable · {review} need your decision before delete",
+  "@aiResultsHeroLine": {
+    "placeholders": {
+      "bytes": {"type": "String"},
+      "review": {"type": "int"}
+    }
+  },
+  "aiResultsMetricSafeTitle": "Safe to remove",
+  "aiResultsMetricReviewTitle": "Needs decision",
+  "aiResultsMetricKeepTitle": "Keep",
+  "aiResultsMetricCountLine": "{count, plural, =1{1 item} other{{count} items}}",
+  "@aiResultsMetricCountLine": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsMetricReviewSubtitle": "Pending",
+  "aiResultsMetricKeepSubtitle": "AI kept",
+  "aiResultsPendingPreviewTitle": "Items needing your decision",
+  "aiResultsReviewQueuePrimary": "Review all {count} pending items",
+  "@aiResultsReviewQueuePrimary": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsViewFullList": "View full list",
+  "aiResultsViewSafeCleanup": "View safe cleanup ({count} items)",
+  "@aiResultsViewSafeCleanup": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsNoPendingReviewHint": "Nothing needs your decision. You can review {count} safe-to-remove items next.",
+  "@aiResultsNoPendingReviewHint": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "aiResultsBackToResults": "Back to results",
+  "aiResultsReviewQueueProgress": "Decided {decided} of {total}",
+  "@aiResultsReviewQueueProgress": {
+    "placeholders": {
+      "decided": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "aiResultsReviewQueueComplete": "All pending items have a decision.",
+  "aiResultsReviewQueueNextDelete": "Continue with selected items",
+  "aiReviewQueueFilteredDir": "Showing items under {path}",
+  "@aiReviewQueueFilteredDir": {
+    "placeholders": {
+      "path": {"type": "String"}
+    }
+  },
+  "aiResultsFilterSafeToRemove": "Safe to remove",
   "aiConclusionsBack": "Back to conclusions",
   "aiConclusionsMoreDirs": "+ {count} more folders in the full list",
   "@aiConclusionsMoreDirs": {
@@ -1049,6 +1107,9 @@
   },
   "aiResultsNeedsDecision": "Needs decision",
   "aiResultsSearchHint": "Search path, reason, source, or hint",
+  "aiResultsSearchSortTitle": "Search and sort",
+  "aiResultsSearchSortDone": "Done",
+  "aiResultsKeepExpandHint": "Kept items appear after you expand a folder.",
   "aiResultsClearSearch": "Clear search",
   "aiResultsNoMatches": "No matching results",
   "aiResultsEmpty": "No cleanup suggestions were found",
@@ -1167,6 +1228,7 @@
     }
   },
   "aiActivityResumingJob": "Resuming your previous analysis",
+  "aiActivityPausing": "Pausing analysis…",
   "aiActivityMetricAnalyzed": "{value} files processed",
   "@aiActivityMetricAnalyzed": {
     "placeholders": {

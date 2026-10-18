@@ -1294,6 +1294,83 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiConclusionsShowAll => '查看全部建议';
 
   @override
+  String get aiResultsPhaseResults => '分析结果';
+
+  @override
+  String get aiResultsPhaseReviewQueue => '待确认';
+
+  @override
+  String get aiResultsPhaseDetailList => '完整列表';
+
+  @override
+  String aiResultsHeroLine(String bytes, int review) {
+    return '可释放 $bytes，$review 项需你确认后再删';
+  }
+
+  @override
+  String get aiResultsMetricSafeTitle => '可安全清理';
+
+  @override
+  String get aiResultsMetricReviewTitle => '待你确认';
+
+  @override
+  String get aiResultsMetricKeepTitle => '建议保留';
+
+  @override
+  String aiResultsMetricCountLine(int count) {
+    return '$count 项';
+  }
+
+  @override
+  String get aiResultsMetricReviewSubtitle => '待决定';
+
+  @override
+  String get aiResultsMetricKeepSubtitle => 'AI 保留';
+
+  @override
+  String get aiResultsPendingPreviewTitle => '需要你确认的项目';
+
+  @override
+  String aiResultsReviewQueuePrimary(int count) {
+    return '处理全部 $count 项待确认';
+  }
+
+  @override
+  String get aiResultsViewFullList => '查看完整列表';
+
+  @override
+  String aiResultsViewSafeCleanup(int count) {
+    return '查看可安全清理（$count 项）';
+  }
+
+  @override
+  String aiResultsNoPendingReviewHint(int count) {
+    return '暂无待确认项。接下来可查看 $count 项可安全清理内容。';
+  }
+
+  @override
+  String get aiResultsBackToResults => '返回分析结果';
+
+  @override
+  String aiResultsReviewQueueProgress(int decided, int total) {
+    return '已决定 $decided / $total';
+  }
+
+  @override
+  String get aiResultsReviewQueueComplete => '待确认项均已做出决定。';
+
+  @override
+  String get aiResultsReviewQueueNextDelete => '继续处理已选项目';
+
+  @override
+  String aiReviewQueueFilteredDir(String path) {
+    return '仅显示 $path 下的项目';
+  }
+
+  @override
+  String get aiResultsFilterSafeToRemove => '可安全清理';
+
+  @override
   String get aiConclusionsBack => '返回结论';
 
   @override
@@ -1355,6 +1432,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiResultsSearchHint => '搜索路径、原因、来源或提示';
+
+  @override
+  String get aiResultsSearchSortTitle => '搜索和排序';
+
+  @override
+  String get aiResultsSearchSortDone => '完成';
+
+  @override
+  String get aiResultsKeepExpandHint => '建议保留的项目需展开目录后才会显示。';
 
   @override
   String get aiResultsClearSearch => '清除搜索';
@@ -1541,6 +1627,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aiActivityResumingJob => '正在恢复上次分析进度';
+
+  @override
+  String get aiActivityPausing => '正在暂停分析…';
 
   @override
   String aiActivityMetricAnalyzed(String value) {

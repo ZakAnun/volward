@@ -1355,6 +1355,90 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiConclusionsShowAll => 'View all suggestions';
 
   @override
+  String get aiResultsPhaseResults => 'Results';
+
+  @override
+  String get aiResultsPhaseReviewQueue => 'Needs your decision';
+
+  @override
+  String get aiResultsPhaseDetailList => 'Full list';
+
+  @override
+  String aiResultsHeroLine(String bytes, int review) {
+    return '$bytes reclaimable · $review need your decision before delete';
+  }
+
+  @override
+  String get aiResultsMetricSafeTitle => 'Safe to remove';
+
+  @override
+  String get aiResultsMetricReviewTitle => 'Needs decision';
+
+  @override
+  String get aiResultsMetricKeepTitle => 'Keep';
+
+  @override
+  String aiResultsMetricCountLine(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '1 item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get aiResultsMetricReviewSubtitle => 'Pending';
+
+  @override
+  String get aiResultsMetricKeepSubtitle => 'AI kept';
+
+  @override
+  String get aiResultsPendingPreviewTitle => 'Items needing your decision';
+
+  @override
+  String aiResultsReviewQueuePrimary(int count) {
+    return 'Review all $count pending items';
+  }
+
+  @override
+  String get aiResultsViewFullList => 'View full list';
+
+  @override
+  String aiResultsViewSafeCleanup(int count) {
+    return 'View safe cleanup ($count items)';
+  }
+
+  @override
+  String aiResultsNoPendingReviewHint(int count) {
+    return 'Nothing needs your decision. You can review $count safe-to-remove items next.';
+  }
+
+  @override
+  String get aiResultsBackToResults => 'Back to results';
+
+  @override
+  String aiResultsReviewQueueProgress(int decided, int total) {
+    return 'Decided $decided of $total';
+  }
+
+  @override
+  String get aiResultsReviewQueueComplete =>
+      'All pending items have a decision.';
+
+  @override
+  String get aiResultsReviewQueueNextDelete => 'Continue with selected items';
+
+  @override
+  String aiReviewQueueFilteredDir(String path) {
+    return 'Showing items under $path';
+  }
+
+  @override
+  String get aiResultsFilterSafeToRemove => 'Safe to remove';
+
+  @override
   String get aiConclusionsBack => 'Back to conclusions';
 
   @override
@@ -1416,6 +1500,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiResultsSearchHint => 'Search path, reason, source, or hint';
+
+  @override
+  String get aiResultsSearchSortTitle => 'Search and sort';
+
+  @override
+  String get aiResultsSearchSortDone => 'Done';
+
+  @override
+  String get aiResultsKeepExpandHint =>
+      'Kept items appear after you expand a folder.';
 
   @override
   String get aiResultsClearSearch => 'Clear search';
@@ -1626,6 +1720,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiActivityResumingJob => 'Resuming your previous analysis';
+
+  @override
+  String get aiActivityPausing => 'Pausing analysis…';
 
   @override
   String aiActivityMetricAnalyzed(String value) {

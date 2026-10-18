@@ -424,6 +424,27 @@ Widget _workspaceShell(
   );
 }
 
+Future<void> _scrollConclusionsUntilVisible(
+  WidgetTester tester,
+  Finder target,
+) async {
+  final overview = find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey);
+  if (overview.evaluate().isEmpty) {
+    await _pumpUntilFound(tester, target);
+    return;
+  }
+  final scrollable = find.descendant(
+    of: overview,
+    matching: find.byType(Scrollable),
+  );
+  if (scrollable.evaluate().isEmpty) {
+    await _pumpUntilFound(tester, target);
+    return;
+  }
+  await tester.scrollUntilVisible(target, 160, scrollable: scrollable.first);
+  await tester.pump();
+}
+
 Future<void> _pumpUntilFound(
   WidgetTester tester,
   Finder finder, {
@@ -439,10 +460,75 @@ Future<void> _pumpUntilFound(
   fail('Timed out waiting for the expected workspace phase');
 }
 
-Future<void> _goToDetailFromOverview(WidgetTester tester) async {
-  await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
-  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.resultsListKey));
+Future<void> _tapResultsFilterSegment(WidgetTester tester, String mode) async {
+  final segment = find.byKey(ValueKey<String>('ai-results-segment:$mode'));
+  await _pumpUntilFound(tester, segment);
+  final filterBar = find.byKey(AiAnalysisWorkspace.resultsFilterKey);
+  final filterScroll = find.descendant(
+    of: filterBar,
+    matching: find.byType(Scrollable),
+  );
+  if (filterScroll.evaluate().isNotEmpty) {
+    await tester.scrollUntilVisible(
+      segment,
+      48,
+      scrollable: filterScroll.first,
+    );
+  }
+  final resultsScroll = find.descendant(
+    of: find.byKey(AiAnalysisWorkspace.detailListKey),
+    matching: find.byType(Scrollable),
+  );
+  if (resultsScroll.evaluate().isNotEmpty) {
+    await tester.scrollUntilVisible(
+      segment,
+      48,
+      scrollable: resultsScroll.first,
+    );
+  }
+  await tester.ensureVisible(segment);
   await tester.pump();
+  await tester.tap(segment);
+}
+
+Future<void> _goToDetailFromOverview(
+  WidgetTester tester, {
+  bool useAllFilter = true,
+}) async {
+  await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.detailListKey));
+  if (useAllFilter) {
+    await _tapResultsFilterSegment(tester, 'all');
+    await tester.pumpAndSettle();
+  }
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.resultsListKey),
+    maxAttempts: 240,
+  );
+  await tester.pump();
+}
+
+Future<void> _openResultsOnOverview(
+  WidgetTester tester,
+  _FakeGateway gateway, {
+  List<AiVerdict> result = verdicts,
+  String? candidatesJson,
+  Locale locale = const Locale('en'),
+}) async {
+  gateway
+    ..candidatesJson = candidatesJson ?? _candidatePayload()
+    ..provider = _ResultProvider(result);
+  await tester.pumpWidget(_workspaceShell(gateway, locale: locale));
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
+  );
+  await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+  );
 }
 
 Future<void> _openResults(
@@ -622,6 +708,7 @@ void main() {
     AiCoverageCoordinator.debugForceAvailable = false;
     AiCoverageCoordinator.debugPlanSummary = null;
     AiCoverageCoordinator.debugLoadJobState = null;
+    AiSettingsStore.instance.settingsFileForTest = null;
     SnapshotCache.cacheDirForTest = null;
     _workspaceTestCacheDir?.deleteSync(recursive: true);
     _workspaceTestCacheDir = null;
@@ -796,7 +883,14 @@ void main() {
     await tester.pumpWidget(_workspaceShell(gateway));
 
     expect(find.byType(AiAnalysisActivityCard), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // Inline substage spinner lives inside the card, not a lone full-screen loader.
+    expect(
+      find.descendant(
+        of: find.byType(AiAnalysisActivityCard),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
     // Chip caption + active title both use the localized substage label.
     expect(find.text('Preparing workspace'), findsWidgets);
 
@@ -1340,6 +1434,26 @@ void main() {
     await tester.tap(_resultItem('/tmp/safe.cache'));
     await tester.pumpAndSettle();
     expect(find.text('0 items selected · 0 B'), findsOneWidget);
+  });
+
+  testWidgets('selected filter lists only selected cleanup items', (
+    tester,
+  ) async {
+    await _openResults(tester, _FakeGateway());
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: _resultItem('/tmp/safe.cache'),
+    );
+
+    await tester.tap(find.text('All'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Selected').last);
+    await tester.pumpAndSettle();
+
+    expect(_resultItem('/tmp/safe.cache'), findsOneWidget);
+    expect(find.text('/tmp/review.log'), findsNothing);
+    expect(find.text('/tmp/keep.db'), findsNothing);
   });
 
   testWidgets('BYOK result persists provider-reported token usage', (
@@ -2199,13 +2313,13 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.decisionSummaryKey), findsOneWidget);
     expect(find.text('100 B reclaimable · 1 need review'), findsOneWidget);
     expect(find.text('Analyzed'), findsNothing);
-    expect(find.text('Safe to remove'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.resultsMetricSafeKey), findsNothing);
     expect(find.text('Kept'), findsNothing);
     expect(find.text('600 B total'), findsNothing);
     expect(find.text('Search path, reason, source, or hint'), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.searchToggleKey), findsOneWidget);
     expect(find.text('All'), findsOneWidget);
-    expect(find.text('Priority'), findsOneWidget);
+    expect(find.text('Priority'), findsNothing);
     expect(find.text('Recommended first'), findsNothing);
     expect(find.text('Show all results'), findsNothing);
     expect(find.text('Review needed'), findsNothing);
@@ -2262,8 +2376,6 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
-    await tester.pumpAndSettle();
     await _ensureGroupExpanded(
       tester,
       '/tmp',
@@ -2279,9 +2391,12 @@ void main() {
       lessThan(tester.getTopLeft(find.text('/tmp/alpha-safe.cache')).dy),
     );
 
-    await tester.tap(find.text('Priority'));
+    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Size').last);
+    expect(find.byKey(AiAnalysisWorkspace.searchSortSheetKey), findsOneWidget);
+    await tester.tap(find.text('Size'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
     expect(
@@ -2293,14 +2408,22 @@ void main() {
       greaterThan(tester.getTopLeft(find.text('/tmp/charlie-safe.cache')).dy),
     );
 
+    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'owner unclear');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(find.text('/tmp/alpha-safe.cache'), findsNothing);
     expect(find.text('/tmp/bravo-review.log'), findsOneWidget);
     expect(find.text('/tmp/charlie-safe.cache'), findsNothing);
     expect(find.text('2 items selected · 800 B'), findsOneWidget);
 
+    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('All'));
     await tester.pumpAndSettle();
@@ -2312,12 +2435,193 @@ void main() {
     expect(find.text('/tmp/charlie-safe.cache'), findsOneWidget);
   });
 
+  testWidgets('directory card opens a directory-filtered safe list', (
+    tester,
+  ) async {
+    await _openResultsOnOverview(
+      tester,
+      _FakeGateway(),
+      result: const [
+        AiVerdict(
+          path: '/tmp/project-a/a.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+        AiVerdict(
+          path: '/tmp/project-b/b.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Rebuildable cache',
+        ),
+      ],
+      candidatesJson: _candidatePayload(
+        unknownCandidates: const [
+          {
+            'path': '/tmp/project-a/a.cache',
+            'size_bytes': 100,
+            'is_dir': false,
+          },
+          {
+            'path': '/tmp/project-b/b.cache',
+            'size_bytes': 200,
+            'is_dir': false,
+          },
+        ],
+      ),
+    );
+    await _scrollConclusionsUntilVisible(tester, find.text('project-a'));
+    await tester.tap(find.text('project-a'));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.detailListKey),
+    );
+    expect(find.textContaining('/tmp/project-a'), findsWidgets);
+    expect(find.text('/tmp/project-a/a.cache'), findsOneWidget);
+    expect(find.text('/tmp/project-b/b.cache'), findsNothing);
+  });
+
+  testWidgets('full coverage All segment keeps a shell for keep-only folders', (
+    tester,
+  ) async {
+    AiCoverageCoordinator.debugForceAvailable = true;
+    final gateway = _FakeGateway()
+      ..candidatesJson = _candidatePayload()
+      ..cache['cache-key'] = jsonEncode({
+        'entries': [
+          {
+            'path': '/tmp/keep.db',
+            'size_bytes': 300,
+            'verdict': 'keep',
+            'confidence': 'high',
+            'reason': 'Application data',
+          },
+        ],
+      });
+    _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+    await tester.tap(find.byKey(AiAnalysisWorkspace.resultsMetricKeepKey));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.detailListKey),
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsKeepExpandHintKey),
+      findsOneWidget,
+    );
+    expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
+    expect(_resultGroup('/tmp'), findsOneWidget);
+  });
+
+  testWidgets('primary CTA opens review queue from overview', (tester) async {
+    await _openResultsOnOverview(tester, _FakeGateway());
+    await tester.tap(find.byKey(AiAnalysisWorkspace.reviewQueuePrimaryKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.reviewQueueKey), findsOneWidget);
+  });
+
+  testWidgets('overview shows hero and three metric cards', (tester) async {
+    await _openResultsOnOverview(tester, _FakeGateway());
+    expect(find.byKey(AiAnalysisWorkspace.resultsHeroKey), findsOneWidget);
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsMetricSafeKey),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsMetricReviewKey),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsMetricKeepKey),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('overview safe metric counts pre-classified deletable items', (
+    tester,
+  ) async {
+    await _openResultsOnOverview(
+      tester,
+      _FakeGateway(),
+      candidatesJson: _candidatePayload(
+        preClassified: const [
+          {
+            'path': '/tmp/local-safe.cache',
+            'size_bytes': 50,
+            'confidence': 'high',
+            'reason': 'Local cache',
+            'deletable': true,
+          },
+        ],
+      ),
+    );
+    expect(find.text('2 items'), findsOneWidget);
+  });
+
+  testWidgets('review filter lists pending review without expanding group', (
+    tester,
+  ) async {
+    await _openResults(
+      tester,
+      _FakeGateway(),
+      result: const [
+        AiVerdict(
+          path: '/tmp/safe.cache',
+          verdict: 'safe_to_remove',
+          confidence: 'high',
+          reason: 'Safe cache',
+        ),
+        AiVerdict(
+          path: '/tmp/review.log',
+          verdict: 'review_needed',
+          confidence: 'medium',
+          reason: 'Needs confirmation',
+        ),
+      ],
+      candidatesJson: _candidatePayload(
+        unknownCandidates: const [
+          {'path': '/tmp/safe.cache', 'size_bytes': 100, 'is_dir': false},
+          {'path': '/tmp/review.log', 'size_bytes': 200, 'is_dir': false},
+        ],
+      ),
+    );
+    await _collapseGroupIfExpanded(
+      tester,
+      '/tmp',
+      expandedItemFinder: _resultItem('/tmp/safe.cache'),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.resultsFilterKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('/tmp/review.log'), findsOneWidget);
+    expect(find.text('/tmp/safe.cache'), findsNothing);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.resultsFilterKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('/tmp/safe.cache'), findsNothing);
+    expect(find.text('/tmp/review.log'), findsNothing);
+  });
+
   testWidgets('empty result filters offer a reset action', (tester) async {
     await _openResults(tester, _FakeGateway());
 
     await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'does-not-exist');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
     expect(find.text('No matching results'), findsOneWidget);
@@ -2694,13 +2998,12 @@ void main() {
 
     expect(find.text('可清理 100 B · 1 项待确认'), findsOneWidget);
     expect(find.text('已分析'), findsNothing);
-    expect(find.text('安全可移除'), findsNothing);
-    expect(find.text('需要确认'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.resultsMetricSafeKey), findsNothing);
     expect(find.text('已保留'), findsNothing);
     expect(find.text('总计 600 B'), findsNothing);
     expect(find.text('搜索路径、原因、来源或提示'), findsNothing);
     expect(find.text('全部'), findsOneWidget);
-    expect(find.text('优先级'), findsOneWidget);
+    expect(find.text('优先级'), findsNothing);
     expect(find.text('已选择 1 项 · 100 B'), findsOneWidget);
     expect(find.text('1 项待确认内容在你决定前不会加入清理。'), findsOneWidget);
   });
@@ -2713,7 +3016,7 @@ void main() {
         'nested/folder/that/needs/the/full/path/cache.data';
     final semantics = tester.ensureSemantics();
     try {
-      await tester.binding.setSurfaceSize(const Size(360, 800));
+      await tester.binding.setSurfaceSize(const Size(640, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _openResults(
         tester,
@@ -2902,6 +3205,42 @@ void main() {
     },
   );
 
+  testWidgets(
+    'paused notify on results stream clears compact activity and pausing copy',
+    (tester) async {
+      const runningJob = CoverageJobState(
+        snapshotId: 'snapshot-1',
+        rootPath: '/home',
+        planVersion: 1,
+        cursor: 2,
+        totalUnclassified: 4,
+        analyzedFiles: 1,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.running,
+        usedTokens: 0,
+        usedCredits: 0,
+        budgetTokens: 1000,
+        budgetCredits: 0,
+        updatedAtMs: 1,
+      );
+      await _openResults(tester, _FakeGateway(), coverageJobState: runningJob);
+
+      expect(find.byKey(AiAnalysisActivityCard.compactKey), findsOneWidget);
+
+      AiCoverageCoordinator.instance.debugEmitJobState(
+        runningJob.copyWith(
+          status: CoverageJobStatus.paused,
+          pauseReason: () => CoveragePauseReason.manual,
+          updatedAtMs: 2,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(AiAnalysisActivityCard.compactKey), findsNothing);
+      expect(find.text('Pausing analysis…'), findsNothing);
+    },
+  );
+
   testWidgets('conclusions overview shows AI reason before detail list', (
     tester,
   ) async {
@@ -2923,7 +3262,10 @@ void main() {
       required bool auto,
     }) async {
       await tester.runAsync(() async {
-        final store = AiSettingsStore.instance;
+        final store = AiSettingsStore.instance
+          ..settingsFileForTest = File(
+            '${_workspaceTestCacheDir!.path}/settings.json',
+          );
         await store.setConclusionNarrativeEnabled(enabled);
         await store.setConclusionNarrativeAuto(auto);
       });
@@ -2931,9 +3273,17 @@ void main() {
 
     Future<void> analyzeToOverview(
       WidgetTester tester,
-      _FakeGateway gateway,
-    ) async {
+      _FakeGateway gateway, {
+      bool waitForNarrativePrecheckHint = false,
+    }) async {
       await tester.pumpWidget(_workspaceShell(gateway));
+      if (waitForNarrativePrecheckHint) {
+        await _pumpUntilFound(
+          tester,
+          find.text('Conclusion summary adds 1 credit.'),
+          maxAttempts: 240,
+        );
+      }
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
@@ -2941,8 +3291,10 @@ void main() {
       await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
       await _pumpUntilFound(
         tester,
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+        find.byKey(AiAnalysisWorkspace.resultsHeroKey),
+        maxAttempts: 240,
       );
+      await tester.pump(const Duration(milliseconds: 100));
     }
 
     testWidgets('auto mode shows synthesized text and caches it', (
@@ -2958,19 +3310,58 @@ void main() {
         ..candidatesJson = _candidatePayload();
 
       await analyzeToOverview(tester, gateway);
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
-      );
-
-      expect(find.text('Narrative from fake provider.'), findsOneWidget);
+      for (var i = 0; i < 160 && provider.synthesisRequests.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
       expect(provider.synthesisRequests, hasLength(1));
-      expect(provider.synthesisRequests.single.schemaVersion, 2);
-      expect(provider.synthesisRequests.single.analysisSessionId, 'cache-key');
       final cacheFile = File(
         '${_workspaceTestCacheDir!.path}/ai_analysis/cache-key.narrative.json',
       );
-      expect(cacheFile.existsSync(), isTrue);
+      String? cachedNarrative;
+      for (var i = 0; i < 80 && cachedNarrative == null; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        if (!cacheFile.existsSync()) continue;
+        try {
+          final decoded = jsonDecode(cacheFile.readAsStringSync());
+          if (decoded is Map) {
+            final text = decoded['text'];
+            if (text is String && text.isNotEmpty) {
+              cachedNarrative = text;
+            }
+          }
+        } catch (_) {}
+      }
+      expect(cachedNarrative, 'Narrative from fake provider.');
+      final narrativeText = find.text('Narrative from fake provider.');
+      final overviewScroll = find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+        matching: find.byType(Scrollable),
+      );
+      for (var i = 0; i < 160 && narrativeText.evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
+      await tester.scrollUntilVisible(
+        narrativeText,
+        200,
+        scrollable: overviewScroll.first,
+      );
+
+      expect(
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
+        findsOneWidget,
+      );
+      expect(provider.synthesisRequests, hasLength(1));
+      expect(provider.synthesisRequests.single.schemaVersion, 2);
+      expect(provider.synthesisRequests.single.analysisSessionId, 'cache-key');
       expect(
         jsonDecode(cacheFile.readAsStringSync())['text'],
         'Narrative from fake provider.',
@@ -3053,18 +3444,45 @@ void main() {
         ..provider = provider
         ..candidatesJson = _candidatePayload();
 
-      await analyzeToOverview(tester, gateway);
-      await _pumpUntilFound(
+      await analyzeToOverview(
         tester,
-        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
+        gateway,
+        waitForNarrativePrecheckHint: true,
+      );
+      await tester.runAsync(() async {
+        expect(
+          await AiSettingsStore.instance.conclusionNarrativeEnabled(),
+          isTrue,
+        );
+        expect(
+          await AiSettingsStore.instance.conclusionNarrativeAuto(),
+          isFalse,
+        );
+      });
+      expect(provider.synthesisRequests, isEmpty);
+      expect(
+        find.textContaining('These conclusions come from AI'),
+        findsOneWidget,
+      );
+      final overviewScroll = find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Generate AI summary'),
+        200,
+        scrollable: overviewScroll.first,
       );
       expect(provider.synthesisRequests, isEmpty);
       expect(find.text('Uses 1 extra credit.'), findsOneWidget);
 
-      await tester.tap(
-        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
-      );
+      await tester.tap(find.text('Generate AI summary'));
       await _pumpUntilFound(
+        tester,
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
+        maxAttempts: 160,
+      );
+      await _scrollConclusionsUntilVisible(
         tester,
         find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
       );
