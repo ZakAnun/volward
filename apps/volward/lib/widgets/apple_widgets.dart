@@ -218,6 +218,54 @@ class AppleSectionHeader extends StatelessWidget {
   }
 }
 
+/// Pill filter control using [VolwardTokens] accent (filled when selected).
+class AppleFilterChip extends StatelessWidget {
+  const AppleFilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = context.volward;
+    final fg = selected ? v.onPrimary : v.inkMuted80;
+    final bg = selected ? v.primaryFocus : Colors.transparent;
+    final border = selected ? v.primaryFocus : v.hairline;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(AppleRadius.pill),
+          border: Border.all(color: border, width: selected ? 1.5 : 1),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppleTypography.finePrint.copyWith(
+            color: fg,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            height: 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AppleOptionChip extends StatelessWidget {
   const AppleOptionChip({
     super.key,
