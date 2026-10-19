@@ -180,6 +180,9 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
   bool _lastHasResults = false;
   bool _hasValidRoot = false;
   _HomeContentMode _contentMode = _HomeContentMode.home;
+  final GlobalKey _storageHomeKey = GlobalKey(
+    debugLabel: 'storage-steward-home',
+  );
   Completer<bool> _startupRootGate = Completer<bool>();
   StorageOverviewData _storageOverview = const StorageOverviewData.loading();
   String? _homeTargetPath;
@@ -1550,12 +1553,27 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
 
   /// Opens the column chain down to [path]'s directory. A file focuses its
   /// parent, so the file's own row is on screen.
+  ///
+  /// Catalog-backed snapshots often leave [ScanTreeNode.children] empty, so
+  /// the chain is built from [_s.queryDirectoryChildrenFromCatalog] when the
+  /// in-memory tree has no children.
   void _focusBrowseOnPath(String path) {
     final root = _resolveResultTree();
     if (root == null) return;
     final node = _findNodeByPath(root, path);
-    if (node == null) return;
-    final directory = node.isDirectory ? node.path : parentFsPath(node.path);
+    final String directory;
+    if (node != null) {
+      directory = node.isDirectory ? node.path : parentFsPath(node.path);
+    } else {
+      final normalized = normalizeFsPath(path);
+      final rootPath = normalizeFsPath(root.path);
+      if (normalized == rootPath) {
+        _resetColumnNav();
+        return;
+      }
+      if (!isUnderFsRoot(normalized, rootPath)) return;
+      directory = normalized;
+    }
     _setColumnChain(_chainToPath(root, directory));
   }
 
@@ -1564,7 +1582,7 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     var current = root;
     while (current.path != targetPath) {
       ScanTreeNode? next;
-      for (final child in current.children) {
+      for (final child in _focusChildrenOf(current)) {
         if (!child.isDirectory) continue;
         if (targetPath == child.path ||
             targetPath.startsWith('${child.path}/')) {
@@ -1577,6 +1595,13 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
       current = next;
     }
     return chain;
+  }
+
+  List<ScanTreeNode> _focusChildrenOf(ScanTreeNode node) {
+    if (node.children.isNotEmpty) return node.children;
+    final catalog = _s.queryDirectoryChildrenFromCatalog(node.path);
+    if (catalog == null || catalog.isEmpty) return const [];
+    return [for (final record in catalog) record.toScanTreeNode()];
   }
 
   void _openHomeCategory(String name) {
@@ -2119,6 +2144,155 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
     );
   }
 
+  Widget _buildMainContent({
+    required bool browsing,
+    required bool restoring,
+    required bool loadingTarget,
+    required bool hasResults,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Offstage(
+            offstage: browsing,
+            child: TickerMode(
+              enabled: !browsing,
+              child: SizedBox.expand(child: _buildHomeDashboard()),
+            ),
+          ),
+        ),
+        if (browsing)
+          _buildBrowseBody(
+            restoring: restoring,
+            loadingTarget: loadingTarget,
+            hasResults: hasResults,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHomeDashboard() {
+    return ValueListenableBuilder<ScanProgressViewState>(
+      valueListenable: _s.scanProgressNotifier,
+      builder: (context, progress, _) {
+        return ValueListenableBuilder<int>(
+          valueListenable: _homeSummaryRevision,
+          builder: (context, _, _) {
+            final summary = _homeSummary(progress);
+            final availableAiSnapshot = _homeAiSnapshot();
+            return StorageStewardHome(
+              key: _storageHomeKey,
+              summary: summary,
+              aiSnapshotId: availableAiSnapshot?.snapshotId,
+              aiAnalysisGateway: widget.aiAnalysisGateway,
+              onAiDeleteCompleted: _handleAiDeleteCompleted,
+              onOpenDetailPage: (path) => unawaited(
+                _onHomeBrowse(focusPath: path.isEmpty ? null : path),
+              ),
+              onBrowse: () => unawaited(_onHomeBrowse()),
+              onChooseFolder: () => unawaited(_pickHomeFolder()),
+              onSelectTarget: (location) =>
+                  unawaited(_prepareHomeTarget(location.path)),
+              onScan: _scanStartAction,
+              onCancelScan: _s.scanning ? _s.cancelScan : null,
+              onOpenSettings: _openSettings,
+              onSelectCategory: _openHomeCategory,
+              onOpenItem: (item) =>
+                  unawaited(_onHomeBrowse(focusPath: item.path)),
+              updater: widget.updater,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildBrowseBody({
+    required bool restoring,
+    required bool loadingTarget,
+    required bool hasResults,
+  }) {
+    if ((restoring || loadingTarget) && !hasResults) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Keep the startup shell (target picker, scan actions)
+          // visible instead of swapping the whole page for a
+          // full-screen skeleton — the folder picker stays usable
+          // while the browser pane is still loading.
+          _buildScanSection(context),
+          Expanded(
+            child: _buildRestoreLoading(
+              context,
+              label: restoring
+                  ? context.l10n.resultsRestoringPreviousScan
+                  : context.l10n.scanColumnPreparingFolder,
+            ),
+          ),
+        ],
+      );
+    }
+    if (hasResults) {
+      return _BrowseResultsPane(
+        revision: _browseRevision,
+        builder: (context) {
+          final displayTree = _resolveResultTree();
+          final matchingCount = _matchingEntryCount();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildCompactResultsChrome(
+                context,
+                matchingCount: matchingCount,
+                displayTree: displayTree,
+              ),
+              Expanded(
+                child: ListenableBuilder(
+                  listenable: _columnNavTick,
+                  builder: (context, _) {
+                    final focus = scanColumnFocusNode(_columnChain);
+                    return Stack(
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: _padExpanded(
+                                _buildResultsBrowser(
+                                  context,
+                                  displayTree,
+                                  matchingCount,
+                                ),
+                                padding: const EdgeInsets.fromLTRB(
+                                  _detailPageHorizontalInset,
+                                  0,
+                                  _detailPageHorizontalInset,
+                                  AppleSpacing.xxs,
+                                ),
+                              ),
+                            ),
+                            _buildItemPreview(context, focus),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _buildScanSection(context)),
+        const SliverToBoxAdapter(child: SizedBox(height: 72)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final browsing = _contentMode == _HomeContentMode.browse;
@@ -2141,131 +2315,12 @@ class _DirectoryDetailsPageState extends State<DirectoryDetailsPage>
                 children: [
                   if (browsing) _buildTopNav(context),
                   Expanded(
-                    child: !browsing
-                        ? ValueListenableBuilder<ScanProgressViewState>(
-                            valueListenable: _s.scanProgressNotifier,
-                            builder: (context, progress, _) {
-                              return ValueListenableBuilder<int>(
-                                valueListenable: _homeSummaryRevision,
-                                builder: (context, _, _) {
-                                  final summary = _homeSummary(progress);
-                                  final availableAiSnapshot = _homeAiSnapshot();
-                                  return StorageStewardHome(
-                                    summary: summary,
-                                    aiSnapshotId:
-                                        availableAiSnapshot?.snapshotId,
-                                    aiAnalysisGateway: widget.aiAnalysisGateway,
-                                    onAiDeleteCompleted:
-                                        _handleAiDeleteCompleted,
-                                    onBrowse: () => unawaited(_onHomeBrowse()),
-                                    onChooseFolder: () =>
-                                        unawaited(_pickHomeFolder()),
-                                    onSelectTarget: (location) => unawaited(
-                                      _prepareHomeTarget(location.path),
-                                    ),
-                                    onScan: _scanStartAction,
-                                    onCancelScan: _s.scanning
-                                        ? _s.cancelScan
-                                        : null,
-                                    onOpenSettings: _openSettings,
-                                    onSelectCategory: _openHomeCategory,
-                                    onOpenItem: (item) => unawaited(
-                                      _onHomeBrowse(focusPath: item.path),
-                                    ),
-                                    updater: widget.updater,
-                                  );
-                                },
-                              );
-                            },
-                          )
-                        : (restoring || loadingTarget) && !hasResults
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Keep the startup shell (target picker, scan actions)
-                              // visible instead of swapping the whole page for a
-                              // full-screen skeleton — the folder picker stays usable
-                              // while the browser pane is still loading.
-                              _buildScanSection(context),
-                              Expanded(
-                                child: _buildRestoreLoading(
-                                  context,
-                                  label: restoring
-                                      ? context
-                                            .l10n
-                                            .resultsRestoringPreviousScan
-                                      : context.l10n.scanColumnPreparingFolder,
-                                ),
-                              ),
-                            ],
-                          )
-                        : hasResults
-                        ? _BrowseResultsPane(
-                            revision: _browseRevision,
-                            builder: (context) {
-                              final displayTree = _resolveResultTree();
-                              final matchingCount = _matchingEntryCount();
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _buildCompactResultsChrome(
-                                    context,
-                                    matchingCount: matchingCount,
-                                    displayTree: displayTree,
-                                  ),
-                                  Expanded(
-                                    child: ListenableBuilder(
-                                      listenable: _columnNavTick,
-                                      builder: (context, _) {
-                                        final focus = scanColumnFocusNode(
-                                          _columnChain,
-                                        );
-                                        return Stack(
-                                          children: [
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.stretch,
-                                              children: [
-                                                Expanded(
-                                                  child: _padExpanded(
-                                                    _buildResultsBrowser(
-                                                      context,
-                                                      displayTree,
-                                                      matchingCount,
-                                                    ),
-                                                    padding: const EdgeInsets.fromLTRB(
-                                                      _detailPageHorizontalInset,
-                                                      0,
-                                                      _detailPageHorizontalInset,
-                                                      AppleSpacing.xxs,
-                                                    ),
-                                                  ),
-                                                ),
-                                                _buildItemPreview(
-                                                  context,
-                                                  focus,
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          )
-                        : CustomScrollView(
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: _buildScanSection(context),
-                              ),
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 72),
-                              ),
-                            ],
-                          ),
+                    child: _buildMainContent(
+                      browsing: browsing,
+                      restoring: restoring,
+                      loadingTarget: loadingTarget,
+                      hasResults: hasResults,
+                    ),
                   ),
                   if (_contentMode == _HomeContentMode.browse)
                     _buildStickyBar(context),

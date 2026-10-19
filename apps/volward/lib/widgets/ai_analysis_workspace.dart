@@ -45,6 +45,7 @@ import 'ai_result_entry_tile.dart';
 import 'ai_results_hub.dart';
 import 'coverage_job_banner.dart';
 import 'apple_widgets.dart';
+import 'home/dashboard_theme.dart';
 import 'top_toast.dart';
 
 class _AiCandidatesBootstrap {
@@ -544,6 +545,8 @@ enum _Phase { loading, precheck, privacy, analyzing, results, deleting, error }
 
 enum _ResultsView { overview, reviewQueue, detailList }
 
+enum _DirectoryTypeFilter { safe, review, keep }
+
 class AiAnalysisWorkspace extends StatefulWidget {
   const AiAnalysisWorkspace({
     super.key,
@@ -555,6 +558,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
     required this.onDeleteCompleted,
     this.gateway = const ProductionAiAnalysisGateway(),
     this.debugCoverageJobState,
+    this.onOpenDetailPage,
   });
 
   static const workspaceKey = Key('ai-analysis-workspace');
@@ -602,6 +606,16 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const conclusionNarrativeGenerateKey = Key(
     'ai-analysis-conclusion-narrative-generate',
   );
+  static const directoryGridKey = Key('ai-analysis-directory-grid');
+  static const directoryTypeFilterKey = Key(
+    'ai-analysis-directory-type-filter',
+  );
+
+  static Key directoryCardKey(String path) =>
+      Key('ai-analysis-directory-card:$path');
+
+  static Key directoryTypeChipKey(String type) =>
+      Key('ai-analysis-dir-type:$type');
 
   final String snapshotId;
   final String targetLabel;
@@ -615,20 +629,23 @@ class AiAnalysisWorkspace extends StatefulWidget {
   @visibleForTesting
   final CoverageJobState? debugCoverageJobState;
 
+  /// Host opens DirectoryDetailsPage browse while keeping analysis mounted.
+  final ValueChanged<String>? onOpenDetailPage;
+
   @override
   State<AiAnalysisWorkspace> createState() => _AiAnalysisWorkspaceState();
 }
 
 class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
-  static const _preClassifiedPrecheckPreviewCap = 32;
   static const _maxDefaultExpandedResultRows = 96;
   static const _expandedGroupInitialItemCap = 120;
   static const _expandedGroupItemCapStep = 120;
   static const _coverageVerdictRefreshMinInterval = Duration(milliseconds: 350);
   static const _heavyResultsLayoutThreshold = 200;
 
-  _Phase _phase = _Phase.loading;
+  _Phase _phase = _Phase.results;
   _ResultsView _resultsView = _ResultsView.overview;
+  _DirectoryTypeFilter _directoryTypeFilter = _DirectoryTypeFilter.safe;
   String? _error;
   List<Map<String, dynamic>> _preClassified = [];
   int? _preClassifiedTotalCount;
@@ -641,7 +658,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int _estimatedByokBatchTokens = 0;
   bool _hasExistingResult = false;
   bool _loadedEmptySuggestions = false;
-  bool _candidatesBootstrapPending = false;
+  bool _candidatesBootstrapPending = true;
   bool _truncated = false;
   int _candidatesBeforeCap = 0;
   String _resultCacheKey = '';
@@ -796,25 +813,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _preClassifiedTotalCount ?? _preClassified.length;
 
   int get _displayUnknownCount => _unknownTotalCount ?? _unknown.length;
-
-  int get _precheckSelectedDeletableCount => _selected.length;
-
-  void _selectAllPrecheckDeletableShown({required bool selected}) {
-    setState(() {
-      for (final entry in _preClassified.take(
-        _preClassifiedPrecheckPreviewCap,
-      )) {
-        if (entry['deletable'] != true) continue;
-        final path = entry['path'] as String?;
-        if (path == null || path.isEmpty) continue;
-        if (selected) {
-          _selected.add(path);
-        } else {
-          _selected.remove(path);
-        }
-      }
-    });
-  }
 
   List<Widget> _buildPrecheckAiEstimateLines(BuildContext context) {
     final l10n = context.l10n;
@@ -1182,7 +1180,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     setState(() {
       _invalidateResultGroups();
       _resetResultsPresentation();
-      _phase = _Phase.loading;
+      _phase = _Phase.results;
+      _resultsView = _ResultsView.overview;
+      _candidatesBootstrapPending = true;
       _error = null;
       _sizeByPath.clear();
       _deleteTargetsByPath.clear();
@@ -1206,7 +1206,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _estimatedTokens = 0;
       _estimatedByokBatchTokens = 0;
       _hasExistingResult = false;
-      _candidatesBootstrapPending = false;
       _truncated = false;
       _candidatesBeforeCap = 0;
       _resultCacheKey = '';
@@ -1262,7 +1261,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'sessionCoverage=${VolwardSession.instance?.hasAiCoverageApi ?? false}',
       );
       setState(() {
-        _phase = _Phase.loading;
+        _phase = _Phase.results;
+        _resultsView = _ResultsView.overview;
         _candidatesBootstrapPending = true;
         _useFullCoverage = fullCoverageAvailable;
         _coverageHydrating = false;
@@ -1364,9 +1364,13 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'unknown=$_displayUnknownCount preClassified=$_displayPreClassifiedCount '
         'truncated=$_truncated candidatesError=${raw.startsWith('error:') ? raw : 'none'}',
       );
-      if (!preserveInteractivePhase && mounted) {
+      if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_isCurrent(generation) || !mounted) return;
+          if (preserveInteractivePhase &&
+              (_verdicts.isNotEmpty || _analyzing || _deleting)) {
+            return;
+          }
           final fullCoverageReady = AiCoverageCoordinator.instance.isAvailable;
           if (fullCoverageReady && !_useFullCoverage) {
             volwardAiDebugLog(
@@ -1552,6 +1556,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         ),
       );
       if (!_isCurrent(generation)) return false;
+      if (_analyzing) return false;
       if (verdicts.length >= _heavyResultsLayoutThreshold) {
         setState(() {
           _resetResultsPresentation();
@@ -1631,17 +1636,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
     setState(() {
       _analyzing = true;
-      _phase = _Phase.analyzing;
+      _phase = _Phase.results;
+      _resultsView = _ResultsView.overview;
+      _embeddedScopeExpandedManual = false;
       _error = null;
       _loadedEmptySuggestions = false;
-      _resetResultsPresentation();
-      _invalidateConclusionNarrative();
-      _selected.clear();
-      _reviewDecisions.clear();
-      _expandedGroupPaths.clear();
-      _expandedGroupItemLimits.clear();
-      _expandedReviewPaths.clear();
-      _invalidateResultGroups();
     });
     final mode = await widget.gateway.getMode();
     if (!_isCurrent(generation)) return;
@@ -1910,6 +1909,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (!_isCurrent(generation) ||
         !mounted ||
         _phase != _Phase.results ||
+        _analyzing ||
+        _deleting ||
         _verdicts.isNotEmpty) {
       return;
     }
@@ -3197,11 +3198,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (_deleting) return;
     final targets = _deleteTargets();
     if (targets.isEmpty) return;
-    final returnToOverviewHub =
+    final stayOnOverview =
         _phase == _Phase.results &&
         _resultsView == _ResultsView.overview &&
-        _verdicts.isEmpty &&
         !_analyzing;
+    final returnToOverviewHub = stayOnOverview && _verdicts.isEmpty;
     final selectedPaths = Set<String>.from(_selected);
     final generation = _beginOperation();
     final l10n = context.l10n;
@@ -3248,7 +3249,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     var completed = false;
     setState(() {
       _deleting = true;
-      _resultsView = _ResultsView.detailList;
+      if (!stayOnOverview) {
+        _resultsView = _ResultsView.detailList;
+      }
       _phase = _Phase.deleting;
     });
     widget.onDeletingChanged(true);
@@ -3287,7 +3290,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (failedCount > 0) {
         setState(() {
           _phase = _Phase.results;
-          if (returnToOverviewHub) _resultsView = _ResultsView.overview;
+          if (stayOnOverview) _resultsView = _ResultsView.overview;
           _partialDeleteFailedCount = failedCount;
           _partialDeleteFreedBytes = freedAfter;
           _retryTargets = failedTargets;
@@ -3323,7 +3326,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!_isCurrent(generation)) return;
       setState(() {
         _phase = _Phase.results;
-        if (returnToOverviewHub) _resultsView = _ResultsView.overview;
+        if (stayOnOverview) _resultsView = _ResultsView.overview;
         _error = l10n.deleteFailed(error.toString());
       });
     } finally {
@@ -3331,7 +3334,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         setState(() {
           _deleting = false;
           _phase = _Phase.results;
-          if (returnToOverviewHub) _resultsView = _ResultsView.overview;
+          if (stayOnOverview) _resultsView = _ResultsView.overview;
         });
         widget.onDeletingChanged(false);
       }
@@ -3444,25 +3447,37 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final tokens = context.volward;
     return DecoratedBox(
       key: AiAnalysisWorkspace.workspaceKey,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+      decoration: dashboardPanelDecoration(context),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        children: [
-          _WorkspaceHeader(
-            phaseLabel: _phaseLabel(context),
-            phaseStep: _phaseStep,
-            phaseStepCount: kWorkspacePhaseStepCount,
-            hubStatusLabel: _overviewHubStatusLabel(context),
-            onBack: _deleting ? null : widget.onExit,
-          ),
-          Divider(height: 1, color: tokens.dividerSoft),
-          Expanded(child: _buildPhaseBody()),
-        ],
+        child: Column(
+          children: [
+            _WorkspaceHeader(
+              phaseLabel: _phaseLabel(context),
+              phaseStep: _phaseStep,
+              phaseStepCount: kWorkspacePhaseStepCount,
+              hubStatusLabel: _overviewHubStatusLabel(context),
+              onBack: _deleting ? null : _handleWorkspaceBack,
+            ),
+            Divider(height: 1, color: tokens.dividerSoft),
+            Expanded(child: _buildPhaseBody()),
+          ],
+        ),
       ),
     );
+  }
+
+  void _handleWorkspaceBack() {
+    if (_resultsView == _ResultsView.reviewQueue ||
+        _resultsView == _ResultsView.detailList) {
+      setState(() {
+        _resultsView = _ResultsView.overview;
+        _resultsDirectoryFilter = null;
+        _reviewQueueDirectoryFilter = null;
+      });
+      return;
+    }
+    widget.onExit();
   }
 
   String _phaseLabel(BuildContext context) {
@@ -3488,12 +3503,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     _Phase.loading || _Phase.error => 1,
     _Phase.precheck => 2,
     _Phase.privacy || _Phase.analyzing => 3,
-    _Phase.results || _Phase.deleting => 4,
+    _Phase.results || _Phase.deleting => _analyzing ? 3 : 4,
   };
 
   String? _overviewHubStatusLabel(BuildContext context) {
     if (_resultsView != _ResultsView.overview) return null;
-    if (_phase != _Phase.results && _phase != _Phase.precheck) return null;
+    if (_phase != _Phase.results &&
+        _phase != _Phase.precheck &&
+        _phase != _Phase.analyzing) {
+      return null;
+    }
     final l10n = context.l10n;
     return switch (_resultsHubMode()) {
       ResultsHubMode.awaitingAnalysis => l10n.aiResultsHubStatusAwaiting,
@@ -3506,7 +3525,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(),
       _Phase.precheck || _Phase.privacy => _buildResultsSurface(),
-      _Phase.analyzing => _wrapScrollHoldForRebuild(_buildAnalyzingBody()),
+      _Phase.analyzing ||
       _Phase.results ||
       _Phase.deleting => _wrapScrollHoldForRebuild(_buildResultsSurface()),
       _Phase.error => _buildError(),
@@ -3520,15 +3539,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       AiMode.byok => l10n.aiSettingsByokLabel,
       AiMode.off => l10n.aiSettingsOffLabel,
     };
-  }
-
-  Widget _buildAnalyzingBody() {
-    if (_useFullCoverage &&
-        _verdicts.isNotEmpty &&
-        !_coverageUiPrefersAnalyzingPhase) {
-      return _buildResults();
-    }
-    return _buildActivityListView();
   }
 
   Widget _buildProgressBody() => _buildActivityListView();
@@ -3562,6 +3572,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   AiActivityMacroPhase get _activityMacroPhase => switch (_phase) {
     _Phase.loading => AiActivityMacroPhase.loading,
     _Phase.analyzing => AiActivityMacroPhase.analyzing,
+    _Phase.results when _analyzing => AiActivityMacroPhase.analyzing,
     _ => AiActivityMacroPhase.resultsBusy,
   };
 
@@ -3602,6 +3613,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   /// Compact strip above results while a coverage job is still streaming in.
   bool _shouldShowCompactActivityCard() {
+    if (_analyzing) return true;
     if (_isLightweightAnalyzingUi()) return true;
     final job = _coverageJobState ?? widget.debugCoverageJobState;
     return job != null &&
@@ -3658,6 +3670,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   String _resultsScopeSummaryLine(AppLocalizations l10n) {
+    if (_candidatesBootstrapPending) {
+      return l10n.aiCandidatesBootstrapLoading;
+    }
     var localDeletable = 0;
     for (final entry in _preClassified) {
       if (entry['deletable'] == true) localDeletable++;
@@ -3708,50 +3723,26 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     ];
   }
 
-  Widget _buildAnalysisScopePanel({
-    required WidgetBuilder expandedBodyBuilder,
-    bool fillRemaining = false,
-  }) {
-    final l10n = context.l10n;
-    return AiAnalysisScopePanel(
-      key: AiAnalysisWorkspace.resultsScopePanelKey,
-      hubMode: _scopePanelHubMode(),
-      summaryLine: _resultsScopeSummaryLine(l10n),
-      fillRemaining: fillRemaining,
-      expandedBodyBuilder: expandedBodyBuilder,
-    );
+  bool _embeddedScopeExpanded() {
+    if (_embeddedScopeExpandedManual != null) {
+      return _embeddedScopeExpandedManual!;
+    }
+    final needsSettings =
+        !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
+    return needsSettings || _error != null;
   }
 
-  bool _embeddedScopeExpanded(ResultsHubMode hubMode) {
-    final manual = _embeddedScopeExpandedManual;
-    if (manual != null) return manual;
-    return hubMode == ResultsHubMode.awaitingAnalysis;
-  }
-
-  Widget _buildEmbeddedScopeHeader(AppLocalizations l10n) {
-    final expanded = _embeddedScopeExpanded(_scopePanelHubMode());
-    return GestureDetector(
-      key: AiAnalysisScopePanel.toggleKey,
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _embeddedScopeExpandedManual = !expanded),
-      child: Text(
-        '${_resultsScopeSummaryLine(l10n)} ${expanded ? '▴' : '▾'}',
-        style: context.vwBodyStrong,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
+  bool get _canStartWorkspaceAnalysis {
+    return _hasProvider &&
+        !_candidatesBootstrapPending &&
+        _canStartCoverage &&
+        !(_mode == AiMode.platform && (_platformCredits == 0)) &&
+        !_coveragePlanIsLocalOnly;
   }
 
   List<Widget> _buildPrecheckChildren({bool includeCoverageBanner = true}) {
     final l10n = context.l10n;
     final tokens = context.volward;
-    final canAnalyze =
-        _hasProvider &&
-        !_candidatesBootstrapPending &&
-        _canStartCoverage &&
-        !(_mode == AiMode.platform && (_platformCredits == 0)) &&
-        !_coveragePlanIsLocalOnly;
     final needsSettings =
         !_hasProvider || (_mode == AiMode.platform && _platformCredits == 0);
     final configurationMessage = !_hasProvider
@@ -3766,6 +3757,60 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           banner,
           const SizedBox(height: AppleSpacing.md),
         ],
+      if (_candidatesBootstrapPending) ...[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            AiAnalysisActivityInlineSpinner(
+              color: tokens.primary,
+              size: 14,
+              strokeWidth: 2,
+            ),
+            const SizedBox(width: AppleSpacing.sm),
+            Expanded(
+              child: Text(
+                l10n.aiCandidatesBootstrapLoading,
+                style: context.vwCaption,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppleSpacing.sm),
+      ],
+      if (needsSettings) ...[
+        Text(
+          configurationMessage,
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppleButton(
+            key: AiAnalysisWorkspace.settingsKey,
+            label: l10n.settingsTitle,
+            icon: Icons.settings_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: widget.onOpenSettings,
+          ),
+        ),
+        const SizedBox(height: AppleSpacing.sm),
+      ] else if (_error != null) ...[
+        Text(
+          _error!,
+          style: AppleTypography.caption.copyWith(color: tokens.danger),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppleButton(
+            label: l10n.aiActionRetry,
+            icon: Icons.refresh_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: _startAnalysis,
+          ),
+        ),
+        const SizedBox(height: AppleSpacing.sm),
+      ],
       Text(
         l10n.aiPreCheckSafeTitle(_displayPreClassifiedCount),
         style: context.vwBodyStrong,
@@ -3932,26 +3977,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             ),
           ),
         ],
-        if (_candidatesBootstrapPending) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              AiAnalysisActivityInlineSpinner(
-                color: tokens.primary,
-                size: 14,
-                strokeWidth: 2,
-              ),
-              const SizedBox(width: AppleSpacing.sm),
-              Expanded(
-                child: Text(
-                  l10n.aiCandidatesBootstrapLoading,
-                  style: context.vwCaption,
-                ),
-              ),
-            ],
-          ),
-        ],
         if (_mode == AiMode.platform &&
             _platformCredits != null &&
             _coverageBudgetCredits != null &&
@@ -3963,95 +3988,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               _coverageBudgetCredits!,
             ),
             style: AppleTypography.caption.copyWith(color: tokens.warning),
-          ),
-        ],
-      ],
-      if (needsSettings) ...[
-        const SizedBox(height: AppleSpacing.md),
-        Text(
-          configurationMessage,
-          style: AppleTypography.caption.copyWith(color: tokens.warning),
-        ),
-        const SizedBox(height: AppleSpacing.xs),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: AppleButton(
-            key: AiAnalysisWorkspace.settingsKey,
-            label: l10n.settingsTitle,
-            icon: Icons.settings_outlined,
-            variant: AppleButtonVariant.pearl,
-            onPressed: widget.onOpenSettings,
-          ),
-        ),
-      ] else if (_error != null) ...[
-        const SizedBox(height: AppleSpacing.md),
-        Text(
-          _error!,
-          style: AppleTypography.caption.copyWith(color: tokens.danger),
-        ),
-        const SizedBox(height: AppleSpacing.xs),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: AppleButton(
-            label: l10n.aiActionRetry,
-            icon: Icons.refresh_outlined,
-            variant: AppleButtonVariant.pearl,
-            onPressed: _startAnalysis,
-          ),
-        ),
-      ],
-      if (_preClassified.isNotEmpty) ...[
-        const SizedBox(height: AppleSpacing.lg),
-        Text(
-          l10n.aiPreCheckSafeSelectable(_displayPreClassifiedCount),
-          style: context.vwCaptionStrong,
-        ),
-        const SizedBox(height: AppleSpacing.xxs),
-        Wrap(
-          spacing: AppleSpacing.sm,
-          runSpacing: AppleSpacing.xxs,
-          children: [
-            TextButton(
-              onPressed: () => _selectAllPrecheckDeletableShown(selected: true),
-              child: Text(l10n.aiPreCheckSelectAllShown),
-            ),
-            if (_selected.isNotEmpty)
-              TextButton(
-                onPressed: () =>
-                    _selectAllPrecheckDeletableShown(selected: false),
-                child: Text(l10n.aiPreCheckClearSelection),
-              ),
-          ],
-        ),
-        const SizedBox(height: AppleSpacing.xxs),
-        ..._preClassified
-            .take(_preClassifiedPrecheckPreviewCap)
-            .map(_preClassifiedTile),
-        if (_displayPreClassifiedCount > _preClassifiedPrecheckPreviewCap) ...[
-          const SizedBox(height: AppleSpacing.xxs),
-          Text(
-            l10n.aiCoverageFailedBatchPathsOverflow(
-              _displayPreClassifiedCount - _preClassifiedPrecheckPreviewCap,
-            ),
-            style: context.vwFinePrint,
-          ),
-        ],
-        if (_precheckSelectedDeletableCount > 0) ...[
-          const SizedBox(height: AppleSpacing.md),
-          Text(
-            l10n.aiResultsSelectedForCleanup(
-              _precheckSelectedDeletableCount,
-              _formatBytes(_selectedBytes),
-            ),
-            style: context.vwCaptionStrong,
-          ),
-          const SizedBox(height: AppleSpacing.xs),
-          AppleButton(
-            key: AiAnalysisWorkspace.precheckDeleteKey,
-            label: l10n.aiDeleteSelected(_precheckSelectedDeletableCount),
-            icon: Icons.delete_outline,
-            expanded: true,
-            onPressed: _deleting ? null : _deleteSelected,
           ),
         ],
       ],
@@ -4070,34 +4006,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           onPressed: () => unawaited(_openLocalOnlyResults()),
         ),
       ],
-      const SizedBox(height: AppleSpacing.lg),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_hasExistingResult) ...[
-            AppleButton(
-              key: AiAnalysisWorkspace.loadPreviousKey,
-              label: l10n.aiWorkspaceLoadPrevious,
-              variant: AppleButtonVariant.secondary,
-              expanded: true,
-              onPressed: _loadPreviousResult,
-            ),
-            const SizedBox(height: AppleSpacing.xs),
-          ],
-          if (!_coveragePlanIsLocalOnly)
-            AppleButton(
-              key: _hasExistingResult
-                  ? AiAnalysisWorkspace.analyzeAgainKey
-                  : AiAnalysisWorkspace.startAnalysisKey,
-              label: _hasExistingResult
-                  ? l10n.aiWorkspaceAnalyzeAgain
-                  : l10n.aiStartAnalysis,
-              icon: Icons.auto_awesome_outlined,
-              expanded: true,
-              onPressed: canAnalyze ? _startAnalysis : null,
-            ),
-        ],
-      ),
     ];
   }
 
@@ -4106,28 +4014,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: _buildPrecheckChildren(
         includeCoverageBanner: includeCoverageBanner,
-      ),
-    );
-  }
-
-  Widget _preClassifiedTile(Map<String, dynamic> entry) {
-    final path = entry['path'] as String? ?? '';
-    final deletable = entry['deletable'] == true;
-    final confidence = entry['confidence']?.toString() ?? '';
-    final reason = entry['reason']?.toString() ?? '';
-    final size = _asInt(entry['size_bytes']);
-    return Material(
-      color: Colors.transparent,
-      child: CheckboxListTile(
-        value: deletable ? _selected.contains(path) : false,
-        onChanged: deletable ? (value) => _toggle(path, value) : null,
-        controlAffinity: ListTileControlAffinity.leading,
-        contentPadding: EdgeInsets.zero,
-        title: _PathLabel(path),
-        subtitle: Text(
-          '${_formatBytes(size)} · $confidence'
-          '${reason.isNotEmpty ? ' · $reason' : ''}',
-        ),
       ),
     );
   }
@@ -4675,8 +4561,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     _embeddedScopeExpandedManual = null;
   }
 
+  void _openDetailPage({String? directoryPath}) {
+    final host = widget.onOpenDetailPage;
+    if (host != null) {
+      host(
+        directoryPath != null && directoryPath.isNotEmpty
+            ? directoryPath
+            : _rootPath,
+      );
+      return;
+    }
+    _openDetailList(
+      initialFilter: directoryPath == null ? _ResultFilterMode.all : null,
+      directoryPath: directoryPath,
+    );
+  }
+
   ResultsHubMode _resultsHubMode() {
-    final job = _coverageJobState;
+    final job = _coverageJobState ?? widget.debugCoverageJobState;
     final coverageRunning =
         job != null &&
         job.snapshotId == widget.snapshotId &&
@@ -4688,14 +4590,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
-  /// Scope panel stays expanded until AI verdicts exist (CTA must remain reachable).
-  ResultsHubMode _scopePanelHubMode() {
-    if (_verdicts.isEmpty && !_analyzing) {
-      return ResultsHubMode.awaitingAnalysis;
-    }
-    return _resultsHubMode();
-  }
-
   void _enterResultsPhase({bool showOverview = true}) {
     final entering = _phase != _Phase.results && _phase != _Phase.deleting;
     _phase = _Phase.results;
@@ -4705,7 +4599,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget _buildResultsSurface() {
-    if (_deleting) {
+    if (_deleting && _resultsView != _ResultsView.overview) {
       return KeyedSubtree(
         key: AiAnalysisWorkspace.detailListKey,
         child: _buildResults(),
@@ -4756,26 +4650,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return [...list]..sort(_compareVisibleItems);
   }
 
-  List<AiVerdict> _previewSafeVerdicts() {
-    final list = _verdicts
-        .where((item) => item.verdict == 'safe_to_remove')
-        .toList(growable: false);
-    list.sort((left, right) {
-      final sizeOrder = (_sizeByPath[right.path] ?? 0).compareTo(
-        _sizeByPath[left.path] ?? 0,
-      );
-      if (sizeOrder != 0) return sizeOrder;
-      return left.path.compareTo(right.path);
-    });
-    return list.take(kAiResultsPreviewItemCap).toList(growable: false);
-  }
-
-  List<AiVerdict> _previewReviewVerdicts() {
-    return _pendingReviewVerdicts()
-        .take(kAiResultsPreviewItemCap)
-        .toList(growable: false);
-  }
-
   /// Safe-item count aligned with [buildAiAnalysisConclusionOverview] / group rollups.
   int _conclusionSafeItemCount() {
     if (_useFullCoverage && _coverageResultsLoadTruncated) {
@@ -4815,6 +4689,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           (fingerprint?.truncated ?? false) ||
           _coverageResultsLoadTruncated,
       fullCoverage: _useFullCoverage,
+      maxDirectories: 64,
       isPendingReview: _isPendingReview,
       analyzedItemCountOverride: _coverageResultsLoadTruncated
           ? job?.analyzedFiles
@@ -5004,31 +4879,9 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget _buildResultsOverview() {
-    if (_resultsLayoutPending && _verdicts.isEmpty) {
-      return _buildResultsActivityPlaceholder();
-    }
-
     final overview = _buildConclusionOverviewModel();
     final l10n = context.l10n;
-    if (_verdicts.isEmpty) {
-      if (_loadedEmptySuggestions) {
-        return KeyedSubtree(
-          key: AiAnalysisWorkspace.conclusionsOverviewKey,
-          child: Center(child: _buildResultsEmptyState(filtered: false)),
-        );
-      }
-      return KeyedSubtree(
-        key: AiAnalysisWorkspace.conclusionsOverviewKey,
-        child: Padding(
-          padding: const EdgeInsets.all(AppleSpacing.lg),
-          child: _buildAnalysisScopePanel(
-            fillRemaining: true,
-            expandedBodyBuilder: (context) =>
-                SingleChildScrollView(child: _buildScopePanelExpandedBody()),
-          ),
-        ),
-      );
-    }
+    final hasVerdicts = _verdicts.isNotEmpty;
     final shareRoot = overview.shareOfRootPct != null
         ? l10n.aiConclusionsShareRootSuffix(
             overview.shareOfRootPct!.toStringAsFixed(1),
@@ -5036,6 +4889,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         : '';
     final hiddenDirCount =
         _directoryBucketCount() - overview.directories.length;
+    final staleUpdating = _analyzing && hasVerdicts;
+    final showCompactActivity = _analyzing || _shouldShowCompactActivityCard();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -5054,130 +4909,178 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                       horizontalPadding,
                       AppleSpacing.lg,
                     ),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        KeyedSubtree(
-                          key: AiAnalysisWorkspace.resultsScopePanelKey,
-                          child: _buildEmbeddedScopeHeader(l10n),
-                        ),
-                        if (_embeddedScopeExpanded(_scopePanelHubMode()))
-                          _buildScopePanelExpandedBody(
-                            includeCoverageBanner: false,
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AiAnalysisScopeSummaryRow(
+                            key: AiAnalysisWorkspace.resultsScopePanelKey,
+                            summaryLine: _resultsScopeSummaryLine(l10n),
+                            expanded: _embeddedScopeExpanded(),
+                            onToggle: () => setState(() {
+                              _embeddedScopeExpandedManual =
+                                  !_embeddedScopeExpanded();
+                            }),
                           ),
-                        const SizedBox(height: AppleSpacing.sm),
-                        if (_buildCoverageBanner() case final banner?) ...[
-                          banner,
-                          const SizedBox(height: AppleSpacing.sm),
-                        ],
-                        Text(
-                          l10n.aiConclusionsScanLine(
-                            overview.targetLabel,
-                            overview.analyzedItemCount,
-                            _formatBytes(overview.analyzedTotalBytes),
-                          ),
-                          style: context.vwCaption,
-                        ),
-                        const SizedBox(height: AppleSpacing.xxs),
-                        Text(
-                          overview.fullCoverage
-                              ? l10n.aiConclusionsModeFull
-                              : l10n.aiConclusionsModeQuick,
-                          style: context.vwCaption,
-                        ),
-                        if (overview.truncated) ...[
-                          const SizedBox(height: AppleSpacing.xxs),
-                          Text(
-                            l10n.aiConclusionsTruncated,
-                            style: context.vwCaption,
-                          ),
-                        ],
-                        const SizedBox(height: AppleSpacing.sm),
-                        _buildResultsHero(overview, shareRoot, l10n),
-                        const SizedBox(height: AppleSpacing.sm),
-                        _buildResultsMetricCards(overview, l10n),
-                        const SizedBox(height: AppleSpacing.sm),
-                        if (_resultsHubMode() == ResultsHubMode.ready) ...[
-                          if (_conclusionSafeItemCount() > 0) ...[
-                            _buildResultsPreviewSafeBlock(l10n),
+                          if (_embeddedScopeExpanded()) ...[
                             const SizedBox(height: AppleSpacing.sm),
-                          ],
-                          if (_pendingReviewVerdicts().isNotEmpty)
-                            _buildResultsPreviewReviewBlock(l10n)
-                          else
-                            _buildNoPendingReviewHint(overview, l10n),
-                        ] else if (overview.reviewCount > 0)
-                          _buildPendingReviewPreview(l10n)
-                        else
-                          _buildNoPendingReviewHint(overview, l10n),
-                        const SizedBox(height: AppleSpacing.sm),
-                        Text(l10n.aiConclusionsLead, style: context.vwBody),
-                        _buildNarrativeSection(overview, l10n),
-                        const SizedBox(height: AppleSpacing.md),
-                        Text(
-                          l10n.aiConclusionsByDirectory,
-                          style: context.vwBodyStrong,
-                        ),
-                        const SizedBox(height: AppleSpacing.sm),
-                        for (final directory in overview.directories)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppleSpacing.sm,
+                            _buildScopePanelExpandedBody(
+                              includeCoverageBanner: false,
                             ),
-                            child: _buildDirectoryConclusionCard(
-                              directory,
+                          ],
+                          if (showCompactActivity) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            _buildActivityCompactCard(),
+                          ],
+                          if (_buildCoverageBanner() case final banner?) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            banner,
+                          ],
+                          if (hasVerdicts) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            Text(
+                              l10n.aiConclusionsScanLine(
+                                overview.targetLabel,
+                                overview.analyzedItemCount,
+                                _formatBytes(overview.analyzedTotalBytes),
+                              ),
+                              style: context.vwCaption,
+                            ),
+                            const SizedBox(height: AppleSpacing.xxs),
+                            Text(
+                              overview.fullCoverage
+                                  ? l10n.aiConclusionsModeFull
+                                  : l10n.aiConclusionsModeQuick,
+                              style: context.vwCaption,
+                            ),
+                            if (overview.truncated) ...[
+                              const SizedBox(height: AppleSpacing.xxs),
+                              Text(
+                                l10n.aiConclusionsTruncated,
+                                style: context.vwCaption,
+                              ),
+                            ],
+                          ],
+                          const SizedBox(height: AppleSpacing.sm),
+                          Opacity(
+                            opacity: staleUpdating ? 0.55 : 1,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildResultsHero(overview, shareRoot, l10n),
+                                const SizedBox(height: AppleSpacing.sm),
+                                _buildResultsMetricCards(overview, l10n),
+                                const SizedBox(height: AppleSpacing.sm),
+                                if (_loadedEmptySuggestions && !hasVerdicts)
+                                  _buildResultsEmptyState(filtered: false),
+                              ],
+                            ),
+                          ),
+                          if (hasVerdicts) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            Text(l10n.aiConclusionsLead, style: context.vwBody),
+                            _buildNarrativeSection(overview, l10n),
+                          ],
+                          if (overview.directories.isNotEmpty) ...[
+                            const SizedBox(height: AppleSpacing.md),
+                            Text(
+                              l10n.aiConclusionsByDirectory,
+                              style: context.vwBodyStrong,
+                            ),
+                            const SizedBox(height: AppleSpacing.sm),
+                            _buildDirectoryTypeFilter(l10n),
+                            const SizedBox(height: AppleSpacing.sm),
+                            _buildDirectoryGrid(
+                              _directoriesForType(overview),
                               l10n,
                             ),
-                          ),
-                        if (hiddenDirCount > 0)
-                          Text(
-                            l10n.aiConclusionsMoreDirs(hiddenDirCount),
-                            style: context.vwCaption,
-                          ),
-                      ]),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                AppleSpacing.sm,
-                horizontalPadding,
-                AppleSpacing.md,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (overview.reviewCount > 0)
-                    AppleButton(
-                      key: AiAnalysisWorkspace.reviewQueuePrimaryKey,
-                      label: l10n.aiResultsReviewQueuePrimary(
-                        overview.reviewCount,
+                            if (hiddenDirCount > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: AppleSpacing.xs,
+                                ),
+                                child: Text(
+                                  l10n.aiConclusionsMoreDirs(hiddenDirCount),
+                                  style: context.vwCaption,
+                                ),
+                              ),
+                          ],
+                        ],
                       ),
-                      onPressed: () => _openReviewQueue(),
-                    ),
-                  if (overview.reviewCount > 0)
-                    const SizedBox(height: AppleSpacing.xs),
-                  AppleButton(
-                    key: AiAnalysisWorkspace.showAllResultsKey,
-                    label: overview.reviewCount > 0
-                        ? l10n.aiResultsViewFullList
-                        : l10n.aiResultsViewSafeCleanup(
-                            _conclusionSafeItemCount(),
-                          ),
-                    variant: overview.reviewCount > 0
-                        ? AppleButtonVariant.pearl
-                        : AppleButtonVariant.primary,
-                    onPressed: () => _openDetailList(
-                      initialFilter: overview.reviewCount > 0
-                          ? _ResultFilterMode.review
-                          : _ResultFilterMode.safeToRemove,
                     ),
                   ),
                 ],
               ),
             ),
+            if (!_analyzing)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  AppleSpacing.sm,
+                  horizontalPadding,
+                  AppleSpacing.md,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!hasVerdicts) ...[
+                      if (_hasExistingResult) ...[
+                        AppleButton(
+                          key: AiAnalysisWorkspace.loadPreviousKey,
+                          label: l10n.aiWorkspaceLoadPrevious,
+                          variant: AppleButtonVariant.secondary,
+                          expanded: true,
+                          onPressed: _loadPreviousResult,
+                        ),
+                        const SizedBox(height: AppleSpacing.xs),
+                      ],
+                      if (!_coveragePlanIsLocalOnly)
+                        AppleButton(
+                          key: AiAnalysisWorkspace.startAnalysisKey,
+                          label: l10n.aiStartAnalysis,
+                          icon: Icons.auto_awesome_outlined,
+                          expanded: true,
+                          onPressed: _canStartWorkspaceAnalysis
+                              ? _startAnalysis
+                              : null,
+                        ),
+                    ] else ...[
+                      AppleButton(
+                        key: AiAnalysisWorkspace.analyzeAgainKey,
+                        label: l10n.aiWorkspaceAnalyzeAgain,
+                        icon: Icons.auto_awesome_outlined,
+                        variant: AppleButtonVariant.pearl,
+                        expanded: true,
+                        onPressed: _canStartWorkspaceAnalysis
+                            ? _startAnalysis
+                            : null,
+                      ),
+                      if (overview.reviewCount > 0) ...[
+                        const SizedBox(height: AppleSpacing.xs),
+                        AppleButton(
+                          key: AiAnalysisWorkspace.reviewQueuePrimaryKey,
+                          label: l10n.aiResultsReviewQueuePrimary(
+                            overview.reviewCount,
+                          ),
+                          onPressed: () => _openReviewQueue(),
+                        ),
+                      ],
+                      const SizedBox(height: AppleSpacing.xs),
+                      AppleButton(
+                        key: AiAnalysisWorkspace.showAllResultsKey,
+                        label: l10n.aiResultsViewFullList,
+                        variant: AppleButtonVariant.pearl,
+                        onPressed: () => _openDetailPage(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            if (!_analyzing && hasVerdicts)
+              _buildResultsActionBar(
+                horizontalPadding: horizontalPadding,
+                pendingReviewCount: overview.reviewCount,
+              ),
           ],
         );
       },
@@ -5205,20 +5108,26 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     String shareRoot,
     AppLocalizations l10n,
   ) {
+    final placeholder = _verdicts.isEmpty;
+    final heroLine = placeholder
+        ? (_analyzing
+              ? l10n.aiResultsHubStatusAnalyzing
+              : l10n.aiResultsHubStatusAwaiting)
+        : l10n.aiResultsHeroLine(
+            _formatBytes(overview.safeBytes),
+            overview.reviewCount,
+          );
     return KeyedSubtree(
       key: AiAnalysisWorkspace.resultsHeroKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.aiResultsHeroLine(
-              _formatBytes(overview.safeBytes),
-              overview.reviewCount,
-            ),
+            heroLine,
             key: AiAnalysisWorkspace.decisionSummaryKey,
             style: context.vwBodyStrong,
           ),
-          if (shareRoot.isNotEmpty) ...[
+          if (!placeholder && shareRoot.isNotEmpty) ...[
             const SizedBox(height: AppleSpacing.xxs),
             Text(shareRoot, style: context.vwCaption),
           ],
@@ -5231,29 +5140,32 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     AiAnalysisConclusionOverview overview,
     AppLocalizations l10n,
   ) {
+    final placeholder = _verdicts.isEmpty;
+    const dash = '—';
     final safeCount = _conclusionSafeItemCount();
     final cards = [
       _buildResultsMetricCard(
         key: AiAnalysisWorkspace.resultsMetricSafeKey,
         title: l10n.aiResultsMetricSafeTitle,
-        value: _formatBytes(overview.safeBytes),
-        subtitle: l10n.aiResultsMetricCountLine(safeCount),
-        onTap: () =>
-            _openDetailList(initialFilter: _ResultFilterMode.safeToRemove),
+        value: placeholder ? dash : _formatBytes(overview.safeBytes),
+        subtitle: placeholder ? dash : l10n.aiResultsMetricCountLine(safeCount),
+        onTap: placeholder ? null : () => _openDetailPage(),
       ),
       _buildResultsMetricCard(
         key: AiAnalysisWorkspace.resultsMetricReviewKey,
         title: l10n.aiResultsMetricReviewTitle,
-        value: '${overview.reviewCount}',
-        subtitle: l10n.aiResultsMetricReviewSubtitle,
-        onTap: overview.reviewCount > 0 ? () => _openReviewQueue() : null,
+        value: placeholder ? dash : '${overview.reviewCount}',
+        subtitle: placeholder ? dash : l10n.aiResultsMetricReviewSubtitle,
+        onTap: !placeholder && overview.reviewCount > 0
+            ? () => _openReviewQueue()
+            : null,
       ),
       _buildResultsMetricCard(
         key: AiAnalysisWorkspace.resultsMetricKeepKey,
         title: l10n.aiResultsMetricKeepTitle,
-        value: '${overview.keepCount}',
-        subtitle: l10n.aiResultsMetricKeepSubtitle,
-        onTap: () => _openDetailList(initialFilter: _ResultFilterMode.all),
+        value: placeholder ? dash : '${overview.keepCount}',
+        subtitle: placeholder ? dash : l10n.aiResultsMetricKeepSubtitle,
+        onTap: placeholder ? null : () => _openDetailPage(),
       ),
     ];
     return LayoutBuilder(
@@ -5316,150 +5228,6 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                 child: child,
               ),
       ),
-    );
-  }
-
-  Widget _buildResultsPreviewSafeBlock(AppLocalizations l10n) {
-    final items = _previewSafeVerdicts();
-    final total = _conclusionSafeItemCount();
-    return KeyedSubtree(
-      key: AiAnalysisWorkspace.resultsPreviewSafeKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l10n.aiResultsPreviewSafeTitle, style: context.vwBodyStrong),
-          const SizedBox(height: AppleSpacing.xs),
-          for (final item in items) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppleSpacing.sm),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Checkbox(
-                    key: Key('ai-results-preview-safe-check:${item.path}'),
-                    value: _selected.contains(item.path),
-                    onChanged: (value) => _toggle(item.path, value),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  const SizedBox(width: AppleSpacing.xxs),
-                  Expanded(
-                    child: AiResultEntryTile(
-                      key: ValueKey<String>(
-                        'ai-results-preview-safe-item:${item.path}',
-                      ),
-                      item: item,
-                      sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
-                      variant: AiResultEntryTileVariant.previewSafe,
-                      cleanupMeta: _cleanupMetaLabel(item),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (total > items.length)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: () => _openDetailList(
-                  initialFilter: _ResultFilterMode.safeToRemove,
-                ),
-                child: Text(l10n.aiResultsPreviewViewAll(total)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultsPreviewReviewBlock(AppLocalizations l10n) {
-    final items = _previewReviewVerdicts();
-    final total = _pendingReviewVerdicts().length;
-    return KeyedSubtree(
-      key: AiAnalysisWorkspace.resultsPreviewReviewKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l10n.aiResultsPreviewReviewTitle, style: context.vwBodyStrong),
-          const SizedBox(height: AppleSpacing.xs),
-          for (final item in items) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppleSpacing.sm),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => _openReviewQueue(),
-                  child: AiResultEntryTile(
-                    key: ValueKey<String>(
-                      'ai-results-preview-review-item:${item.path}',
-                    ),
-                    item: item,
-                    sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
-                    variant: AiResultEntryTileVariant.previewReview,
-                    cleanupMeta: _cleanupMetaLabel(item),
-                    reviewStatusLabel: _reviewStatusLabel(
-                      _reviewDecisions[item.path] ?? _ReviewDecision.pending,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          if (total > items.length)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: _openReviewQueue,
-                child: Text(l10n.aiResultsPreviewViewAll(total)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPendingReviewPreview(AppLocalizations l10n) {
-    final pending = _pendingReviewVerdicts().take(3).toList(growable: false);
-    return KeyedSubtree(
-      key: AiAnalysisWorkspace.pendingPreviewKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l10n.aiResultsPendingPreviewTitle, style: context.vwBodyStrong),
-          const SizedBox(height: AppleSpacing.xs),
-          for (final item in pending) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppleSpacing.xxs),
-              child: Text(
-                '${item.path} · ${_formatBytes(_sizeByPath[item.path] ?? 0)}',
-                style: context.vwCaption,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (item.reason.trim().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppleSpacing.xs),
-                child: Text(
-                  l10n.aiConclusionsAiSays(item.reason),
-                  style: context.vwBody,
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoPendingReviewHint(
-    AiAnalysisConclusionOverview overview,
-    AppLocalizations l10n,
-  ) {
-    final safeCount = _conclusionSafeItemCount();
-    return Text(
-      l10n.aiResultsNoPendingReviewHint(safeCount),
-      style: context.vwBody,
     );
   }
 
@@ -5535,9 +5303,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                         const SizedBox(height: AppleSpacing.sm),
                         AppleButton(
                           label: l10n.aiResultsReviewQueueNextDelete,
-                          onPressed: () => _openDetailList(
-                            initialFilter: _ResultFilterMode.selected,
-                          ),
+                          onPressed: _handleWorkspaceBack,
                         ),
                       ],
                     ),
@@ -5575,47 +5341,127 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  List<AiDirectoryConclusion> _directoriesForType(
+    AiAnalysisConclusionOverview overview,
+  ) {
+    return overview.directories
+        .where((directory) {
+          return switch (_directoryTypeFilter) {
+            _DirectoryTypeFilter.safe => directory.safeBytes > 0,
+            _DirectoryTypeFilter.review => directory.reviewCount > 0,
+            _DirectoryTypeFilter.keep => directory.keepCount > 0,
+          };
+        })
+        .toList(growable: false);
+  }
+
+  Widget _buildDirectoryTypeFilter(AppLocalizations l10n) {
+    final tokens = context.volward;
+    final segments = <(_DirectoryTypeFilter, String)>[
+      (_DirectoryTypeFilter.safe, l10n.aiResultsFilterSafeToRemove),
+      (_DirectoryTypeFilter.review, l10n.aiResultsFilterReview),
+      (_DirectoryTypeFilter.keep, l10n.aiResultsMetricKeepTitle),
+    ];
+    return KeyedSubtree(
+      key: AiAnalysisWorkspace.directoryTypeFilterKey,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surfacePearl,
+          borderRadius: BorderRadius.circular(AppleRadius.sm),
+          border: Border.all(color: tokens.hairline),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppleRadius.sm),
+          child: SizedBox(
+            height: 32,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < segments.length; i++) ...[
+                  if (i > 0) Container(width: 1, color: tokens.hairline),
+                  Expanded(
+                    child: _DirectoryTypeSegment(
+                      key: AiAnalysisWorkspace.directoryTypeChipKey(
+                        segments[i].$1.name,
+                      ),
+                      label: segments[i].$2,
+                      selected: _directoryTypeFilter == segments[i].$1,
+                      onTap: () =>
+                          setState(() => _directoryTypeFilter = segments[i].$1),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDirectoryGrid(
+    List<AiDirectoryConclusion> directories,
+    AppLocalizations l10n,
+  ) {
+    if (directories.isEmpty) {
+      return Text(l10n.aiResultsNoMatches, style: context.vwCaption);
+    }
+    return GridView.builder(
+      key: AiAnalysisWorkspace.directoryGridKey,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: directories.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: AppleSpacing.sm,
+        mainAxisSpacing: AppleSpacing.sm,
+        mainAxisExtent: 112,
+      ),
+      itemBuilder: (context, index) {
+        return _buildDirectoryConclusionCard(directories[index], l10n);
+      },
+    );
+  }
+
   Widget _buildDirectoryConclusionCard(
     AiDirectoryConclusion directory,
     AppLocalizations l10n,
   ) {
+    final tokens = context.volward;
     return Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      key: AiAnalysisWorkspace.directoryCardKey(directory.path),
+      color: tokens.surfacePearl,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppleSpacing.sm),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        side: BorderSide(color: tokens.hairline),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppleSpacing.sm),
-        onTap: () {
-          if (directory.reviewCount > 0) {
-            _openReviewQueue(directoryPath: directory.path);
-          } else {
-            _openDetailList(
-              initialFilter: _ResultFilterMode.safeToRemove,
-              directoryPath: directory.path,
-            );
-          }
-        },
+        borderRadius: BorderRadius.circular(AppleRadius.sm),
+        onTap: () => _openDetailPage(directoryPath: directory.path),
         child: Padding(
           padding: const EdgeInsets.all(AppleSpacing.sm),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(directory.displayLabel, style: context.vwBodyStrong),
-              const SizedBox(height: AppleSpacing.xxs),
               Text(
-                l10n.aiConclusionsDirectoryMetrics(
-                  _formatBytes(directory.safeBytes),
-                  directory.reviewCount,
-                  directory.shareOfSafePct.toStringAsFixed(0),
-                ),
-                style: context.vwCaption,
+                directory.displayLabel,
+                style: context.vwBodyStrong,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              for (final reason in directory.reasonHighlights) ...[
-                const SizedBox(height: AppleSpacing.xxs),
-                Text(l10n.aiConclusionsAiSays(reason), style: context.vwBody),
-              ],
+              const SizedBox(height: AppleSpacing.xxs),
+              Expanded(
+                child: Text(
+                  l10n.aiConclusionsDirectoryMetrics(
+                    _formatBytes(directory.safeBytes),
+                    directory.reviewCount,
+                    directory.shareOfSafePct.toStringAsFixed(0),
+                  ),
+                  style: context.vwCaption,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -6835,6 +6681,43 @@ class _OverallResultSummaryData {
   final int reviewCount;
 }
 
+class _DirectoryTypeSegment extends StatelessWidget {
+  const _DirectoryTypeSegment({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return Material(
+      color: selected
+          ? tokens.primary.withValues(alpha: 0.12)
+          : tokens.surfacePearl,
+      child: InkWell(
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.vwFinePrint.copyWith(
+              color: selected ? tokens.primary : tokens.inkMuted80,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _WorkspaceHeader extends StatelessWidget {
   const _WorkspaceHeader({
     required this.phaseLabel,
@@ -6891,7 +6774,7 @@ class _WorkspaceHeader extends StatelessWidget {
         ? null
         : Container(
             key: AiAnalysisWorkspace.hubStatusChipKey,
-            padding: EdgeInsets.symmetric(
+            padding: const EdgeInsets.symmetric(
               horizontal: AppleSpacing.xs,
               vertical: AppleSpacing.xxs / 2,
             ),
@@ -6912,7 +6795,7 @@ class _WorkspaceHeader extends StatelessWidget {
           );
     return DecoratedBox(
       key: AiAnalysisWorkspace.headerKey,
-      decoration: BoxDecoration(color: tokens.canvas),
+      decoration: const BoxDecoration(color: Colors.transparent),
       child: SafeArea(
         bottom: false,
         child: Padding(

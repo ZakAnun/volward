@@ -125,6 +125,7 @@ class StorageStewardHome extends StatefulWidget {
     this.aiSnapshotId,
     this.aiAnalysisGateway = const ProductionAiAnalysisGateway(),
     this.onAiDeleteCompleted,
+    this.onOpenDetailPage,
     this.updater,
   });
 
@@ -167,6 +168,7 @@ class StorageStewardHome extends StatefulWidget {
   final String? aiSnapshotId;
   final AiAnalysisGateway aiAnalysisGateway;
   final VoidCallback? onAiDeleteCompleted;
+  final ValueChanged<String>? onOpenDetailPage;
   final AppUpdater? updater;
 
   @override
@@ -215,11 +217,16 @@ class _StorageStewardHomeState extends State<StorageStewardHome> {
   @override
   void didUpdateWidget(covariant StorageStewardHome oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_activeAiSnapshotId != null &&
-        (widget.aiSnapshotId != oldWidget.aiSnapshotId ||
-            widget.summary.selectedLocation?.path !=
-                oldWidget.summary.selectedLocation?.path)) {
-      _closeAi(restoreFocus: false);
+    if (_activeAiSnapshotId != null) {
+      final locationChanged =
+          widget.summary.selectedLocation?.path !=
+          oldWidget.summary.selectedLocation?.path;
+      final snapshotReplaced =
+          widget.aiSnapshotId != null &&
+          widget.aiSnapshotId != oldWidget.aiSnapshotId;
+      if (locationChanged || snapshotReplaced) {
+        _closeAi(restoreFocus: false);
+      }
     }
   }
 
@@ -298,6 +305,7 @@ class _StorageStewardHomeState extends State<StorageStewardHome> {
       onOpenSettings: widget.onOpenSettings ?? () {},
       onDeletingChanged: _setAiDeleting,
       onDeleteCompleted: _handleAiDeleteCompleted,
+      onOpenDetailPage: widget.onOpenDetailPage,
     );
   }
 

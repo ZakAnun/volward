@@ -63,6 +63,8 @@ class AiAnalysisScopePanel extends StatefulWidget {
     required this.summaryLine,
     required this.expandedBodyBuilder,
     this.fillRemaining = false,
+    this.expanded,
+    this.onExpandedChanged,
   });
 
   static const toggleKey = AiAnalysisScopeSummaryRow.toggleKey;
@@ -72,6 +74,10 @@ class AiAnalysisScopePanel extends StatefulWidget {
   final WidgetBuilder expandedBodyBuilder;
   final bool fillRemaining;
 
+  /// When set with [onExpandedChanged], expansion is driven by the parent.
+  final bool? expanded;
+  final ValueChanged<bool>? onExpandedChanged;
+
   @override
   State<AiAnalysisScopePanel> createState() => _AiAnalysisScopePanelState();
 }
@@ -80,6 +86,8 @@ class _AiAnalysisScopePanelState extends State<AiAnalysisScopePanel> {
   bool? _userExpanded;
 
   bool get _expanded {
+    final controlled = widget.expanded;
+    if (controlled != null) return controlled;
     final user = _userExpanded;
     if (user != null) return user;
     return widget.hubMode == ResultsHubMode.awaitingAnalysis;
@@ -95,6 +103,12 @@ class _AiAnalysisScopePanelState extends State<AiAnalysisScopePanel> {
   }
 
   void _toggle() {
+    final onChanged = widget.onExpandedChanged;
+    final controlled = widget.expanded;
+    if (onChanged != null && controlled != null) {
+      onChanged(!controlled);
+      return;
+    }
     setState(() => _userExpanded = !_expanded);
   }
 

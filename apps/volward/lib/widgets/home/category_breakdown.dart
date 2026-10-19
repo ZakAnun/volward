@@ -62,9 +62,17 @@ class CategoryBreakdown extends StatelessWidget {
                   categories.length >= 4 &&
                   (constraints.maxWidth - _columnGap) / 2 >=
                       _minLegendColumnWidth;
-              return useTwoColumns
+              final legend = useTwoColumns
                   ? _buildTwoColumnLegend(total)
                   : _buildSingleColumnLegend(total);
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                  child: legend,
+                ),
+              );
             },
           ),
         ),
