@@ -1377,6 +1377,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsPhaseDetailList => 'Full list';
 
   @override
+  String get aiResultsHubStatusAwaiting => 'Awaiting analysis';
+
+  @override
+  String get aiResultsHubStatusAnalyzing => 'Analyzing';
+
+  @override
+  String get aiResultsHubStatusReady => 'Ready';
+
+  @override
   String aiResultsHeroLine(String bytes, int review) {
     return '$bytes reclaimable · $review need your decision before delete';
   }

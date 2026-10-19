@@ -2254,6 +2254,24 @@ abstract class AppLocalizations {
   /// **'Full list'**
   String get aiResultsPhaseDetailList;
 
+  /// No description provided for @aiResultsHubStatusAwaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting analysis'**
+  String get aiResultsHubStatusAwaiting;
+
+  /// No description provided for @aiResultsHubStatusAnalyzing.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing'**
+  String get aiResultsHubStatusAnalyzing;
+
+  /// No description provided for @aiResultsHubStatusReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get aiResultsHubStatusReady;
+
   /// No description provided for @aiResultsHeroLine.
   ///
   /// In en, this message translates to:

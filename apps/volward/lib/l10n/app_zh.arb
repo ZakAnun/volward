@@ -1025,6 +1025,9 @@
   "aiResultsPhaseResults": "分析结果",
   "aiResultsPhaseReviewQueue": "待确认",
   "aiResultsPhaseDetailList": "完整列表",
+  "aiResultsHubStatusAwaiting": "待分析",
+  "aiResultsHubStatusAnalyzing": "分析中",
+  "aiResultsHubStatusReady": "已完成",
   "aiResultsHeroLine": "可释放 {bytes}，{review} 项需你确认后再删",
   "@aiResultsHeroLine": {
     "placeholders": {

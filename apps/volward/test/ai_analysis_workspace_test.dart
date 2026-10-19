@@ -985,6 +985,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('safe.cache'), findsOneWidget);
+    expect(find.text('Pre-check'), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.hubStatusChipKey), findsOneWidget);
+    expect(find.text('Awaiting analysis'), findsOneWidget);
   });
 
   testWidgets('cached result auto-loads on bootstrap', (tester) async {
@@ -1013,6 +1016,8 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Pre-check'), findsNothing);
+    expect(find.text('Ready'), findsOneWidget);
   });
 
   testWidgets('precheck shows v3 plan breakdown from plan summary', (
@@ -1327,7 +1332,8 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is Semantics &&
-            widget.properties.value == 'Results, step 4 of 5',
+            widget.properties.value ==
+                'Results, Awaiting analysis, step 4 of 4',
       ),
       findsOneWidget,
     );

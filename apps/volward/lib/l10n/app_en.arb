@@ -1025,6 +1025,9 @@
   "aiResultsPhaseResults": "Results",
   "aiResultsPhaseReviewQueue": "Needs your decision",
   "aiResultsPhaseDetailList": "Full list",
+  "aiResultsHubStatusAwaiting": "Awaiting analysis",
+  "aiResultsHubStatusAnalyzing": "Analyzing",
+  "aiResultsHubStatusReady": "Ready",
   "aiResultsHeroLine": "{bytes} reclaimable · {review} need your decision before delete",
   "@aiResultsHeroLine": {
     "placeholders": {

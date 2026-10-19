@@ -573,6 +573,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const deleteKey = Key('ai-analysis-delete');
   static const precheckDeleteKey = Key('ai-analysis-precheck-delete');
   static const headerKey = Key('ai-analysis-header');
+  static const hubStatusChipKey = Key('ai-results-hub-status-chip');
   static const selectedSummaryKey = Key('ai-analysis-selected-summary');
   static const pendingReviewKey = Key('ai-analysis-pending-review');
   static const conclusionsOverviewKey = Key('ai-analysis-conclusions-overview');
@@ -3451,6 +3452,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           _WorkspaceHeader(
             phaseLabel: _phaseLabel(context),
             phaseStep: _phaseStep,
+            phaseStepCount: kWorkspacePhaseStepCount,
+            hubStatusLabel: _overviewHubStatusLabel(context),
             onBack: _deleting ? null : widget.onExit,
           ),
           Divider(height: 1, color: tokens.dividerSoft),
@@ -3477,13 +3480,25 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     };
   }
 
+  static const kWorkspacePhaseStepCount = 4;
+
   int get _phaseStep => switch (_phase) {
     _Phase.loading || _Phase.error => 1,
     _Phase.precheck => 2,
     _Phase.privacy || _Phase.analyzing => 3,
-    _Phase.results => 4,
-    _Phase.deleting => 5,
+    _Phase.results || _Phase.deleting => 4,
   };
+
+  String? _overviewHubStatusLabel(BuildContext context) {
+    if (_resultsView != _ResultsView.overview) return null;
+    if (_phase != _Phase.results && _phase != _Phase.precheck) return null;
+    final l10n = context.l10n;
+    return switch (_resultsHubMode()) {
+      ResultsHubMode.awaitingAnalysis => l10n.aiResultsHubStatusAwaiting,
+      ResultsHubMode.analyzing => l10n.aiResultsHubStatusAnalyzing,
+      ResultsHubMode.ready => l10n.aiResultsHubStatusReady,
+    };
+  }
 
   Widget _buildPhaseBody() {
     return switch (_phase) {
@@ -6792,25 +6807,31 @@ class _WorkspaceHeader extends StatelessWidget {
   const _WorkspaceHeader({
     required this.phaseLabel,
     required this.phaseStep,
+    required this.phaseStepCount,
+    required this.hubStatusLabel,
     required this.onBack,
   });
 
   final String phaseLabel;
   final int phaseStep;
+  final int phaseStepCount;
+  final String? hubStatusLabel;
   final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final tokens = context.volward;
-    final phaseSemantics = '$phaseLabel, step $phaseStep of 5';
+    final phaseSemantics = hubStatusLabel == null
+        ? '$phaseLabel, step $phaseStep of $phaseStepCount'
+        : '$phaseLabel, $hubStatusLabel, step $phaseStep of $phaseStepCount';
     final phaseIndicator = Semantics(
       value: phaseSemantics,
       child: ExcludeSemantics(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (var step = 1; step <= 5; step++) ...[
+            for (var step = 1; step <= phaseStepCount; step++) ...[
               Container(
                 width: 4,
                 height: 4,
@@ -6821,7 +6842,8 @@ class _WorkspaceHeader extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
               ),
-              if (step < 5) const SizedBox(width: AppleSpacing.xxs),
+              if (step < phaseStepCount)
+                const SizedBox(width: AppleSpacing.xxs),
             ],
           ],
         ),
@@ -6833,6 +6855,29 @@ class _WorkspaceHeader extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: context.vwBodyStrong.copyWith(fontSize: 15, height: 1.12),
     );
+    final hubStatusChip = hubStatusLabel == null
+        ? null
+        : Container(
+            key: AiAnalysisWorkspace.hubStatusChipKey,
+            padding: EdgeInsets.symmetric(
+              horizontal: AppleSpacing.xs,
+              vertical: AppleSpacing.xxs / 2,
+            ),
+            decoration: BoxDecoration(
+              color: tokens.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppleRadius.pill),
+              border: Border.all(color: tokens.primary.withValues(alpha: 0.22)),
+            ),
+            child: Text(
+              hubStatusLabel!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.vwFinePrint.copyWith(
+                color: tokens.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
     return DecoratedBox(
       key: AiAnalysisWorkspace.headerKey,
       decoration: BoxDecoration(color: tokens.canvas),
@@ -6854,6 +6899,10 @@ class _WorkspaceHeader extends StatelessWidget {
               ),
               const SizedBox(width: AppleSpacing.xs),
               Expanded(child: title),
+              if (hubStatusChip != null) ...[
+                const SizedBox(width: AppleSpacing.xs),
+                hubStatusChip,
+              ],
               const SizedBox(width: AppleSpacing.sm),
               phaseIndicator,
             ],

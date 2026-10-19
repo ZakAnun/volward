@@ -1316,6 +1316,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultsPhaseDetailList => '完整列表';
 
   @override
+  String get aiResultsHubStatusAwaiting => '待分析';
+
+  @override
+  String get aiResultsHubStatusAnalyzing => '分析中';
+
+  @override
+  String get aiResultsHubStatusReady => '已完成';
+
+  @override
   String aiResultsHeroLine(String bytes, int review) {
     return '可释放 $bytes，$review 项需你确认后再删';
   }
