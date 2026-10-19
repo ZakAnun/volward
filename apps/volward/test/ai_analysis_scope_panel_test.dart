@@ -20,7 +20,7 @@ void main() {
         AiAnalysisScopePanel(
           hubMode: ResultsHubMode.awaitingAnalysis,
           summaryLine: 'summary',
-          expandedBody: const Text('scope-body'),
+          expandedBodyBuilder: (_) => const Text('scope-body'),
         ),
       ),
     );
@@ -34,7 +34,7 @@ void main() {
         AiAnalysisScopePanel(
           hubMode: ResultsHubMode.ready,
           summaryLine: 'summary',
-          expandedBody: const Text('scope-body'),
+          expandedBodyBuilder: (_) => const Text('scope-body'),
         ),
       ),
     );
@@ -46,5 +46,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('scope-body'), findsOneWidget);
+  });
+
+  testWidgets('scope panel collapses when hub mode leaves awaitingAnalysis', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _panelShell(
+        AiAnalysisScopePanel(
+          hubMode: ResultsHubMode.awaitingAnalysis,
+          summaryLine: 'summary',
+          expandedBodyBuilder: (_) => const Text('scope-body'),
+        ),
+      ),
+    );
+    expect(find.text('scope-body'), findsOneWidget);
+
+    await tester.pumpWidget(
+      _panelShell(
+        AiAnalysisScopePanel(
+          hubMode: ResultsHubMode.ready,
+          summaryLine: 'summary',
+          expandedBodyBuilder: (_) => const Text('scope-body'),
+        ),
+      ),
+    );
+    expect(find.text('scope-body'), findsNothing);
   });
 }

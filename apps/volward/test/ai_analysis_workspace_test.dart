@@ -23,6 +23,7 @@ import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/volward_session.dart';
 import 'package:volward/widgets/apple_widgets.dart';
 import 'package:volward/widgets/ai_analysis_activity_card.dart';
+import 'package:volward/widgets/ai_analysis_scope_panel.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
 import 'package:volward/widgets/ai_result_entry_tile.dart';
 
@@ -2617,6 +2618,24 @@ void main() {
     await tester.tap(find.byKey(AiAnalysisWorkspace.reviewQueuePrimaryKey));
     await tester.pumpAndSettle();
     expect(find.byKey(AiAnalysisWorkspace.reviewQueueKey), findsOneWidget);
+  });
+
+  testWidgets('ready overview embeds collapsed analysis scope at top', (
+    tester,
+  ) async {
+    await _openResultsOnOverview(tester, _FakeGateway());
+
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsScopePanelKey),
+      findsOneWidget,
+    );
+    expect(find.byKey(AiAnalysisWorkspace.resultsHeroKey), findsOneWidget);
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsNothing);
+
+    await tester.tap(find.byKey(AiAnalysisScopePanel.toggleKey));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
   });
 
   testWidgets('overview preview blocks show safe and review entry tiles', (

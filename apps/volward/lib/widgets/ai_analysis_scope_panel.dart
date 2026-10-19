@@ -4,21 +4,72 @@ import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'ai_results_hub.dart';
 
+/// Collapsible header row for the analysis scope block.
+class AiAnalysisScopeSummaryRow extends StatelessWidget {
+  const AiAnalysisScopeSummaryRow({
+    super.key,
+    required this.summaryLine,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  static const toggleKey = Key('ai-results-scope-panel-toggle');
+
+  final String summaryLine;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: toggleKey,
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(AppleRadius.md),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            vertical: AppleSpacing.sm,
+            horizontal: AppleSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  summaryLine,
+                  style: context.vwBodyStrong,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                expanded ? '▴' : '▾',
+                style: context.vwBodyStrong.copyWith(color: tokens.inkMuted80),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Collapsible analysis scope block at the top of the results overview hub.
 class AiAnalysisScopePanel extends StatefulWidget {
   const AiAnalysisScopePanel({
     super.key,
     required this.hubMode,
     required this.summaryLine,
-    required this.expandedBody,
+    required this.expandedBodyBuilder,
     this.fillRemaining = false,
   });
 
-  static const toggleKey = Key('ai-results-scope-panel-toggle');
+  static const toggleKey = AiAnalysisScopeSummaryRow.toggleKey;
 
   final ResultsHubMode hubMode;
   final String summaryLine;
-  final Widget expandedBody;
+  final WidgetBuilder expandedBodyBuilder;
   final bool fillRemaining;
 
   @override
@@ -37,7 +88,8 @@ class _AiAnalysisScopePanelState extends State<AiAnalysisScopePanel> {
   @override
   void didUpdateWidget(covariant AiAnalysisScopePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.hubMode != widget.hubMode && _userExpanded == null) {
+    if (oldWidget.hubMode != widget.hubMode) {
+      _userExpanded = null;
       setState(() {});
     }
   }
@@ -48,38 +100,10 @@ class _AiAnalysisScopePanelState extends State<AiAnalysisScopePanel> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = context.volward;
-    final header = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: AiAnalysisScopePanel.toggleKey,
-        onTap: _toggle,
-        borderRadius: BorderRadius.circular(AppleRadius.md),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            vertical: AppleSpacing.sm,
-            horizontal: AppleSpacing.xs,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.summaryLine,
-                  style: context.vwBodyStrong,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Icon(
-                _expanded
-                    ? Icons.expand_less_outlined
-                    : Icons.expand_more_outlined,
-                color: tokens.inkMuted80,
-              ),
-            ],
-          ),
-        ),
-      ),
+    final header = AiAnalysisScopeSummaryRow(
+      summaryLine: widget.summaryLine,
+      expanded: _expanded,
+      onToggle: _toggle,
     );
 
     if (!_expanded) {
@@ -91,14 +115,14 @@ class _AiAnalysisScopePanelState extends State<AiAnalysisScopePanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           header,
-          Expanded(child: widget.expandedBody),
+          Expanded(child: widget.expandedBodyBuilder(context)),
         ],
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [header, widget.expandedBody],
+      children: [header, widget.expandedBodyBuilder(context)],
     );
   }
 }

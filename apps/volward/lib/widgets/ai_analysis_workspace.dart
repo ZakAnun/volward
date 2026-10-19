@@ -656,6 +656,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   final Map<String, String> _deleteTargetsByPath = {};
   bool _hasProvider = false;
   bool _analyzing = false;
+  bool? _embeddedScopeExpandedManual;
   bool _deleting = false;
   int? _partialDeleteFailedCount;
   int? _partialDeleteFreedBytes;
@@ -1757,6 +1758,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _hasExistingResult = true;
         _loadedEmptySuggestions = enrichedVerdicts.isEmpty;
         _analyzing = false;
+        _embeddedScopeExpandedManual = null;
         _enterResultsPhase();
       });
       unawaited(() async {
@@ -3707,7 +3709,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   }
 
   Widget _buildAnalysisScopePanel({
-    required Widget expandedBody,
+    required WidgetBuilder expandedBodyBuilder,
     bool fillRemaining = false,
   }) {
     final l10n = context.l10n;
@@ -3716,11 +3718,32 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       hubMode: _scopePanelHubMode(),
       summaryLine: _resultsScopeSummaryLine(l10n),
       fillRemaining: fillRemaining,
-      expandedBody: expandedBody,
+      expandedBodyBuilder: expandedBodyBuilder,
     );
   }
 
-  List<Widget> _buildPrecheckChildren() {
+  bool _embeddedScopeExpanded(ResultsHubMode hubMode) {
+    final manual = _embeddedScopeExpandedManual;
+    if (manual != null) return manual;
+    return hubMode == ResultsHubMode.awaitingAnalysis;
+  }
+
+  Widget _buildEmbeddedScopeHeader(AppLocalizations l10n) {
+    final expanded = _embeddedScopeExpanded(_scopePanelHubMode());
+    return GestureDetector(
+      key: AiAnalysisScopePanel.toggleKey,
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _embeddedScopeExpandedManual = !expanded),
+      child: Text(
+        '${_resultsScopeSummaryLine(l10n)} ${expanded ? '▴' : '▾'}',
+        style: context.vwBodyStrong,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  List<Widget> _buildPrecheckChildren({bool includeCoverageBanner = true}) {
     final l10n = context.l10n;
     final tokens = context.volward;
     final canAnalyze =
@@ -3738,10 +3761,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                   : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
     return [
-      if (_buildCoverageBanner() case final banner?) ...[
-        banner,
-        const SizedBox(height: AppleSpacing.md),
-      ],
+      if (includeCoverageBanner)
+        if (_buildCoverageBanner() case final banner?) ...[
+          banner,
+          const SizedBox(height: AppleSpacing.md),
+        ],
       Text(
         l10n.aiPreCheckSafeTitle(_displayPreClassifiedCount),
         style: context.vwBodyStrong,
@@ -4077,10 +4101,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     ];
   }
 
-  Widget _buildPrecheck() {
-    return ListView(
-      padding: const EdgeInsets.all(AppleSpacing.lg),
-      children: _buildPrecheckChildren(),
+  Widget _buildScopePanelExpandedBody({bool includeCoverageBanner = true}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _buildPrecheckChildren(
+        includeCoverageBanner: includeCoverageBanner,
+      ),
     );
   }
 
@@ -4646,6 +4672,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   void _enterOverviewHub() {
     _phase = _Phase.results;
     _resultsView = _ResultsView.overview;
+    _embeddedScopeExpandedManual = null;
   }
 
   ResultsHubMode _resultsHubMode() {
@@ -4996,12 +5023,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           padding: const EdgeInsets.all(AppleSpacing.lg),
           child: _buildAnalysisScopePanel(
             fillRemaining: true,
-            expandedBody: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _buildPrecheckChildren(),
-              ),
-            ),
+            expandedBodyBuilder: (context) =>
+                SingleChildScrollView(child: _buildScopePanelExpandedBody()),
           ),
         ),
       );
@@ -5033,6 +5056,15 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                     ),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
+                        KeyedSubtree(
+                          key: AiAnalysisWorkspace.resultsScopePanelKey,
+                          child: _buildEmbeddedScopeHeader(l10n),
+                        ),
+                        if (_embeddedScopeExpanded(_scopePanelHubMode()))
+                          _buildScopePanelExpandedBody(
+                            includeCoverageBanner: false,
+                          ),
+                        const SizedBox(height: AppleSpacing.sm),
                         if (_buildCoverageBanner() case final banner?) ...[
                           banner,
                           const SizedBox(height: AppleSpacing.sm),
