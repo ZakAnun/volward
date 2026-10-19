@@ -40,6 +40,7 @@ import '../snapshot_cache.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'ai_analysis_activity_card.dart';
+import 'ai_analysis_scope_panel.dart';
 import 'ai_results_hub.dart';
 import 'coverage_job_banner.dart';
 import 'apple_widgets.dart';
@@ -1494,7 +1495,12 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       cacheKey: key,
       snapshotId: widget.snapshotId,
     );
-    return _applyLoadedResult(raw, l10n.aiLoadPreviousFailed, generation);
+    return _applyLoadedResult(
+      raw,
+      l10n.aiLoadPreviousFailed,
+      generation,
+      bootstrapGeneration: bootstrapGeneration,
+    );
   }
 
   Future<String?> _loadSavedAnalysisRaw({
@@ -1513,14 +1519,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Future<bool> _applyLoadedResult(
     String? raw,
     String failureMessage,
-    int generation,
-  ) async {
+    int generation, {
+    int? bootstrapGeneration,
+  }) async {
     if (raw == null || raw.isEmpty || raw.startsWith('error:')) {
       if (!_isCurrent(generation)) return false;
-      setState(() {
-        _error = failureMessage;
-        _enterOverviewHub();
-      });
+      if (bootstrapGeneration == null) {
+        setState(() {
+          _error = failureMessage;
+          _enterOverviewHub();
+        });
+      }
       return false;
     }
     try {
@@ -3628,7 +3637,72 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
-  Widget _buildPrecheck() {
+  String _resultsScopeSummaryLine(AppLocalizations l10n) {
+    var localDeletable = 0;
+    for (final entry in _preClassified) {
+      if (entry['deletable'] == true) localDeletable++;
+    }
+    final line = l10n.aiResultsScopeSummaryLine(
+      _displayUnknownCount,
+      localDeletable,
+    );
+    if (_useFullCoverage) {
+      return '$line · ${l10n.aiConclusionsModeFull}';
+    }
+    return line;
+  }
+
+  List<Widget> _buildUnknownScopeSampleSection(AppLocalizations l10n) {
+    if (_displayUnknownCount == 0 ||
+        _displayUnknownCount > kDefaultAiCandidateCap) {
+      return const [];
+    }
+    if (_unknownCandidatesSpillPath != null && _unknown.isEmpty) {
+      unawaited(_ensureUnknownCandidatesLoaded());
+      return const [];
+    }
+    final sample = _unknown.take(kAiResultsScopeUnknownSampleCap).toList();
+    if (sample.isEmpty) {
+      return const [];
+    }
+    final remaining = _displayUnknownCount - sample.length;
+    return [
+      const SizedBox(height: AppleSpacing.md),
+      Text(
+        l10n.aiResultsScopeUnknownSampleHeader,
+        style: context.vwCaptionStrong,
+      ),
+      const SizedBox(height: AppleSpacing.xxs),
+      for (final candidate in sample)
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: _PathLabel(candidate.path),
+          subtitle: Text(_formatBytes(candidate.sizeBytes)),
+        ),
+      if (remaining > 0)
+        Text(
+          l10n.aiResultsScopeUnknownSampleFooter(remaining),
+          style: context.vwFinePrint,
+        ),
+    ];
+  }
+
+  Widget _buildAnalysisScopePanel({
+    required Widget expandedBody,
+    bool fillRemaining = false,
+  }) {
+    final l10n = context.l10n;
+    return AiAnalysisScopePanel(
+      key: AiAnalysisWorkspace.resultsScopePanelKey,
+      hubMode: _scopePanelHubMode(),
+      summaryLine: _resultsScopeSummaryLine(l10n),
+      fillRemaining: fillRemaining,
+      expandedBody: expandedBody,
+    );
+  }
+
+  List<Widget> _buildPrecheckChildren() {
     final l10n = context.l10n;
     final tokens = context.volward;
     final canAnalyze =
@@ -3645,347 +3719,350 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                   ? l10n.aiSettingsSessionExpired
                   : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
-    return ListView(
-      padding: const EdgeInsets.all(AppleSpacing.lg),
-      children: [
-        if (_buildCoverageBanner() case final banner?) ...[
-          banner,
-          const SizedBox(height: AppleSpacing.md),
-        ],
-        Text(
-          l10n.aiPreCheckSafeTitle(_displayPreClassifiedCount),
-          style: context.vwBodyStrong,
-        ),
+    return [
+      if (_buildCoverageBanner() case final banner?) ...[
+        banner,
+        const SizedBox(height: AppleSpacing.md),
+      ],
+      Text(
+        l10n.aiPreCheckSafeTitle(_displayPreClassifiedCount),
+        style: context.vwBodyStrong,
+      ),
+      const SizedBox(height: AppleSpacing.xs),
+      if (_useFullCoverage)
+        Text(l10n.aiPrecheckDataScopeHint, style: context.vwCaption),
+      if (_useFullCoverage) const SizedBox(height: AppleSpacing.xs),
+      ..._buildPrecheckAiEstimateLines(context),
+      ..._buildUnknownScopeSampleSection(l10n),
+      if (_mode == AiMode.platform && _narrativeEnabled) ...[
         const SizedBox(height: AppleSpacing.xs),
-        if (_useFullCoverage)
-          Text(l10n.aiPrecheckDataScopeHint, style: context.vwCaption),
-        if (_useFullCoverage) const SizedBox(height: AppleSpacing.xs),
-        ..._buildPrecheckAiEstimateLines(context),
-        if (_mode == AiMode.platform && _narrativeEnabled) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Text(l10n.aiPrecheckNarrativeCreditHint, style: context.vwCaption),
-        ],
-        if (_mode == AiMode.platform &&
-            _platformCredits != null &&
-            !(_useFullCoverage && _estimatedCoverageCredits != null)) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Text(
-            l10n.aiPrecheckCreditsCost(_platformCredits!),
-            style: context.vwCaption,
+        Text(l10n.aiPrecheckNarrativeCreditHint, style: context.vwCaption),
+      ],
+      if (_mode == AiMode.platform &&
+          _platformCredits != null &&
+          !(_useFullCoverage && _estimatedCoverageCredits != null)) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiPrecheckCreditsCost(_platformCredits!),
+          style: context.vwCaption,
+        ),
+      ],
+      if (_useFullCoverage &&
+          _mode == AiMode.platform &&
+          _showsCoverageV3PrecheckBreakdown) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiCoverageLocalResolved(
+            _coveragePlanSummary!.localSafeFiles! +
+                _coveragePlanSummary!.localKeepFiles!,
           ),
-        ],
-        if (_useFullCoverage &&
-            _mode == AiMode.platform &&
-            _showsCoverageV3PrecheckBreakdown) ...[
-          const SizedBox(height: AppleSpacing.xs),
+        ),
+        if ((_coveragePlanMinApiCalls ?? 0) > 0) ...[
           Text(
-            l10n.aiCoverageLocalResolved(
-              _coveragePlanSummary!.localSafeFiles! +
-                  _coveragePlanSummary!.localKeepFiles!,
+            l10n.aiCoverageEstimatedTreeRounds(
+              _coveragePlanSummary!.estimatedTreeCredits!,
             ),
           ),
-          if ((_coveragePlanMinApiCalls ?? 0) > 0) ...[
-            Text(
-              l10n.aiCoverageEstimatedTreeRounds(
-                _coveragePlanSummary!.estimatedTreeCredits!,
-              ),
+          Text(
+            l10n.aiCoverageEstimatedTailRounds(
+              _coveragePlanSummary!.estimatedTailCredits!,
             ),
-            Text(
-              l10n.aiCoverageEstimatedTailRounds(
-                _coveragePlanSummary!.estimatedTailCredits!,
-              ),
-            ),
-            Text(
-              l10n.aiCoverageEstimatedCreditsTotal(_estimatedCoverageCredits!),
-            ),
-            Text(
-              l10n.aiCoverageBufferedCreditsMinimum(
-                coverageBufferedEstimate(_estimatedCoverageCredits!),
-              ),
-            ),
-          ],
-          if (_coverageBudgetCredits != null)
-            Text(l10n.aiCoverageRunCapConfigured(_coverageBudgetCredits!)),
-          if (_platformCredits != null)
-            Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
-          if (_runBudgetCredits != null &&
-              _runBudgetCredits != _coverageBudgetCredits)
-            Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
-          if ((_coveragePlanMinApiCalls ?? 0) >= 10)
-            Text(
-              l10n.aiCoveragePurchaseFooterConditional,
-              style: context.vwCaption,
-            ),
-        ] else if (_useFullCoverage &&
-            _mode == AiMode.platform &&
-            _estimatedCoverageCredits != null &&
-            !_coveragePlanIsLocalOnly) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Text(l10n.aiCoverageEstimatedCredits(_estimatedCoverageCredits!)),
+          ),
+          Text(
+            l10n.aiCoverageEstimatedCreditsTotal(_estimatedCoverageCredits!),
+          ),
           Text(
             l10n.aiCoverageBufferedCreditsMinimum(
               coverageBufferedEstimate(_estimatedCoverageCredits!),
             ),
           ),
-          if (_coverageBudgetCredits != null)
-            Text(l10n.aiCoverageRunCapConfigured(_coverageBudgetCredits!)),
-          if (_platformCredits != null)
-            Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
-          if (_runBudgetCredits != null &&
-              _runBudgetCredits != _coverageBudgetCredits)
-            Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
-          if ((_coveragePlanMinApiCalls ?? _estimatedCoverageCredits!) >= 10)
-            Text(
-              l10n.aiCoveragePurchaseFooterConditional,
-              style: context.vwCaption,
-            ),
         ],
-        if (_useFullCoverage &&
-            _platformCredits != null &&
-            _estimatedCoverageCredits != null &&
-            _platformCredits! < _estimatedCoverageCredits!) ...[
-          const SizedBox(height: AppleSpacing.xs),
+        if (_coverageBudgetCredits != null)
+          Text(l10n.aiCoverageRunCapConfigured(_coverageBudgetCredits!)),
+        if (_platformCredits != null)
+          Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
+        if (_runBudgetCredits != null &&
+            _runBudgetCredits != _coverageBudgetCredits)
+          Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
+        if ((_coveragePlanMinApiCalls ?? 0) >= 10)
           Text(
-            l10n.aiCoverageInsufficientForEstimate(
-              _estimatedCoverageCredits!,
-              _platformCredits!,
-            ),
-            style: AppleTypography.caption.copyWith(color: tokens.warning),
-          ),
-        ],
-        if (_useFullCoverage &&
-            _mode == AiMode.platform &&
-            _runCapBelowBufferedEstimate &&
-            _estimatedCoverageCredits != null &&
-            _coverageBudgetCredits != null) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Text(
-            l10n.aiCoverageRunCapBelowBufferedEstimate(
-              _coverageBudgetCredits!,
-              coverageBufferedEstimate(_estimatedCoverageCredits!),
-              _estimatedCoverageCredits!,
-            ),
-            style: AppleTypography.caption.copyWith(color: tokens.warning),
-          ),
-          const SizedBox(height: AppleSpacing.xs),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AppleButton(
-              label: l10n.aiCoverageRaiseBudgetToEstimate,
-              icon: Icons.trending_up_outlined,
-              variant: AppleButtonVariant.pearl,
-              onPressed: () => unawaited(_raiseConfiguredCoverageCap()),
-            ),
-          ),
-        ],
-        if (_useFullCoverage) ...[
-          const SizedBox(height: AppleSpacing.xs),
-          Text(
-            _mode == AiMode.platform
-                ? l10n.aiCoverageFullRunPlatformHint
-                : l10n.aiCoverageFullRunHint,
+            l10n.aiCoveragePurchaseFooterConditional,
             style: context.vwCaption,
           ),
-          if (_mode == AiMode.platform &&
-              _coverageBudgetCredits != null &&
-              (_coverageJobState == null ||
-                  _coverageJobState!.status == CoverageJobStatus.idle)) ...[
-            const SizedBox(height: AppleSpacing.xxs),
-            Text(
-              l10n.aiCoverageRunBudgetConfigured(_coverageBudgetCredits!),
-              style: context.vwCaptionStrong,
-            ),
-          ],
-          if (_coverageHydrating) ...[
-            const SizedBox(height: AppleSpacing.xs),
-            Text(l10n.aiCoverageHydrating, style: context.vwCaption),
-          ],
-          if (_coveragePlanLoadError != null) ...[
-            const SizedBox(height: AppleSpacing.xs),
-            Text(
-              _coveragePlanLoadError!,
-              style: AppleTypography.caption.copyWith(color: tokens.warning),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppleButton(
-                label: l10n.aiActionRetry,
-                icon: Icons.refresh_outlined,
-                variant: AppleButtonVariant.pearl,
-                onPressed: () =>
-                    unawaited(_bootstrapPrecheckContext(_beginOperation())),
-              ),
-            ),
-          ],
-          if (_candidatesBootstrapPending) ...[
-            const SizedBox(height: AppleSpacing.xs),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                AiAnalysisActivityInlineSpinner(
-                  color: tokens.primary,
-                  size: 14,
-                  strokeWidth: 2,
-                ),
-                const SizedBox(width: AppleSpacing.sm),
-                Expanded(
-                  child: Text(
-                    l10n.aiCandidatesBootstrapLoading,
-                    style: context.vwCaption,
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (_mode == AiMode.platform &&
-              _platformCredits != null &&
-              _coverageBudgetCredits != null &&
-              _platformCredits! < _coverageBudgetCredits!) ...[
-            const SizedBox(height: AppleSpacing.xs),
-            Text(
-              l10n.aiCoveragePlatformBudgetWarning(
-                _platformCredits!,
-                _coverageBudgetCredits!,
-              ),
-              style: AppleTypography.caption.copyWith(color: tokens.warning),
-            ),
-          ],
-        ],
-        if (needsSettings) ...[
-          const SizedBox(height: AppleSpacing.md),
+      ] else if (_useFullCoverage &&
+          _mode == AiMode.platform &&
+          _estimatedCoverageCredits != null &&
+          !_coveragePlanIsLocalOnly) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(l10n.aiCoverageEstimatedCredits(_estimatedCoverageCredits!)),
+        Text(
+          l10n.aiCoverageBufferedCreditsMinimum(
+            coverageBufferedEstimate(_estimatedCoverageCredits!),
+          ),
+        ),
+        if (_coverageBudgetCredits != null)
+          Text(l10n.aiCoverageRunCapConfigured(_coverageBudgetCredits!)),
+        if (_platformCredits != null)
+          Text(l10n.aiCoverageAccountBalance(_platformCredits!)),
+        if (_runBudgetCredits != null &&
+            _runBudgetCredits != _coverageBudgetCredits)
+          Text(l10n.aiCoverageRunCapConfigured(_runBudgetCredits!)),
+        if ((_coveragePlanMinApiCalls ?? _estimatedCoverageCredits!) >= 10)
           Text(
-            configurationMessage,
+            l10n.aiCoveragePurchaseFooterConditional,
+            style: context.vwCaption,
+          ),
+      ],
+      if (_useFullCoverage &&
+          _platformCredits != null &&
+          _estimatedCoverageCredits != null &&
+          _platformCredits! < _estimatedCoverageCredits!) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiCoverageInsufficientForEstimate(
+            _estimatedCoverageCredits!,
+            _platformCredits!,
+          ),
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+      ],
+      if (_useFullCoverage &&
+          _mode == AiMode.platform &&
+          _runCapBelowBufferedEstimate &&
+          _estimatedCoverageCredits != null &&
+          _coverageBudgetCredits != null) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiCoverageRunCapBelowBufferedEstimate(
+            _coverageBudgetCredits!,
+            coverageBufferedEstimate(_estimatedCoverageCredits!),
+            _estimatedCoverageCredits!,
+          ),
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppleButton(
+            label: l10n.aiCoverageRaiseBudgetToEstimate,
+            icon: Icons.trending_up_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: () => unawaited(_raiseConfiguredCoverageCap()),
+          ),
+        ),
+      ],
+      if (_useFullCoverage) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          _mode == AiMode.platform
+              ? l10n.aiCoverageFullRunPlatformHint
+              : l10n.aiCoverageFullRunHint,
+          style: context.vwCaption,
+        ),
+        if (_mode == AiMode.platform &&
+            _coverageBudgetCredits != null &&
+            (_coverageJobState == null ||
+                _coverageJobState!.status == CoverageJobStatus.idle)) ...[
+          const SizedBox(height: AppleSpacing.xxs),
+          Text(
+            l10n.aiCoverageRunBudgetConfigured(_coverageBudgetCredits!),
+            style: context.vwCaptionStrong,
+          ),
+        ],
+        if (_coverageHydrating) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(l10n.aiCoverageHydrating, style: context.vwCaption),
+        ],
+        if (_coveragePlanLoadError != null) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            _coveragePlanLoadError!,
             style: AppleTypography.caption.copyWith(color: tokens.warning),
           ),
-          const SizedBox(height: AppleSpacing.xs),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AppleButton(
-              key: AiAnalysisWorkspace.settingsKey,
-              label: l10n.settingsTitle,
-              icon: Icons.settings_outlined,
-              variant: AppleButtonVariant.pearl,
-              onPressed: widget.onOpenSettings,
-            ),
-          ),
-        ] else if (_error != null) ...[
-          const SizedBox(height: AppleSpacing.md),
-          Text(
-            _error!,
-            style: AppleTypography.caption.copyWith(color: tokens.danger),
-          ),
-          const SizedBox(height: AppleSpacing.xs),
           Align(
             alignment: Alignment.centerLeft,
             child: AppleButton(
               label: l10n.aiActionRetry,
               icon: Icons.refresh_outlined,
               variant: AppleButtonVariant.pearl,
-              onPressed: _startAnalysis,
+              onPressed: () =>
+                  unawaited(_bootstrapPrecheckContext(_beginOperation())),
             ),
           ),
         ],
-        if (_preClassified.isNotEmpty) ...[
-          const SizedBox(height: AppleSpacing.lg),
-          Text(
-            l10n.aiPreCheckSafeSelectable(_displayPreClassifiedCount),
-            style: context.vwCaptionStrong,
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
-          Wrap(
-            spacing: AppleSpacing.sm,
-            runSpacing: AppleSpacing.xxs,
+        if (_candidatesBootstrapPending) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              AiAnalysisActivityInlineSpinner(
+                color: tokens.primary,
+                size: 14,
+                strokeWidth: 2,
+              ),
+              const SizedBox(width: AppleSpacing.sm),
+              Expanded(
+                child: Text(
+                  l10n.aiCandidatesBootstrapLoading,
+                  style: context.vwCaption,
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (_mode == AiMode.platform &&
+            _platformCredits != null &&
+            _coverageBudgetCredits != null &&
+            _platformCredits! < _coverageBudgetCredits!) ...[
+          const SizedBox(height: AppleSpacing.xs),
+          Text(
+            l10n.aiCoveragePlatformBudgetWarning(
+              _platformCredits!,
+              _coverageBudgetCredits!,
+            ),
+            style: AppleTypography.caption.copyWith(color: tokens.warning),
+          ),
+        ],
+      ],
+      if (needsSettings) ...[
+        const SizedBox(height: AppleSpacing.md),
+        Text(
+          configurationMessage,
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppleButton(
+            key: AiAnalysisWorkspace.settingsKey,
+            label: l10n.settingsTitle,
+            icon: Icons.settings_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: widget.onOpenSettings,
+          ),
+        ),
+      ] else if (_error != null) ...[
+        const SizedBox(height: AppleSpacing.md),
+        Text(
+          _error!,
+          style: AppleTypography.caption.copyWith(color: tokens.danger),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppleButton(
+            label: l10n.aiActionRetry,
+            icon: Icons.refresh_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: _startAnalysis,
+          ),
+        ),
+      ],
+      if (_preClassified.isNotEmpty) ...[
+        const SizedBox(height: AppleSpacing.lg),
+        Text(
+          l10n.aiPreCheckSafeSelectable(_displayPreClassifiedCount),
+          style: context.vwCaptionStrong,
+        ),
+        const SizedBox(height: AppleSpacing.xxs),
+        Wrap(
+          spacing: AppleSpacing.sm,
+          runSpacing: AppleSpacing.xxs,
+          children: [
+            TextButton(
+              onPressed: () => _selectAllPrecheckDeletableShown(selected: true),
+              child: Text(l10n.aiPreCheckSelectAllShown),
+            ),
+            if (_selected.isNotEmpty)
               TextButton(
                 onPressed: () =>
-                    _selectAllPrecheckDeletableShown(selected: true),
-                child: Text(l10n.aiPreCheckSelectAllShown),
-              ),
-              if (_selected.isNotEmpty)
-                TextButton(
-                  onPressed: () =>
-                      _selectAllPrecheckDeletableShown(selected: false),
-                  child: Text(l10n.aiPreCheckClearSelection),
-                ),
-            ],
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
-          ..._preClassified
-              .take(_preClassifiedPrecheckPreviewCap)
-              .map(_preClassifiedTile),
-          if (_displayPreClassifiedCount >
-              _preClassifiedPrecheckPreviewCap) ...[
-            const SizedBox(height: AppleSpacing.xxs),
-            Text(
-              l10n.aiCoverageFailedBatchPathsOverflow(
-                _displayPreClassifiedCount - _preClassifiedPrecheckPreviewCap,
-              ),
-              style: context.vwFinePrint,
-            ),
-          ],
-          if (_precheckSelectedDeletableCount > 0) ...[
-            const SizedBox(height: AppleSpacing.md),
-            Text(
-              l10n.aiResultsSelectedForCleanup(
-                _precheckSelectedDeletableCount,
-                _formatBytes(_selectedBytes),
-              ),
-              style: context.vwCaptionStrong,
-            ),
-            const SizedBox(height: AppleSpacing.xs),
-            AppleButton(
-              key: AiAnalysisWorkspace.precheckDeleteKey,
-              label: l10n.aiDeleteSelected(_precheckSelectedDeletableCount),
-              icon: Icons.delete_outline,
-              expanded: true,
-              onPressed: _deleting ? null : _deleteSelected,
-            ),
-          ],
-        ],
-        if (_useFullCoverage &&
-            _coverageHydrated &&
-            _coveragePlanIsLocalOnly) ...[
-          const SizedBox(height: AppleSpacing.md),
-          Text(l10n.aiPreCheckLocalOnlyTitle, style: context.vwBodyStrong),
-          const SizedBox(height: AppleSpacing.xxs),
-          Text(l10n.aiPreCheckLocalOnlyBody, style: context.vwCaption),
-          const SizedBox(height: AppleSpacing.sm),
-          AppleButton(
-            label: l10n.aiStartLocalOnly,
-            icon: Icons.checklist_outlined,
-            expanded: true,
-            onPressed: () => unawaited(_openLocalOnlyResults()),
-          ),
-        ],
-        const SizedBox(height: AppleSpacing.lg),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_hasExistingResult) ...[
-              AppleButton(
-                key: AiAnalysisWorkspace.loadPreviousKey,
-                label: l10n.aiWorkspaceLoadPrevious,
-                variant: AppleButtonVariant.secondary,
-                expanded: true,
-                onPressed: _loadPreviousResult,
-              ),
-              const SizedBox(height: AppleSpacing.xs),
-            ],
-            if (!_coveragePlanIsLocalOnly)
-              AppleButton(
-                key: _hasExistingResult
-                    ? AiAnalysisWorkspace.analyzeAgainKey
-                    : AiAnalysisWorkspace.startAnalysisKey,
-                label: _hasExistingResult
-                    ? l10n.aiWorkspaceAnalyzeAgain
-                    : l10n.aiStartAnalysis,
-                icon: Icons.auto_awesome_outlined,
-                expanded: true,
-                onPressed: canAnalyze ? _startAnalysis : null,
+                    _selectAllPrecheckDeletableShown(selected: false),
+                child: Text(l10n.aiPreCheckClearSelection),
               ),
           ],
         ),
+        const SizedBox(height: AppleSpacing.xxs),
+        ..._preClassified
+            .take(_preClassifiedPrecheckPreviewCap)
+            .map(_preClassifiedTile),
+        if (_displayPreClassifiedCount > _preClassifiedPrecheckPreviewCap) ...[
+          const SizedBox(height: AppleSpacing.xxs),
+          Text(
+            l10n.aiCoverageFailedBatchPathsOverflow(
+              _displayPreClassifiedCount - _preClassifiedPrecheckPreviewCap,
+            ),
+            style: context.vwFinePrint,
+          ),
+        ],
+        if (_precheckSelectedDeletableCount > 0) ...[
+          const SizedBox(height: AppleSpacing.md),
+          Text(
+            l10n.aiResultsSelectedForCleanup(
+              _precheckSelectedDeletableCount,
+              _formatBytes(_selectedBytes),
+            ),
+            style: context.vwCaptionStrong,
+          ),
+          const SizedBox(height: AppleSpacing.xs),
+          AppleButton(
+            key: AiAnalysisWorkspace.precheckDeleteKey,
+            label: l10n.aiDeleteSelected(_precheckSelectedDeletableCount),
+            icon: Icons.delete_outline,
+            expanded: true,
+            onPressed: _deleting ? null : _deleteSelected,
+          ),
+        ],
       ],
+      if (_useFullCoverage &&
+          _coverageHydrated &&
+          _coveragePlanIsLocalOnly) ...[
+        const SizedBox(height: AppleSpacing.md),
+        Text(l10n.aiPreCheckLocalOnlyTitle, style: context.vwBodyStrong),
+        const SizedBox(height: AppleSpacing.xxs),
+        Text(l10n.aiPreCheckLocalOnlyBody, style: context.vwCaption),
+        const SizedBox(height: AppleSpacing.sm),
+        AppleButton(
+          label: l10n.aiStartLocalOnly,
+          icon: Icons.checklist_outlined,
+          expanded: true,
+          onPressed: () => unawaited(_openLocalOnlyResults()),
+        ),
+      ],
+      const SizedBox(height: AppleSpacing.lg),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_hasExistingResult) ...[
+            AppleButton(
+              key: AiAnalysisWorkspace.loadPreviousKey,
+              label: l10n.aiWorkspaceLoadPrevious,
+              variant: AppleButtonVariant.secondary,
+              expanded: true,
+              onPressed: _loadPreviousResult,
+            ),
+            const SizedBox(height: AppleSpacing.xs),
+          ],
+          if (!_coveragePlanIsLocalOnly)
+            AppleButton(
+              key: _hasExistingResult
+                  ? AiAnalysisWorkspace.analyzeAgainKey
+                  : AiAnalysisWorkspace.startAnalysisKey,
+              label: _hasExistingResult
+                  ? l10n.aiWorkspaceAnalyzeAgain
+                  : l10n.aiStartAnalysis,
+              icon: Icons.auto_awesome_outlined,
+              expanded: true,
+              onPressed: canAnalyze ? _startAnalysis : null,
+            ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _buildPrecheck() {
+    return ListView(
+      padding: const EdgeInsets.all(AppleSpacing.lg),
+      children: _buildPrecheckChildren(),
     );
   }
 
@@ -4566,6 +4643,14 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  /// Scope panel stays expanded until AI verdicts exist (CTA must remain reachable).
+  ResultsHubMode _scopePanelHubMode() {
+    if (_verdicts.isEmpty && !_analyzing) {
+      return ResultsHubMode.awaitingAnalysis;
+    }
+    return _resultsHubMode();
+  }
+
   void _enterResultsPhase({bool showOverview = true}) {
     final entering = _phase != _Phase.results && _phase != _Phase.deleting;
     _phase = _Phase.results;
@@ -4869,9 +4954,17 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       }
       return KeyedSubtree(
         key: AiAnalysisWorkspace.conclusionsOverviewKey,
-        child: KeyedSubtree(
-          key: AiAnalysisWorkspace.resultsScopePanelKey,
-          child: _buildPrecheck(),
+        child: Padding(
+          padding: const EdgeInsets.all(AppleSpacing.lg),
+          child: _buildAnalysisScopePanel(
+            fillRemaining: true,
+            expandedBody: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _buildPrecheckChildren(),
+              ),
+            ),
+          ),
         ),
       );
     }

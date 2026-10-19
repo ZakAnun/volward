@@ -395,6 +395,20 @@
   "aiPreCheckTreeCreditsMayGrow": "目录树展开后，实际 credits 可能高于上述 plan 下限。",
   "aiPreCheckSelectAllShown": "全选当前列表",
   "aiPreCheckClearSelection": "清除选择",
+  "aiResultsScopeSummaryLine": "待 AI 分析 {unknownCount} · 本地可删 {localDeletableCount}",
+  "@aiResultsScopeSummaryLine": {
+    "placeholders": {
+      "unknownCount": {"type": "int"},
+      "localDeletableCount": {"type": "int"}
+    }
+  },
+  "aiResultsScopeUnknownSampleHeader": "待 AI 判定的路径示例",
+  "aiResultsScopeUnknownSampleFooter": "还有 {remaining} 项 — 分析后将逐条给出结论",
+  "@aiResultsScopeUnknownSampleFooter": {
+    "placeholders": {
+      "remaining": {"type": "int"}
+    }
+  },
   "aiStartAnalysis": "开始 AI 分析",
   "aiNoApiKey": "未配置 API Key — 请在设置中配置",
   "aiContractUnavailable": "当前原生库版本过旧，请更新 Volward 后再使用 AI 分析。",

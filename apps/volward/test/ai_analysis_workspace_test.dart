@@ -513,32 +513,52 @@ Future<void> _pumpUntilOverviewHub(WidgetTester tester) async {
   await _pumpUntilFound(
     tester,
     find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    maxAttempts: 360,
   );
 }
 
+Future<void> _pumpUntilScopePrecheckContent(
+  WidgetTester tester,
+  Finder finder,
+) async {
+  await _pumpUntilOverviewHub(tester);
+  for (var frame = 0; frame < 120; frame++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  for (var attempt = 0; attempt < 24; attempt++) {
+    if (finder.evaluate().isNotEmpty) return;
+    final scrollables = find.byType(Scrollable);
+    if (scrollables.evaluate().isEmpty) break;
+    await tester.drag(scrollables.first, const Offset(0, -280));
+    await tester.pumpAndSettle();
+  }
+  await _pumpUntilFound(tester, finder, maxAttempts: 240);
+}
+
 Future<void> _tapWorkspaceStartAnalysis(WidgetTester tester) async {
+  Future<void> tapWhenFound(Finder control) async {
+    final scrollables = find.byType(Scrollable);
+    if (scrollables.evaluate().isNotEmpty) {
+      await tester.scrollUntilVisible(
+        control,
+        120,
+        scrollable: scrollables.first,
+      );
+    } else {
+      await tester.ensureVisible(control);
+    }
+    await tester.tap(control);
+  }
+
   final analyzeAgain = find.byKey(AiAnalysisWorkspace.analyzeAgainKey);
   final startAnalysis = find.byKey(AiAnalysisWorkspace.startAnalysisKey);
   if (startAnalysis.evaluate().isNotEmpty) {
-    await tester.ensureVisible(startAnalysis);
-    await tester.tap(startAnalysis);
+    await tapWhenFound(startAnalysis);
     return;
   }
   if (analyzeAgain.evaluate().isNotEmpty) {
-    final scrollable = find.descendant(
-      of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      matching: find.byType(Scrollable),
-    );
-    if (scrollable.evaluate().isNotEmpty) {
-      await tester.scrollUntilVisible(
-        analyzeAgain,
-        48,
-        scrollable: scrollable.first,
-      );
-    } else {
-      await tester.ensureVisible(analyzeAgain);
-    }
-    await tester.tap(analyzeAgain);
+    await tapWhenFound(analyzeAgain);
     return;
   }
   for (final finder in [
@@ -556,7 +576,11 @@ Future<void> _tapWorkspaceStartAnalysis(WidgetTester tester) async {
 }
 
 Future<void> _pumpUntilAnalyzedOverview(WidgetTester tester) async {
-  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.resultsHeroKey));
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.resultsHeroKey),
+    maxAttempts: 360,
+  );
 }
 
 Future<void> _openResultsOnOverview(
@@ -954,6 +978,7 @@ void main() {
       find.byKey(AiAnalysisWorkspace.resultsScopePanelKey),
       findsOneWidget,
     );
+    expect(find.textContaining('safe.cache'), findsOneWidget);
   });
 
   testWidgets('cached result auto-loads on bootstrap', (tester) async {
@@ -999,7 +1024,7 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
+    await _pumpUntilScopePrecheckContent(
       tester,
       find.textContaining('Locally resolved: 1000 files'),
     );
@@ -1009,6 +1034,10 @@ void main() {
     expect(find.textContaining('Estimated tail rounds: ~5'), findsOneWidget);
     expect(find.textContaining('Total estimated credits: ~20'), findsOneWidget);
     expect(find.textContaining('Estimated for full analysis'), findsNothing);
+    await _pumpUntilScopePrecheckContent(
+      tester,
+      find.textContaining('Account balance: 100 credits'),
+    );
     expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
   });
 
@@ -1027,7 +1056,7 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
+    await _pumpUntilScopePrecheckContent(
       tester,
       find.textContaining('Estimated for full analysis'),
     );
@@ -1067,7 +1096,7 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
+    await _pumpUntilScopePrecheckContent(
       tester,
       find.textContaining('Run cap for this scan: $expectedRunCap credits'),
     );
@@ -1093,7 +1122,7 @@ void main() {
       ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
+    await _pumpUntilScopePrecheckContent(
       tester,
       find.textContaining('Need about 23 credits; you have 7.'),
     );
@@ -1146,7 +1175,7 @@ void main() {
         ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
       await tester.pumpWidget(_workspaceShell(gateway));
-      await _pumpUntilFound(
+      await _pumpUntilScopePrecheckContent(
         tester,
         find.textContaining('Single-run limit (1 credits)'),
       );
@@ -1186,8 +1215,17 @@ void main() {
       ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(tester, find.text('Raise limit to match estimate'));
-    await tester.tap(find.text('Raise limit to match estimate'));
+    await _pumpUntilScopePrecheckContent(
+      tester,
+      find.text('Raise limit to match estimate'),
+    );
+    final raiseLimit = find.text('Raise limit to match estimate');
+    await tester.scrollUntilVisible(
+      raiseLimit,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(raiseLimit);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Raise limit & resume'));
     await tester.pumpAndSettle();
@@ -1219,7 +1257,7 @@ void main() {
       ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
+    await _pumpUntilScopePrecheckContent(
       tester,
       find.textContaining('Loading coverage job status'),
     );
@@ -3093,7 +3131,7 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
+    await _pumpUntilScopePrecheckContent(
       tester,
       find.text('No API calls needed for this scan'),
     );
@@ -3134,7 +3172,10 @@ void main() {
       await tester.pumpWidget(
         _workspaceShell(gateway, coverageJobState: persistedJob),
       );
-      await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+      await _pumpUntilScopePrecheckContent(
+        tester,
+        find.text('Start AI Analysis'),
+      );
 
       expect(find.text('Raise limit & resume'), findsOneWidget);
       expect(find.byKey(AiAnalysisWorkspace.decisionSummaryKey), findsNothing);

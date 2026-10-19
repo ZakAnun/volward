@@ -595,6 +595,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiPreCheckClearSelection => '清除选择';
 
   @override
+  String aiResultsScopeSummaryLine(int unknownCount, int localDeletableCount) {
+    return '待 AI 分析 $unknownCount · 本地可删 $localDeletableCount';
+  }
+
+  @override
+  String get aiResultsScopeUnknownSampleHeader => '待 AI 判定的路径示例';
+
+  @override
+  String aiResultsScopeUnknownSampleFooter(int remaining) {
+    return '还有 $remaining 项 — 分析后将逐条给出结论';
+  }
+
+  @override
   String get aiStartAnalysis => '开始 AI 分析';
 
   @override

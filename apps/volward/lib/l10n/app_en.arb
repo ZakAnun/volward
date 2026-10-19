@@ -395,6 +395,20 @@
   "aiPreCheckTreeCreditsMayGrow": "Directory tree analysis may use more credits than this plan minimum.",
   "aiPreCheckSelectAllShown": "Select all shown",
   "aiPreCheckClearSelection": "Clear selection",
+  "aiResultsScopeSummaryLine": "{unknownCount} awaiting AI · {localDeletableCount} locally removable",
+  "@aiResultsScopeSummaryLine": {
+    "placeholders": {
+      "unknownCount": {"type": "int"},
+      "localDeletableCount": {"type": "int"}
+    }
+  },
+  "aiResultsScopeUnknownSampleHeader": "Sample paths awaiting AI",
+  "aiResultsScopeUnknownSampleFooter": "{remaining} more items — verdicts appear after analysis",
+  "@aiResultsScopeUnknownSampleFooter": {
+    "placeholders": {
+      "remaining": {"type": "int"}
+    }
+  },
   "aiStartAnalysis": "Start AI Analysis",
   "aiNoApiKey": "No API Key — configure in Settings",
   "aiContractUnavailable": "The installed native library is out of date. Please update Volward to use AI analysis.",

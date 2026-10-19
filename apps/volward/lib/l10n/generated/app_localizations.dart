@@ -1099,6 +1099,24 @@ abstract class AppLocalizations {
   /// **'Clear selection'**
   String get aiPreCheckClearSelection;
 
+  /// No description provided for @aiResultsScopeSummaryLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{unknownCount} awaiting AI · {localDeletableCount} locally removable'**
+  String aiResultsScopeSummaryLine(int unknownCount, int localDeletableCount);
+
+  /// No description provided for @aiResultsScopeUnknownSampleHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Sample paths awaiting AI'**
+  String get aiResultsScopeUnknownSampleHeader;
+
+  /// No description provided for @aiResultsScopeUnknownSampleFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'{remaining} more items — verdicts appear after analysis'**
+  String aiResultsScopeUnknownSampleFooter(int remaining);
+
   /// No description provided for @aiStartAnalysis.
   ///
   /// In en, this message translates to:

@@ -625,6 +625,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiPreCheckClearSelection => 'Clear selection';
 
   @override
+  String aiResultsScopeSummaryLine(int unknownCount, int localDeletableCount) {
+    return '$unknownCount awaiting AI · $localDeletableCount locally removable';
+  }
+
+  @override
+  String get aiResultsScopeUnknownSampleHeader => 'Sample paths awaiting AI';
+
+  @override
+  String aiResultsScopeUnknownSampleFooter(int remaining) {
+    return '$remaining more items — verdicts appear after analysis';
+  }
+
+  @override
   String get aiStartAnalysis => 'Start AI Analysis';
 
   @override
