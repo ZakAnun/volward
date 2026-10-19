@@ -2296,6 +2296,24 @@ abstract class AppLocalizations {
   /// **'AI kept'**
   String get aiResultsMetricKeepSubtitle;
 
+  /// No description provided for @aiResultsPreviewSafeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe to remove'**
+  String get aiResultsPreviewSafeTitle;
+
+  /// No description provided for @aiResultsPreviewReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs your decision'**
+  String get aiResultsPreviewReviewTitle;
+
+  /// No description provided for @aiResultsPreviewViewAll.
+  ///
+  /// In en, this message translates to:
+  /// **'View all {count} items'**
+  String aiResultsPreviewViewAll(int count);
+
   /// No description provided for @aiResultsPendingPreviewTitle.
   ///
   /// In en, this message translates to:

@@ -41,6 +41,7 @@ import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'ai_analysis_activity_card.dart';
 import 'ai_analysis_scope_panel.dart';
+import 'ai_result_entry_tile.dart';
 import 'ai_results_hub.dart';
 import 'coverage_job_banner.dart';
 import 'apple_widgets.dart';
@@ -590,6 +591,8 @@ class AiAnalysisWorkspace extends StatefulWidget {
   );
   static const resultsMetricKeepKey = Key('ai-analysis-results-metric-keep');
   static const pendingPreviewKey = Key('ai-analysis-pending-preview');
+  static const resultsPreviewSafeKey = Key('ai-results-preview-safe');
+  static const resultsPreviewReviewKey = Key('ai-results-preview-review');
   static const backToConclusionsKey = Key('ai-analysis-back-to-conclusions');
   static const conclusionNarrativeKey = Key('ai-analysis-conclusion-narrative');
   static const conclusionNarrativeLoadingKey = Key(
@@ -4711,6 +4714,26 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     return [...list]..sort(_compareVisibleItems);
   }
 
+  List<AiVerdict> _previewSafeVerdicts() {
+    final list = _verdicts
+        .where((item) => item.verdict == 'safe_to_remove')
+        .toList(growable: false);
+    list.sort((left, right) {
+      final sizeOrder = (_sizeByPath[right.path] ?? 0).compareTo(
+        _sizeByPath[left.path] ?? 0,
+      );
+      if (sizeOrder != 0) return sizeOrder;
+      return left.path.compareTo(right.path);
+    });
+    return list.take(kAiResultsPreviewItemCap).toList(growable: false);
+  }
+
+  List<AiVerdict> _previewReviewVerdicts() {
+    return _pendingReviewVerdicts()
+        .take(kAiResultsPreviewItemCap)
+        .toList(growable: false);
+  }
+
   /// Safe-item count aligned with [buildAiAnalysisConclusionOverview] / group rollups.
   int _conclusionSafeItemCount() {
     if (_useFullCoverage && _coverageResultsLoadTruncated) {
@@ -5026,7 +5049,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                         const SizedBox(height: AppleSpacing.sm),
                         _buildResultsMetricCards(overview, l10n),
                         const SizedBox(height: AppleSpacing.sm),
-                        if (overview.reviewCount > 0)
+                        if (_resultsHubMode() == ResultsHubMode.ready) ...[
+                          if (_conclusionSafeItemCount() > 0) ...[
+                            _buildResultsPreviewSafeBlock(l10n),
+                            const SizedBox(height: AppleSpacing.sm),
+                          ],
+                          if (_pendingReviewVerdicts().isNotEmpty)
+                            _buildResultsPreviewReviewBlock(l10n)
+                          else
+                            _buildNoPendingReviewHint(overview, l10n),
+                        ] else if (overview.reviewCount > 0)
                           _buildPendingReviewPreview(l10n)
                         else
                           _buildNoPendingReviewHint(overview, l10n),
@@ -5236,6 +5268,106 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
                 borderRadius: BorderRadius.circular(AppleRadius.sm),
                 child: child,
               ),
+      ),
+    );
+  }
+
+  Widget _buildResultsPreviewSafeBlock(AppLocalizations l10n) {
+    final items = _previewSafeVerdicts();
+    final total = _conclusionSafeItemCount();
+    return KeyedSubtree(
+      key: AiAnalysisWorkspace.resultsPreviewSafeKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l10n.aiResultsPreviewSafeTitle, style: context.vwBodyStrong),
+          const SizedBox(height: AppleSpacing.xs),
+          for (final item in items) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppleSpacing.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Checkbox(
+                    key: Key('ai-results-preview-safe-check:${item.path}'),
+                    value: _selected.contains(item.path),
+                    onChanged: (value) => _toggle(item.path, value),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  const SizedBox(width: AppleSpacing.xxs),
+                  Expanded(
+                    child: AiResultEntryTile(
+                      key: ValueKey<String>(
+                        'ai-results-preview-safe-item:${item.path}',
+                      ),
+                      item: item,
+                      sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
+                      variant: AiResultEntryTileVariant.previewSafe,
+                      cleanupMeta: _cleanupMetaLabel(item),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (total > items.length)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => _openDetailList(
+                  initialFilter: _ResultFilterMode.safeToRemove,
+                ),
+                child: Text(l10n.aiResultsPreviewViewAll(total)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultsPreviewReviewBlock(AppLocalizations l10n) {
+    final items = _previewReviewVerdicts();
+    final total = _pendingReviewVerdicts().length;
+    return KeyedSubtree(
+      key: AiAnalysisWorkspace.resultsPreviewReviewKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l10n.aiResultsPreviewReviewTitle, style: context.vwBodyStrong),
+          const SizedBox(height: AppleSpacing.xs),
+          for (final item in items) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppleSpacing.sm),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _openReviewQueue(),
+                  child: AiResultEntryTile(
+                    key: ValueKey<String>(
+                      'ai-results-preview-review-item:${item.path}',
+                    ),
+                    item: item,
+                    sizeLabel: _formatBytes(_sizeByPath[item.path] ?? 0),
+                    variant: AiResultEntryTileVariant.previewReview,
+                    cleanupMeta: _cleanupMetaLabel(item),
+                    reviewStatusLabel: _reviewStatusLabel(
+                      _reviewDecisions[item.path] ?? _ReviewDecision.pending,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (total > items.length)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _openReviewQueue,
+                child: Text(l10n.aiResultsPreviewViewAll(total)),
+              ),
+            ),
+        ],
       ),
     );
   }

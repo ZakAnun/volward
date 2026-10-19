@@ -1043,6 +1043,14 @@
   },
   "aiResultsMetricReviewSubtitle": "待决定",
   "aiResultsMetricKeepSubtitle": "AI 保留",
+  "aiResultsPreviewSafeTitle": "可安全清理",
+  "aiResultsPreviewReviewTitle": "待你确认",
+  "aiResultsPreviewViewAll": "查看全部 {count} 项",
+  "@aiResultsPreviewViewAll": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "aiResultsPendingPreviewTitle": "需要你确认的项目",
   "aiResultsReviewQueuePrimary": "处理全部 {count} 项待确认",
   "@aiResultsReviewQueuePrimary": {

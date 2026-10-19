@@ -2594,6 +2594,81 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.reviewQueueKey), findsOneWidget);
   });
 
+  testWidgets('overview preview blocks show safe and review entry tiles', (
+    tester,
+  ) async {
+    await _openResultsOnOverview(tester, _FakeGateway());
+
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsPreviewSafeKey),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsPreviewReviewKey),
+      findsOneWidget,
+    );
+    expect(find.text('Rebuildable cache'), findsOneWidget);
+    expect(find.textContaining('uncertain ownership'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ai-results-preview-safe-item:/tmp/safe.cache'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'overview safe preview caps at six items and view all opens list',
+    (tester) async {
+      final result = [
+        for (var index = 0; index < 7; index++)
+          AiVerdict(
+            path: '/tmp/item-$index.cache',
+            verdict: 'safe_to_remove',
+            confidence: 'high',
+            reason: index == 0 ? 'Rebuildable cache' : 'Other cache $index',
+          ),
+      ];
+      final candidatesJson = _candidatePayload(
+        unknownCandidates: [
+          for (var index = 0; index < 7; index++)
+            {
+              'path': '/tmp/item-$index.cache',
+              'size_bytes': (7 - index) * 100,
+              'is_dir': false,
+            },
+        ],
+      );
+
+      await _openResultsOnOverview(
+        tester,
+        _FakeGateway(),
+        result: result,
+        candidatesJson: candidatesJson,
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey('ai-results-preview-safe-item:/tmp/item-0.cache'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('ai-results-preview-safe-item:/tmp/item-6.cache'),
+        ),
+        findsNothing,
+      );
+      await _scrollConclusionsUntilVisible(
+        tester,
+        find.text('View all 7 items'),
+      );
+      await tester.tap(find.text('View all 7 items'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    },
+  );
+
   testWidgets('overview shows hero and three metric cards', (tester) async {
     await _openResultsOnOverview(tester, _FakeGateway());
     expect(find.byKey(AiAnalysisWorkspace.resultsHeroKey), findsOneWidget);
@@ -3330,7 +3405,7 @@ void main() {
       find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
       findsOneWidget,
     );
-    expect(find.textContaining('AI:'), findsWidgets);
+    expect(find.textContaining('uncertain ownership'), findsOneWidget);
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.showAllResultsKey), findsOneWidget);
   });
@@ -3536,6 +3611,10 @@ void main() {
         );
       });
       expect(provider.synthesisRequests, isEmpty);
+      await _scrollConclusionsUntilVisible(
+        tester,
+        find.textContaining('These conclusions come from AI'),
+      );
       expect(
         find.textContaining('These conclusions come from AI'),
         findsOneWidget,

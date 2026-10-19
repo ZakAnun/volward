@@ -1043,6 +1043,14 @@
   },
   "aiResultsMetricReviewSubtitle": "Pending",
   "aiResultsMetricKeepSubtitle": "AI kept",
+  "aiResultsPreviewSafeTitle": "Safe to remove",
+  "aiResultsPreviewReviewTitle": "Needs your decision",
+  "aiResultsPreviewViewAll": "View all {count} items",
+  "@aiResultsPreviewViewAll": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "aiResultsPendingPreviewTitle": "Items needing your decision",
   "aiResultsReviewQueuePrimary": "Review all {count} pending items",
   "@aiResultsReviewQueuePrimary": {

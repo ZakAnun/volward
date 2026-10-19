@@ -1408,6 +1408,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsMetricKeepSubtitle => 'AI kept';
 
   @override
+  String get aiResultsPreviewSafeTitle => 'Safe to remove';
+
+  @override
+  String get aiResultsPreviewReviewTitle => 'Needs your decision';
+
+  @override
+  String aiResultsPreviewViewAll(int count) {
+    return 'View all $count items';
+  }
+
+  @override
   String get aiResultsPendingPreviewTitle => 'Items needing your decision';
 
   @override

@@ -1341,6 +1341,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultsMetricKeepSubtitle => 'AI 保留';
 
   @override
+  String get aiResultsPreviewSafeTitle => '可安全清理';
+
+  @override
+  String get aiResultsPreviewReviewTitle => '待你确认';
+
+  @override
+  String aiResultsPreviewViewAll(int count) {
+    return '查看全部 $count 项';
+  }
+
+  @override
   String get aiResultsPendingPreviewTitle => '需要你确认的项目';
 
   @override
