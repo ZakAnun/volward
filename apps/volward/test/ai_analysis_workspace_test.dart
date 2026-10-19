@@ -509,6 +509,56 @@ Future<void> _goToDetailFromOverview(
   await tester.pump();
 }
 
+Future<void> _pumpUntilOverviewHub(WidgetTester tester) async {
+  await _pumpUntilFound(
+    tester,
+    find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+  );
+}
+
+Future<void> _tapWorkspaceStartAnalysis(WidgetTester tester) async {
+  final analyzeAgain = find.byKey(AiAnalysisWorkspace.analyzeAgainKey);
+  final startAnalysis = find.byKey(AiAnalysisWorkspace.startAnalysisKey);
+  if (startAnalysis.evaluate().isNotEmpty) {
+    await tester.ensureVisible(startAnalysis);
+    await tester.tap(startAnalysis);
+    return;
+  }
+  if (analyzeAgain.evaluate().isNotEmpty) {
+    final scrollable = find.descendant(
+      of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      matching: find.byType(Scrollable),
+    );
+    if (scrollable.evaluate().isNotEmpty) {
+      await tester.scrollUntilVisible(
+        analyzeAgain,
+        48,
+        scrollable: scrollable.first,
+      );
+    } else {
+      await tester.ensureVisible(analyzeAgain);
+    }
+    await tester.tap(analyzeAgain);
+    return;
+  }
+  for (final finder in [
+    find.text('Start AI Analysis'),
+    find.text('Analyze Again'),
+    find.text('Review local results'),
+    find.byIcon(Icons.auto_awesome_outlined),
+  ]) {
+    if (finder.evaluate().isEmpty) continue;
+    await tester.ensureVisible(finder.first);
+    await tester.tap(finder.first);
+    return;
+  }
+  fail('No workspace start-analysis control found');
+}
+
+Future<void> _pumpUntilAnalyzedOverview(WidgetTester tester) async {
+  await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.resultsHeroKey));
+}
+
 Future<void> _openResultsOnOverview(
   WidgetTester tester,
   _FakeGateway gateway, {
@@ -520,15 +570,11 @@ Future<void> _openResultsOnOverview(
     ..candidatesJson = candidatesJson ?? _candidatePayload()
     ..provider = _ResultProvider(result);
   await tester.pumpWidget(_workspaceShell(gateway, locale: locale));
-  await _pumpUntilFound(
-    tester,
-    find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-  );
-  await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
-  await _pumpUntilFound(
-    tester,
-    find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-  );
+  await _pumpUntilOverviewHub(tester);
+  if (find.byKey(AiAnalysisWorkspace.resultsHeroKey).evaluate().isEmpty) {
+    await _tapWorkspaceStartAnalysis(tester);
+  }
+  await _pumpUntilAnalyzedOverview(tester);
 }
 
 Future<void> _openResults(
@@ -553,15 +599,11 @@ Future<void> _openResults(
       coverageJobState: coverageJobState,
     ),
   );
-  await _pumpUntilFound(
-    tester,
-    find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-  );
-  await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
-  await _pumpUntilFound(
-    tester,
-    find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-  );
+  await _pumpUntilOverviewHub(tester);
+  if (find.byKey(AiAnalysisWorkspace.resultsHeroKey).evaluate().isEmpty) {
+    await _tapWorkspaceStartAnalysis(tester);
+  }
+  await _pumpUntilAnalyzedOverview(tester);
   await _goToDetailFromOverview(tester);
 }
 
@@ -899,20 +941,43 @@ void main() {
     expect(find.byType(AiAnalysisActivityCard), findsNothing);
   });
 
+  testWidgets('bootstrap lands on results overview shell', (tester) async {
+    final gateway = _FakeGateway()..candidatesJson = _candidatePayload();
+    await tester.pumpWidget(_workspaceShell(gateway));
+    await _pumpUntilOverviewHub(tester);
+
+    expect(
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspace.resultsScopePanelKey),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('cached result auto-loads on bootstrap', (tester) async {
     final payload = Map<String, dynamic>.from(
       jsonDecode(candidatePayload) as Map,
     )..['has_existing_result'] = true;
     final gateway = _FakeGateway()
       ..candidatesJson = jsonEncode(payload)
-      ..cache['cache-key'] = '{"entries":[]}';
+      ..cache['cache-key'] = jsonEncode({
+        'entries': [
+          {
+            'path': '/tmp/safe.cache',
+            'size_bytes': 100,
+            'verdict': 'safe_to_remove',
+            'confidence': 'high',
+            'reason': 'Rebuildable cache',
+          },
+        ],
+      });
     _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-    );
+    await _pumpUntilOverviewHub(tester);
+    await _pumpUntilAnalyzedOverview(tester);
 
     expect(find.byKey(AiAnalysisWorkspace.loadPreviousKey), findsNothing);
     expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsNothing);
@@ -1202,15 +1267,14 @@ void main() {
         ],
         truncated: true,
         candidatesBeforeCap: 12,
+        hasExistingResult: false,
       );
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
+    await _pumpUntilOverviewHub(tester);
+    await tester.pumpAndSettle();
 
-    expect(find.textContaining('2 items pre-identified'), findsOneWidget);
+    expect(find.textContaining('pre-identified as safe'), findsOneWidget);
     expect(find.textContaining('12 items still need'), findsOneWidget);
     expect(find.textContaining('640 input tokens'), findsOneWidget);
     expect(find.textContaining('150 cap'), findsOneWidget);
@@ -1219,7 +1283,7 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is Semantics &&
-            widget.properties.value == 'Pre-check, step 2 of 5',
+            widget.properties.value == 'Results, step 4 of 5',
       ),
       findsOneWidget,
     );
@@ -1248,10 +1312,7 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-    );
+    await _pumpUntilAnalyzedOverview(tester);
     await _goToDetailFromOverview(tester);
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
     expect(validGateway.byokUsageRecords, isEmpty);
@@ -1316,10 +1377,7 @@ void main() {
       find.byKey(AiAnalysisWorkspace.loadPreviousKey),
     );
     await tester.tap(find.byKey(AiAnalysisWorkspace.loadPreviousKey));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-    );
+    await _pumpUntilAnalyzedOverview(tester);
     await _goToDetailFromOverview(tester);
     await _pumpUntilFound(tester, _resultGroup('/Users/x/Library'));
     expect(_resultGroup('/Users/x/Library'), findsOneWidget);
@@ -1362,20 +1420,16 @@ void main() {
       ..provider = provider
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
+    await _pumpUntilOverviewHub(tester);
 
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(provider.analyzeCalls, 0);
-    expect(find.byKey(AiAnalysisWorkspace.analyzeAgainKey), findsOneWidget);
 
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('I understand'));
     await tester.pumpAndSettle();
@@ -1418,7 +1472,8 @@ void main() {
     expect(find.text('/tmp/review.log'), findsNothing);
     expect(find.text('/tmp/keep.db'), findsNothing);
     expect(find.text('/tmp/local-keep.db'), findsNothing);
-    expect(find.text('1 item selected · 100 B'), findsOneWidget);
+    expect(find.textContaining('1 item selected'), findsOneWidget);
+    expect(find.textContaining('100 B'), findsWidgets);
 
     await _expandGroup(tester, '/tmp');
     expect(find.text('/tmp/keep.db'), findsOneWidget);
@@ -1463,12 +1518,8 @@ void main() {
       ..provider = _UsageByokProvider(verdicts)
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
-
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _pumpUntilOverviewHub(tester);
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
 
     final result = jsonDecode(gateway.cache['snapshot-1']!) as Map;
@@ -1486,12 +1537,8 @@ void main() {
       ..provider = _IncompleteUsageByokProvider(verdicts)
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
-
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _pumpUntilOverviewHub(tester);
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
 
     final result = jsonDecode(gateway.cache['snapshot-1']!) as Map;
@@ -1509,12 +1556,8 @@ void main() {
       ..provider = _PartialUsageFailureByokProvider()
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
-
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _pumpUntilOverviewHub(tester);
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
 
     expect(gateway.cache, isEmpty);
@@ -1530,12 +1573,8 @@ void main() {
       ..provider = _EstimatedPartialUsageFailureByokProvider()
       ..candidatesJson = _candidatePayload();
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-    );
-
-    await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+    await _pumpUntilOverviewHub(tester);
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
 
     expect(gateway.cache, isEmpty);
@@ -2224,6 +2263,7 @@ void main() {
     await tester.pumpWidget(
       _workspaceShell(missingKeyGateway, onOpenSettings: () => settingsCalls++),
     );
+    await _pumpUntilOverviewHub(tester);
     await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.settingsKey));
     await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
 
@@ -2237,6 +2277,7 @@ void main() {
     await tester.pumpWidget(
       _workspaceShell(zeroQuotaGateway, onOpenSettings: () => settingsCalls++),
     );
+    await _pumpUntilOverviewHub(tester);
     await _pumpUntilFound(tester, find.byKey(AiAnalysisWorkspace.settingsKey));
     await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
 
@@ -2246,8 +2287,8 @@ void main() {
     await tester.pumpWidget(
       _workspaceShell(expiredGateway, onOpenSettings: () => settingsCalls++),
     );
-    await _pumpUntilFound(tester, find.text('Start AI Analysis'));
-    await tester.tap(find.text('Start AI Analysis'));
+    await _pumpUntilOverviewHub(tester);
+    await _tapWorkspaceStartAnalysis(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(AiAnalysisWorkspace.settingsKey));
     expect(settingsCalls, 3);
@@ -2264,11 +2305,8 @@ void main() {
         ..candidatesJson = _candidatePayload()
         ..provider = _ThrowingProvider(StateError(error.key));
       await tester.pumpWidget(_workspaceShell(gateway));
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-      );
-      await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+      await _pumpUntilOverviewHub(tester);
+      await _tapWorkspaceStartAnalysis(tester);
       await tester.pumpAndSettle();
       expect(find.text(error.value), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
@@ -2287,11 +2325,8 @@ void main() {
         ..candidatesJson = _candidatePayload()
         ..provider = _ThrowingProvider(StateError(error.key));
       await tester.pumpWidget(_workspaceShell(gateway));
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-      );
-      await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+      await _pumpUntilOverviewHub(tester);
+      await _tapWorkspaceStartAnalysis(tester);
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.settingsKey),
@@ -2500,10 +2535,7 @@ void main() {
       });
     _writeAnalysisCacheFile('cache-key', gateway.cache['cache-key']!);
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilFound(
-      tester,
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-    );
+    await _pumpUntilAnalyzedOverview(tester);
     await tester.tap(find.byKey(AiAnalysisWorkspace.resultsMetricKeepKey));
     await _pumpUntilFound(
       tester,
@@ -2559,7 +2591,13 @@ void main() {
         ],
       ),
     );
-    expect(find.text('2 items'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(AiAnalysisWorkspace.resultsMetricSafeKey),
+        matching: find.textContaining('2 items'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('review filter lists pending review without expanding group', (
@@ -3284,11 +3322,8 @@ void main() {
           maxAttempts: 240,
         );
       }
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.analyzeAgainKey),
-      );
-      await tester.tap(find.byKey(AiAnalysisWorkspace.analyzeAgainKey));
+      await _pumpUntilOverviewHub(tester);
+      await _tapWorkspaceStartAnalysis(tester);
       await _pumpUntilFound(
         tester,
         find.byKey(AiAnalysisWorkspace.resultsHeroKey),

@@ -40,6 +40,7 @@ import '../snapshot_cache.dart';
 import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'ai_analysis_activity_card.dart';
+import 'ai_results_hub.dart';
 import 'coverage_job_banner.dart';
 import 'apple_widgets.dart';
 import 'top_toast.dart';
@@ -558,6 +559,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const backKey = Key('ai-analysis-back');
   static const loadPreviousKey = Key('ai-analysis-load-previous');
   static const analyzeAgainKey = Key('ai-analysis-analyze-again');
+  static const startAnalysisKey = Key('ai-analysis-start-analysis');
   static const settingsKey = Key('ai-analysis-open-settings');
   static const resultsListKey = Key('ai-analysis-results-list');
   static const summaryKey = Key('ai-analysis-summary');
@@ -572,6 +574,7 @@ class AiAnalysisWorkspace extends StatefulWidget {
   static const selectedSummaryKey = Key('ai-analysis-selected-summary');
   static const pendingReviewKey = Key('ai-analysis-pending-review');
   static const conclusionsOverviewKey = Key('ai-analysis-conclusions-overview');
+  static const resultsScopePanelKey = Key('ai-results-scope-panel');
   static const showAllResultsKey = Key('ai-analysis-show-all-results');
   static const detailListSecondaryKey = Key(
     'ai-analysis-detail-list-secondary',
@@ -632,6 +635,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   int _estimatedTokens = 0;
   int _estimatedByokBatchTokens = 0;
   bool _hasExistingResult = false;
+  bool _loadedEmptySuggestions = false;
   bool _candidatesBootstrapPending = false;
   bool _truncated = false;
   int _candidatesBeforeCap = 0;
@@ -1252,7 +1256,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         'sessionCoverage=${VolwardSession.instance?.hasAiCoverageApi ?? false}',
       );
       setState(() {
-        _phase = _Phase.precheck;
+        _phase = _Phase.loading;
         _candidatesBootstrapPending = true;
         _useFullCoverage = fullCoverageAvailable;
         _coverageHydrating = false;
@@ -1341,7 +1345,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
             ..clear()
             ..addAll(parsed.selected);
         }
-        _phase = preserveInteractivePhase ? _phase : _Phase.precheck;
+        if (!preserveInteractivePhase) {
+          _phase = _Phase.results;
+          _resultsView = _ResultsView.overview;
+        }
         _candidatesBootstrapPending = false;
         _useFullCoverage = AiCoverageCoordinator.instance.isAvailable;
         _coverageHydrated = !_useFullCoverage;
@@ -1464,7 +1471,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
     if (!_isCurrent(generation)) return false;
     if (confirmed != true) {
-      setState(() => _phase = _Phase.precheck);
+      setState(() {
+        _phase = _Phase.results;
+        _resultsView = _ResultsView.overview;
+      });
       return false;
     }
     await widget.gateway.setPrivacyAccepted(true);
@@ -1509,7 +1519,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!_isCurrent(generation)) return false;
       setState(() {
         _error = failureMessage;
-        _phase = _Phase.precheck;
+        _enterOverviewHub();
       });
       return false;
     }
@@ -1565,6 +1575,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         _selected.addAll(_selectedPathsForResults(verdicts));
         _expandedGroupPaths.addAll(_defaultExpandedGroupPaths());
         _hasExistingResult = true;
+        _loadedEmptySuggestions = verdicts.isEmpty;
         _error = null;
         _enterResultsPhase();
       });
@@ -1574,7 +1585,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       if (!_isCurrent(generation)) return false;
       setState(() {
         _error = failureMessage;
-        _phase = _Phase.precheck;
+        _enterOverviewHub();
       });
       return false;
     }
@@ -1608,6 +1619,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       _analyzing = true;
       _phase = _Phase.analyzing;
       _error = null;
+      _loadedEmptySuggestions = false;
       _resetResultsPresentation();
       _invalidateConclusionNarrative();
       _selected.clear();
@@ -1730,6 +1742,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           ..addAll(_selectedPathsForResults(enrichedVerdicts));
         _expandedGroupPaths.addAll(_defaultExpandedGroupPaths());
         _hasExistingResult = true;
+        _loadedEmptySuggestions = enrichedVerdicts.isEmpty;
         _analyzing = false;
         _enterResultsPhase();
       });
@@ -1757,7 +1770,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         setState(() {
           _error = context.l10n.aiInsufficientCredits;
           _analyzing = false;
-          _phase = _Phase.precheck;
+          _enterOverviewHub();
           _platformCredits = 0;
         });
         return;
@@ -1767,7 +1780,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
           _error = context.l10n.aiSettingsSessionExpired;
           _analyzing = false;
           _hasProvider = false;
-          _phase = _Phase.precheck;
+          _enterOverviewHub();
         });
         return;
       }
@@ -1790,7 +1803,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       };
       setState(() {
         _analyzing = false;
-        _phase = _Phase.precheck;
+        _enterOverviewHub();
         _hasProvider = configurationError ? false : _hasProvider;
         _error = _localizedAiError(error);
       });
@@ -1879,7 +1892,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
   /// Reopens the last session (legacy saved JSON or persisted coverage verdicts).
   Future<void> _maybeAutoRestorePreviousSession(int generation) async {
-    if (!_isCurrent(generation) || !mounted || _phase != _Phase.precheck) {
+    if (!_isCurrent(generation) ||
+        !mounted ||
+        _phase != _Phase.results ||
+        _verdicts.isNotEmpty) {
       return;
     }
 
@@ -2221,9 +2237,10 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     }
     // Persisted jobs surface on precheck as the banner only until the user
     // explicitly starts or resumes full coverage this visit.
-    if (_phase == _Phase.precheck &&
+    if (_resultsHubMode() != ResultsHubMode.ready &&
         !_analyzing &&
-        !_coverageUserEngagedFullRun) {
+        !_coverageUserEngagedFullRun &&
+        _verdicts.isEmpty) {
       if (!mounted) return;
       final terminal = _isTerminalCoverageJobStatus(state);
       setState(() {
@@ -2698,7 +2715,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         setState(() {
           _analyzing = false;
           _coverageUiPrefersAnalyzingPhase = false;
-          _phase = _Phase.precheck;
+          _enterOverviewHub();
           _error = null;
           _coverageCapBelowEstimate = true;
         });
@@ -2711,7 +2728,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
         setState(() {
           _analyzing = false;
           _coverageUiPrefersAnalyzingPhase = false;
-          _phase = _Phase.precheck;
+          _enterOverviewHub();
           _error = context.l10n.aiCoverageInsufficientForEstimate(
             needed,
             available,
@@ -2724,7 +2741,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       setState(() {
         _analyzing = false;
         _coverageUiPrefersAnalyzingPhase = false;
-        _phase = _Phase.precheck;
+        _enterOverviewHub();
         _error = context.l10n.aiCoverageUnavailable;
       });
       return;
@@ -3165,8 +3182,11 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     if (_deleting) return;
     final targets = _deleteTargets();
     if (targets.isEmpty) return;
-    final returnToPrecheck =
-        _phase == _Phase.precheck && _verdicts.isEmpty && !_analyzing;
+    final returnToOverviewHub =
+        _phase == _Phase.results &&
+        _resultsView == _ResultsView.overview &&
+        _verdicts.isEmpty &&
+        !_analyzing;
     final selectedPaths = Set<String>.from(_selected);
     final generation = _beginOperation();
     final l10n = context.l10n;
@@ -3251,7 +3271,8 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       );
       if (failedCount > 0) {
         setState(() {
-          _phase = returnToPrecheck ? _Phase.precheck : _Phase.results;
+          _phase = _Phase.results;
+          if (returnToOverviewHub) _resultsView = _ResultsView.overview;
           _partialDeleteFailedCount = failedCount;
           _partialDeleteFreedBytes = freedAfter;
           _retryTargets = failedTargets;
@@ -3264,7 +3285,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
       }
       completed = true;
       _retryTargets = [];
-      if (returnToPrecheck) {
+      if (returnToOverviewHub) {
         setState(() {
           _preClassified.removeWhere(
             (entry) => selectedPaths.contains(entry['path']?.toString() ?? ''),
@@ -3286,14 +3307,16 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     } catch (error) {
       if (!_isCurrent(generation)) return;
       setState(() {
-        _phase = returnToPrecheck ? _Phase.precheck : _Phase.results;
+        _phase = _Phase.results;
+        if (returnToOverviewHub) _resultsView = _ResultsView.overview;
         _error = l10n.deleteFailed(error.toString());
       });
     } finally {
       if (_isCurrent(generation)) {
         setState(() {
           _deleting = false;
-          _phase = returnToPrecheck ? _Phase.precheck : _Phase.results;
+          _phase = _Phase.results;
+          if (returnToOverviewHub) _resultsView = _ResultsView.overview;
         });
         widget.onDeletingChanged(false);
       }
@@ -3429,7 +3452,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     final l10n = context.l10n;
     return switch (_phase) {
       _Phase.loading => l10n.aiWorkspacePhaseLoading,
-      _Phase.precheck => l10n.aiWorkspacePhasePrecheck,
+      _Phase.precheck => l10n.aiResultsPhaseResults,
       _Phase.privacy => l10n.aiWorkspacePhasePrivacy,
       _Phase.analyzing => l10n.aiWorkspacePhaseAnalyzing,
       _Phase.results => switch (_resultsView) {
@@ -3453,7 +3476,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
   Widget _buildPhaseBody() {
     return switch (_phase) {
       _Phase.loading => _buildProgressBody(),
-      _Phase.precheck || _Phase.privacy => _buildPrecheck(),
+      _Phase.precheck || _Phase.privacy => _buildResultsSurface(),
       _Phase.analyzing => _wrapScrollHoldForRebuild(_buildAnalyzingBody()),
       _Phase.results ||
       _Phase.deleting => _wrapScrollHoldForRebuild(_buildResultsSurface()),
@@ -3952,7 +3975,7 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
               AppleButton(
                 key: _hasExistingResult
                     ? AiAnalysisWorkspace.analyzeAgainKey
-                    : null,
+                    : AiAnalysisWorkspace.startAnalysisKey,
                 label: _hasExistingResult
                     ? l10n.aiWorkspaceAnalyzeAgain
                     : l10n.aiStartAnalysis,
@@ -4525,6 +4548,24 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
     );
   }
 
+  void _enterOverviewHub() {
+    _phase = _Phase.results;
+    _resultsView = _ResultsView.overview;
+  }
+
+  ResultsHubMode _resultsHubMode() {
+    final job = _coverageJobState;
+    final coverageRunning =
+        job != null &&
+        job.snapshotId == widget.snapshotId &&
+        job.status == CoverageJobStatus.running;
+    return resolveResultsHubMode(
+      analyzing: _analyzing,
+      hasAnalyzedVerdicts: _verdicts.isNotEmpty,
+      coverageRunning: coverageRunning,
+    );
+  }
+
   void _enterResultsPhase({bool showOverview = true}) {
     final entering = _phase != _Phase.results && _phase != _Phase.deleting;
     _phase = _Phase.results;
@@ -4819,10 +4860,19 @@ class _AiAnalysisWorkspaceState extends State<AiAnalysisWorkspace> {
 
     final overview = _buildConclusionOverviewModel();
     final l10n = context.l10n;
-    if (overview.analyzedItemCount == 0) {
+    if (_verdicts.isEmpty) {
+      if (_loadedEmptySuggestions) {
+        return KeyedSubtree(
+          key: AiAnalysisWorkspace.conclusionsOverviewKey,
+          child: Center(child: _buildResultsEmptyState(filtered: false)),
+        );
+      }
       return KeyedSubtree(
         key: AiAnalysisWorkspace.conclusionsOverviewKey,
-        child: Center(child: _buildResultsEmptyState(filtered: false)),
+        child: KeyedSubtree(
+          key: AiAnalysisWorkspace.resultsScopePanelKey,
+          child: _buildPrecheck(),
+        ),
       );
     }
     final shareRoot = overview.shareOfRootPct != null
