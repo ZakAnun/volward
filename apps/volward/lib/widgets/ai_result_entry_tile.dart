@@ -35,6 +35,7 @@ class AiResultEntryTile extends StatelessWidget {
     this.cleanupMeta,
     this.reviewStatusLabel,
     this.maxReasonLines = 3,
+    this.showInlineSize = true,
   });
 
   final AiVerdict item;
@@ -43,6 +44,7 @@ class AiResultEntryTile extends StatelessWidget {
   final String? cleanupMeta;
   final String? reviewStatusLabel;
   final int maxReasonLines;
+  final bool showInlineSize;
 
   @override
   Widget build(BuildContext context) {
@@ -68,11 +70,14 @@ class AiResultEntryTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.vwCaptionStrong,
+                  Semantics(
+                    value: item.path,
+                    child: Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.vwCaptionStrong,
+                    ),
                   ),
                   if (parentPath != null) ...[
                     const SizedBox(height: AppleSpacing.xxs),
@@ -88,14 +93,16 @@ class AiResultEntryTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: AppleSpacing.sm),
-            Text(
-              sizeLabel,
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.vwCaptionStrong,
-            ),
+            if (showInlineSize) ...[
+              const SizedBox(width: AppleSpacing.sm),
+              Text(
+                sizeLabel,
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.vwCaptionStrong,
+              ),
+            ],
           ],
         ),
         if (item.reason.isNotEmpty) ...[
@@ -111,7 +118,8 @@ class AiResultEntryTile extends StatelessWidget {
           const SizedBox(height: AppleSpacing.xxs),
           Text(metaLine, style: context.vwCaption),
         ],
-        if (variant == AiResultEntryTileVariant.previewReview &&
+        if ((variant == AiResultEntryTileVariant.previewReview ||
+                variant == AiResultEntryTileVariant.listRow) &&
             reviewLabel != null &&
             reviewLabel.isNotEmpty) ...[
           const SizedBox(height: AppleSpacing.xxs),

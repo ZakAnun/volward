@@ -6519,22 +6519,6 @@ class _ResultRow extends StatelessWidget {
     final tokens = context.volward;
     final isSafe = item.verdict == 'safe_to_remove';
     final isReview = item.verdict == 'review_needed';
-    final isUnanalyzed = item.verdict == 'unanalyzed';
-    final subtitle = switch (item.verdict) {
-      'safe_to_remove' => [
-        item.confidence,
-        if (item.reason.isNotEmpty) item.reason,
-        if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
-      ].join(' · '),
-      'review_needed' => reviewStatusLabel,
-      'unanalyzed' => item.reason,
-      _ => [
-        context.l10n.aiResultsMetricProtected,
-        item.confidence,
-        if (item.reason.isNotEmpty) item.reason,
-        if (cleanupMeta != null && cleanupMeta!.isNotEmpty) cleanupMeta!,
-      ].join(' · '),
-    };
     final leading = switch (item.verdict) {
       'safe_to_remove' => Checkbox(
         key: Key('ai-item-toggle:${item.path}'),
@@ -6555,25 +6539,13 @@ class _ResultRow extends StatelessWidget {
       ),
       _ => Icon(Icons.lock_outline, size: 18, color: tokens.inkMuted48),
     };
-    final titleBlock = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _PathLabel(item.path, style: context.vwCaptionStrong, maxLines: 2),
-        const SizedBox(height: AppleSpacing.xxs),
-        Text(
-          subtitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: context.vwFinePrint.copyWith(
-            color: isReview
-                ? tokens.warning
-                : isUnanalyzed
-                ? tokens.inkMuted80
-                : null,
-          ),
-        ),
-      ],
+    final entryTile = AiResultEntryTile(
+      item: item,
+      sizeLabel: sizeLabel,
+      variant: AiResultEntryTileVariant.listRow,
+      cleanupMeta: cleanupMeta,
+      reviewStatusLabel: isReview ? reviewStatusLabel : null,
+      showInlineSize: false,
     );
     final sizeText = Text(
       sizeLabel,
@@ -6609,7 +6581,7 @@ class _ResultRow extends StatelessWidget {
                   children: [
                     SizedBox(width: 40, child: leading),
                     const SizedBox(width: AppleSpacing.xs),
-                    Expanded(child: titleBlock),
+                    Expanded(child: entryTile),
                   ],
                 ),
                 Padding(
@@ -6633,7 +6605,7 @@ class _ResultRow extends StatelessWidget {
             children: [
               SizedBox(width: 40, child: leading),
               const SizedBox(width: AppleSpacing.xs),
-              Expanded(child: titleBlock),
+              Expanded(child: entryTile),
               const SizedBox(width: AppleSpacing.sm),
               Padding(
                 padding: const EdgeInsets.only(top: 2),
