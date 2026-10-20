@@ -985,7 +985,8 @@ class _AiModePicker extends StatelessWidget {
     final options = [
       (AiMode.off, l10n.aiSettingsOffLabel, Icons.do_not_disturb_on_outlined),
       (AiMode.byok, l10n.aiSettingsByokLabel, Icons.key_outlined),
-      (AiMode.platform, l10n.aiSettingsPlatformLabel, Icons.cloud_outlined),
+      // Volward 平台入口暂时隐藏；恢复时取消下行注释。
+      // (AiMode.platform, l10n.aiSettingsPlatformLabel, Icons.cloud_outlined),
     ];
 
     return DecoratedBox(
