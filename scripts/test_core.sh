@@ -22,6 +22,25 @@ run_rust() {
   cargo test -p volward-platform-api
 }
 
+run_shell_architecture() {
+  bash "$root_dir/scripts/test_check_architecture.sh"
+  bash "$root_dir/scripts/check_architecture.sh"
+}
+
+run_dart_architecture() {
+  bash "$root_dir/scripts/test_check_dart_dependencies.sh"
+  dart "$root_dir/scripts/check_dart_dependencies.dart" \
+    --root "$root_dir" \
+    --accepted-cycles "$root_dir/scripts/architecture/accepted-dart-cycles.json" \
+    --check
+}
+
+run_cargo_architecture() {
+  bash "$root_dir/scripts/test_check_cargo_dependencies.sh"
+  python3 "$root_dir/scripts/check_cargo_dependencies.py" \
+    --root "$root_dir"
+}
+
 run_flutter() {
   bash "$root_dir/scripts/check_dart_format.sh"
   cd "$root_dir/apps/volward"
@@ -52,12 +71,19 @@ run_flutter() {
 
 case "$mode" in
   rust)
+    run_shell_architecture
+    run_cargo_architecture
     run_rust
     ;;
   flutter)
+    run_shell_architecture
+    run_dart_architecture
     run_flutter
     ;;
   all)
+    run_shell_architecture
+    run_dart_architecture
+    run_cargo_architecture
     run_rust
     run_flutter
     ;;

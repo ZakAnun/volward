@@ -155,7 +155,7 @@ describe('fitTourMockup', () => {
         toJSON: () => ({}),
       }),
       style: {
-        props: { '--tour-mockup-scale': '0.75' },
+        props: { '--tour-mockup-scale': '0.75' } as Record<string, string>,
         getPropertyValue(name: string) {
           return this.props[name] ?? '';
         },

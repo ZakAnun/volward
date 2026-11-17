@@ -1,0 +1,27 @@
+[
+  [
+    "ai/ai_conclusion_synthesis.dart",
+    "ai/ai_provider.dart",
+    "ai/ai_result_groups.dart",
+    "ai/ai_result_overview.dart"
+  ],
+  [
+    "ai/ai_coverage_job_controller.dart",
+    "ai/coverage_analyze_batch.dart",
+    "ai/coverage_analyze_tree_batch.dart"
+  ],
+  [
+    "ai/coverage_client_logic.dart",
+    "ai/coverage_job_state.dart"
+  ],
+  [
+    "analytics/analytics.dart",
+    "analytics/aptabase_analytics.dart",
+    "analytics/noop_analytics.dart"
+  ],
+  [
+    "l10n/generated/app_localizations.dart",
+    "l10n/generated/app_localizations_en.dart",
+    "l10n/generated/app_localizations_zh.dart"
+  ]
+]

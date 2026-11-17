@@ -3,7 +3,7 @@ use axum::Json;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::middleware::issue_token;
+use crate::auth::issue_token;
 use crate::error::AppError;
 use crate::AppState;
 
