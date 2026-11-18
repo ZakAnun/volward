@@ -5,6 +5,7 @@ import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/capabilities/capability_models.dart';
+import 'package:volward/infrastructure/ai/ai_workspace_ports.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
@@ -120,6 +121,7 @@ class _GatewayHostState extends State<_GatewayHost> {
       snapshotId: 'snapshot-1',
       targetLabel: 'Home',
       gateway: _gateway,
+      ports: createProductionAiWorkspacePorts(),
       onExit: () {},
       onOpenSettings: () {},
       onDeletingChanged: (_) {},

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/features/browse/scan_sort_mode.dart';
+import 'package:volward/features/browse/widgets/scan_column_view.dart';
 import 'package:volward/scan_tree.dart';
 import 'package:volward/snapshot_query.dart';
 import 'package:volward/theme/apple_tokens.dart';
 import 'package:volward/theme/volward_theme.dart';
-import 'package:volward/widgets/scan_column_view.dart';
-import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
   testWidgets('ScanColumnView renders a visible slice', (tester) async {

@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::ai_coverage_propagate::CoverageLocalVerdict;
 use crate::ai_candidates::{
     indexed_local_exclusion_prefixes, resolve_unclassified_for_ai, UnclassifiedAiRouting,
 };
+use crate::coverage_funnel::CoverageFunnelStats;
 use crate::index::SnapshotIndex;
 use crate::model::ScanStats;
 use crate::os_knowledge::OsKnowledgeBase;
@@ -62,6 +64,114 @@ impl AiCoveragePlan {
             None
         };
         (self.rows[start..end].to_vec(), next)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoveragePlanSummary {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub root_path: String,
+    pub root_size_bytes: u64,
+    pub scanned_at_ms: i64,
+    pub stats: ScanStats,
+    pub total_unclassified: u64,
+    pub pre_classified_count: u64,
+    pub group_rows: u64,
+    pub file_rows: u64,
+    pub estimated_pages: u64,
+    pub local_safe_files: u64,
+    pub local_keep_files: u64,
+    pub tail_files: u64,
+    pub tree_pending_files: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoveragePlanPage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub next_cursor: Option<u64>,
+    pub rows: Vec<AiCoverageRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageLocalVerdictPage {
+    pub verdicts: Vec<CoverageLocalVerdict>,
+    pub next_cursor: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageGroupMember {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageGroupResolution {
+    pub snapshot_id: String,
+    pub path: String,
+    pub members: Vec<CoverageGroupMember>,
+}
+
+pub fn coverage_plan_summary(
+    plan: &AiCoveragePlan,
+    funnel: CoverageFunnelStats,
+) -> CoveragePlanSummary {
+    CoveragePlanSummary {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: plan.plan_version,
+        root_path: plan.root_path.clone(),
+        root_size_bytes: plan.root_size_bytes,
+        scanned_at_ms: plan.scanned_at_ms,
+        stats: plan.stats.clone(),
+        total_unclassified: plan.total_unclassified,
+        pre_classified_count: plan.pre_classified_count,
+        group_rows: plan.group_rows,
+        file_rows: plan.file_rows,
+        estimated_pages: (plan.rows.len() as u64).div_ceil(40),
+        local_safe_files: funnel.local_safe_files,
+        local_keep_files: funnel.local_keep_files,
+        tail_files: funnel.tail_files,
+        tree_pending_files: funnel.tree_pending_files,
+    }
+}
+
+pub fn coverage_plan_page(
+    plan: &AiCoveragePlan,
+    cursor: u64,
+    page_size: usize,
+) -> CoveragePlanPage {
+    let (rows, next_cursor) = plan.page(cursor, page_size);
+    CoveragePlanPage {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: plan.plan_version,
+        next_cursor,
+        rows,
+    }
+}
+
+pub fn coverage_local_verdict_page(
+    verdicts: Vec<CoverageLocalVerdict>,
+    next_cursor: Option<u64>,
+) -> CoverageLocalVerdictPage {
+    CoverageLocalVerdictPage {
+        verdicts,
+        next_cursor,
+    }
+}
+
+pub fn coverage_group_resolution(
+    snapshot_id: &str,
+    group_path: &str,
+    members: Vec<(String, u64)>,
+) -> CoverageGroupResolution {
+    CoverageGroupResolution {
+        snapshot_id: snapshot_id.to_string(),
+        path: group_path.to_string(),
+        members: members
+            .into_iter()
+            .map(|(path, size_bytes)| CoverageGroupMember { path, size_bytes })
+            .collect(),
     }
 }
 

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/features/browse/widgets/scan_column_view.dart';
 import 'package:volward/home_page.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/scan_preview.dart';
@@ -13,7 +14,6 @@ import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/theme/volward_theme_settings.dart';
 import 'package:volward/updater/app_updater.dart';
 import 'package:volward/volward_session.dart';
-import 'package:volward/widgets/scan_column_view.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 
 StorageOverviewData _overviewData(String volumeName) {

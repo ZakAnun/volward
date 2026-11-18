@@ -1,6 +1,7 @@
 import 'dart:io';
 
-/// In-memory cache of native candidate build results keyed by [snapshotId].
+/// In-memory cache of native candidate build results keyed by owner and
+/// [snapshotId]. Callers that omit [ownerId] keep the legacy snapshot-only key.
 ///
 /// Survives Platform ↔ BYOK gateway swaps; cleared when the snapshot changes.
 /// A `spill:<path>` entry owns its temp file: readers must not delete it, and
@@ -16,49 +17,74 @@ class AiCandidatesMaterializedCache {
   final Map<String, String> _rawBySnapshot = {};
   final Map<String, Future<String?>> _inFlight = {};
 
-  String? peekRaw(String snapshotId) {
-    final raw = _rawBySnapshot[snapshotId];
+  String? peekRaw(String snapshotId, {String? ownerId}) {
+    final key = _cacheKey(snapshotId, ownerId);
+    final raw = _rawBySnapshot[key];
     if (raw == null) return null;
     final path = _spillPathOf(raw);
     if (path != null && !File(path).existsSync()) {
-      _rawBySnapshot.remove(snapshotId);
+      _rawBySnapshot.remove(key);
       return null;
     }
     return raw;
   }
 
-  void putRaw(String snapshotId, String raw) {
+  void putRaw(String snapshotId, String raw, {String? ownerId}) {
     if (raw.isEmpty || raw.startsWith('error:')) return;
-    final previous = _rawBySnapshot[snapshotId];
-    _rawBySnapshot[snapshotId] = raw;
+    final key = _cacheKey(snapshotId, ownerId);
+    final previous = _rawBySnapshot[key];
+    _rawBySnapshot[key] = raw;
     if (previous != null && previous != raw) _deleteSpill(previous);
   }
 
-  void clear(String snapshotId) {
-    final previous = _rawBySnapshot.remove(snapshotId);
+  void clear(String snapshotId, {String? ownerId}) {
+    if (ownerId == null) {
+      clearSnapshot(snapshotId);
+      return;
+    }
+    final key = _cacheKey(snapshotId, ownerId);
+    final previous = _rawBySnapshot.remove(key);
     if (previous != null) _deleteSpill(previous);
+  }
+
+  /// Clears the snapshot for every owner, including the legacy bare-snapshot
+  /// cache entry.
+  void clearSnapshot(String snapshotId) {
+    final suffix = ':snapshot:$snapshotId';
+    final keys = _rawBySnapshot.keys
+        .where((key) => key == snapshotId || key.endsWith(suffix))
+        .toList(growable: false);
+    for (final key in keys) {
+      final previous = _rawBySnapshot.remove(key);
+      if (previous != null) _deleteSpill(previous);
+    }
   }
 
   /// Returns cached raw payload or runs [load] once per snapshot in flight.
   Future<String?> loadOrReuse(
     String snapshotId,
-    Future<String?> Function() load,
-  ) {
-    final cached = peekRaw(snapshotId);
+    Future<String?> Function() load, {
+    String? ownerId,
+  }) {
+    final key = _cacheKey(snapshotId, ownerId);
+    final cached = peekRaw(snapshotId, ownerId: ownerId);
     if (cached != null) {
       return Future<String?>.value(cached);
     }
-    final existing = _inFlight[snapshotId];
+    final existing = _inFlight[key];
     if (existing != null) return existing;
     final future = load();
-    _inFlight[snapshotId] = future;
-    return future.whenComplete(() => _inFlight.remove(snapshotId)).then((raw) {
+    _inFlight[key] = future;
+    return future.whenComplete(() => _inFlight.remove(key)).then((raw) {
       if (raw != null && raw.isNotEmpty) {
-        putRaw(snapshotId, raw);
+        putRaw(snapshotId, raw, ownerId: ownerId);
       }
       return raw;
     });
   }
+
+  static String _cacheKey(String snapshotId, String? ownerId) =>
+      ownerId == null ? snapshotId : 'owner:$ownerId:snapshot:$snapshotId';
 
   static String? _spillPathOf(String raw) =>
       raw.startsWith(_spillPrefix) ? raw.substring(_spillPrefix.length) : null;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -11,6 +12,7 @@ import 'coverage_engine.dart';
 import 'coverage_models.dart';
 import 'coverage_native_responses.dart';
 import 'coverage_verdict_store.dart';
+import '../core/session/native_engine_lifetime.dart';
 
 /// FFI-backed [CoverageEngine] that delegates to Rust coverage plan APIs.
 class NativeCoverageEngine implements CoverageEngine {
@@ -19,13 +21,50 @@ class NativeCoverageEngine implements CoverageEngine {
     required this.engine,
     this.pageSize = 200,
     this.offloadHeavyCalls = true,
-  });
+    this.lifetime,
+  }) : _lease = null;
 
-  static final Map<String, Future<String>> _inFlightPlanJson = {};
+  NativeCoverageEngine._scoped(NativeCoverageEngine source, this._lease)
+    : bridge = source.bridge,
+      engine = source.engine,
+      pageSize = source.pageSize,
+      offloadHeavyCalls = source.offloadHeavyCalls,
+      lifetime = source.lifetime;
+
+  static final Map<(int, String, bool), Future<String>> _inFlightPlanJson = {};
+  static final Object _materializedReadScope = Object();
+
+  Future<T> withMaterializedReadScope<T>(Future<T> Function() action) async {
+    final child = _lease?.child();
+    if (child == null) return action();
+    try {
+      return await runZoned(
+        action,
+        zoneValues: {_materializedReadScope: (lifetime, child)},
+      );
+    } finally {
+      child.release();
+    }
+  }
 
   final VolwardNativeBridge bridge;
   final Pointer<Void> engine;
   final int pageSize;
+  final NativeEngineLifetime? lifetime;
+  final NativeEngineLease? _lease;
+
+  /// Creates a service-owned engine with admission reserved before close.
+  (NativeCoverageEngine, void Function()) scopedForService() {
+    final lease = lifetime?.scope();
+    if (lease == null) return (this, () {});
+    return (NativeCoverageEngine._scoped(this, lease), lease.release);
+  }
+
+  /// Retains the session engine for the lifetime of a coverage service.
+  void Function()? retain() => _lease?.retain() ?? lifetime?.retain();
+
+  Future<T> _guard<T>(Future<T> Function() action) =>
+      _lease?.guard(action) ?? lifetime?.guard(action) ?? action();
 
   /// Run per-file native scans (and their JSON decode) on a short-lived isolate.
   /// On large indexes each call takes long enough to freeze the UI isolate; set
@@ -43,7 +82,7 @@ class NativeCoverageEngine implements CoverageEngine {
     String snapshotId, {
     required bool tree,
   }) {
-    final key = '$snapshotId|tree=$tree';
+    final key = (engine.address, snapshotId, tree);
     final existing = _inFlightPlanJson[key];
     if (existing != null) return existing;
     final load = _fetchCoveragePlanJsonImpl(snapshotId, tree: tree);
@@ -139,31 +178,43 @@ class NativeCoverageEngine implements CoverageEngine {
     String snapshotId, {
     required bool tree,
   }) {
-    if (!bridge.hasAsyncAiCoveragePlanApi) return null;
-    if (bridge.isAiCoveragePlanBuilding(engine)) return null;
-    return parseMaterializedCoveragePlanJson(
-      raw: bridge.getAiCoveragePlanJson(engine),
-      snapshotId: snapshotId,
-      tree: tree,
-    );
+    final scope =
+        Zone.current[_materializedReadScope]
+            as (NativeEngineLifetime?, NativeEngineLease)?;
+    final release = scope != null && identical(scope.$1, lifetime)
+        ? scope.$2.retain()
+        : retain();
+    try {
+      if (!bridge.hasAsyncAiCoveragePlanApi) return null;
+      if (bridge.isAiCoveragePlanBuilding(engine)) return null;
+      return parseMaterializedCoveragePlanJson(
+        raw: bridge.getAiCoveragePlanJson(engine),
+        snapshotId: snapshotId,
+        tree: tree,
+      );
+    } finally {
+      release?.call();
+    }
   }
 
   @override
-  Future<CoveragePlanSummary> buildPlan(String snapshotId) async {
-    final raw = await _fetchCoveragePlanJson(snapshotId, tree: false);
-    final summary = parseCoveragePlanSummary(raw);
-    if (summary.snapshotId != snapshotId) {
-      throw CoverageEngineException('error:coverage plan snapshot mismatch');
-    }
-    return summary;
-  }
+  Future<CoveragePlanSummary> buildPlan(String snapshotId) async => _guard(
+    () async {
+      final raw = await _fetchCoveragePlanJson(snapshotId, tree: false);
+      final summary = parseCoveragePlanSummary(raw);
+      if (summary.snapshotId != snapshotId) {
+        throw CoverageEngineException('error:coverage plan snapshot mismatch');
+      }
+      return summary;
+    },
+  );
 
   @override
   Future<CoveragePage> nextPage(
     String snapshotId,
     int planVersion,
     int cursor,
-  ) async {
+  ) async => _guard(() async {
     final raw = _requireJson(
       bridge.nextAiCoveragePageJson(
         engine,
@@ -179,19 +230,20 @@ class NativeCoverageEngine implements CoverageEngine {
       throw CoverageEngineException('error:coverage page mismatch');
     }
     return page;
-  }
+  });
 
   @override
-  Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async {
-    final raw = await _fetchCoveragePlanJson(snapshotId, tree: true);
-    final summary = parseCoveragePlanSummary(raw);
-    if (summary.snapshotId != snapshotId) {
-      throw CoverageEngineException(
-        'error:tree coverage plan snapshot mismatch',
-      );
-    }
-    return summary;
-  }
+  Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async =>
+      _guard(() async {
+        final raw = await _fetchCoveragePlanJson(snapshotId, tree: true);
+        final summary = parseCoveragePlanSummary(raw);
+        if (summary.snapshotId != snapshotId) {
+          throw CoverageEngineException(
+            'error:tree coverage plan snapshot mismatch',
+          );
+        }
+        return summary;
+      });
 
   @override
   Future<CoverageTreePage> nextTreePage(
@@ -199,7 +251,7 @@ class NativeCoverageEngine implements CoverageEngine {
     int planVersion,
     int cursor, {
     int? pageSize,
-  }) async {
+  }) async => _guard(() async {
     final raw = _requireJson(
       bridge.nextAiTreeCoveragePageJson(
         engine,
@@ -215,7 +267,7 @@ class NativeCoverageEngine implements CoverageEngine {
       throw CoverageEngineException('error:tree coverage page mismatch');
     }
     return page;
-  }
+  });
 
   @override
   Future<CoverageTailPage> nextTailPage(
@@ -223,7 +275,7 @@ class NativeCoverageEngine implements CoverageEngine {
     int planVersion,
     int cursor, {
     int? pageSize,
-  }) async {
+  }) async => _guard(() async {
     final raw = _requireJson(
       bridge.nextAiTailCoveragePageJson(
         engine,
@@ -239,19 +291,19 @@ class NativeCoverageEngine implements CoverageEngine {
       throw CoverageEngineException('error:tail coverage page mismatch');
     }
     return page;
-  }
+  });
 
   @override
   Future<List<CoverageTreeNode>> expandTreeNode(
     String snapshotId,
     String dirPath,
-  ) async {
+  ) async => _guard(() async {
     final raw = _requireJson(
       bridge.expandAiTreeNodeJson(engine, snapshotId, dirPath),
       'expand tree node',
     );
     return parseCoverageTreeExpandNodes(raw);
-  }
+  });
 
   @override
   Future<List<CoverageVerdict>> applyDirVerdict(
@@ -260,7 +312,7 @@ class NativeCoverageEngine implements CoverageEngine {
     String verdict,
     String confidence,
     String roleSnakeCase,
-  ) async {
+  ) async => _guard(() async {
     if (!offloadHeavyCalls) {
       return _applyDirVerdict(
         bridge,
@@ -283,7 +335,7 @@ class NativeCoverageEngine implements CoverageEngine {
       ),
       debugName: 'volward-apply-dir-verdict',
     );
-  }
+  });
 
   @override
   Future<int?> applyDirVerdictToFile(
@@ -293,7 +345,7 @@ class NativeCoverageEngine implements CoverageEngine {
     String confidence,
     String roleSnakeCase,
     String outPath,
-  ) async {
+  ) async => _guard(() async {
     if (!bridge.hasApplyDirVerdictToFileApi) return null;
     if (!offloadHeavyCalls) {
       return _applyDirVerdictToFile(
@@ -319,7 +371,7 @@ class NativeCoverageEngine implements CoverageEngine {
       ),
       debugName: 'volward-apply-dir-verdict-file',
     );
-  }
+  });
 
   static int Function() _applyDirVerdictToFileTask(
     int engineAddress,
@@ -425,7 +477,7 @@ class NativeCoverageEngine implements CoverageEngine {
     String snapshotId, {
     int cursor = 0,
     int limit = 5000,
-  }) async {
+  }) async => _guard(() async {
     if (!offloadHeavyCalls) {
       return _fetchLocalVerdictsPage(bridge, engine, snapshotId, cursor, limit);
     }
@@ -433,7 +485,7 @@ class NativeCoverageEngine implements CoverageEngine {
       _localVerdictsPageTask(engine.address, snapshotId, cursor, limit),
       debugName: 'volward-local-verdicts',
     );
-  }
+  });
 
   /// Writes every native local verdict page into the verdict store at
   /// [storeDirectory] without materializing them on the calling isolate.
@@ -442,7 +494,7 @@ class NativeCoverageEngine implements CoverageEngine {
     String snapshotId,
     String storeDirectory, {
     int pageLimit = 5000,
-  }) {
+  }) => _guard(() async {
     if (!offloadHeavyCalls) {
       return _backfillLocalVerdicts(
         bridge,
@@ -456,7 +508,7 @@ class NativeCoverageEngine implements CoverageEngine {
       _backfillTask(engine.address, snapshotId, storeDirectory, pageLimit),
       debugName: 'volward-local-verdict-backfill',
     );
-  }
+  });
 
   static Future<int> Function() _backfillTask(
     int engineAddress,
@@ -541,11 +593,11 @@ class NativeCoverageEngine implements CoverageEngine {
   Future<List<Map<String, dynamic>>> resolveGroupMembers(
     String snapshotId,
     String groupPath,
-  ) async {
+  ) async => _guard(() async {
     final raw = _requireJson(
       bridge.resolveAiCoverageGroupJson(engine, snapshotId, groupPath),
       'resolve coverage group',
     );
     return parseCoverageGroupMembers(raw);
-  }
+  });
 }

@@ -5,11 +5,11 @@ import 'package:http/http.dart' as http;
 
 import 'ai_completion_text.dart';
 import 'ai_conclusion_synthesis.dart';
-import 'ai_contract.dart';
+import 'ai_contract_api.dart';
 import 'ai_provider.dart';
 import 'cancel_token.dart';
 import 'coverage_models.dart';
-import '../volward_session.dart';
+import 'session_ai_contract.dart';
 
 const _kRequestTimeout = Duration(seconds: 90);
 
@@ -55,11 +55,11 @@ class ByokAiProvider implements AiProvider, TreeAiProvider {
   AiContract _resolveContract() {
     final injected = contract;
     if (injected != null) return injected;
-    final session = VolwardSession.instance;
-    if (session == null) {
+    final fallback = SessionAiContract.forCurrentSession();
+    if (fallback == null) {
       throw Exception('ai_contract_unavailable');
     }
-    return SessionAiContract(session);
+    return fallback;
   }
 
   /// Call when the provider is no longer needed (closes owned client only).

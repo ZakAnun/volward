@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/features/browse/widgets/scan_column_view.dart';
 import 'package:volward/scan_tree.dart';
 import 'package:volward/theme/volward_theme.dart';
-import 'package:volward/widgets/scan_column_view.dart';
 
 Finder _paintedColumn() {
   return find.byWidgetPredicate(

@@ -1,5 +1,8 @@
-use crate::model::{EntryCategory, ScanTreeNode};
+use crate::ai_analysis::{compute_result_cache_key, AiAnalysisResult};
+use crate::index::SnapshotIndex;
+use crate::model::{EntryCategory, ScanTreeNode, SourceType, StorageSnapshot};
 use crate::os_knowledge::{Confidence, OsKnowledgeBase};
+use crate::unclassified_coverage_cache::UnclassifiedCoverageCache;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -140,6 +143,132 @@ pub struct AiCandidateSet {
     pub truncated: bool,
     /// True when pre-classified rows were capped for UI/payload size.
     pub pre_classified_truncated: bool,
+}
+
+pub struct AiCandidateAssembly {
+    pub set: AiCandidateSet,
+    pub cache_key: String,
+    pub has_existing_result: bool,
+    pub root_path: String,
+    pub truncated: bool,
+}
+
+pub fn build_index_candidate_assembly(
+    index: &SnapshotIndex,
+    cache: &UnclassifiedCoverageCache,
+    kb: &OsKnowledgeBase,
+    indexed_prefixes: &[String],
+) -> AiCandidateAssembly {
+    let root_path = index.root_path.clone();
+    let stats = index.stats.clone();
+    let root_size_bytes = index.summary().root_size_bytes;
+    let reclaimable = index.reclaimable_estimate_bytes;
+    let total_unclassified = cache.total_unclassified_file_count;
+    let files = cache.funnel_largest_files.clone();
+    let build_artifacts = index
+        .entries_with_category("BuildArtifact")
+        .into_iter()
+        .map(|entry| {
+            (
+                entry.path.clone(),
+                entry.size_bytes,
+                index.is_directory(&entry.path),
+                entry.deletable,
+            )
+        })
+        .collect::<Vec<_>>();
+    let funnel_sampled = total_unclassified > files.len();
+    let mut builder = AiCandidateBuilder::from_unclassified_files_with_total(
+        &files,
+        total_unclassified,
+        &HashSet::new(),
+        kb,
+        indexed_prefixes,
+    );
+    for (path, size_bytes, is_dir, deletable) in build_artifacts {
+        builder.push_pre_classified(PreClassifiedEntry {
+            is_dir,
+            path,
+            size_bytes,
+            category: EntryCategory::BuildArtifact,
+            confidence: "high".to_string(),
+            reason: "Classified as build artifact by local rules".to_string(),
+            deletable,
+        });
+    }
+    let mut set = builder
+        .annotate_ai_cleanup_patterns()
+        .aggregate_by_dir(20)
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build()
+        .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
+    if funnel_sampled {
+        set.truncated = true;
+    }
+    let cache_key =
+        compute_result_cache_key(&root_path, &stats, root_size_bytes, reclaimable, &set);
+    let has_existing_result =
+        AiAnalysisResult::exists(&cache_key) || AiAnalysisResult::exists(&index.snapshot_id);
+    AiCandidateAssembly {
+        truncated: set.truncated,
+        set,
+        cache_key,
+        has_existing_result,
+        root_path,
+    }
+}
+
+pub fn build_snapshot_candidate_assembly(
+    snapshot: &StorageSnapshot,
+    kb: &OsKnowledgeBase,
+) -> AiCandidateAssembly {
+    let classified: HashSet<String> = snapshot
+        .entries
+        .iter()
+        .map(|entry| entry.path_or_uri.clone())
+        .collect();
+    let mut builder = AiCandidateBuilder::from_tree(&snapshot.tree, &classified, kb);
+    for entry in &snapshot.entries {
+        if entry.category != EntryCategory::BuildArtifact {
+            continue;
+        }
+        builder.push_pre_classified(PreClassifiedEntry {
+            is_dir: entry.source_type == SourceType::Directory,
+            path: entry.path_or_uri.clone(),
+            size_bytes: entry.size_bytes,
+            category: EntryCategory::BuildArtifact,
+            confidence: "high".to_string(),
+            reason: if entry.reason.is_empty() {
+                "Classified as build artifact by local rules".to_string()
+            } else {
+                entry.reason.clone()
+            },
+            deletable: entry.deletable,
+        });
+    }
+    let set = builder
+        .annotate_ai_cleanup_patterns()
+        .aggregate_by_dir(20)
+        .cap_top_n(DEFAULT_CANDIDATE_CAP)
+        .build()
+        .cap_pre_classified_top_n(DEFAULT_PRECLASSIFIED_CAP);
+    let root_path = snapshot.tree.path.clone();
+    let cache_key = compute_result_cache_key(
+        &root_path,
+        &snapshot.stats,
+        snapshot.tree.size_bytes,
+        snapshot.reclaimable_estimate_bytes,
+        &set,
+    );
+    let has_existing_result =
+        AiAnalysisResult::exists(&cache_key) || AiAnalysisResult::exists(&snapshot.snapshot_id);
+    AiCandidateAssembly {
+        truncated: set.truncated,
+        set,
+        cache_key,
+        has_existing_result,
+        root_path,
+    }
 }
 
 pub struct AiCandidateBuilder {

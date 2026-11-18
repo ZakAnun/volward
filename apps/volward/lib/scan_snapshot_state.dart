@@ -1,12 +1,12 @@
 // ignore_for_file: prefer_initializing_formals
 
+import 'features/browse/scan_sort_mode.dart';
 import 'scan_entry_record.dart';
 import 'scan_tree.dart';
 import 'snapshot_catalog.dart';
 import 'snapshot_query.dart';
-import 'widgets/scan_filter_bar.dart';
 
-class ScanSnapshotState {
+class ScanSnapshotState implements SnapshotCatalogSource {
   ScanSnapshotState({
     required this.snapshotId,
     required this.scannedAtMs,
@@ -143,10 +143,12 @@ class ScanSnapshotState {
     );
   }
 
+  @override
   final String snapshotId;
   final int? scannedAtMs;
   final Map<String, dynamic> stats;
   final int reclaimableEstimateBytes;
+  @override
   final ScanTreeNode? tree;
   final int entryCount;
   final List<ScanEntryRecord>? _flatEntries;

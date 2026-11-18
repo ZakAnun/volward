@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/features/browse/scan_sort_mode.dart';
 import 'package:volward/scan_snapshot_merge.dart';
 import 'package:volward/scan_snapshot_state.dart';
 import 'package:volward/snapshot_query.dart';
-import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
   group('mergeSubtreeIntoSnapshot', () {

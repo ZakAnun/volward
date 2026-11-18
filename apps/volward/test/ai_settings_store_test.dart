@@ -3,9 +3,39 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_settings_store.dart';
+import 'package:volward/snapshot_cache.dart';
 import 'package:volward/theme/volward_theme_settings.dart';
 
 void main() {
+  test(
+    'theme and AI settings share the default cache-root settings file',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'volward-settings-file',
+      );
+      final previous = SnapshotCache.cacheDirForTest;
+      SnapshotCache.cacheDirForTest = temp;
+      addTearDown(() async {
+        SnapshotCache.cacheDirForTest = previous;
+        await temp.delete(recursive: true);
+      });
+      final store = AiSettingsStore.instance;
+      final theme = VolwardThemeSettings();
+      addTearDown(theme.dispose);
+
+      await store.setMode(AiMode.platform);
+      await theme.setLocalePreference(VolwardLocalePreference.zh);
+      await store.setConclusionNarrativeEnabled(true);
+
+      final settings =
+          jsonDecode(File('${temp.path}/settings.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(settings['ai_mode'], 'platform');
+      expect(settings['locale_preference'], VolwardLocalePreference.zh.index);
+      expect(settings['ai_conclusion_narrative_enabled'], isTrue);
+    },
+  );
+
   test(
     'conclusion narrative settings default to disabled and auto on',
     () async {
