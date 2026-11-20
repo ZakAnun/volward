@@ -316,6 +316,27 @@ impl PlatformStorage for DesktopPlatform {
                 });
             }
         }
+        roots.sort_by(|left, right| {
+            left.path
+                .len()
+                .cmp(&right.path.len())
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        let mut non_overlapping_roots = Vec::new();
+        for root in roots {
+            let covered_by_existing_root = non_overlapping_roots.iter().any(|other: &ScanRoot| {
+                other.path == root.path
+                    || other.path == "/"
+                    || root
+                        .path
+                        .strip_prefix(&other.path)
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+            });
+            if !covered_by_existing_root {
+                non_overlapping_roots.push(root);
+            }
+        }
+        roots = non_overlapping_roots;
         if roots.is_empty() {
             if let Some(home) = dirs::home_dir() {
                 roots.push(ScanRoot {
@@ -1017,6 +1038,37 @@ mod tests {
         let platform = DesktopPlatform::new();
         let result = platform.quick_list_dir("/definitely/does/not/exist/volward-test");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn discover_roots_drops_selected_descendant_of_an_existing_root() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let parent = std::env::temp_dir().join(format!(
+            "volward-overlapping-roots-{}-{unique}",
+            std::process::id()
+        ));
+        let child = parent.join("child");
+        fs::create_dir_all(&child).expect("mkdir child");
+
+        let platform = DesktopPlatform::new();
+        let roots = platform
+            .discover_roots(&[
+                parent.to_string_lossy().to_string(),
+                child.to_string_lossy().to_string(),
+                parent.to_string_lossy().to_string(),
+            ])
+            .expect("discover roots");
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(
+            roots[0].path,
+            normalize_path_string(&parent.to_string_lossy())
+        );
+
+        fs::remove_dir_all(parent).expect("cleanup");
     }
 
     #[cfg(unix)]
