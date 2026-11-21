@@ -75,6 +75,92 @@ impl AiTreePlan {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTreeSummary {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub root_path: String,
+    pub root_size_bytes: u64,
+    pub scanned_at_ms: i64,
+    pub total_unclassified: u64,
+    pub seed_node_count: u64,
+    pub tail_file_count: u64,
+    pub local_safe_files: u64,
+    pub local_keep_files: u64,
+    pub tail_files: u64,
+    pub tree_pending_files: u64,
+    pub estimated_tree_credits: u64,
+    pub estimated_tail_credits: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTreePage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub next_cursor: Option<u64>,
+    pub nodes: Vec<AiTreeNode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTailRow {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTailPage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub next_cursor: Option<u64>,
+    pub rows: Vec<CoverageTailRow>,
+}
+
+pub fn coverage_tree_summary(index: &SnapshotIndex, plan: &AiTreePlan) -> CoverageTreeSummary {
+    let funnel = plan.funnel_stats;
+    CoverageTreeSummary {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: AI_COVERAGE_TREE_PLAN_VERSION,
+        root_path: plan.root_path.clone(),
+        root_size_bytes: index.summary().root_size_bytes,
+        scanned_at_ms: index.scanned_at_ms,
+        total_unclassified: funnel.local_safe_files
+            + funnel.local_keep_files
+            + funnel.tail_files
+            + funnel.tree_pending_files,
+        seed_node_count: plan.seed_nodes.len() as u64,
+        tail_file_count: plan.tail_file_paths.len() as u64,
+        local_safe_files: funnel.local_safe_files,
+        local_keep_files: funnel.local_keep_files,
+        tail_files: funnel.tail_files,
+        tree_pending_files: funnel.tree_pending_files,
+        estimated_tree_credits: plan.estimated_tree_credits,
+        estimated_tail_credits: plan.estimated_tail_credits,
+    }
+}
+
+pub fn coverage_tree_page(plan: &AiTreePlan, cursor: u64, page_size: usize) -> CoverageTreePage {
+    let (nodes, next_cursor) = plan.tree_page(cursor, page_size);
+    CoverageTreePage {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: plan.plan_version,
+        next_cursor,
+        nodes,
+    }
+}
+
+pub fn coverage_tail_page(plan: &AiTreePlan, cursor: u64, page_size: usize) -> CoverageTailPage {
+    let (rows, next_cursor) = plan.tail_page(cursor, page_size);
+    CoverageTailPage {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: plan.plan_version,
+        next_cursor,
+        rows: rows
+            .into_iter()
+            .map(|(path, size_bytes)| CoverageTailRow { path, size_bytes })
+            .collect(),
+    }
+}
+
 pub fn build_ai_tree_plan(
     index: &SnapshotIndex,
     kb: &OsKnowledgeBase,

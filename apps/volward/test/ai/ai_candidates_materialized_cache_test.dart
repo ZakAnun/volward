@@ -63,4 +63,46 @@ void main() {
     cache.clear('snap-a');
     expect(y.existsSync(), isFalse);
   });
+
+  test('loadOrReuse isolates the same snapshot between owners', () async {
+    final cache = AiCandidatesMaterializedCache.instance;
+    var loads = 0;
+
+    final first = await cache.loadOrReuse('snap-a', () async {
+      loads++;
+      return 'owner-a';
+    }, ownerId: 'engine-a');
+    final second = await cache.loadOrReuse('snap-a', () async {
+      loads++;
+      return 'owner-b';
+    }, ownerId: 'engine-b');
+
+    expect(first, 'owner-a');
+    expect(second, 'owner-b');
+    expect(loads, 2);
+  });
+
+  test('clearSnapshot removes legacy and owner-scoped entries', () async {
+    final cache = AiCandidatesMaterializedCache.instance;
+    cache.putRaw('snap-a', 'legacy');
+    cache.putRaw('snap-a', 'owner-a', ownerId: 'engine-a');
+    cache.putRaw('snap-b', 'owner-b', ownerId: 'engine-b');
+
+    cache.clearSnapshot('snap-a');
+
+    expect(cache.peekRaw('snap-a'), isNull);
+    expect(cache.peekRaw('snap-a', ownerId: 'engine-a'), isNull);
+    expect(cache.peekRaw('snap-b', ownerId: 'engine-b'), 'owner-b');
+  });
+
+  test('clear without owner preserves snapshot-wide compatibility', () async {
+    final cache = AiCandidatesMaterializedCache.instance;
+    cache.putRaw('snap-a', 'legacy');
+    cache.putRaw('snap-a', 'owner-a', ownerId: 'engine-a');
+
+    cache.clear('snap-a');
+
+    expect(cache.peekRaw('snap-a'), isNull);
+    expect(cache.peekRaw('snap-a', ownerId: 'engine-a'), isNull);
+  });
 }

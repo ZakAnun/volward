@@ -1,6 +1,6 @@
+import 'features/browse/scan_sort_mode.dart';
 import 'scan_entry_record.dart';
 import 'scan_tree.dart';
-import 'widgets/scan_filter_bar.dart';
 
 String rustSortModeName(ScanSortMode mode) => switch (mode) {
   ScanSortMode.sizeDesc => 'size_desc',

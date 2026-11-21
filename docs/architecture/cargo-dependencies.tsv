@@ -1,0 +1,10 @@
+platform-desktop	volward-core
+volward-cli	platform-desktop
+volward-cli	volward-core
+volward-cli	volward-index-pb
+volward-facade	platform-desktop
+volward-facade	volward-ai
+volward-facade	volward-core
+volward-facade	volward-index-pb
+volward-index-pb	volward-core
+volward-platform-api	volward-ai

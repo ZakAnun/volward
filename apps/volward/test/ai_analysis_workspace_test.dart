@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
-import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_contract_api.dart';
 import 'package:volward/ai/ai_candidates_materialized_cache.dart';
 import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/ai_conclusion_synthesis.dart';
@@ -17,6 +17,7 @@ import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/capabilities/capability_models.dart';
+import 'package:volward/infrastructure/ai/ai_workspace_ports.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/snapshot_cache.dart';
 import 'package:volward/theme/volward_theme.dart';
@@ -444,6 +445,7 @@ Widget _workspaceShell(
         snapshotId: 'snapshot-1',
         targetLabel: 'Home',
         gateway: gateway,
+        ports: createProductionAiWorkspacePorts(),
         onExit: onExit ?? () {},
         onOpenSettings: onOpenSettings ?? () {},
         onDeletingChanged: onDeletingChanged ?? (_) {},
@@ -1125,6 +1127,7 @@ void main() {
     expect(find.byKey(AiAnalysisWorkspace.hubStatusChipKey), findsOneWidget);
     expect(find.text('Awaiting analysis'), findsWidgets);
     expect(find.byKey(AiAnalysisWorkspace.resultsHeroKey), findsOneWidget);
+    expect(find.text('3 awaiting AI · 0 locally removable'), findsOneWidget);
   });
 
   testWidgets('quick analyze stays on the same overview skeleton', (

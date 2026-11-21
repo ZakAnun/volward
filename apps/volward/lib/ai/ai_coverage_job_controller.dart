@@ -105,9 +105,13 @@ class CoverageJobController {
   CoverageJobState? _state;
   bool _pauseRequested = false;
   bool _cancelRequested = false;
-  bool _running = false;
+  Completer<void>? _runCompleter;
   CoveragePauseReason? _pauseRequestReason;
   final _states = StreamController<CoverageJobState>.broadcast();
+
+  /// True until every batch and final persistence operation has drained.
+  /// Persisted status can already be paused/completed while this is true.
+  bool get isRunning => _runCompleter != null;
 
   CoverageJobState? get state => _state;
   Stream<CoverageJobState> get states => _states.stream;
@@ -118,7 +122,7 @@ class CoverageJobController {
     required int budgetCredits,
     bool detachRun = false,
   }) async {
-    if (_running) {
+    if (isRunning) {
       if (_state?.snapshotId == snapshotId) {
         return _state!;
       }
@@ -151,7 +155,7 @@ class CoverageJobController {
   }
 
   Future<CoverageJobState> pause() async {
-    _pauseRequestReason = CoveragePauseReason.manual;
+    _pauseRequestReason ??= CoveragePauseReason.manual;
     _pauseRequested = true;
     _cancelToken.cancel();
     await waitUntilIdle();
@@ -159,8 +163,8 @@ class CoverageJobController {
   }
 
   Future<void> waitUntilIdle() async {
-    while (_running) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
+    while (_runCompleter != null) {
+      await _runCompleter!.future;
     }
   }
 
@@ -171,10 +175,11 @@ class CoverageJobController {
   }
 
   Future<void> markAppQuit() async {
-    if (_state?.status != CoverageJobStatus.running) return;
-    _pauseRequestReason = CoveragePauseReason.appQuit;
-    _pauseRequested = true;
-    _cancelToken.cancel();
+    if (isRunning) {
+      _pauseRequestReason ??= CoveragePauseReason.appQuit;
+      _pauseRequested = true;
+      _cancelToken.cancel();
+    }
     await waitUntilIdle();
   }
 
@@ -182,7 +187,7 @@ class CoverageJobController {
     String snapshotId, {
     bool detachRun = false,
   }) async {
-    if (_running) {
+    if (isRunning) {
       if (_state?.snapshotId == snapshotId) {
         return _state!;
       }
@@ -208,7 +213,7 @@ class CoverageJobController {
   }
 
   Future<CoverageJobState> cancel(String snapshotId) async {
-    if (_running && _state?.snapshotId != snapshotId) {
+    if (isRunning && _state?.snapshotId != snapshotId) {
       await waitUntilIdle();
     }
     _cancelRequested = true;
@@ -220,7 +225,7 @@ class CoverageJobController {
         current.status != CoverageJobStatus.paused) {
       return current;
     }
-    if (!_running) {
+    if (!isRunning) {
       _state = current.copyWith(
         status: CoverageJobStatus.cancelled,
         pauseReason: () => null,
@@ -229,9 +234,7 @@ class CoverageJobController {
       _emit();
       return _state!;
     }
-    while (_running) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
+    await waitUntilIdle();
     return _state ?? current;
   }
 
@@ -241,7 +244,7 @@ class CoverageJobController {
     required int budgetCredits,
     bool detachRun = false,
   }) async {
-    if (_running) {
+    if (isRunning) {
       if (_state?.snapshotId == snapshotId) {
         return _state!;
       }
@@ -317,8 +320,8 @@ class CoverageJobController {
   }
 
   Future<void> _run() async {
-    if (_running) return;
-    _running = true;
+    if (isRunning) return;
+    final run = _runCompleter = Completer<void>();
     _cancelToken.reset();
     try {
       var guard = _state;
@@ -582,7 +585,8 @@ class CoverageJobController {
         message: e.toString(),
       );
     } finally {
-      _running = false;
+      _runCompleter = null;
+      run.complete();
     }
   }
 

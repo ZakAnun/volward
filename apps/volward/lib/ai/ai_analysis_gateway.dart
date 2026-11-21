@@ -2,6 +2,7 @@ import '../capabilities/capability_models.dart';
 import '../volward_session.dart';
 import 'ai_provider.dart';
 import 'ai_settings_store.dart';
+import 'session_ai_contract.dart';
 
 abstract interface class AiAnalysisGateway {
   Future<AiMode> getMode();
@@ -31,7 +32,15 @@ abstract interface class AiAnalysisGateway {
   });
 }
 
-class ProductionAiAnalysisGateway implements AiAnalysisGateway {
+/// Coverage reads used while rendering an AI analysis workspace.
+abstract interface class AiWorkspaceCoverage {
+  bool get sessionReady;
+  bool get hasCoverageApi;
+  Future<int> backfillLocalVerdicts(String snapshotId, String storeDirectory);
+}
+
+class ProductionAiAnalysisGateway
+    implements AiAnalysisGateway, AiWorkspaceCoverage {
   const ProductionAiAnalysisGateway({this.session});
 
   final VolwardSession? session;
@@ -41,8 +50,29 @@ class ProductionAiAnalysisGateway implements AiAnalysisGateway {
   Future<AiMode> getMode() => AiSettingsStore.instance.getMode();
 
   @override
-  Future<AiProvider?> resolveProvider() =>
-      AiSettingsStore.instance.resolveProvider();
+  Future<AiProvider?> resolveProvider() {
+    final current = session;
+    final store = AiSettingsStore.instance;
+    if (current == null) return store.resolveProvider();
+    return store.resolveProviderWithContract(() => SessionAiContract(current));
+  }
+
+  @override
+  bool get sessionReady => _session?.ready ?? false;
+
+  @override
+  bool get hasCoverageApi => _session?.hasAiCoverageApi ?? false;
+
+  @override
+  Future<int> backfillLocalVerdicts(
+    String snapshotId,
+    String storeDirectory,
+  ) async {
+    final current = _session;
+    final engine = current?.treeCoverageEngine ?? current?.coverageEngine;
+    if (engine == null) return 0;
+    return engine.backfillLocalVerdictsToStore(snapshotId, storeDirectory);
+  }
 
   @override
   Future<bool> isPrivacyAccepted() =>

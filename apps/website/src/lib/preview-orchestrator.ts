@@ -68,7 +68,6 @@ export function initPreviewOrchestrator({
   hero,
   features,
   layer,
-  tourRoot,
   reducedMotion = false,
 }: PreviewOrchestratorOptions): () => void {
   const heroSlot = hero.querySelector<HTMLElement>('[data-preview-slot="hero"]');

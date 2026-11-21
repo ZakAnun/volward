@@ -47,7 +47,7 @@ bash ../../scripts/test_core.sh flutter
 | `lib/scan_snapshot_merge.dart` | 子树合并（checkpoint upsert / peek 权威覆盖） |
 | `lib/scan_tree_navigation.dart` | checkpoint 后按 path 刷新列导航链 |
 | `lib/bridge/scan_worker.dart` | 主扫描 Isolate（含 checkpoint）与 peek Isolate |
-| `lib/widgets/scan_filter_bar.dart` | 分类 / 排序 / 筛选 |
-| `lib/widgets/scan_column_view.dart` | Finder 式列视图（未扫完目录加载态） |
+| `lib/features/browse/widgets/scan_filter_bar.dart` | 分类 / 排序 / 筛选 |
+| `lib/features/browse/widgets/scan_column_view.dart` | Finder 式列视图（未扫完目录加载态） |
 | `lib/snapshot_cache.dart` | 读取磁盘 manifest / snapshot |
 | `lib/theme/` | VolwardTokens、主题构建、settings 持久化 |

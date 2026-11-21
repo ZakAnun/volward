@@ -6,13 +6,13 @@ import 'dart:math' show min;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../snapshot_cache.dart';
-import '../volward_session.dart';
-import 'ai_contract.dart';
+import '../settings/settings_file.dart';
+import 'ai_contract_api.dart';
 import 'ai_provider.dart';
 import 'byok_ai_provider.dart';
 import 'platform_ai_provider.dart';
 import 'platform_auth_store.dart';
+import 'session_ai_contract.dart';
 
 enum AiMode { off, byok, platform }
 
@@ -83,9 +83,7 @@ class AiSettingsStore {
     mOptions: MacOsOptions(useDataProtectionKeyChain: false),
   );
 
-  File _settingsFile() =>
-      settingsFileForTest ??
-      File('${SnapshotCache.cacheDir().path}/settings.json');
+  File _settingsFile() => settingsFileForTest ?? sharedSettingsFile();
 
   File _byokUsageFile() =>
       File('${_settingsFile().parent.path}/ai_byok_usage.json');
@@ -335,7 +333,12 @@ class AiSettingsStore {
     }
   }
 
-  Future<AiProvider?> resolveProvider() async {
+  Future<AiProvider?> resolveProvider() =>
+      resolveProviderWithContract(SessionAiContract.forCurrentSession);
+
+  Future<AiProvider?> resolveProviderWithContract(
+    AiContract? Function() resolveContract,
+  ) async {
     final mode = await getMode();
     switch (mode) {
       case AiMode.off:
@@ -348,15 +351,7 @@ class AiSettingsStore {
         final key = await getByokKey();
         if (key == null || key.isEmpty) return null;
         try {
-          final session = VolwardSession.instance;
-          if (session != null) {
-            return ByokAiProvider(
-              apiKey: key,
-              contract: SessionAiContract(session),
-            );
-          }
-          // Unit tests / pre-session: provider without contract (analyze needs inject).
-          return ByokAiProvider(apiKey: key);
+          return ByokAiProvider(apiKey: key, contract: resolveContract());
         } catch (_) {
           // Native lib older than Dart contract surface — UI shows update hint.
           return null;

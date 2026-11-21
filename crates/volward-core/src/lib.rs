@@ -30,22 +30,28 @@ pub mod unclassified_coverage_cache_persist;
 
 pub use ai_analysis::{compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
 pub use ai_candidates::{
-    ai_aggregate_delete_target, ai_aggregate_path_from_delete_target, hint_source_skips_ai,
-    indexed_local_exclusion_prefixes, resolve_unclassified_for_ai, AiCandidate, AiCandidateBuilder,
-    AiCandidateSet, PreClassifiedEntry, UnclassifiedAiRouting, AI_AGGREGATE_DELETE_TARGET_PREFIX,
-    DEFAULT_CANDIDATE_CAP, DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP,
-    FUNNEL_UNCLASSIFIED_FILE_BUDGET,
+    ai_aggregate_delete_target, ai_aggregate_path_from_delete_target,
+    build_index_candidate_assembly, build_snapshot_candidate_assembly, hint_source_skips_ai,
+    indexed_local_exclusion_prefixes, resolve_unclassified_for_ai, AiCandidate,
+    AiCandidateAssembly, AiCandidateBuilder, AiCandidateSet, PreClassifiedEntry,
+    UnclassifiedAiRouting, AI_AGGREGATE_DELETE_TARGET_PREFIX, DEFAULT_CANDIDATE_CAP,
+    DEFAULT_MAX_MEMBER_PATHS, DEFAULT_PRECLASSIFIED_CAP, FUNNEL_UNCLASSIFIED_FILE_BUDGET,
 };
 pub use ai_coverage::{
-    build_ai_coverage_plan, coverage_group_member_paths, AiCoveragePlan, AiCoverageRow,
-    AiCoverageRowKind, AI_COVERAGE_PLAN_VERSION,
+    build_ai_coverage_plan, coverage_group_member_paths, coverage_group_resolution,
+    coverage_local_verdict_page, coverage_plan_page, coverage_plan_summary,
+    AiCoveragePlan, AiCoverageRow, AiCoverageRowKind, CoverageGroupMember,
+    CoverageGroupResolution, CoverageLocalVerdictPage, CoveragePlanPage,
+    CoveragePlanSummary, AI_COVERAGE_PLAN_VERSION,
 };
 pub use ai_coverage_propagate::{apply_dir_verdict, write_dir_verdict_jsonl, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
     build_ai_tree_plan, build_ai_tree_plan_from_coverage_cache,
-    build_unclassified_subtree_index, expand_tree_drill_children,
+    build_unclassified_subtree_index, coverage_tail_page, coverage_tree_page,
+    coverage_tree_summary, expand_tree_drill_children,
     expand_tree_drill_children_with_index, scan_unclassified_for_coverage, AiTreeNode,
-    AiTreePlan, UnclassifiedCoverageScan, UnclassifiedSubtreeIndex,
+    AiTreePlan, CoverageTailPage, CoverageTailRow, CoverageTreePage,
+    CoverageTreeSummary, UnclassifiedCoverageScan, UnclassifiedSubtreeIndex,
     AI_COVERAGE_TREE_PLAN_VERSION,
 };
 pub use unclassified_coverage_cache::{

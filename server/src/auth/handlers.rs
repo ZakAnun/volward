@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::middleware::{issue_token, require_device, require_user};
 use super::otp;
-use crate::billing::env_credits::balance_for_env;
+use crate::billing::balance_for_env;
 use crate::error::AppError;
 use crate::AppState;
 

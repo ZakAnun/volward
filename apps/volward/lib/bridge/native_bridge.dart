@@ -1,2350 +1,294 @@
-import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
-import '../ai/ai_debug_log.dart';
+import '../infrastructure/bridge/ai_facade.dart';
+import '../infrastructure/bridge/native_engine_bridge_set.dart';
+import '../infrastructure/bridge/native_engine_host_backend.dart';
+import '../infrastructure/bridge/runtime/native_library.dart';
+import '../core/session/engine_host.dart';
 
-typedef VolwardEngineCreateNative = Pointer<Void> Function();
-typedef VolwardEngineCreate = Pointer<Void> Function();
+export 'bindings/ai.dart';
+export 'bindings/capabilities.dart';
+export 'bindings/delete.dart';
+export 'bindings/index.dart';
+export 'bindings/scan.dart';
+export '../infrastructure/bridge/engine_bridge.dart'
+    show
+        VolwardEngineCreate,
+        VolwardEngineCreateNative,
+        VolwardEngineFree,
+        VolwardEngineFreeNative,
+        VolwardFreeString,
+        VolwardFreeStringNative,
+        VolwardBridge;
 
-typedef VolwardEngineFreeNative = Void Function(Pointer<Void>);
-typedef VolwardEngineFree = void Function(Pointer<Void>);
-
-typedef VolwardFreeStringNative = Void Function(Pointer<Utf8>);
-typedef VolwardFreeString = void Function(Pointer<Utf8>);
-
-typedef VolwardProbeCapabilitiesJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardProbeCapabilitiesJson = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardIsDeepScanReadyNative = Bool Function(Pointer<Void>);
-typedef VolwardIsDeepScanReady = bool Function(Pointer<Void>);
-
-typedef VolwardStartScanNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardStartScan =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-
-typedef VolwardStartScanAsyncNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardStartScanAsync =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-
-typedef VolwardStartScanAsyncWithOptionsNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
-typedef VolwardStartScanAsyncWithOptions =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
-
-typedef VolwardIsScanRunningNative = Bool Function(Pointer<Void>);
-typedef VolwardIsScanRunning = bool Function(Pointer<Void>);
-
-typedef VolwardGetLastProgressJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardGetLastProgressJson = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardCancelScanNative = Void Function(Pointer<Void>);
-typedef VolwardCancelScan = void Function(Pointer<Void>);
-
-typedef VolwardRequestScanPauseNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardRequestScanPause =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-
-typedef VolwardGetLastPauseErrorNative = Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardGetLastPauseError = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardGetLastSnapshotJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardGetLastSnapshotJson = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardSetLastSnapshotJsonNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardSetLastSnapshotJson =
-    bool Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardWriteLastSnapshotToPathNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastSnapshotToPath =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardLoadLastSnapshotFromPathNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardLoadLastSnapshotFromPath =
-    bool Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardWriteLastCheckpointToPathNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastCheckpointToPath =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardWriteLastSnapshotToPathPbNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastSnapshotToPathPb =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardWriteLastCheckpointToPathPbNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastCheckpointToPathPb =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardQuickListDirJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardQuickListDirJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardOpenPermissionSettingsNative = Bool Function(Pointer<Void>);
-typedef VolwardOpenPermissionSettings = bool Function(Pointer<Void>);
-
-typedef VolwardDeleteEntriesJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Bool);
-typedef VolwardDeleteEntriesJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, bool);
-
-typedef VolwardEmptyTrashJsonNative = Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardEmptyTrashJson = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardAiBuildCandidatesJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiBuildCandidatesJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiStartBuildCandidatesAsyncNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiStartBuildCandidatesAsync =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiIsCandidatesBuildingNative = Bool Function(Pointer<Void>);
-typedef VolwardAiIsCandidatesBuilding = bool Function(Pointer<Void>);
-typedef VolwardAiGetCandidatesJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardAiGetCandidatesJson = Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardAiTakeCandidatesSpillPathNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardAiTakeCandidatesSpillPath =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardAiSaveResultJsonNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiSaveResultJson =
-    bool Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiLoadResultJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiLoadResultJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiUpstreamEndpointNative = Pointer<Utf8> Function();
-typedef VolwardAiUpstreamEndpoint = Pointer<Utf8> Function();
-typedef VolwardAiBatchSizeNative = Uint32 Function();
-typedef VolwardAiBatchSize = int Function();
-typedef VolwardAiBuildRequestJsonNative = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef VolwardAiBuildRequestJson = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef VolwardAiBuildConclusionSynthesisJsonNative =
-    Pointer<Utf8> Function(Pointer<Utf8>);
-typedef VolwardAiBuildConclusionSynthesisJson =
-    Pointer<Utf8> Function(Pointer<Utf8>);
-typedef VolwardAiParseResponseJsonNative =
-    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiParseResponseJson =
-    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiTreeBatchSizeNative = Uint32 Function();
-typedef VolwardAiTreeBatchSize = int Function();
-typedef VolwardAiBuildTreeRequestJsonNative =
-    Pointer<Utf8> Function(Pointer<Utf8>);
-typedef VolwardAiBuildTreeRequestJson = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef VolwardAiParseTreeResponseJsonNative =
-    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiParseTreeResponseJson =
-    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiBuildCoveragePlanJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiBuildCoveragePlanJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiStartBuildCoveragePlanAsyncNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Bool);
-typedef VolwardAiStartBuildCoveragePlanAsync =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, bool);
-typedef VolwardAiIsCoveragePlanBuildingNative = Bool Function(Pointer<Void>);
-typedef VolwardAiIsCoveragePlanBuilding = bool Function(Pointer<Void>);
-typedef VolwardAiGetCoveragePlanJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardAiGetCoveragePlanJson = Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardAiNextCoveragePageJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Uint64,
-      Uint64,
-      Uint32,
-    );
-typedef VolwardAiNextCoveragePageJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
-typedef VolwardAiListLocalCoverageVerdictsJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Uint64, Uint32);
-typedef VolwardAiListLocalCoverageVerdictsJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int);
-typedef VolwardAiResolveCoverageGroupJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiResolveCoverageGroupJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiBuildTreeCoveragePlanJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiBuildTreeCoveragePlanJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardAiNextTreeCoveragePageJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Uint64,
-      Uint64,
-      Uint32,
-    );
-typedef VolwardAiNextTreeCoveragePageJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
-typedef VolwardAiNextTailCoveragePageJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Uint64,
-      Uint64,
-      Uint32,
-    );
-typedef VolwardAiNextTailCoveragePageJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
-typedef VolwardAiExpandTreeNodeJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiExpandTreeNodeJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardAiApplyDirVerdictJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-typedef VolwardAiApplyDirVerdictJson =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-typedef VolwardAiApplyDirVerdictToFileNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-typedef VolwardAiApplyDirVerdictToFile =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-
-// ---------------------------------------------------------------------------
-// Catalog index API typedefs (Design §5.3)
-// ---------------------------------------------------------------------------
-
-typedef VolwardQueryDirectoryJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Bool,
-      Pointer<Utf8>,
-    );
-typedef VolwardQueryDirectoryJson =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      bool,
-      Pointer<Utf8>,
-    );
-
-typedef VolwardRefreshDirectoryNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardRefreshDirectory =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardLoadIndexFromPathNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardLoadIndexFromPath = bool Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardStartLoadIndexFromPathAsyncNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardStartLoadIndexFromPathAsync =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardIsIndexLoadingNative = Bool Function(Pointer<Void>);
-typedef VolwardIsIndexLoading = bool Function(Pointer<Void>);
-
-typedef VolwardInvalidateIndexLoadNative = Void Function(Pointer<Void>);
-typedef VolwardInvalidateIndexLoad = void Function(Pointer<Void>);
-
-typedef VolwardGetLastIndexLoadErrorNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardGetLastIndexLoadError = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardWriteLastIndexToPathNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardWriteLastIndexToPath =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardGetIndexSummaryJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>);
-typedef VolwardGetIndexSummaryJson = Pointer<Utf8> Function(Pointer<Void>);
-
-typedef VolwardIndexVersionNative = Uint64 Function(Pointer<Void>);
-typedef VolwardIndexVersion = int Function(Pointer<Void>);
-
-typedef VolwardReplaceDirectoryWithSubtreeNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef VolwardReplaceDirectoryWithSubtree =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-
-typedef VolwardAnalyzeCapabilityJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-typedef VolwardAnalyzeCapabilityJson =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-
-typedef VolwardStartCapabilityAnalysisJsonNative =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-typedef VolwardStartCapabilityAnalysisJson =
-    Pointer<Utf8> Function(
-      Pointer<Void>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-    );
-
-typedef VolwardGetCapabilityJobStatusJsonNative =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardGetCapabilityJobStatusJson =
-    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-
-typedef VolwardCancelCapabilityAnalysisNative =
-    Bool Function(Pointer<Void>, Pointer<Utf8>);
-typedef VolwardCancelCapabilityAnalysis =
-    bool Function(Pointer<Void>, Pointer<Utf8>);
-
-abstract interface class VolwardBridge {
-  bool get hasSnapshotFileApi;
-  bool get hasSnapshotFilePbApi;
-  bool get hasScanOptionsApi;
-  bool get hasCheckpointApi;
-  bool get hasQuickListApi;
-  bool get hasIndexApi;
-}
-
-final class VolwardNativeBridge implements VolwardBridge {
-  VolwardNativeBridge._(this._lib, {bool logCapabilities = false}) {
-    _create = _lib
-        .lookup<NativeFunction<VolwardEngineCreateNative>>(
-          'volward_engine_create',
-        )
-        .asFunction();
-    _free = _lib
-        .lookup<NativeFunction<VolwardEngineFreeNative>>('volward_engine_free')
-        .asFunction();
-    _freeString = _lib
-        .lookup<NativeFunction<VolwardFreeStringNative>>('volward_free_string')
-        .asFunction();
-    _probeCapabilitiesJson = _lib
-        .lookup<NativeFunction<VolwardProbeCapabilitiesJsonNative>>(
-          'volward_probe_capabilities_json',
-        )
-        .asFunction();
-    _isDeepScanReady = _lib
-        .lookup<NativeFunction<VolwardIsDeepScanReadyNative>>(
-          'volward_is_deep_scan_ready',
-        )
-        .asFunction();
-    _startScan = _lib
-        .lookup<NativeFunction<VolwardStartScanNative>>('volward_start_scan')
-        .asFunction();
-    _startScanAsync = _lib
-        .lookup<NativeFunction<VolwardStartScanAsyncNative>>(
-          'volward_start_scan_async',
-        )
-        .asFunction();
-    _startScanAsyncWithOptions = _tryLookupStartScanAsyncWithOptions();
-    _isScanRunning = _lib
-        .lookup<NativeFunction<VolwardIsScanRunningNative>>(
-          'volward_is_scan_running',
-        )
-        .asFunction();
-    _cancelScan = _lib
-        .lookup<NativeFunction<VolwardCancelScanNative>>('volward_cancel_scan')
-        .asFunction();
-    _requestScanPause = _tryLookupRequestScanPause();
-    _getLastPauseError = _tryLookupGetLastPauseError();
-    _getLastSnapshotJson = _lib
-        .lookup<NativeFunction<VolwardGetLastSnapshotJsonNative>>(
-          'volward_get_last_snapshot_json',
-        )
-        .asFunction();
-    _getLastProgressJson = _lib
-        .lookup<NativeFunction<VolwardGetLastProgressJsonNative>>(
-          'volward_get_last_progress_json',
-        )
-        .asFunction();
-    _setLastSnapshotJson = _lib
-        .lookup<NativeFunction<VolwardSetLastSnapshotJsonNative>>(
-          'volward_set_last_snapshot_json',
-        )
-        .asFunction();
-    _writeLastSnapshotToPath = _tryLookupWriteSnapshot();
-    _loadLastSnapshotFromPath = _tryLookupLoadSnapshot();
-    _writeLastCheckpointToPath = _tryLookupWriteCheckpoint();
-    _writeLastSnapshotToPathPb = _tryLookupWriteSnapshotPb();
-    _writeLastCheckpointToPathPb = _tryLookupWriteCheckpointPb();
-    _quickListDirJson = _tryLookupQuickListDirJson();
-    _openPermissionSettings = _lib
-        .lookup<NativeFunction<VolwardOpenPermissionSettingsNative>>(
-          'volward_open_permission_settings',
-        )
-        .asFunction();
-    _deleteEntriesJson = _lib
-        .lookup<NativeFunction<VolwardDeleteEntriesJsonNative>>(
-          'volward_delete_entries_json',
-        )
-        .asFunction();
-    _emptyTrashJson = _tryLookupEmptyTrashJson();
-    _buildAiCandidatesJson = _tryLookupAiBuildCandidatesJson();
-    _startBuildAiCandidatesAsync = _tryLookupAiStartBuildCandidatesAsync();
-    _isAiCandidatesBuilding = _tryLookupAiIsCandidatesBuilding();
-    _getAiCandidatesJson = _tryLookupAiGetCandidatesJson();
-    _takeAiCandidatesSpillPath = _tryLookupAiTakeCandidatesSpillPath();
-    _saveAiResultJson = _tryLookupAiSaveResultJson();
-    _loadAiResultJson = _tryLookupAiLoadResultJson();
-    _aiUpstreamEndpoint = _tryLookupAiUpstreamEndpoint();
-    _aiBatchSize = _tryLookupAiBatchSize();
-    _aiBuildRequestJson = _tryLookupAiBuildRequestJson();
-    _aiBuildConclusionSynthesisJson =
-        _tryLookupAiBuildConclusionSynthesisJson();
-    _aiParseResponseJson = _tryLookupAiParseResponseJson();
-    _aiTreeBatchSize = _tryLookupAiTreeBatchSize();
-    _aiBuildTreeRequestJson = _tryLookupAiBuildTreeRequestJson();
-    _aiParseTreeResponseJson = _tryLookupAiParseTreeResponseJson();
-    _buildAiCoveragePlanJson = _tryLookupAiBuildCoveragePlanJson();
-    _startBuildAiCoveragePlanAsync = _tryLookupAiStartBuildCoveragePlanAsync();
-    _isAiCoveragePlanBuilding = _tryLookupAiIsCoveragePlanBuilding();
-    _getAiCoveragePlanJson = _tryLookupAiGetCoveragePlanJson();
-    _nextAiCoveragePageJson = _tryLookupAiNextCoveragePageJson();
-    _listLocalCoverageVerdictsJson =
-        _tryLookupAiListLocalCoverageVerdictsJson();
-    _resolveAiCoverageGroupJson = _tryLookupAiResolveCoverageGroupJson();
-    _buildAiTreeCoveragePlanJson = _tryLookupAiBuildTreeCoveragePlanJson();
-    _nextAiTreeCoveragePageJson = _tryLookupAiNextTreeCoveragePageJson();
-    _nextAiTailCoveragePageJson = _tryLookupAiNextTailCoveragePageJson();
-    _expandAiTreeNodeJson = _tryLookupAiExpandTreeNodeJson();
-    _applyAiDirVerdictJson = _tryLookupAiApplyDirVerdictJson();
-    _applyAiDirVerdictToFile = _tryLookupAiApplyDirVerdictToFile();
-    hasAiCoverageApi =
-        _buildAiCoveragePlanJson != null &&
-        _nextAiCoveragePageJson != null &&
-        _resolveAiCoverageGroupJson != null;
-    hasAiTreeCoverageApi =
-        _buildAiTreeCoveragePlanJson != null &&
-        _nextAiTreeCoveragePageJson != null &&
-        _nextAiTailCoveragePageJson != null &&
-        _expandAiTreeNodeJson != null &&
-        _applyAiDirVerdictJson != null &&
-        _listLocalCoverageVerdictsJson != null;
-    hasAiSessionApi =
-        _buildAiCandidatesJson != null && _saveAiResultJson != null;
-    hasAiContractApi =
-        _aiUpstreamEndpoint != null &&
-        _aiBatchSize != null &&
-        _aiBuildRequestJson != null &&
-        _aiParseResponseJson != null;
-    hasAiTreeContractApi =
-        hasAiContractApi &&
-        _aiTreeBatchSize != null &&
-        _aiBuildTreeRequestJson != null &&
-        _aiParseTreeResponseJson != null;
-    if (kDebugMode) {
-      final missing = <String>[];
-      if (_buildAiCoveragePlanJson == null) {
-        missing.add('volward_ai_build_coverage_plan_json');
-      }
-      if (_nextAiCoveragePageJson == null) {
-        missing.add('volward_ai_next_coverage_page_json');
-      }
-      if (_resolveAiCoverageGroupJson == null) {
-        missing.add('volward_ai_resolve_coverage_group_json');
-      }
-      if (_buildAiTreeCoveragePlanJson == null) {
-        missing.add('volward_ai_build_tree_coverage_plan_json');
-      }
-      if (_nextAiTreeCoveragePageJson == null) {
-        missing.add('volward_ai_next_tree_coverage_page_json');
-      }
-      if (_nextAiTailCoveragePageJson == null) {
-        missing.add('volward_ai_next_tail_coverage_page_json');
-      }
-      if (_expandAiTreeNodeJson == null) {
-        missing.add('volward_ai_expand_tree_node_json');
-      }
-      if (_applyAiDirVerdictJson == null) {
-        missing.add('volward_ai_apply_dir_verdict_json');
-      }
-      if (_listLocalCoverageVerdictsJson == null) {
-        missing.add('volward_ai_list_local_coverage_verdicts_json');
-      }
-      if (logCapabilities || missing.isNotEmpty) {
-        volwardAiDebugLog(
-          'native FFI coverage=$hasAiCoverageApi tree=$hasAiTreeCoverageApi '
-          'session=$hasAiSessionApi asyncCandidates=$hasAsyncAiCandidatesApi '
-          'missing=${missing.isEmpty ? "none" : missing.join(", ")}',
-        );
-      }
-    }
-    _queryDirectoryJson = _tryLookupQueryDirectoryJson();
-    _refreshDirectory = _tryLookupRefreshDirectory();
-    _loadIndexFromPath = _tryLookupLoadIndexFromPath();
-    _startLoadIndexFromPathAsync = _tryLookupStartLoadIndexFromPathAsync();
-    _isIndexLoading = _tryLookupIsIndexLoading();
-    _invalidateIndexLoad = _tryLookupInvalidateIndexLoad();
-    _getLastIndexLoadError = _tryLookupGetLastIndexLoadError();
-    _writeLastIndexToPath = _tryLookupWriteLastIndexToPath();
-    _getIndexSummaryJson = _tryLookupGetIndexSummaryJson();
-    _indexVersion = _tryLookupIndexVersion();
-    _replaceDirectoryWithSubtree = _tryLookupReplaceDirectoryWithSubtree();
-    _analyzeCapabilityJson = _tryLookupAnalyzeCapabilityJson();
-    _startCapabilityAnalysisJson = _tryLookupStartCapabilityAnalysisJson();
-    _getCapabilityJobStatusJson = _tryLookupGetCapabilityJobStatusJson();
-    _cancelCapabilityAnalysis = _tryLookupCancelCapabilityAnalysis();
+class VolwardNativeBridge with AiBridgeFacade implements VolwardBridge {
+  VolwardNativeBridge._(NativeLibraryHandle library) {
+    _engineBridge = EngineNativeBridge(library);
+    final codec = _engineBridge.codec;
+    _scanBridge = ScanNativeBridge(library, codec);
+    _indexBridge = IndexNativeBridge(library, codec);
+    _deleteBridge = DeleteNativeBridge(library, codec);
+    _capabilityBridge = CapabilityNativeBridge(library, codec);
+    _aiBridge = AiNativeBridge(library, codec);
   }
-
-  VolwardReplaceDirectoryWithSubtree? _tryLookupReplaceDirectoryWithSubtree() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardReplaceDirectoryWithSubtreeNative>>(
-            'volward_replace_directory_with_subtree',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAnalyzeCapabilityJson? _tryLookupAnalyzeCapabilityJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAnalyzeCapabilityJsonNative>>(
-            'volward_analyze_capability_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardStartCapabilityAnalysisJson? _tryLookupStartCapabilityAnalysisJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardStartCapabilityAnalysisJsonNative>>(
-            'volward_start_capability_analysis_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardGetCapabilityJobStatusJson? _tryLookupGetCapabilityJobStatusJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardGetCapabilityJobStatusJsonNative>>(
-            'volward_get_capability_job_status_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardCancelCapabilityAnalysis? _tryLookupCancelCapabilityAnalysis() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardCancelCapabilityAnalysisNative>>(
-            'volward_cancel_capability_analysis',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardStartScanAsyncWithOptions? _tryLookupStartScanAsyncWithOptions() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardStartScanAsyncWithOptionsNative>>(
-            'volward_start_scan_async_with_options',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardWriteLastSnapshotToPath? _tryLookupWriteSnapshot() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardWriteLastSnapshotToPathNative>>(
-            'volward_write_last_snapshot_to_path',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardLoadLastSnapshotFromPath? _tryLookupLoadSnapshot() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardLoadLastSnapshotFromPathNative>>(
-            'volward_load_last_snapshot_from_path',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardWriteLastCheckpointToPath? _tryLookupWriteCheckpoint() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardWriteLastCheckpointToPathNative>>(
-            'volward_write_last_checkpoint_to_path',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardQuickListDirJson? _tryLookupQuickListDirJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardQuickListDirJsonNative>>(
-            'volward_quick_list_dir_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardWriteLastSnapshotToPathPb? _tryLookupWriteSnapshotPb() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardWriteLastSnapshotToPathPbNative>>(
-            'volward_write_last_snapshot_to_path_pb',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardWriteLastCheckpointToPathPb? _tryLookupWriteCheckpointPb() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardWriteLastCheckpointToPathPbNative>>(
-            'volward_write_last_checkpoint_to_path_pb',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
+  @visibleForTesting
+  VolwardNativeBridge.test({
+    EngineBridge? engine,
+    ScanBridge? scan,
+    IndexBridge? index,
+    DeleteBridge? delete,
+    CapabilityBridge? capability,
+    AiBridge? ai,
+  }) : _engineBridge = engine ?? _UnavailableEngineBridge(),
+       _scanBridge = scan ?? _UnavailableScanBridge(),
+       _indexBridge = index ?? _UnavailableIndexBridge(),
+       _deleteBridge = delete ?? _UnavailableDeleteBridge(),
+       _capabilityBridge = capability ?? _UnavailableCapabilityBridge(),
+       _aiBridge = ai ?? _UnavailableAiBridge();
 
   static VolwardNativeBridge? _instance;
 
-  static VolwardNativeBridge get instance {
-    return _instance ??= VolwardNativeBridge._(
-      _openLibrary(),
-      logCapabilities: true,
-    );
-  }
+  static VolwardNativeBridge get instance => _instance ??=
+      VolwardNativeBridge._(DynamicNativeLibraryHandle.openExecutableSibling());
 
-  /// Independent bridge instance (e.g. for [Isolate.run] workers).
-  static VolwardNativeBridge open() => VolwardNativeBridge._(_openLibrary());
+  static VolwardNativeBridge open() =>
+      VolwardNativeBridge._(DynamicNativeLibraryHandle.openExecutableSibling());
 
-  final DynamicLibrary _lib;
-  late final VolwardEngineCreate _create;
-  late final VolwardEngineFree _free;
-  late final VolwardFreeString _freeString;
-  late final VolwardProbeCapabilitiesJson _probeCapabilitiesJson;
-  late final VolwardIsDeepScanReady _isDeepScanReady;
-  late final VolwardStartScan _startScan;
-  late final VolwardStartScanAsync _startScanAsync;
-  late final VolwardStartScanAsyncWithOptions? _startScanAsyncWithOptions;
-  late final VolwardIsScanRunning _isScanRunning;
-  late final VolwardCancelScan _cancelScan;
-  late final VolwardRequestScanPause? _requestScanPause;
-  late final VolwardGetLastPauseError? _getLastPauseError;
-  late final VolwardGetLastSnapshotJson _getLastSnapshotJson;
-  late final VolwardGetLastProgressJson _getLastProgressJson;
-  late final VolwardSetLastSnapshotJson _setLastSnapshotJson;
-  late final VolwardWriteLastSnapshotToPath? _writeLastSnapshotToPath;
-  late final VolwardLoadLastSnapshotFromPath? _loadLastSnapshotFromPath;
-  late final VolwardWriteLastCheckpointToPath? _writeLastCheckpointToPath;
-  late final VolwardWriteLastSnapshotToPathPb? _writeLastSnapshotToPathPb;
-  late final VolwardWriteLastCheckpointToPathPb? _writeLastCheckpointToPathPb;
-  late final VolwardQuickListDirJson? _quickListDirJson;
-  late final VolwardOpenPermissionSettings _openPermissionSettings;
-  late final VolwardDeleteEntriesJson _deleteEntriesJson;
-  late final VolwardEmptyTrashJson? _emptyTrashJson;
-  late final bool hasAiSessionApi;
-  late final bool hasAiContractApi;
-  late final bool hasAiTreeContractApi;
-  late final bool hasAiCoverageApi;
-  late final bool hasAiTreeCoverageApi;
-  late final VolwardAiBuildCandidatesJson? _buildAiCandidatesJson;
-  late final VolwardAiStartBuildCandidatesAsync? _startBuildAiCandidatesAsync;
-  late final VolwardAiIsCandidatesBuilding? _isAiCandidatesBuilding;
-  late final VolwardAiGetCandidatesJson? _getAiCandidatesJson;
-  late final VolwardAiTakeCandidatesSpillPath? _takeAiCandidatesSpillPath;
-  late final VolwardAiSaveResultJson? _saveAiResultJson;
-  late final VolwardAiLoadResultJson? _loadAiResultJson;
-  late final VolwardAiUpstreamEndpoint? _aiUpstreamEndpoint;
-  late final VolwardAiBatchSize? _aiBatchSize;
-  late final VolwardAiBuildRequestJson? _aiBuildRequestJson;
-  late final VolwardAiBuildConclusionSynthesisJson?
-  _aiBuildConclusionSynthesisJson;
-  late final VolwardAiParseResponseJson? _aiParseResponseJson;
-  late final VolwardAiTreeBatchSize? _aiTreeBatchSize;
-  late final VolwardAiBuildTreeRequestJson? _aiBuildTreeRequestJson;
-  late final VolwardAiParseTreeResponseJson? _aiParseTreeResponseJson;
-  late final VolwardAiBuildCoveragePlanJson? _buildAiCoveragePlanJson;
-  late final VolwardAiStartBuildCoveragePlanAsync?
-  _startBuildAiCoveragePlanAsync;
-  late final VolwardAiIsCoveragePlanBuilding? _isAiCoveragePlanBuilding;
-  late final VolwardAiGetCoveragePlanJson? _getAiCoveragePlanJson;
-  late final VolwardAiNextCoveragePageJson? _nextAiCoveragePageJson;
-  late final VolwardAiListLocalCoverageVerdictsJson?
-  _listLocalCoverageVerdictsJson;
-  late final VolwardAiResolveCoverageGroupJson? _resolveAiCoverageGroupJson;
-  late final VolwardAiBuildTreeCoveragePlanJson? _buildAiTreeCoveragePlanJson;
-  late final VolwardAiNextTreeCoveragePageJson? _nextAiTreeCoveragePageJson;
-  late final VolwardAiNextTailCoveragePageJson? _nextAiTailCoveragePageJson;
-  late final VolwardAiExpandTreeNodeJson? _expandAiTreeNodeJson;
-  late final VolwardAiApplyDirVerdictJson? _applyAiDirVerdictJson;
-  late final VolwardAiApplyDirVerdictToFile? _applyAiDirVerdictToFile;
+  late final EngineBridge _engineBridge;
+  late final ScanBridge _scanBridge;
+  late final IndexBridge _indexBridge;
+  late final DeleteBridge _deleteBridge;
+  late final CapabilityBridge _capabilityBridge;
+  late final AiBridge _aiBridge;
 
-  bool get hasApplyDirVerdictToFileApi => _applyAiDirVerdictToFile != null;
-
-  // Catalog index API fields
-  late final VolwardQueryDirectoryJson? _queryDirectoryJson;
-  late final VolwardRefreshDirectory? _refreshDirectory;
-  late final VolwardLoadIndexFromPath? _loadIndexFromPath;
-  late final VolwardStartLoadIndexFromPathAsync? _startLoadIndexFromPathAsync;
-  late final VolwardIsIndexLoading? _isIndexLoading;
-  late final VolwardInvalidateIndexLoad? _invalidateIndexLoad;
-  late final VolwardGetLastIndexLoadError? _getLastIndexLoadError;
-  late final VolwardWriteLastIndexToPath? _writeLastIndexToPath;
-  late final VolwardGetIndexSummaryJson? _getIndexSummaryJson;
-  late final VolwardIndexVersion? _indexVersion;
-  late final VolwardReplaceDirectoryWithSubtree? _replaceDirectoryWithSubtree;
-  late final VolwardAnalyzeCapabilityJson? _analyzeCapabilityJson;
-  late final VolwardStartCapabilityAnalysisJson? _startCapabilityAnalysisJson;
-  late final VolwardGetCapabilityJobStatusJson? _getCapabilityJobStatusJson;
-  late final VolwardCancelCapabilityAnalysis? _cancelCapabilityAnalysis;
-
-  /// True when the bundled dylib includes file-based snapshot FFI (post-2026-07-23).
   @override
-  bool get hasSnapshotFileApi =>
-      _writeLastSnapshotToPath != null && _loadLastSnapshotFromPath != null;
+  AiBridge get aiBridge => _aiBridge;
 
-  /// True when the bundled dylib supports protobuf file-based snapshot I/O.
-  /// Requires `volward_write_last_snapshot_to_path_pb` and
-  /// `volward_write_last_checkpoint_to_path_pb` (both added 2026-07-27).
+  EngineHost createEngineHost() => EngineHost.create(
+    backend: NativeEngineHostBackend(
+      NativeEngineBridgeSet(
+        engine: _engineBridge,
+        scan: _scanBridge,
+        index: _indexBridge,
+        delete: _deleteBridge,
+        capability: _capabilityBridge,
+        ai: _aiBridge,
+      ),
+    ),
+  );
+
   @override
-  bool get hasSnapshotFilePbApi =>
-      _writeLastSnapshotToPathPb != null &&
-      _writeLastCheckpointToPathPb != null;
-
-  /// True when the bundled dylib accepts incremental scan options.
+  bool get hasSnapshotFileApi => _indexBridge.hasSnapshotFileApi;
   @override
-  bool get hasScanOptionsApi => _startScanAsyncWithOptions != null;
-
-  /// True when the bundled dylib supports periodic scan checkpoints.
+  bool get hasSnapshotFilePbApi => _indexBridge.hasSnapshotFilePbApi;
   @override
-  bool get hasCheckpointApi => _writeLastCheckpointToPath != null;
-
-  /// True when the bundled dylib supports instant, non-recursive directory
-  /// listing (used for the pre-scan preview and click-priority peeks).
+  bool get hasScanOptionsApi => _scanBridge.hasScanOptionsApi;
   @override
-  bool get hasQuickListApi => _quickListDirJson != null;
-
-  /// True when the bundled dylib supports catalog index query/refresh APIs
-  /// (Design §5.3 — added 2026-07-31).
+  bool get hasCheckpointApi => _indexBridge.hasCheckpointApi;
   @override
-  bool get hasIndexApi =>
-      _queryDirectoryJson != null &&
-      _refreshDirectory != null &&
-      _loadIndexFromPath != null &&
-      _writeLastIndexToPath != null &&
-      _getIndexSummaryJson != null;
+  bool get hasQuickListApi => _scanBridge.hasQuickListApi;
+  @override
+  bool get hasIndexApi => _indexBridge.hasIndexApi;
 
-  /// True when the dylib supports splicing a peek subtree into the catalog
-  /// (volward_replace_directory_with_subtree — added 2026-08-06).
-  bool get hasReplaceSubtreeApi => _replaceDirectoryWithSubtree != null;
+  bool get hasReplaceSubtreeApi => _indexBridge.hasReplaceSubtreeApi;
+  bool get hasAsyncIndexLoadApi => _indexBridge.hasAsyncIndexLoadApi;
+  bool get hasCapabilityApi => _capabilityBridge.hasCapabilityApi;
 
-  /// True when the bundled dylib exposes the capability analysis FFI
-  /// (synchronous analyze + async start/status/cancel).
-  bool get hasCapabilityApi =>
-      _analyzeCapabilityJson != null &&
-      _startCapabilityAnalysisJson != null &&
-      _getCapabilityJobStatusJson != null &&
-      _cancelCapabilityAnalysis != null;
+  Pointer<Void> createEngine() => _engineBridge.createEngine();
+  void freeEngine(Pointer<Void> engine) => _engineBridge.freeEngine(engine);
+  Map<String, dynamic> probeCapabilities(Pointer<Void> engine) =>
+      _capabilityBridge.probeCapabilities(engine);
+  bool isDeepScanReady(Pointer<Void> engine) =>
+      _capabilityBridge.isDeepScanReady(engine);
+  bool openPermissionSettings(Pointer<Void> engine) =>
+      _capabilityBridge.openPermissionSettings(engine);
 
-  bool get hasAsyncIndexLoadApi =>
-      _startLoadIndexFromPathAsync != null &&
-      _isIndexLoading != null &&
-      _invalidateIndexLoad != null &&
-      _getLastIndexLoadError != null;
-
-  /// True when AI candidate build can run on a Rust worker thread.
-  bool get hasAsyncAiCandidatesApi =>
-      _startBuildAiCandidatesAsync != null &&
-      _isAiCandidatesBuilding != null &&
-      _getAiCandidatesJson != null;
-
-  /// True when coverage plan build can run on a Rust worker thread.
-  bool get hasAsyncAiCoveragePlanApi =>
-      _startBuildAiCoveragePlanAsync != null &&
-      _isAiCoveragePlanBuilding != null &&
-      _getAiCoveragePlanJson != null;
-
-  Pointer<Void> createEngine() => _create();
-
-  void freeEngine(Pointer<Void> engine) => _free(engine);
-
-  Map<String, dynamic> probeCapabilities(Pointer<Void> engine) {
-    final ptr = _probeCapabilitiesJson(engine);
-    return _decodeJsonPtr(ptr);
-  }
-
-  bool isDeepScanReady(Pointer<Void> engine) => _isDeepScanReady(engine);
-
-  String startScan(Pointer<Void> engine, String jobId, List<String> roots) {
-    final jobPtr = jobId.toNativeUtf8();
-    final rootsPtr = jsonEncode(roots).toNativeUtf8();
-    try {
-      final out = _startScan(engine, jobPtr, rootsPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(jobPtr);
-      calloc.free(rootsPtr);
-    }
-  }
-
+  String startScan(Pointer<Void> engine, String jobId, List<String> roots) =>
+      _scanBridge.startScan(engine, jobId, roots);
   String startScanAsync(
     Pointer<Void> engine,
     String jobId,
     List<String> roots,
-  ) {
-    return startScanAsyncWithOptions(engine, jobId, roots, incremental: false);
-  }
-
+  ) => _scanBridge.startScanAsync(engine, jobId, roots);
   String startScanAsyncWithOptions(
     Pointer<Void> engine,
     String jobId,
     List<String> roots, {
     required bool incremental,
-  }) {
-    final jobPtr = jobId.toNativeUtf8();
-    final rootsPtr = jsonEncode(roots).toNativeUtf8();
-    try {
-      final startWithOptions = _startScanAsyncWithOptions;
-      final out = startWithOptions != null
-          ? startWithOptions(engine, jobPtr, rootsPtr, incremental)
-          : _startScanAsync(engine, jobPtr, rootsPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(jobPtr);
-      calloc.free(rootsPtr);
-    }
-  }
-
-  bool isScanRunning(Pointer<Void> engine) => _isScanRunning(engine);
-
-  Map<String, dynamic>? getLastProgress(Pointer<Void> engine) {
-    final ptr = _getLastProgressJson(engine);
-    if (ptr == nullptr) {
-      return null;
-    }
-    return _decodeJsonPtr(ptr);
-  }
-
-  void cancelScan(Pointer<Void> engine) => _cancelScan(engine);
-
-  String requestScanPause(Pointer<Void> engine, String root, String cacheDir) {
-    final fn = _requestScanPause;
-    if (fn == null) {
-      return 'error:native dylib missing volward_request_scan_pause — rebuild Rust';
-    }
-    final rootPtr = root.toNativeUtf8();
-    final cacheDirPtr = cacheDir.toNativeUtf8();
-    try {
-      final out = fn(engine, rootPtr, cacheDirPtr);
-      return _decodeStringPtr(out) ?? 'error:null pause response';
-    } finally {
-      calloc.free(rootPtr);
-      calloc.free(cacheDirPtr);
-    }
-  }
-
-  String? getLastPauseError(Pointer<Void> engine) {
-    final fn = _getLastPauseError;
-    if (fn == null) return 'native dylib missing volward_get_last_pause_error';
-    return _decodeStringPtr(fn(engine));
-  }
-
-  Map<String, dynamic>? getLastSnapshot(Pointer<Void> engine) {
-    final ptr = _getLastSnapshotJson(engine);
-    if (ptr == nullptr) {
-      return null;
-    }
-    return _decodeJsonPtr(ptr);
-  }
-
-  bool setLastSnapshot(Pointer<Void> engine, Map<String, dynamic> snapshot) {
-    final jsonPtr = jsonEncode(snapshot).toNativeUtf8();
-    try {
-      return _setLastSnapshotJson(engine, jsonPtr);
-    } finally {
-      calloc.free(jsonPtr);
-    }
-  }
-
-  /// Rust serializes snapshot directly to [path]; returns snapshot_id or `error:…`.
-  String writeLastSnapshotToPath(Pointer<Void> engine, String path) {
-    final write = _writeLastSnapshotToPath;
-    if (write == null) {
-      return 'error:native dylib missing volward_write_last_snapshot_to_path — rebuild Rust';
-    }
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = write(engine, pathPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  bool loadLastSnapshotFromPath(Pointer<Void> engine, String path) {
-    final load = _loadLastSnapshotFromPath;
-    if (load == null) return false;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      return load(engine, pathPtr);
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Writes the current in-progress scan checkpoint to [path]; returns the
-  /// checkpoint's `snapshot_id`, or `null` if no checkpoint API/checkpoint
-  /// is available yet.
-  String? writeLastCheckpointToPath(Pointer<Void> engine, String path) {
-    final write = _writeLastCheckpointToPath;
-    if (write == null) return null;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = write(engine, pathPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Protobuf variant — encodes the snapshot as proto3 bytes and writes it
-  /// atomically to [path] (temp+rename). Returns snapshot_id or `error:…`.
-  String writeLastSnapshotToPathPb(Pointer<Void> engine, String path) {
-    final write = _writeLastSnapshotToPathPb;
-    if (write == null) {
-      return 'error:native dylib missing volward_write_last_snapshot_to_path_pb — rebuild Rust';
-    }
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = write(engine, pathPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Protobuf variant — encodes the last checkpoint as proto3 bytes and writes
-  /// it atomically to [path] (temp+rename). Returns snapshot_id or `null`.
-  String? writeLastCheckpointToPathPb(Pointer<Void> engine, String path) {
-    final write = _writeLastCheckpointToPathPb;
-    if (write == null) return null;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = write(engine, pathPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Single-level, non-recursive listing of [path]. Returns an empty list
-  /// if the native dylib doesn't support it yet (old build) or on error.
-  List<Map<String, dynamic>> quickListDir(Pointer<Void> engine, String path) {
-    final lookup = _quickListDirJson;
-    if (lookup == null) return const [];
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = lookup(engine, pathPtr);
-      if (out == nullptr) return const [];
-      try {
-        final decoded = jsonDecode(out.toDartString());
-        if (decoded is! List) return const [];
-        return decoded
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  bool openPermissionSettings(Pointer<Void> engine) =>
-      _openPermissionSettings(engine);
-
-  Map<String, dynamic> deleteEntries(
-    Pointer<Void> engine,
-    String snapshotId,
-    List<String> entryIds, {
-    bool dryRun = false,
-  }) {
-    final snapshotPtr = snapshotId.toNativeUtf8();
-    final idsPtr = jsonEncode(entryIds).toNativeUtf8();
-    try {
-      final out = _deleteEntriesJson(engine, snapshotPtr, idsPtr, dryRun);
-      return _decodeJsonPtr(out);
-    } finally {
-      calloc.free(snapshotPtr);
-      calloc.free(idsPtr);
-    }
-  }
-
-  Map<String, dynamic> emptyTrash(Pointer<Void> engine) {
-    final lookup = _emptyTrashJson;
-    if (lookup == null) {
-      return const {
-        'error': 'native dylib missing volward_empty_trash_json — rebuild Rust',
-      };
-    }
-    final out = lookup(engine);
-    return _decodeJsonPtr(out);
-  }
-
-  String? buildAiCandidatesJson(Pointer<Void> engine, String snapshotId) {
-    final fn = _buildAiCandidatesJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? startBuildAiCandidatesAsync(Pointer<Void> engine, String snapshotId) {
-    final fn = _startBuildAiCandidatesAsync;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  bool isAiCandidatesBuilding(Pointer<Void> engine) {
-    final fn = _isAiCandidatesBuilding;
-    if (fn == null) return false;
-    return fn(engine);
-  }
-
-  String? getAiCandidatesJson(Pointer<Void> engine) {
-    final fn = _getAiCandidatesJson;
-    if (fn == null) return null;
-    final out = fn(engine);
-    if (out == nullptr) return null;
-    try {
-      return out.toDartString();
-    } finally {
-      _freeString(out);
-    }
-  }
-
-  /// Temp-file path for the latest async candidates JSON (caller deletes after read).
-  String? takeAiCandidatesSpillPath(Pointer<Void> engine) {
-    final fn = _takeAiCandidatesSpillPath;
-    if (fn == null) return null;
-    final out = fn(engine);
-    if (out == nullptr) return null;
-    try {
-      return out.toDartString();
-    } finally {
-      _freeString(out);
-    }
-  }
-
-  String? startBuildAiCoveragePlanAsync(
-    Pointer<Void> engine,
-    String snapshotId, {
-    required bool tree,
-  }) {
-    final fn = _startBuildAiCoveragePlanAsync;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr, tree);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  bool isAiCoveragePlanBuilding(Pointer<Void> engine) {
-    final fn = _isAiCoveragePlanBuilding;
-    if (fn == null) return false;
-    return fn(engine);
-  }
-
-  String? getAiCoveragePlanJson(Pointer<Void> engine) {
-    final fn = _getAiCoveragePlanJson;
-    if (fn == null) return null;
-    final out = fn(engine);
-    if (out == nullptr) return null;
-    try {
-      return out.toDartString();
-    } finally {
-      _freeString(out);
-    }
-  }
-
-  String? buildAiCoveragePlanJson(Pointer<Void> engine, String snapshotId) {
-    final fn = _buildAiCoveragePlanJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? listLocalCoverageVerdictsJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    int cursor, {
-    int limit = 5000,
-  }) {
-    final fn = _listLocalCoverageVerdictsJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr, cursor, limit);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? nextAiCoveragePageJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    int planVersion,
-    int cursor, {
-    int pageSize = 40,
-  }) {
-    final fn = _nextAiCoveragePageJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr, planVersion, cursor, pageSize);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? resolveAiCoverageGroupJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    String groupPath,
-  ) {
-    final fn = _resolveAiCoverageGroupJson;
-    if (fn == null) return null;
-    final snapPtr = snapshotId.toNativeUtf8();
-    final groupPtr = groupPath.toNativeUtf8();
-    try {
-      final out = fn(engine, snapPtr, groupPtr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(snapPtr);
-      calloc.free(groupPtr);
-    }
-  }
-
-  String? buildAiTreeCoveragePlanJson(Pointer<Void> engine, String snapshotId) {
-    final fn = _buildAiTreeCoveragePlanJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? nextAiTreeCoveragePageJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    int planVersion,
-    int cursor, {
-    int pageSize = 80,
-  }) {
-    final fn = _nextAiTreeCoveragePageJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr, planVersion, cursor, pageSize);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? nextAiTailCoveragePageJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    int planVersion,
-    int cursor, {
-    int pageSize = 40,
-  }) {
-    final fn = _nextAiTailCoveragePageJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr, planVersion, cursor, pageSize);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? expandAiTreeNodeJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    String dirPath,
-  ) {
-    final fn = _expandAiTreeNodeJson;
-    if (fn == null) return null;
-    final snapPtr = snapshotId.toNativeUtf8();
-    final dirPtr = dirPath.toNativeUtf8();
-    try {
-      final out = fn(engine, snapPtr, dirPtr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(snapPtr);
-      calloc.free(dirPtr);
-    }
-  }
-
-  String? applyAiDirVerdictJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    String dirPath,
-    String verdict,
-    String confidence,
-    String roleSnakeCase,
-  ) {
-    final fn = _applyAiDirVerdictJson;
-    if (fn == null) return null;
-    final snapPtr = snapshotId.toNativeUtf8();
-    final dirPtr = dirPath.toNativeUtf8();
-    final verdictPtr = verdict.toNativeUtf8();
-    final confidencePtr = confidence.toNativeUtf8();
-    final rolePtr = roleSnakeCase.toNativeUtf8();
-    try {
-      final out = fn(
-        engine,
-        snapPtr,
-        dirPtr,
-        verdictPtr,
-        confidencePtr,
-        rolePtr,
-      );
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(snapPtr);
-      calloc.free(dirPtr);
-      calloc.free(verdictPtr);
-      calloc.free(confidencePtr);
-      calloc.free(rolePtr);
-    }
-  }
-
-  /// Appends propagated verdicts to [outPath]; returns `{"count":N}` or `error:…`.
-  String? applyAiDirVerdictToFile(
-    Pointer<Void> engine,
-    String snapshotId,
-    String dirPath,
-    String verdict,
-    String confidence,
-    String roleSnakeCase,
-    String outPath,
-  ) {
-    final fn = _applyAiDirVerdictToFile;
-    if (fn == null) return null;
-    final snapPtr = snapshotId.toNativeUtf8();
-    final dirPtr = dirPath.toNativeUtf8();
-    final verdictPtr = verdict.toNativeUtf8();
-    final confidencePtr = confidence.toNativeUtf8();
-    final rolePtr = roleSnakeCase.toNativeUtf8();
-    final outPtr = outPath.toNativeUtf8();
-    try {
-      final out = fn(
-        engine,
-        snapPtr,
-        dirPtr,
-        verdictPtr,
-        confidencePtr,
-        rolePtr,
-        outPtr,
-      );
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(snapPtr);
-      calloc.free(dirPtr);
-      calloc.free(verdictPtr);
-      calloc.free(confidencePtr);
-      calloc.free(rolePtr);
-      calloc.free(outPtr);
-    }
-  }
-
-  bool saveAiResultJson(
-    Pointer<Void> engine,
-    String snapshotId,
-    String resultJson,
-  ) {
-    final fn = _saveAiResultJson;
-    if (fn == null) return false;
-    final snapPtr = snapshotId.toNativeUtf8();
-    final jsonPtr = resultJson.toNativeUtf8();
-    try {
-      return fn(engine, snapPtr, jsonPtr);
-    } finally {
-      calloc.free(snapPtr);
-      calloc.free(jsonPtr);
-    }
-  }
-
-  /// Returns saved analysis JSON, an `error:…` string, or null if the symbol
-  /// is missing from the dylib (needs rebuild).
-  String? loadAiResultJson(Pointer<Void> engine, String snapshotId) {
-    final fn = _loadAiResultJson;
-    if (fn == null) return null;
-    final ptr = snapshotId.toNativeUtf8();
-    try {
-      final out = fn(engine, ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? aiUpstreamEndpoint() {
-    final fn = _aiUpstreamEndpoint;
-    if (fn == null) return null;
-    final out = fn();
-    if (out == nullptr) return null;
-    try {
-      return out.toDartString();
-    } finally {
-      _freeString(out);
-    }
-  }
-
-  int? aiBatchSize() {
-    final fn = _aiBatchSize;
-    if (fn == null) return null;
-    return fn();
-  }
-
-  String? aiBuildRequestJson(String candidatesJson) {
-    final fn = _aiBuildRequestJson;
-    if (fn == null) return null;
-    final ptr = candidatesJson.toNativeUtf8();
-    try {
-      final out = fn(ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? aiBuildConclusionSynthesisJson(String userJson) {
-    final fn = _aiBuildConclusionSynthesisJson;
-    if (fn == null) return null;
-    final ptr = userJson.toNativeUtf8();
-    try {
-      final out = fn(ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? aiParseResponseJson(String upstreamBody, String batchJson) {
-    final fn = _aiParseResponseJson;
-    if (fn == null) return null;
-    final bodyPtr = upstreamBody.toNativeUtf8();
-    final batchPtr = batchJson.toNativeUtf8();
-    try {
-      final out = fn(bodyPtr, batchPtr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(bodyPtr);
-      calloc.free(batchPtr);
-    }
-  }
-
-  int? aiTreeBatchSize() {
-    final fn = _aiTreeBatchSize;
-    if (fn == null) return null;
-    return fn();
-  }
-
-  String? aiBuildTreeRequestJson(String nodesJson) {
-    final fn = _aiBuildTreeRequestJson;
-    if (fn == null) return null;
-    final ptr = nodesJson.toNativeUtf8();
-    try {
-      final out = fn(ptr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  String? aiParseTreeResponseJson(String upstreamBody, String batchJson) {
-    final fn = _aiParseTreeResponseJson;
-    if (fn == null) return null;
-    final bodyPtr = upstreamBody.toNativeUtf8();
-    final batchPtr = batchJson.toNativeUtf8();
-    try {
-      final out = fn(bodyPtr, batchPtr);
-      if (out == nullptr) return null;
-      try {
-        return out.toDartString();
-      } finally {
-        _freeString(out);
-      }
-    } finally {
-      calloc.free(bodyPtr);
-      calloc.free(batchPtr);
-    }
-  }
-
-  Map<String, dynamic> _decodeJsonPtr(Pointer<Utf8> ptr) {
-    try {
-      final raw = ptr.toDartString();
-      return jsonDecode(raw) as Map<String, dynamic>;
-    } finally {
-      _freeString(ptr);
-    }
-  }
-
-  String? _decodeStringPtr(Pointer<Utf8> ptr) {
-    if (ptr == nullptr) return null;
-    try {
-      return ptr.toDartString();
-    } finally {
-      _freeString(ptr);
-    }
-  }
-
-  static DynamicLibrary _openLibrary() {
-    if (Platform.isMacOS) {
-      final exe = Platform.resolvedExecutable;
-      final libPath =
-          '${File(exe).parent.path}/../Frameworks/libvolward_facade.dylib';
-      return DynamicLibrary.open(libPath);
-    }
-    if (Platform.isLinux) {
-      final exe = Platform.resolvedExecutable;
-      final libPath = '${File(exe).parent.path}/lib/libvolward_facade.so';
-      return DynamicLibrary.open(libPath);
-    }
-    if (Platform.isWindows) {
-      final exe = Platform.resolvedExecutable;
-      final libPath = '${File(exe).parent.path}/volward_facade.dll';
-      return DynamicLibrary.open(libPath);
-    }
-    throw UnsupportedError('Volward native bridge: unsupported platform');
-  }
-
-  VolwardEmptyTrashJson? _tryLookupEmptyTrashJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardEmptyTrashJsonNative>>(
-            'volward_empty_trash_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardRequestScanPause? _tryLookupRequestScanPause() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardRequestScanPauseNative>>(
-            'volward_request_scan_pause',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardGetLastPauseError? _tryLookupGetLastPauseError() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardGetLastPauseErrorNative>>(
-            'volward_get_last_pause_error',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBuildCandidatesJson? _tryLookupAiBuildCandidatesJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBuildCandidatesJsonNative>>(
-            'volward_ai_build_candidates_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiStartBuildCandidatesAsync? _tryLookupAiStartBuildCandidatesAsync() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiStartBuildCandidatesAsyncNative>>(
-            'volward_ai_start_build_candidates_async',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiIsCandidatesBuilding? _tryLookupAiIsCandidatesBuilding() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiIsCandidatesBuildingNative>>(
-            'volward_ai_is_candidates_building',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiGetCandidatesJson? _tryLookupAiGetCandidatesJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiGetCandidatesJsonNative>>(
-            'volward_ai_get_candidates_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiTakeCandidatesSpillPath? _tryLookupAiTakeCandidatesSpillPath() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiTakeCandidatesSpillPathNative>>(
-            'volward_ai_take_candidates_spill_path',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiSaveResultJson? _tryLookupAiSaveResultJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiSaveResultJsonNative>>(
-            'volward_ai_save_result_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiLoadResultJson? _tryLookupAiLoadResultJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiLoadResultJsonNative>>(
-            'volward_ai_load_result_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiUpstreamEndpoint? _tryLookupAiUpstreamEndpoint() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiUpstreamEndpointNative>>(
-            'volward_ai_upstream_endpoint',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBatchSize? _tryLookupAiBatchSize() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBatchSizeNative>>(
-            'volward_ai_batch_size',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBuildRequestJson? _tryLookupAiBuildRequestJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBuildRequestJsonNative>>(
-            'volward_ai_build_request_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBuildConclusionSynthesisJson?
-  _tryLookupAiBuildConclusionSynthesisJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBuildConclusionSynthesisJsonNative>>(
-            'volward_ai_build_conclusion_synthesis_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiParseResponseJson? _tryLookupAiParseResponseJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiParseResponseJsonNative>>(
-            'volward_ai_parse_response_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiTreeBatchSize? _tryLookupAiTreeBatchSize() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiTreeBatchSizeNative>>(
-            'volward_ai_tree_batch_size',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBuildTreeRequestJson? _tryLookupAiBuildTreeRequestJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBuildTreeRequestJsonNative>>(
-            'volward_ai_build_tree_request_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiParseTreeResponseJson? _tryLookupAiParseTreeResponseJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiParseTreeResponseJsonNative>>(
-            'volward_ai_parse_tree_response_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBuildCoveragePlanJson? _tryLookupAiBuildCoveragePlanJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBuildCoveragePlanJsonNative>>(
-            'volward_ai_build_coverage_plan_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiStartBuildCoveragePlanAsync?
-  _tryLookupAiStartBuildCoveragePlanAsync() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiStartBuildCoveragePlanAsyncNative>>(
-            'volward_ai_start_build_coverage_plan_async',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiIsCoveragePlanBuilding? _tryLookupAiIsCoveragePlanBuilding() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiIsCoveragePlanBuildingNative>>(
-            'volward_ai_is_coverage_plan_building',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiGetCoveragePlanJson? _tryLookupAiGetCoveragePlanJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiGetCoveragePlanJsonNative>>(
-            'volward_ai_get_coverage_plan_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiNextCoveragePageJson? _tryLookupAiNextCoveragePageJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiNextCoveragePageJsonNative>>(
-            'volward_ai_next_coverage_page_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiListLocalCoverageVerdictsJson?
-  _tryLookupAiListLocalCoverageVerdictsJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiListLocalCoverageVerdictsJsonNative>>(
-            'volward_ai_list_local_coverage_verdicts_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiResolveCoverageGroupJson? _tryLookupAiResolveCoverageGroupJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiResolveCoverageGroupJsonNative>>(
-            'volward_ai_resolve_coverage_group_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiBuildTreeCoveragePlanJson? _tryLookupAiBuildTreeCoveragePlanJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiBuildTreeCoveragePlanJsonNative>>(
-            'volward_ai_build_tree_coverage_plan_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiNextTreeCoveragePageJson? _tryLookupAiNextTreeCoveragePageJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiNextTreeCoveragePageJsonNative>>(
-            'volward_ai_next_tree_coverage_page_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiNextTailCoveragePageJson? _tryLookupAiNextTailCoveragePageJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiNextTailCoveragePageJsonNative>>(
-            'volward_ai_next_tail_coverage_page_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiExpandTreeNodeJson? _tryLookupAiExpandTreeNodeJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiExpandTreeNodeJsonNative>>(
-            'volward_ai_expand_tree_node_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiApplyDirVerdictJson? _tryLookupAiApplyDirVerdictJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiApplyDirVerdictJsonNative>>(
-            'volward_ai_apply_dir_verdict_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardAiApplyDirVerdictToFile? _tryLookupAiApplyDirVerdictToFile() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardAiApplyDirVerdictToFileNative>>(
-            'volward_ai_apply_dir_verdict_to_file',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Catalog index API — try-lookup helpers + public methods
-  // ---------------------------------------------------------------------------
-
-  VolwardQueryDirectoryJson? _tryLookupQueryDirectoryJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardQueryDirectoryJsonNative>>(
-            'volward_query_directory_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardRefreshDirectory? _tryLookupRefreshDirectory() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardRefreshDirectoryNative>>(
-            'volward_refresh_directory',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardLoadIndexFromPath? _tryLookupLoadIndexFromPath() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardLoadIndexFromPathNative>>(
-            'volward_load_index_from_path',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardStartLoadIndexFromPathAsync? _tryLookupStartLoadIndexFromPathAsync() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardStartLoadIndexFromPathAsyncNative>>(
-            'volward_start_load_index_from_path_async',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardIsIndexLoading? _tryLookupIsIndexLoading() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardIsIndexLoadingNative>>(
-            'volward_is_index_loading',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardInvalidateIndexLoad? _tryLookupInvalidateIndexLoad() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardInvalidateIndexLoadNative>>(
-            'volward_invalidate_index_load',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardGetLastIndexLoadError? _tryLookupGetLastIndexLoadError() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardGetLastIndexLoadErrorNative>>(
-            'volward_get_last_index_load_error',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardWriteLastIndexToPath? _tryLookupWriteLastIndexToPath() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardWriteLastIndexToPathNative>>(
-            'volward_write_last_index_to_path',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardGetIndexSummaryJson? _tryLookupGetIndexSummaryJson() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardGetIndexSummaryJsonNative>>(
-            'volward_get_index_summary_json',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  VolwardIndexVersion? _tryLookupIndexVersion() {
-    try {
-      return _lib
-          .lookup<NativeFunction<VolwardIndexVersionNative>>(
-            'volward_index_version',
-          )
-          .asFunction();
-    } on Object {
-      return null;
-    }
-  }
-
-  /// Query direct children of [path] from the Rust catalog index.
-  /// Returns a parsed `SnapshotQueryResult` JSON map.
-  /// Pure in-memory — does NOT trigger a file-system scan.
-  /// Throws [UnsupportedError] if the dylib lacks the index API.
+  }) => _scanBridge.startScanAsyncWithOptions(
+    engine,
+    jobId,
+    roots,
+    incremental: incremental,
+  );
+  bool isScanRunning(Pointer<Void> engine) => _scanBridge.isScanRunning(engine);
+  Map<String, dynamic>? getLastProgress(Pointer<Void> engine) =>
+      _scanBridge.getLastProgress(engine);
+  void cancelScan(Pointer<Void> engine) => _scanBridge.cancelScan(engine);
+  String requestScanPause(Pointer<Void> engine, String root, String cacheDir) =>
+      _scanBridge.requestScanPause(engine, root, cacheDir);
+  String? getLastPauseError(Pointer<Void> engine) =>
+      _scanBridge.getLastPauseError(engine);
+  List<Map<String, dynamic>> quickListDir(Pointer<Void> engine, String path) =>
+      _scanBridge.quickListDir(engine, path);
+
+  Map<String, dynamic>? getLastSnapshot(Pointer<Void> engine) =>
+      _indexBridge.getLastSnapshot(engine);
+  bool setLastSnapshot(Pointer<Void> engine, Map<String, dynamic> snapshot) =>
+      _indexBridge.setLastSnapshot(engine, snapshot);
+  String writeLastSnapshotToPath(Pointer<Void> engine, String path) =>
+      _indexBridge.writeLastSnapshotToPath(engine, path);
+  bool loadLastSnapshotFromPath(Pointer<Void> engine, String path) =>
+      _indexBridge.loadLastSnapshotFromPath(engine, path);
+  String? writeLastCheckpointToPath(Pointer<Void> engine, String path) =>
+      _indexBridge.writeLastCheckpointToPath(engine, path);
+  String writeLastSnapshotToPathPb(Pointer<Void> engine, String path) =>
+      _indexBridge.writeLastSnapshotToPathPb(engine, path);
+  String? writeLastCheckpointToPathPb(Pointer<Void> engine, String path) =>
+      _indexBridge.writeLastCheckpointToPathPb(engine, path);
   Map<String, dynamic> queryDirectoryJson(
     Pointer<Void> engine,
     String path, {
     String? categoryFilter,
     bool deletableOnly = false,
     String sortMode = 'size_desc',
-  }) {
-    final fn = _queryDirectoryJson;
-    if (fn == null) {
-      throw UnsupportedError(
-        'volward_query_directory_json not available — rebuild Rust',
-      );
-    }
-    final pathPtr = path.toNativeUtf8();
-    final catPtr = categoryFilter != null
-        ? categoryFilter.toNativeUtf8()
-        : Pointer<Utf8>.fromAddress(0);
-    final sortPtr = sortMode.toNativeUtf8();
-    try {
-      final out = fn(engine, pathPtr, catPtr, deletableOnly, sortPtr);
-      return _decodeJsonPtr(out);
-    } finally {
-      calloc.free(pathPtr);
-      if (categoryFilter != null) calloc.free(catPtr);
-      calloc.free(sortPtr);
-    }
-  }
-
-  /// Re-query the existing catalog for [path] — pure in-memory, no scan.
-  /// Returns a parsed `SnapshotQueryResult` JSON map.
-  /// Throws [UnsupportedError] if the dylib lacks the index API.
-  Map<String, dynamic> refreshDirectory(Pointer<Void> engine, String path) {
-    final fn = _refreshDirectory;
-    if (fn == null) {
-      throw UnsupportedError(
-        'volward_refresh_directory not available — rebuild Rust',
-      );
-    }
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = fn(engine, pathPtr);
-      return _decodeJsonPtr(out);
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Load a persisted index file into the engine. Returns true on success.
-  bool loadIndexFromPath(Pointer<Void> engine, String path) {
-    final fn = _loadIndexFromPath;
-    if (fn == null) return false;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      return fn(engine, pathPtr);
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Splices a freshly scanned subtree into the catalog index at
-  /// [targetPath], replacing that directory, and bumps the index version.
-  /// [subtreeJson] is `{"tree": …, "entries": […]}` from a peek scan.
-  /// Returns the new index version, or null when the API is unavailable or the
-  /// engine rejected the payload.
+  }) => _indexBridge.queryDirectoryJson(
+    engine,
+    path,
+    categoryFilter: categoryFilter,
+    deletableOnly: deletableOnly,
+    sortMode: sortMode,
+  );
+  Map<String, dynamic> refreshDirectory(Pointer<Void> engine, String path) =>
+      _indexBridge.refreshDirectory(engine, path);
+  bool loadIndexFromPath(Pointer<Void> engine, String path) =>
+      _indexBridge.loadIndexFromPath(engine, path);
   int? replaceDirectoryWithSubtree(
     Pointer<Void> engine,
     String targetPath,
     String subtreeJson,
-  ) {
-    final fn = _replaceDirectoryWithSubtree;
-    if (fn == null) return null;
-    final pathPtr = targetPath.toNativeUtf8();
-    final jsonPtr = subtreeJson.toNativeUtf8();
-    try {
-      final out = fn(engine, pathPtr, jsonPtr);
-      final raw = _decodeStringPtr(out);
-      if (raw == null) return null;
-      if (raw.startsWith('{')) return null; // {"error": …}
-      return int.tryParse(raw);
-    } finally {
-      calloc.free(pathPtr);
-      calloc.free(jsonPtr);
-    }
-  }
+  ) =>
+      _indexBridge.replaceDirectoryWithSubtree(engine, targetPath, subtreeJson);
+  String? startLoadIndexFromPathAsync(Pointer<Void> engine, String path) =>
+      _indexBridge.startLoadIndexFromPathAsync(engine, path);
+  bool isIndexLoading(Pointer<Void> engine) =>
+      _indexBridge.isIndexLoading(engine);
+  void invalidateIndexLoad(Pointer<Void> engine) =>
+      _indexBridge.invalidateIndexLoad(engine);
+  String? getLastIndexLoadError(Pointer<Void> engine) =>
+      _indexBridge.getLastIndexLoadError(engine);
+  String? writeLastIndexToPath(Pointer<Void> engine, String path) =>
+      _indexBridge.writeLastIndexToPath(engine, path);
+  Map<String, dynamic>? getIndexSummaryJson(Pointer<Void> engine) =>
+      _indexBridge.getIndexSummaryJson(engine);
+  int indexVersion(Pointer<Void> engine) => _indexBridge.indexVersion(engine);
 
-  String? startLoadIndexFromPathAsync(Pointer<Void> engine, String path) {
-    final fn = _startLoadIndexFromPathAsync;
-    if (fn == null) return null;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = fn(engine, pathPtr);
-      return _decodeStringPtr(out);
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
+  Map<String, dynamic> deleteEntries(
+    Pointer<Void> engine,
+    String snapshotId,
+    List<String> entryIds, {
+    bool dryRun = false,
+  }) =>
+      _deleteBridge.deleteEntries(engine, snapshotId, entryIds, dryRun: dryRun);
+  Map<String, dynamic> emptyTrash(Pointer<Void> engine) =>
+      _deleteBridge.emptyTrash(engine);
 
-  bool isIndexLoading(Pointer<Void> engine) {
-    final fn = _isIndexLoading;
-    if (fn == null) return false;
-    return fn(engine);
-  }
-
-  void invalidateIndexLoad(Pointer<Void> engine) {
-    final fn = _invalidateIndexLoad;
-    if (fn == null) return;
-    fn(engine);
-  }
-
-  String? getLastIndexLoadError(Pointer<Void> engine) {
-    final fn = _getLastIndexLoadError;
-    if (fn == null) return null;
-    final out = fn(engine);
-    return _decodeStringPtr(out);
-  }
-
-  /// Persist the current index to [path]. Returns snapshot_id or `error:…`.
-  String? writeLastIndexToPath(Pointer<Void> engine, String path) {
-    final fn = _writeLastIndexToPath;
-    if (fn == null) return null;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      final out = fn(engine, pathPtr);
-      return out.toDartString();
-    } finally {
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// Current lightweight index summary from Rust.
-  Map<String, dynamic>? getIndexSummaryJson(Pointer<Void> engine) {
-    final fn = _getIndexSummaryJson;
-    if (fn == null) return null;
-    final out = fn(engine);
-    return _decodeJsonPtr(out);
-  }
-
-  /// Current catalog version counter from Rust.
-  /// Dart uses this as [SnapshotQueryKey.version] for cache alignment.
-  int indexVersion(Pointer<Void> engine) {
-    final fn = _indexVersion;
-    if (fn == null) return 0;
-    return fn(engine);
-  }
-
-  // ── Capability analysis APIs ──────────────────────────────────────────
-
-  /// Runs a capability analysis synchronously against the current snapshot.
-  /// Returns `{"result": …}` / `{"error": …}` JSON from Rust.
   String analyzeCapability(
     Pointer<Void> engine,
     String snapshotId,
     String capability,
     String optionsJson,
-  ) {
-    final fn = _analyzeCapabilityJson;
-    if (fn == null) {
-      return 'error:native dylib missing volward_analyze_capability_json — rebuild Rust';
-    }
-    final snapshotPtr = snapshotId.toNativeUtf8();
-    final capabilityPtr = capability.toNativeUtf8();
-    final optionsPtr = optionsJson.toNativeUtf8();
-    try {
-      final out = fn(engine, snapshotPtr, capabilityPtr, optionsPtr);
-      return _decodeStringPtr(out) ?? 'error:null capability response';
-    } finally {
-      calloc.free(snapshotPtr);
-      calloc.free(capabilityPtr);
-      calloc.free(optionsPtr);
-    }
-  }
-
-  /// Starts an async capability analysis and returns `{"job_id": …}` /
-  /// `{"error": …}` JSON from Rust.
+  ) => _capabilityBridge.analyzeCapability(
+    engine,
+    snapshotId,
+    capability,
+    optionsJson,
+  );
   String startCapabilityAnalysis(
     Pointer<Void> engine,
     String snapshotId,
     String capability,
     String optionsJson,
-  ) {
-    final fn = _startCapabilityAnalysisJson;
-    if (fn == null) {
-      return 'error:native dylib missing volward_start_capability_analysis_json — rebuild Rust';
-    }
-    final snapshotPtr = snapshotId.toNativeUtf8();
-    final capabilityPtr = capability.toNativeUtf8();
-    final optionsPtr = optionsJson.toNativeUtf8();
-    try {
-      final out = fn(engine, snapshotPtr, capabilityPtr, optionsPtr);
-      return _decodeStringPtr(out) ?? 'error:null capability start response';
-    } finally {
-      calloc.free(snapshotPtr);
-      calloc.free(capabilityPtr);
-      calloc.free(optionsPtr);
-    }
-  }
+  ) => _capabilityBridge.startCapabilityAnalysis(
+    engine,
+    snapshotId,
+    capability,
+    optionsJson,
+  );
+  String getCapabilityJobStatus(Pointer<Void> engine, String jobId) =>
+      _capabilityBridge.getCapabilityJobStatus(engine, jobId);
+  bool cancelCapabilityAnalysis(Pointer<Void> engine, String jobId) =>
+      _capabilityBridge.cancelCapabilityAnalysis(engine, jobId);
+}
 
-  /// Reads the current status of a capability job as `{"progress": …,
-  /// "result": …}` / `{"error": …}` JSON from Rust.
-  String getCapabilityJobStatus(Pointer<Void> engine, String jobId) {
-    final fn = _getCapabilityJobStatusJson;
-    if (fn == null) {
-      return 'error:native dylib missing volward_get_capability_job_status_json — rebuild Rust';
-    }
-    final jobPtr = jobId.toNativeUtf8();
-    try {
-      final out = fn(engine, jobPtr);
-      return _decodeStringPtr(out) ?? 'error:null capability status';
-    } finally {
-      calloc.free(jobPtr);
-    }
-  }
+class _UnavailableEngineBridge implements EngineBridge {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Native engine bridge was not provided');
+}
 
-  /// Requests cancellation of an in-flight capability job.
-  bool cancelCapabilityAnalysis(Pointer<Void> engine, String jobId) {
-    final fn = _cancelCapabilityAnalysis;
-    if (fn == null) return false;
-    final jobPtr = jobId.toNativeUtf8();
-    try {
-      return fn(engine, jobPtr);
-    } finally {
-      calloc.free(jobPtr);
-    }
-  }
+class _UnavailableScanBridge implements ScanBridge {
+  @override
+  bool get hasScanOptionsApi => false;
+  @override
+  bool get hasQuickListApi => false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Native scan bridge was not provided');
+}
+
+class _UnavailableIndexBridge implements IndexBridge {
+  @override
+  bool get hasSnapshotFileApi => false;
+  @override
+  bool get hasSnapshotFilePbApi => false;
+  @override
+  bool get hasCheckpointApi => false;
+  @override
+  bool get hasIndexApi => false;
+  @override
+  bool get hasReplaceSubtreeApi => false;
+  @override
+  bool get hasAsyncIndexLoadApi => false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Native index bridge was not provided');
+}
+
+class _UnavailableDeleteBridge implements DeleteBridge {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Native delete bridge was not provided');
+}
+
+class _UnavailableCapabilityBridge implements CapabilityBridge {
+  @override
+  bool get hasCapabilityApi => false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Native capability bridge was not provided');
+}
+
+class _UnavailableAiBridge implements AiBridge {
+  @override
+  bool get hasApplyDirVerdictToFileApi => false;
+  @override
+  bool get hasAsyncAiCandidatesApi => false;
+  @override
+  bool get hasAsyncAiCoveragePlanApi => false;
+  @override
+  bool get hasAiSessionApi => false;
+  @override
+  bool get hasAiContractApi => false;
+  @override
+  bool get hasAiTreeContractApi => false;
+  @override
+  bool get hasAiCoverageApi => false;
+  @override
+  bool get hasAiTreeCoverageApi => false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Native AI bridge was not provided');
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_coverage_coordinator.dart';
 import 'package:volward/ai/ai_coverage_job_controller.dart';
@@ -12,6 +13,7 @@ import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/coverage_engine.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
+import 'package:volward/ai/coverage_snapshot_reader.dart';
 import 'package:volward/ai/coverage_verdict_store.dart';
 import 'package:volward/ai/coverage_notification_text.dart';
 import 'package:volward/l10n/generated/app_localizations_en.dart';
@@ -19,6 +21,27 @@ import 'package:volward/volward_session.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'Coverage service uses the reader and falls back without a catalog',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final reader = _SnapshotReader();
+      final provider = _Provider();
+      final service = await AiCoverageService.tryCreate(
+        session: reader,
+        provider: provider,
+        catalogSnapshotId: 'requested-snapshot',
+      );
+      addTearDown(() => service?.dispose());
+
+      expect(reader.requestedSnapshotId, 'requested-snapshot');
+      expect(service?.engine, same(reader.coverageEngine));
+      expect(service?.isolateCatalogPath, isNull);
+      expect(service?.isolateCatalogMatches('requested-snapshot'), isTrue);
+    },
+  );
 
   test(
     'debugTryResumePlanForJob returns precheck cache for fresh start job',
@@ -284,6 +307,37 @@ void main() {
     },
   );
 
+  test(
+    'start uses the retained platform provider after equivalent provider reuse',
+    () async {
+      final service = _RecordingStartService();
+      final active = _TrackedPlatformProvider();
+      final incoming = _TrackedPlatformProvider();
+      final coordinator = AiCoverageCoordinator.testing(
+        serviceFactory:
+            ({
+              required session,
+              required provider,
+              resumePlanLoader,
+              catalogSnapshotId,
+            }) async => service,
+        isCoverageApiReady: (_) => true,
+        resolveProvider: () async => null,
+      );
+      coordinator.rebind(VolwardSession.test());
+      await coordinator.prepareService(active);
+      final result = await coordinator.startFullCoverage(
+        snapshotId: 'snapshot',
+        mode: AiMode.platform,
+        provider: incoming,
+      );
+      expect(result, isA<StartFullCoverageStarted>());
+      expect(incoming.disposed, isTrue);
+      expect(active.quotaCalls, 1);
+      await coordinator.detachAndDrain();
+    },
+  );
+
   test('coordinator emits desktop notify on completion', () async {
     final notifications = <String>[];
     final coordinator = AiCoverageCoordinator.testing(
@@ -315,6 +369,40 @@ void main() {
     final copy = coverageCompleteNotification(l10n, state);
     expect(notifications.single, '${copy.title}::${copy.body}::s1');
   });
+}
+
+class _SnapshotReader implements CoverageSnapshotReader {
+  String? requestedSnapshotId;
+
+  @override
+  final coverageEngine = FakeCoverageEngine(
+    summary: const CoveragePlanSummary(
+      snapshotId: 'requested-snapshot',
+      planVersion: 1,
+      rootPath: '/data',
+      totalUnclassified: 0,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 0,
+      estimatedPages: 0,
+    ),
+    pages: const [],
+  );
+
+  @override
+  bool get hasAiTreeCoverageApi => false;
+
+  @override
+  bool get hasIndexApi => true;
+
+  @override
+  String? get currentCoverageSnapshotId => 'current-snapshot';
+
+  @override
+  Future<String?> catalogIndexPathForAiCoverage(String snapshotId) async {
+    requestedSnapshotId = snapshotId;
+    return null;
+  }
 }
 
 class _TestPlatformProvider extends PlatformAiProvider {
@@ -417,5 +505,24 @@ class _RecordingStartService extends AiCoverageService {
       budgetCredits: 48,
       updatedAtMs: 0,
     );
+  }
+}
+
+class _TrackedPlatformProvider extends PlatformAiProvider {
+  _TrackedPlatformProvider() : super(token: 'same-token');
+  bool disposed = false;
+  int quotaCalls = 0;
+  @override
+  Future<AiQuotaInfo?> queryQuota() async {
+    if (disposed) throw StateError('used disposed provider');
+    quotaCalls++;
+    lastCreditsRemaining = 1000;
+    return const AiQuotaInfo(creditsRemaining: 1000, creditsTotal: 1000);
+  }
+
+  @override
+  void dispose() {
+    disposed = true;
+    super.dispose();
   }
 }

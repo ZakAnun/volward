@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../snapshot_cache.dart';
+import '../settings/settings_file.dart';
 import 'volward_tokens.dart';
 
 enum VolwardThemePreference { system, light, dark }
@@ -162,6 +162,5 @@ class VolwardThemeSettings extends ChangeNotifier {
     }
   }
 
-  static File _settingsFile() =>
-      File('${SnapshotCache.cacheDir().path}/settings.json');
+  static File _settingsFile() => sharedSettingsFile();
 }
