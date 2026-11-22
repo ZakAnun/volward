@@ -128,6 +128,38 @@ class StorageHomeSummary {
 
   bool get hasUsableCapacity => _hasUsableCapacity(selectedVolume);
 
+  /// A completed scan of a folder explicitly chosen by the user has an
+  /// authoritative subtree total. Show that value as the primary capacity
+  /// metric instead of the unchanged usage of the containing disk.
+  bool get usesScopedCapacity =>
+      selectedLocation?.kind == StorageLocationKind.custom &&
+      hasCompletedScan &&
+      scannedBytes != null &&
+      hasUsableCapacity;
+
+  /// The primary usage value displayed by the home capacity card.
+  int? get displayedUsedBytes => usesScopedCapacity
+      ? scannedBytes
+      : hasUsableCapacity
+      ? selectedVolume?.usedBytes
+      : null;
+
+  /// The capacity-card meter fraction. For an explicitly selected folder it
+  /// represents that folder's physical usage as a portion of its disk.
+  double? get displayedCapacityFraction {
+    if (!hasUsableCapacity) return null;
+    if (!usesScopedCapacity) return selectedVolume?.usedFraction;
+    final bytes = scannedBytes;
+    final total = selectedVolume?.totalBytes;
+    if (bytes == null || total == null || total <= 0) return null;
+    return (bytes / total).clamp(0, 1).toDouble();
+  }
+
+  /// The path whose bytes are represented by [displayedUsedBytes].
+  String get displayedCapacityPath => usesScopedCapacity
+      ? selectedLocation?.path ?? ''
+      : selectedVolume?.rootPath ?? selectedLocation?.path ?? '';
+
   /// Whether the primary action should offer to cancel.
   ///
   /// Guards the one place [scanning] is too broad: during a snapshot restore

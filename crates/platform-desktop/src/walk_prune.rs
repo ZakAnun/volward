@@ -112,6 +112,7 @@ fn is_windows_drive_root(path: &str) -> bool {
 pub fn prune_child_directories(
     children: &mut [Result<DirEntry<((), ())>, Error>],
     protected_prefixes: &[String],
+    prune_named_directories: bool,
 ) -> u32 {
     let mut parent_flags = 0u32;
     for entry in children.iter_mut() {
@@ -119,7 +120,7 @@ pub fn prune_child_directories(
         if !dir_entry.file_type.is_dir() {
             continue;
         }
-        if is_skippable_dir_name(&dir_entry.file_name) {
+        if prune_named_directories && is_skippable_dir_name(&dir_entry.file_name) {
             parent_flags |= pruned_child_flags_for_dir_name(&dir_entry.file_name);
             dir_entry.read_children_path = None;
             continue;

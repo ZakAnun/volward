@@ -914,6 +914,43 @@ void main() {
     ]);
   });
 
+  testWidgets('completed custom folder capacity follows scanned scope', (
+    tester,
+  ) async {
+    const custom = StorageLocationInfo(
+      id: 'custom:/Users/me/Downloads/testDir',
+      name: 'testDir',
+      path: '/Users/me/Downloads/testDir',
+      kind: StorageLocationKind.custom,
+      volumeId: '/',
+    );
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: StorageOverviewData(
+          selectedVolumeId: '/',
+          volumes: const [volume],
+          locations: const [home, custom],
+        ),
+        selectedLocation: custom,
+        selectedVolume: volume,
+        scanning: false,
+        hasCompletedScan: true,
+        scannedBytes: 50,
+      ),
+    );
+
+    expect(find.text('50 B scanned'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(StorageStewardHome.capacityPathKey)).data,
+      '/Users/me/Downloads/testDir',
+    );
+    expect(
+      tester.widget<FractionallySizedBox>(capacityMeterFill()).widthFactor,
+      closeTo(0.05, 0.001),
+    );
+  });
+
   testWidgets('status, browse, and scan controls use one height and font', (
     tester,
   ) async {

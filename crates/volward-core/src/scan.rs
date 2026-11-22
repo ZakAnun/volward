@@ -1030,6 +1030,7 @@ mod tests {
             root: ScanRoot {
                 path: root_path,
                 label: "temp".to_string(),
+                user_selected: false,
             },
             entries,
             cancel_after_entries: None,

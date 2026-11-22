@@ -313,6 +313,7 @@ impl PlatformStorage for DesktopPlatform {
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| "Selected".to_string()),
+                    user_selected: true,
                 });
             }
         }
@@ -342,6 +343,7 @@ impl PlatformStorage for DesktopPlatform {
                 roots.push(ScanRoot {
                     path: normalize_path_string(&home.to_string_lossy()),
                     label: "Home".to_string(),
+                    user_selected: false,
                 });
             }
         }
@@ -363,6 +365,7 @@ impl PlatformStorage for DesktopPlatform {
                 return Err(PlatformError::Cancelled);
             }
             let root_path = Path::new(&root.path);
+            let prune_named_directories = !root.user_selected;
             if !root_path.exists() {
                 continue;
             }
@@ -396,7 +399,8 @@ impl PlatformStorage for DesktopPlatform {
                         if subtree_skipped {
                             children.clear();
                         }
-                        let pruned_flags = prune_child_directories(children, &protected);
+                        let pruned_flags =
+                            prune_child_directories(children, &protected, prune_named_directories);
                         if pruned_flags != 0 {
                             if let Ok(mut cache) = pruned_child_flags_cache.lock() {
                                 *cache.entry(path.to_path_buf()).or_insert(0) |= pruned_flags;
@@ -824,6 +828,7 @@ mod tests {
         let roots = vec![ScanRoot {
             path: root_path.to_string_lossy().to_string(),
             label: "test".to_string(),
+            user_selected: true,
         }];
         let cancel = AtomicBool::new(false);
         let mut root_fingerprint = None;
@@ -869,6 +874,7 @@ mod tests {
         let roots = vec![ScanRoot {
             path: root_path.to_string_lossy().to_string(),
             label: "test".to_string(),
+            user_selected: false,
         }];
         let cancel = AtomicBool::new(false);
         let mut root_flags = 0u32;
@@ -889,6 +895,47 @@ mod tests {
             .expect("walk should succeed");
 
         assert_eq!(root_flags, PRUNED_CHILD_VCS);
+
+        fs::remove_dir_all(root_path).expect("remove test directory");
+    }
+
+    #[test]
+    fn explicit_selected_root_keeps_named_child_payloads() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root_path = std::env::temp_dir().join(format!(
+            "volward-explicit-root-{}-{unique}",
+            std::process::id()
+        ));
+        let payload = root_path.join("node_modules").join("payload.bin");
+        fs::create_dir_all(payload.parent().expect("payload parent")).expect("create node_modules");
+        fs::write(&payload, vec![0_u8; 4096]).expect("write payload");
+
+        let platform = DesktopPlatform::new();
+        let roots = vec![ScanRoot {
+            path: root_path.to_string_lossy().to_string(),
+            label: "selected".to_string(),
+            user_selected: true,
+        }];
+        let cancel = AtomicBool::new(false);
+        let mut paths = Vec::new();
+        platform
+            .walk_entries(
+                &roots,
+                WalkOptions {
+                    baseline_fingerprints: None,
+                },
+                &cancel,
+                &mut |entry| {
+                    paths.push(entry.path);
+                    WalkAction::Continue
+                },
+            )
+            .expect("walk should succeed");
+
+        assert!(paths.contains(&payload.to_string_lossy().to_string()));
 
         fs::remove_dir_all(root_path).expect("remove test directory");
     }

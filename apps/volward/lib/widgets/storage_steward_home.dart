@@ -968,11 +968,10 @@ class _StatPanel extends StatelessWidget {
     final l10n = context.l10n;
     final volume = summary.selectedVolume;
     final usableVolume = summary.hasUsableCapacity ? volume : null;
-    final used = formatStorageBytes(usableVolume?.usedBytes);
+    final used = formatStorageBytes(summary.displayedUsedBytes);
     final total = formatStorageBytes(usableVolume?.totalBytes);
     final available = formatStorageBytes(usableVolume?.availableBytes);
-    final rawCapacityPath =
-        volume?.rootPath ?? summary.selectedLocation?.path ?? '';
+    final rawCapacityPath = summary.displayedCapacityPath;
     final capacityPath = rawCapacityPath.isEmpty ? '—' : rawCapacityPath;
 
     return Semantics(
@@ -1019,7 +1018,9 @@ class _StatPanel extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        l10n.homeCapacityUsed,
+                        summary.usesScopedCapacity
+                            ? l10n.homeScannedSize(used)
+                            : l10n.homeCapacityUsed,
                         style: context.vwFinePrint.copyWith(
                           color: dashboardOn(context).withValues(alpha: 0.72),
                         ),
@@ -1098,9 +1099,7 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = summary.hasUsableCapacity
-        ? summary.selectedVolume?.usedFraction
-        : null;
+    final progress = summary.displayedCapacityFraction;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,
