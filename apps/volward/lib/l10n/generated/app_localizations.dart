@@ -2185,8 +2185,170 @@ abstract class AppLocalizations {
   /// No description provided for @aiConclusionsLead.
   ///
   /// In en, this message translates to:
-  /// **'These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.'**
+  /// **'These are this run\'s classification conclusions. Review folder highlights below, then open the full list to adjust selections.'**
   String get aiConclusionsLead;
+
+  /// No description provided for @aiConclusionsPartialResults.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis is still running. These are partial classifications and will continue to update.'**
+  String get aiConclusionsPartialResults;
+
+  /// No description provided for @aiConclusionsComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis is complete. These are the complete classifications for this run.'**
+  String get aiConclusionsComplete;
+
+  /// No description provided for @aiConclusionsAnalysisPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Classification is paused; shown results remain partial.'**
+  String get aiConclusionsAnalysisPaused;
+
+  /// No description provided for @aiConclusionsAnalysisFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Classification stopped after an error; shown results remain partial.'**
+  String get aiConclusionsAnalysisFailed;
+
+  /// No description provided for @aiConclusionsLocalOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'This run was classified by local rules.'**
+  String get aiConclusionsLocalOnly;
+
+  /// No description provided for @aiClassificationProvenanceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Classification sources'**
+  String get aiClassificationProvenanceTitle;
+
+  /// No description provided for @aiClassificationBootstrapLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Candidate-stage local preclassification: {count} items'**
+  String aiClassificationBootstrapLocal(int count);
+
+  /// No description provided for @aiClassificationCoverageLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Coverage local rules: {count} items'**
+  String aiClassificationCoverageLocal(int count);
+
+  /// No description provided for @aiClassificationAiNotStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis has not started yet.'**
+  String get aiClassificationAiNotStarted;
+
+  /// No description provided for @aiClassificationAiRunningKnown.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis: {completed} / {planned} items complete · analyzing'**
+  String aiClassificationAiRunningKnown(int completed, int planned);
+
+  /// No description provided for @aiClassificationAiRunningUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis: {completed} items complete · analyzing'**
+  String aiClassificationAiRunningUnknown(int completed);
+
+  /// No description provided for @aiClassificationAiCompletedKnown.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis: {completed} / {planned} items complete · completed'**
+  String aiClassificationAiCompletedKnown(int completed, int planned);
+
+  /// No description provided for @aiClassificationAiCompletedUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis: {completed} items complete · completed'**
+  String aiClassificationAiCompletedUnknown(int completed);
+
+  /// No description provided for @aiClassificationAiPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis is paused; shown results are partial.'**
+  String get aiClassificationAiPaused;
+
+  /// No description provided for @aiClassificationAiFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis failed; shown results are partial.'**
+  String get aiClassificationAiFailed;
+
+  /// No description provided for @aiClassificationAiNotRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'No AI request was needed for this run.'**
+  String get aiClassificationAiNotRequired;
+
+  /// No description provided for @aiClassificationLocalRulesProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Local rules {percent}%'**
+  String aiClassificationLocalRulesProgress(int percent);
+
+  /// No description provided for @aiClassificationLocalRulesPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local rules'**
+  String get aiClassificationLocalRulesPreparing;
+
+  /// No description provided for @aiClassificationAiWaitingForLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'AI analysis waits for local rules to finish.'**
+  String get aiClassificationAiWaitingForLocal;
+
+  /// No description provided for @aiAnalysisStageCandidateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Candidate preclassification'**
+  String get aiAnalysisStageCandidateTitle;
+
+  /// No description provided for @aiAnalysisStageCandidateDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items available for optional cleanup'**
+  String aiAnalysisStageCandidateDetail(int count);
+
+  /// No description provided for @aiAnalysisStageLocalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local coverage rules'**
+  String get aiAnalysisStageLocalTitle;
+
+  /// No description provided for @aiAnalysisStageLocalPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local rules'**
+  String get aiAnalysisStageLocalPreparing;
+
+  /// No description provided for @aiAnalysisStageLocalProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{resolved} / {planned} items classified locally'**
+  String aiAnalysisStageLocalProgress(int resolved, int planned);
+
+  /// No description provided for @aiAnalysisStageAiTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI coverage analysis'**
+  String get aiAnalysisStageAiTitle;
+
+  /// No description provided for @aiAnalysisStageAiProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{resolved} / {planned} items analyzed by AI'**
+  String aiAnalysisStageAiProgress(int resolved, int planned);
+
+  /// No description provided for @aiAnalysisPlanDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'View plan details'**
+  String get aiAnalysisPlanDetails;
 
   /// No description provided for @aiConclusionNarrativeLoading.
   ///
@@ -2199,6 +2361,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Generate AI summary'**
   String get aiConclusionNarrativeGenerate;
+
+  /// No description provided for @aiConclusionNarrativeDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'AI summary is disabled. The structured classification results above are complete and ready to use.'**
+  String get aiConclusionNarrativeDisabled;
+
+  /// No description provided for @aiConclusionNarrativeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'AI summary is not available yet. The structured classification results above are ready to use.'**
+  String get aiConclusionNarrativeUnavailable;
 
   /// No description provided for @aiConclusionNarrativePlatformCreditHint.
   ///

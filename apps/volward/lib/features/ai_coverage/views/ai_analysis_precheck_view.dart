@@ -13,6 +13,7 @@ import '../../../widgets/ai_analysis_activity_card.dart';
 import '../../../widgets/ai_results_hub.dart';
 import '../../../widgets/apple_widgets.dart';
 import 'ai_analysis_purchase_view.dart';
+import '../ai_analysis_workspace_keys.dart';
 import 'ai_analysis_workspace_view_actions.dart';
 import 'ai_analysis_workspace_view_state.dart';
 
@@ -41,6 +42,13 @@ class AiAnalysisPrecheckView extends StatelessWidget {
   }
 
   List<Widget> _buildChildren(BuildContext context) {
+    if (precheck.useFullCoverage) {
+      return _buildFullCoverageChildren(context);
+    }
+    return _buildLegacyChildren(context);
+  }
+
+  List<Widget> _buildLegacyChildren(BuildContext context) {
     final l10n = context.l10n;
     final tokens = context.volward;
     final mode = precheck.mode;
@@ -303,6 +311,166 @@ class AiAnalysisPrecheckView extends StatelessWidget {
     ];
   }
 
+  List<Widget> _buildFullCoverageChildren(BuildContext context) {
+    final l10n = context.l10n;
+    final tokens = context.volward;
+    final summary = coverage.planSummary;
+    final localPlanned = summary == null || summary.planVersion < 3
+        ? null
+        : (summary.localSafeFiles ?? 0) + (summary.localKeepFiles ?? 0);
+    final localResolved = coverage.jobState?.localRuleFiles ?? 0;
+    final localComplete =
+        coverage.jobState?.localPhaseComplete == true ||
+        (localPlanned != null &&
+            localPlanned > 0 &&
+            localResolved >= localPlanned);
+    final aiPlanned = summary == null
+        ? precheck.displayUnknownCount
+        : (summary.treePendingFiles ?? 0) +
+              (summary.tailFiles ?? summary.tailFileCount ?? 0);
+    final aiResolved = coverage.jobState?.aiResolvedFiles ?? 0;
+
+    return [
+      if (precheck.candidatesBootstrapPending) ...[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            AiAnalysisActivityInlineSpinner(
+              color: tokens.primary,
+              size: 14,
+              strokeWidth: 2,
+            ),
+            const SizedBox(width: AppleSpacing.sm),
+            Expanded(
+              child: Text(
+                l10n.aiCandidatesBootstrapLoading,
+                style: context.vwCaption,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppleSpacing.sm),
+      ],
+      AiAnalysisPurchaseView(
+        precheck: precheck,
+        onOpenSettings: onOpenSettings,
+      ),
+      if (precheck.error != null &&
+          (precheck.hasProvider ||
+              (precheck.mode == AiMode.platform &&
+                  precheck.platformCredits != 0))) ...[
+        Text(
+          precheck.error!,
+          style: AppleTypography.caption.copyWith(color: tokens.danger),
+        ),
+        const SizedBox(height: AppleSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppleButton(
+            label: l10n.aiActionRetry,
+            icon: Icons.refresh_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: () => unawaited(
+              actions.startAnalysis(fullCoverage: precheck.useFullCoverage),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppleSpacing.sm),
+      ],
+      _CoverageStageRow(
+        icon: Icons.shield_outlined,
+        title: l10n.aiAnalysisStageCandidateTitle,
+        detail: l10n.aiAnalysisStageCandidateDetail(
+          precheck.displayPreClassifiedCount,
+        ),
+        color: Colors.green.shade700,
+      ),
+      const SizedBox(height: AppleSpacing.sm),
+      _CoverageStageRow(
+        icon: Icons.rule_folder_outlined,
+        title: l10n.aiAnalysisStageLocalTitle,
+        detail: localPlanned == null || localPlanned <= 0
+            ? l10n.aiAnalysisStageLocalPreparing
+            : l10n.aiAnalysisStageLocalProgress(localResolved, localPlanned),
+        color: localComplete ? Colors.green.shade700 : tokens.primary,
+        progress: localPlanned == null || localPlanned <= 0
+            ? null
+            : (localResolved / localPlanned).clamp(0, 1).toDouble(),
+      ),
+      const SizedBox(height: AppleSpacing.sm),
+      _CoverageStageRow(
+        icon: Icons.auto_awesome_outlined,
+        title: l10n.aiAnalysisStageAiTitle,
+        detail: localComplete
+            ? l10n.aiAnalysisStageAiProgress(aiResolved, aiPlanned)
+            : l10n.aiClassificationAiWaitingForLocal,
+        color: localComplete ? tokens.primary : AppleColors.inkMuted48,
+      ),
+      if (precheck.platformCredits != null &&
+          precheck.estimatedCoverageCredits != null &&
+          precheck.platformCredits! < precheck.estimatedCoverageCredits!) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          l10n.aiCoverageInsufficientForEstimate(
+            precheck.estimatedCoverageCredits!,
+            precheck.platformCredits!,
+          ),
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+      ],
+      const SizedBox(height: AppleSpacing.sm),
+      _PlanDetailsDisclosure(
+        key: AiAnalysisWorkspaceKeys.coveragePlanDetailsKey,
+        title: l10n.aiAnalysisPlanDetails,
+        children: _buildPlanDetailLines(context),
+      ),
+    ];
+  }
+
+  List<Widget> _buildPlanDetailLines(BuildContext context) {
+    final l10n = context.l10n;
+    final tokens = context.volward;
+    final summary = coverage.planSummary;
+    final minApiCalls = summary == null
+        ? null
+        : coveragePlanMinApiCalls(summary);
+    return [
+      ..._buildEstimateLines(
+        context,
+        minApiCalls,
+        coveragePlanSummaryShowsV3PrecheckBreakdown(summary),
+      ),
+      const SizedBox(height: AppleSpacing.xs),
+      Text(l10n.aiCoverageFullRunPlatformHint, style: context.vwCaption),
+      if (precheck.mode == AiMode.platform &&
+          precheck.estimatedCoverageCredits != null) ...[
+        const SizedBox(height: AppleSpacing.xxs),
+        Text(
+          l10n.aiCoverageEstimatedCredits(precheck.estimatedCoverageCredits!),
+          style: context.vwCaption,
+        ),
+      ],
+      if (precheck.mode == AiMode.platform &&
+          precheck.coverageBudgetCredits != null)
+        Text(
+          l10n.aiCoverageRunCapConfigured(precheck.coverageBudgetCredits!),
+          style: context.vwCaption,
+        ),
+      if (precheck.mode == AiMode.platform && precheck.platformCredits != null)
+        Text(
+          l10n.aiCoverageAccountBalance(precheck.platformCredits!),
+          style: context.vwCaption,
+        ),
+      if (precheck.planLoadError != null) ...[
+        const SizedBox(height: AppleSpacing.xs),
+        Text(
+          precheck.planLoadError!,
+          style: AppleTypography.caption.copyWith(color: tokens.warning),
+        ),
+      ],
+    ];
+  }
+
   List<Widget> _buildEstimateLines(
     BuildContext context,
     int? minApiCalls,
@@ -441,6 +609,123 @@ class AiAnalysisPrecheckView extends StatelessWidget {
       return '${(value / 1048576).toStringAsFixed(1)} MB';
     }
     return '${(value / 1073741824).toStringAsFixed(2)} GB';
+  }
+}
+
+class _CoverageStageRow extends StatelessWidget {
+  const _CoverageStageRow({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.color,
+    this.progress,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final Color color;
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: AppleSpacing.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: context.vwCaptionStrong),
+              const SizedBox(height: AppleSpacing.xxs),
+              Text(detail, style: context.vwCaption),
+              if (progress case final value?) ...[
+                const SizedBox(height: AppleSpacing.xxs),
+                LinearProgressIndicator(
+                  value: value,
+                  minHeight: 4,
+                  borderRadius: BorderRadius.circular(AppleRadius.pill),
+                  color: color,
+                  backgroundColor: AppleColors.dividerSoft,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PlanDetailsDisclosure extends StatefulWidget {
+  const _PlanDetailsDisclosure({
+    super.key,
+    required this.title,
+    required this.children,
+  });
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  State<_PlanDetailsDisclosure> createState() => _PlanDetailsDisclosureState();
+}
+
+class _PlanDetailsDisclosureState extends State<_PlanDetailsDisclosure> {
+  var _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return Material(
+      color: Colors.transparent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(AppleRadius.md),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: AppleSpacing.sm,
+                horizontal: AppleSpacing.xs,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(widget.title, style: context.vwBodyStrong),
+                  ),
+                  Text(
+                    _expanded ? '▴' : '▾',
+                    style: context.vwBodyStrong.copyWith(
+                      color: tokens.inkMuted80,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: _expanded
+                ? Padding(
+                    padding: const EdgeInsets.only(
+                      top: AppleSpacing.xs,
+                      bottom: AppleSpacing.sm,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: widget.children,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -1001,9 +1001,66 @@
       "pct": {"type": "String"}
     }
   },
-  "aiConclusionsLead": "以下结论来自本次 AI 分类。先看各目录要点，再打开完整列表调整选中项。",
+  "aiConclusionsLead": "以下为本次分类结论。先看各目录要点，再打开完整列表调整选中项。",
+  "aiConclusionsPartialResults": "AI 正在分析中；当前为阶段性分类结果，内容会继续更新。",
+  "aiConclusionsComplete": "AI 分析已完成；以下为本次完整的分类结论。",
+  "aiConclusionsAnalysisPaused": "分类任务已暂停；当前展示的是阶段性结果。",
+  "aiConclusionsAnalysisFailed": "分类任务因错误停止；当前展示的是阶段性结果。",
+  "aiConclusionsLocalOnly": "本次分类由本地规则完成。",
+  "aiClassificationProvenanceTitle": "本次分类来源",
+  "aiClassificationBootstrapLocal": "候选阶段本地预分类：{count} 项",
+  "@aiClassificationBootstrapLocal": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "aiClassificationCoverageLocal": "覆盖任务本地规则：{count} 项",
+  "@aiClassificationCoverageLocal": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "aiClassificationAiNotStarted": "AI 分析尚未开始。",
+  "aiClassificationAiRunningKnown": "AI 分析：已完成 {completed} / {planned} 项 · 分析中",
+  "@aiClassificationAiRunningKnown": {
+    "placeholders": {
+      "completed": {"type": "int"},
+      "planned": {"type": "int"}
+    }
+  },
+  "aiClassificationAiRunningUnknown": "AI 分析：已完成 {completed} 项 · 分析中",
+  "@aiClassificationAiRunningUnknown": {
+    "placeholders": {"completed": {"type": "int"}}
+  },
+  "aiClassificationAiCompletedKnown": "AI 分析：已完成 {completed} / {planned} 项 · 已完成",
+  "@aiClassificationAiCompletedKnown": {
+    "placeholders": {
+      "completed": {"type": "int"},
+      "planned": {"type": "int"}
+    }
+  },
+  "aiClassificationAiCompletedUnknown": "AI 分析：已完成 {completed} 项 · 已完成",
+  "@aiClassificationAiCompletedUnknown": {
+    "placeholders": {"completed": {"type": "int"}}
+  },
+  "aiClassificationAiPaused": "AI 分析已暂停；当前展示的是阶段性结果。",
+  "aiClassificationAiFailed": "AI 分析失败；当前展示的是阶段性结果。",
+  "aiClassificationAiNotRequired": "本次无需 AI 请求。",
+  "aiClassificationLocalRulesProgress": "本地覆盖规则 {percent}%",
+  "@aiClassificationLocalRulesProgress": {"placeholders": {"percent": {"type": "int"}}},
+  "aiClassificationLocalRulesPreparing": "正在准备本地覆盖规则",
+  "aiClassificationAiWaitingForLocal": "等待本地规则完成后开始 AI 分析",
+  "aiAnalysisStageCandidateTitle": "候选预判",
+  "aiAnalysisStageCandidateDetail": "{count} 项可选清理，尚未经过 AI 终审",
+  "@aiAnalysisStageCandidateDetail": {"placeholders": {"count": {"type": "int"}}},
+  "aiAnalysisStageLocalTitle": "本地覆盖规则",
+  "aiAnalysisStageLocalPreparing": "正在准备本地规则",
+  "aiAnalysisStageLocalProgress": "本地已判定 {resolved} / {planned} 项",
+  "@aiAnalysisStageLocalProgress": {"placeholders": {"resolved": {"type": "int"}, "planned": {"type": "int"}}},
+  "aiAnalysisStageAiTitle": "AI 覆盖分析",
+  "aiAnalysisStageAiProgress": "AI 已分析 {resolved} / {planned} 项",
+  "@aiAnalysisStageAiProgress": {"placeholders": {"resolved": {"type": "int"}, "planned": {"type": "int"}}},
+  "aiAnalysisPlanDetails": "查看计划细节",
   "aiConclusionNarrativeLoading": "正在整理分析结论…",
   "aiConclusionNarrativeGenerate": "生成 AI 导读",
+  "aiConclusionNarrativeDisabled": "AI 导读未启用；上方展示的是本次已完成的结构化分类结论。",
+  "aiConclusionNarrativeUnavailable": "AI 导读暂未生成；上方的结构化分类结论已可使用。",
   "aiConclusionNarrativePlatformCreditHint": "将额外消耗 1 积分。",
   "aiPrecheckNarrativeCreditHint": "结论导读将额外消耗 1 积分。",
   "aiConclusionsByDirectory": "按目录",

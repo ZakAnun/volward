@@ -27,6 +27,7 @@ class AiAnalysisPurchaseView extends StatelessWidget {
     final l10n = context.l10n;
     final tokens = context.volward;
     final mode = precheck.mode;
+    if (precheck.candidatesBootstrapPending) return const SizedBox.shrink();
     final needsSettings =
         !precheck.hasProvider ||
         (mode == AiMode.platform && precheck.platformCredits == 0);
@@ -38,12 +39,16 @@ class AiAnalysisPurchaseView extends StatelessWidget {
                   ? l10n.aiSettingsSessionExpired
                   : l10n.aiNoApiKey))
         : l10n.aiInsufficientCredits;
+    final isCreditPurchase = mode == AiMode.platform && precheck.hasProvider;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         CoveragePurchaseView(
-          title: Text(l10n.aiSettingsBuyCredits, style: context.vwBodyStrong),
+          title: Text(
+            isCreditPurchase ? l10n.aiSettingsBuyCredits : l10n.aiSettingsTitle,
+            style: context.vwBodyStrong,
+          ),
           body: Text(
             configurationMessage,
             style: AppleTypography.caption.copyWith(color: tokens.warning),

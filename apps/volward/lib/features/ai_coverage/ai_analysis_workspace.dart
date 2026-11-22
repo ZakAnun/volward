@@ -82,6 +82,8 @@ class AiAnalysisWorkspace extends StatefulWidget {
       AiAnalysisWorkspaceKeys.conclusionNarrativeLoading;
   static const conclusionNarrativeGenerateKey =
       AiAnalysisWorkspaceKeys.conclusionNarrativeGenerate;
+  static const conclusionNarrativeUnavailableKey =
+      AiAnalysisWorkspaceKeys.conclusionNarrativeUnavailable;
   static const directoryGridKey = AiAnalysisWorkspaceKeys.directoryGrid;
   static const directoryTypeFilterKey =
       AiAnalysisWorkspaceKeys.directoryTypeFilter;

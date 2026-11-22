@@ -10,6 +10,32 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const resultsList = Key('ai-analysis-results-list');
   static const summary = Key('ai-analysis-summary');
   static const decisionSummary = Key('ai-analysis-decision-summary');
+  static const analysisProgress = Key('ai-analysis-analysis-progress');
+  static const classificationProvenance = Key(
+    'ai-analysis-classification-provenance',
+  );
+  static const classificationAiStatus = Key(
+    'ai-analysis-classification-ai-status',
+  );
+  static const classificationBootstrap = Key(
+    'ai-analysis-classification-bootstrap',
+  );
+  static const classificationLocalRules = Key(
+    'ai-analysis-classification-local-rules',
+  );
+  static const classificationAiMetric = Key(
+    'ai-analysis-classification-ai-metric',
+  );
+  static const classificationAiProgress = Key(
+    'ai-analysis-classification-ai-progress',
+  );
+  static const classificationLocalProgress = Key(
+    'ai-analysis-classification-local-progress',
+  );
+  static const classificationLocalPreparing = Key(
+    'ai-analysis-classification-local-preparing',
+  );
+  static const coveragePlanDetails = Key('ai-analysis-coverage-plan-details');
   static const searchToggle = Key('ai-analysis-search-toggle');
   static const searchSortSheet = Key('ai-analysis-search-sort-sheet');
   static const resultsFilter = Key('ai-analysis-results-filter');
@@ -42,6 +68,9 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const conclusionNarrativeGenerate = Key(
     'ai-analysis-conclusion-narrative-generate',
   );
+  static const conclusionNarrativeUnavailable = Key(
+    'ai-analysis-conclusion-narrative-unavailable',
+  );
   static const directoryGrid = Key('ai-analysis-directory-grid');
   static const directoryTypeFilter = Key('ai-analysis-directory-type-filter');
 
@@ -61,6 +90,16 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const resultsListKey = resultsList;
   static const summaryKey = summary;
   static const decisionSummaryKey = decisionSummary;
+  static const analysisProgressKey = analysisProgress;
+  static const classificationProvenanceKey = classificationProvenance;
+  static const classificationAiStatusKey = classificationAiStatus;
+  static const classificationBootstrapKey = classificationBootstrap;
+  static const classificationLocalRulesKey = classificationLocalRules;
+  static const classificationAiMetricKey = classificationAiMetric;
+  static const classificationAiProgressKey = classificationAiProgress;
+  static const classificationLocalProgressKey = classificationLocalProgress;
+  static const classificationLocalPreparingKey = classificationLocalPreparing;
+  static const coveragePlanDetailsKey = coveragePlanDetails;
   static const searchToggleKey = searchToggle;
   static const searchSortSheetKey = searchSortSheet;
   static const resultsFilterKey = resultsFilter;
@@ -89,6 +128,8 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const conclusionNarrativeKey = conclusionNarrative;
   static const conclusionNarrativeLoadingKey = conclusionNarrativeLoading;
   static const conclusionNarrativeGenerateKey = conclusionNarrativeGenerate;
+  static const conclusionNarrativeUnavailableKey =
+      conclusionNarrativeUnavailable;
   static const directoryGridKey = directoryGrid;
   static const directoryTypeFilterKey = directoryTypeFilter;
 

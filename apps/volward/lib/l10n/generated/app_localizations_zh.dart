@@ -1276,13 +1276,120 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get aiConclusionsLead => '以下结论来自本次 AI 分类。先看各目录要点，再打开完整列表调整选中项。';
+  String get aiConclusionsLead => '以下为本次分类结论。先看各目录要点，再打开完整列表调整选中项。';
+
+  @override
+  String get aiConclusionsPartialResults => 'AI 正在分析中；当前为阶段性分类结果，内容会继续更新。';
+
+  @override
+  String get aiConclusionsComplete => 'AI 分析已完成；以下为本次完整的分类结论。';
+
+  @override
+  String get aiConclusionsAnalysisPaused => '分类任务已暂停；当前展示的是阶段性结果。';
+
+  @override
+  String get aiConclusionsAnalysisFailed => '分类任务因错误停止；当前展示的是阶段性结果。';
+
+  @override
+  String get aiConclusionsLocalOnly => '本次分类由本地规则完成。';
+
+  @override
+  String get aiClassificationProvenanceTitle => '本次分类来源';
+
+  @override
+  String aiClassificationBootstrapLocal(int count) {
+    return '候选阶段本地预分类：$count 项';
+  }
+
+  @override
+  String aiClassificationCoverageLocal(int count) {
+    return '覆盖任务本地规则：$count 项';
+  }
+
+  @override
+  String get aiClassificationAiNotStarted => 'AI 分析尚未开始。';
+
+  @override
+  String aiClassificationAiRunningKnown(int completed, int planned) {
+    return 'AI 分析：已完成 $completed / $planned 项 · 分析中';
+  }
+
+  @override
+  String aiClassificationAiRunningUnknown(int completed) {
+    return 'AI 分析：已完成 $completed 项 · 分析中';
+  }
+
+  @override
+  String aiClassificationAiCompletedKnown(int completed, int planned) {
+    return 'AI 分析：已完成 $completed / $planned 项 · 已完成';
+  }
+
+  @override
+  String aiClassificationAiCompletedUnknown(int completed) {
+    return 'AI 分析：已完成 $completed 项 · 已完成';
+  }
+
+  @override
+  String get aiClassificationAiPaused => 'AI 分析已暂停；当前展示的是阶段性结果。';
+
+  @override
+  String get aiClassificationAiFailed => 'AI 分析失败；当前展示的是阶段性结果。';
+
+  @override
+  String get aiClassificationAiNotRequired => '本次无需 AI 请求。';
+
+  @override
+  String aiClassificationLocalRulesProgress(int percent) {
+    return '本地覆盖规则 $percent%';
+  }
+
+  @override
+  String get aiClassificationLocalRulesPreparing => '正在准备本地覆盖规则';
+
+  @override
+  String get aiClassificationAiWaitingForLocal => '等待本地规则完成后开始 AI 分析';
+
+  @override
+  String get aiAnalysisStageCandidateTitle => '候选预判';
+
+  @override
+  String aiAnalysisStageCandidateDetail(int count) {
+    return '$count 项可选清理，尚未经过 AI 终审';
+  }
+
+  @override
+  String get aiAnalysisStageLocalTitle => '本地覆盖规则';
+
+  @override
+  String get aiAnalysisStageLocalPreparing => '正在准备本地规则';
+
+  @override
+  String aiAnalysisStageLocalProgress(int resolved, int planned) {
+    return '本地已判定 $resolved / $planned 项';
+  }
+
+  @override
+  String get aiAnalysisStageAiTitle => 'AI 覆盖分析';
+
+  @override
+  String aiAnalysisStageAiProgress(int resolved, int planned) {
+    return 'AI 已分析 $resolved / $planned 项';
+  }
+
+  @override
+  String get aiAnalysisPlanDetails => '查看计划细节';
 
   @override
   String get aiConclusionNarrativeLoading => '正在整理分析结论…';
 
   @override
   String get aiConclusionNarrativeGenerate => '生成 AI 导读';
+
+  @override
+  String get aiConclusionNarrativeDisabled => 'AI 导读未启用；上方展示的是本次已完成的结构化分类结论。';
+
+  @override
+  String get aiConclusionNarrativeUnavailable => 'AI 导读暂未生成；上方的结构化分类结论已可使用。';
 
   @override
   String get aiConclusionNarrativePlatformCreditHint => '将额外消耗 1 积分。';

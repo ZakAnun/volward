@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../ai/ai_conclusion_synthesis.dart';
 import '../../../ai/ai_result_overview.dart';
 import '../../../ai/ai_result_groups.dart';
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../l10n/l10n.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../theme/apple_tokens.dart';
 import '../../../theme/volward_tokens.dart';
 import '../../../widgets/apple_widgets.dart';
@@ -25,7 +27,7 @@ final class AiAnalysisOverviewView extends StatelessWidget {
     required this.canGenerateNarrative,
     required this.showNarrativeCreditHint,
     required this.emptyState,
-    required this.onOpenDetailPage,
+    required this.onOpenDetailList,
     required this.onOpenReviewQueue,
     required this.onDirectoryTypeFilterChanged,
     required this.onGenerateNarrative,
@@ -38,7 +40,8 @@ final class AiAnalysisOverviewView extends StatelessWidget {
   final bool canGenerateNarrative;
   final bool showNarrativeCreditHint;
   final Widget emptyState;
-  final void Function({String? directoryPath}) onOpenDetailPage;
+  final void Function(WorkspaceResultFilter filter, {String? directoryPath})
+  onOpenDetailList;
   final VoidCallback onOpenReviewQueue;
   final ValueChanged<WorkspaceDirectoryTypeFilter> onDirectoryTypeFilterChanged;
   final VoidCallback onGenerateNarrative;
@@ -66,6 +69,10 @@ final class AiAnalysisOverviewView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (hasVerdicts) ...[
+          _ClassificationProvenanceSection(
+            provenance: state.results.classificationProvenance,
+          ),
+          const SizedBox(height: AppleSpacing.xxs),
           Text(
             l10n.aiConclusionsScanLine(
               overview.targetLabel,
@@ -103,7 +110,7 @@ final class AiAnalysisOverviewView extends StatelessWidget {
                 overview: overview,
                 placeholder: !hasVerdicts,
                 safeCount: safeCount,
-                onOpenDetailPage: onOpenDetailPage,
+                onOpenDetailList: onOpenDetailList,
                 onOpenReviewQueue: onOpenReviewQueue,
               ),
               const SizedBox(height: AppleSpacing.sm),
@@ -115,14 +122,15 @@ final class AiAnalysisOverviewView extends StatelessWidget {
         if (hasVerdicts) ...[
           const SizedBox(height: AppleSpacing.sm),
           Text(l10n.aiConclusionsLead, style: context.vwBody),
-          _NarrativeSection(
-            narrative: state.narrative,
-            overview: overview,
-            groups: state.results.groups,
-            canGenerate: canGenerateNarrative,
-            showCreditHint: showNarrativeCreditHint,
-            onGenerate: onGenerateNarrative,
-          ),
+          if (!analyzing)
+            _NarrativeSection(
+              narrative: state.narrative,
+              overview: overview,
+              groups: state.results.groups,
+              canGenerate: canGenerateNarrative,
+              showCreditHint: showNarrativeCreditHint,
+              onGenerate: onGenerateNarrative,
+            ),
         ],
         if (overview.directories.isNotEmpty) ...[
           const SizedBox(height: AppleSpacing.md),
@@ -135,7 +143,10 @@ final class AiAnalysisOverviewView extends StatelessWidget {
           const SizedBox(height: AppleSpacing.sm),
           _DirectoryGrid(
             directories: directories,
-            onOpenDetailPage: onOpenDetailPage,
+            filter: _resultFilterForDirectoryType(
+              state.results.directoryTypeFilter,
+            ),
+            onOpenDetailList: onOpenDetailList,
           ),
           if (hiddenDirCount > 0)
             Padding(
@@ -165,6 +176,16 @@ final class AiAnalysisOverviewView extends StatelessWidget {
         .toList(growable: false);
   }
 
+  static WorkspaceResultFilter _resultFilterForDirectoryType(
+    WorkspaceDirectoryTypeFilter filter,
+  ) {
+    return switch (filter) {
+      WorkspaceDirectoryTypeFilter.safe => WorkspaceResultFilter.safeToRemove,
+      WorkspaceDirectoryTypeFilter.review => WorkspaceResultFilter.review,
+      WorkspaceDirectoryTypeFilter.keep => WorkspaceResultFilter.keep,
+    };
+  }
+
   static String _formatBytes(num? bytes) {
     if (bytes == null) return '-';
     final value = bytes.toInt();
@@ -174,6 +195,229 @@ final class AiAnalysisOverviewView extends StatelessWidget {
       return '${(value / 1048576).toStringAsFixed(1)} MB';
     }
     return '${(value / 1073741824).toStringAsFixed(2)} GB';
+  }
+}
+
+class _ClassificationProvenanceSection extends StatelessWidget {
+  const _ClassificationProvenanceSection({required this.provenance});
+
+  final ClassificationProvenanceSummary provenance;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final presentation = buildClassificationProgressPresentation(provenance);
+    final localPlanned = provenance.localPlannedCount;
+    final localFraction = localPlanned == null || localPlanned <= 0
+        ? null
+        : (provenance.localRuleCount / localPlanned).clamp(0, 1).toDouble();
+    final localComplete =
+        provenance.localPhaseComplete ||
+        (localFraction != null && localFraction >= 1);
+    final aiStatusLine = localComplete
+        ? _aiStatusLine(l10n, provenance)
+        : l10n.aiClassificationAiWaitingForLocal;
+    return Column(
+      key: AiAnalysisWorkspaceKeys.classificationProvenanceKey,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: AppleSpacing.sm,
+          runSpacing: AppleSpacing.xxs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _ClassificationMetric(
+              key: AiAnalysisWorkspaceKeys.classificationBootstrapKey,
+              icon: Icons.shield_outlined,
+              value: '${provenance.bootstrapLocalCount}',
+              label: l10n.aiClassificationBootstrapLocal(
+                provenance.bootstrapLocalCount,
+              ),
+            ),
+            _ClassificationMetric(
+              key: AiAnalysisWorkspaceKeys.classificationLocalRulesKey,
+              icon: Icons.rule_folder_outlined,
+              value: '${provenance.localRuleCount}',
+              label: l10n.aiClassificationCoverageLocal(
+                provenance.localRuleCount,
+              ),
+            ),
+            _ClassificationMetric(
+              key: AiAnalysisWorkspaceKeys.classificationAiMetricKey,
+              icon: Icons.auto_awesome_outlined,
+              value: _aiMetricValue(provenance),
+              label: aiStatusLine,
+              color: _statusColor(provenance.phase),
+            ),
+            Tooltip(
+              message: aiStatusLine,
+              child: Semantics(
+                label: aiStatusLine,
+                child: Icon(
+                  _statusIcon(
+                    localComplete
+                        ? provenance.phase
+                        : ClassificationAiPhase.notStarted,
+                  ),
+                  key: AiAnalysisWorkspaceKeys.classificationAiStatusKey,
+                  color: _statusColor(
+                    localComplete
+                        ? provenance.phase
+                        : ClassificationAiPhase.notStarted,
+                  ),
+                  size: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (localFraction != null) ...[
+          const SizedBox(height: AppleSpacing.xxs),
+          Row(
+            key: AiAnalysisWorkspaceKeys.classificationLocalProgressKey,
+            children: [
+              Text(
+                l10n.aiClassificationLocalRulesProgress(
+                  (localFraction * 100).round(),
+                ),
+                style: context.vwCaption,
+              ),
+              const SizedBox(width: AppleSpacing.xs),
+              Expanded(
+                child: LinearProgressIndicator(
+                  value: localFraction,
+                  minHeight: 4,
+                  borderRadius: BorderRadius.circular(AppleRadius.pill),
+                  color: localComplete
+                      ? Colors.green.shade700
+                      : AppleColors.primary,
+                  backgroundColor: AppleColors.dividerSoft,
+                ),
+              ),
+            ],
+          ),
+        ] else if (!localComplete) ...[
+          const SizedBox(height: AppleSpacing.xxs),
+          Text(
+            l10n.aiClassificationLocalRulesPreparing,
+            key: AiAnalysisWorkspaceKeys.classificationLocalPreparingKey,
+            style: context.vwCaption,
+          ),
+        ],
+        if (presentation.showsAiProgress && localComplete) ...[
+          const SizedBox(height: AppleSpacing.xxs),
+          Row(
+            key: AiAnalysisWorkspaceKeys.classificationAiProgressKey,
+            children: [
+              Text(
+                '${presentation.progressPercent}%',
+                style: context.vwCaption,
+              ),
+              const SizedBox(width: AppleSpacing.xs),
+              Expanded(
+                child: Semantics(
+                  label: _aiStatusLine(l10n, provenance),
+                  value: '${presentation.progressPercent}%',
+                  child: LinearProgressIndicator(
+                    value: presentation.progressFraction,
+                    minHeight: 4,
+                    borderRadius: BorderRadius.circular(AppleRadius.pill),
+                    color: _statusColor(provenance.phase),
+                    backgroundColor: AppleColors.dividerSoft,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _aiMetricValue(ClassificationProvenanceSummary provenance) {
+    final planned = provenance.aiPlannedCount;
+    return planned == null || planned <= 0
+        ? '${provenance.aiResolvedCount}'
+        : '${provenance.aiResolvedCount} / $planned';
+  }
+
+  IconData _statusIcon(ClassificationAiPhase phase) => switch (phase) {
+    ClassificationAiPhase.notStarted => Icons.pending_outlined,
+    ClassificationAiPhase.running => Icons.autorenew,
+    ClassificationAiPhase.completed => Icons.check_circle_outline,
+    ClassificationAiPhase.paused => Icons.pause_circle_outline,
+    ClassificationAiPhase.failed => Icons.error_outline,
+    ClassificationAiPhase.notRequired => Icons.offline_bolt_outlined,
+  };
+
+  Color _statusColor(ClassificationAiPhase phase) => switch (phase) {
+    ClassificationAiPhase.running => AppleColors.primary,
+    ClassificationAiPhase.completed ||
+    ClassificationAiPhase.notRequired => Colors.green.shade700,
+    ClassificationAiPhase.paused => Colors.orange.shade800,
+    ClassificationAiPhase.failed => Colors.red.shade700,
+    ClassificationAiPhase.notStarted => AppleColors.inkMuted48,
+  };
+
+  String _aiStatusLine(
+    AppLocalizations l10n,
+    ClassificationProvenanceSummary provenance,
+  ) {
+    return switch (provenance.phase) {
+      ClassificationAiPhase.notStarted => l10n.aiClassificationAiNotStarted,
+      ClassificationAiPhase.running when provenance.aiPlannedCount != null =>
+        l10n.aiClassificationAiRunningKnown(
+          provenance.aiResolvedCount,
+          provenance.aiPlannedCount!,
+        ),
+      ClassificationAiPhase.running => l10n.aiClassificationAiRunningUnknown(
+        provenance.aiResolvedCount,
+      ),
+      ClassificationAiPhase.completed when provenance.aiPlannedCount != null =>
+        l10n.aiClassificationAiCompletedKnown(
+          provenance.aiResolvedCount,
+          provenance.aiPlannedCount!,
+        ),
+      ClassificationAiPhase.completed =>
+        l10n.aiClassificationAiCompletedUnknown(provenance.aiResolvedCount),
+      ClassificationAiPhase.paused => l10n.aiClassificationAiPaused,
+      ClassificationAiPhase.failed => l10n.aiClassificationAiFailed,
+      ClassificationAiPhase.notRequired => l10n.aiClassificationAiNotRequired,
+    };
+  }
+}
+
+class _ClassificationMetric extends StatelessWidget {
+  const _ClassificationMetric({
+    required super.key,
+    required this.icon,
+    required this.value,
+    required this.label,
+    this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final metricColor = color ?? AppleColors.inkMuted48;
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        label: label,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: metricColor, size: 18),
+            const SizedBox(width: AppleSpacing.xxs),
+            Text(value, style: context.vwCaptionStrong),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -226,14 +470,15 @@ class _ResultsMetricCards extends StatelessWidget {
     required this.overview,
     required this.placeholder,
     required this.safeCount,
-    required this.onOpenDetailPage,
+    required this.onOpenDetailList,
     required this.onOpenReviewQueue,
   });
 
   final AiAnalysisConclusionOverview overview;
   final bool placeholder;
   final int safeCount;
-  final void Function({String? directoryPath}) onOpenDetailPage;
+  final void Function(WorkspaceResultFilter filter, {String? directoryPath})
+  onOpenDetailList;
   final VoidCallback onOpenReviewQueue;
 
   @override
@@ -248,7 +493,9 @@ class _ResultsMetricCards extends StatelessWidget {
             ? dash
             : AiAnalysisOverviewView._formatBytes(overview.safeBytes),
         subtitle: placeholder ? dash : l10n.aiResultsMetricCountLine(safeCount),
-        onTap: placeholder ? null : () => onOpenDetailPage(),
+        onTap: placeholder
+            ? null
+            : () => onOpenDetailList(WorkspaceResultFilter.safeToRemove),
       ),
       _MetricCard(
         cardKey: AiAnalysisWorkspaceKeys.resultsMetricReviewKey,
@@ -264,7 +511,9 @@ class _ResultsMetricCards extends StatelessWidget {
         title: l10n.aiResultsMetricKeepTitle,
         value: placeholder ? dash : '${overview.keepCount}',
         subtitle: placeholder ? dash : l10n.aiResultsMetricKeepSubtitle,
-        onTap: placeholder ? null : () => onOpenDetailPage(),
+        onTap: placeholder
+            ? null
+            : () => onOpenDetailList(WorkspaceResultFilter.keep),
       ),
     ];
     return LayoutBuilder(
@@ -435,11 +684,14 @@ class _DirectoryTypeSegment extends StatelessWidget {
 class _DirectoryGrid extends StatelessWidget {
   const _DirectoryGrid({
     required this.directories,
-    required this.onOpenDetailPage,
+    required this.filter,
+    required this.onOpenDetailList,
   });
 
   final List<AiDirectoryConclusion> directories;
-  final void Function({String? directoryPath}) onOpenDetailPage;
+  final WorkspaceResultFilter filter;
+  final void Function(WorkspaceResultFilter filter, {String? directoryPath})
+  onOpenDetailList;
 
   @override
   Widget build(BuildContext context) {
@@ -460,7 +712,8 @@ class _DirectoryGrid extends StatelessWidget {
       itemBuilder: (context, index) {
         return _DirectoryConclusionCard(
           directory: directories[index],
-          onTap: () => onOpenDetailPage(directoryPath: directories[index].path),
+          onTap: () =>
+              onOpenDetailList(filter, directoryPath: directories[index].path),
         );
       },
     );
@@ -541,8 +794,17 @@ class _NarrativeSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!narrative.enabled) return const SizedBox.shrink();
     final l10n = context.l10n;
+    if (!narrative.enabled) {
+      return Padding(
+        padding: const EdgeInsets.only(top: AppleSpacing.xs),
+        child: Text(
+          l10n.aiConclusionNarrativeDisabled,
+          key: AiAnalysisWorkspaceKeys.conclusionNarrativeUnavailableKey,
+          style: context.vwCaption,
+        ),
+      );
+    }
     final hash = conclusionContentHash(
       overview,
       groups.expand((group) => group.items),
@@ -601,6 +863,33 @@ class _NarrativeSection extends StatelessWidget {
         ),
       );
     }
-    return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: AppleSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.aiConclusionNarrativeUnavailable,
+            key: AiAnalysisWorkspaceKeys.conclusionNarrativeUnavailableKey,
+            style: context.vwCaption,
+          ),
+          const SizedBox(height: AppleSpacing.xs),
+          AppleButton(
+            key: AiAnalysisWorkspaceKeys.conclusionNarrativeGenerateKey,
+            label: l10n.aiConclusionNarrativeGenerate,
+            icon: Icons.auto_awesome_outlined,
+            variant: AppleButtonVariant.pearl,
+            onPressed: canGenerate ? onGenerate : null,
+          ),
+          if (showCreditHint) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              l10n.aiConclusionNarrativePlatformCreditHint,
+              style: context.vwCaption,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

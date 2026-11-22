@@ -1001,9 +1001,66 @@
       "pct": {"type": "String"}
     }
   },
-  "aiConclusionsLead": "These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.",
+  "aiConclusionsLead": "These are this run's classification conclusions. Review folder highlights below, then open the full list to adjust selections.",
+  "aiConclusionsPartialResults": "AI analysis is still running. These are partial classifications and will continue to update.",
+  "aiConclusionsComplete": "AI analysis is complete. These are the complete classifications for this run.",
+  "aiConclusionsAnalysisPaused": "Classification is paused; shown results remain partial.",
+  "aiConclusionsAnalysisFailed": "Classification stopped after an error; shown results remain partial.",
+  "aiConclusionsLocalOnly": "This run was classified by local rules.",
+  "aiClassificationProvenanceTitle": "Classification sources",
+  "aiClassificationBootstrapLocal": "Candidate-stage local preclassification: {count} items",
+  "@aiClassificationBootstrapLocal": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "aiClassificationCoverageLocal": "Coverage local rules: {count} items",
+  "@aiClassificationCoverageLocal": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "aiClassificationAiNotStarted": "AI analysis has not started yet.",
+  "aiClassificationAiRunningKnown": "AI analysis: {completed} / {planned} items complete · analyzing",
+  "@aiClassificationAiRunningKnown": {
+    "placeholders": {
+      "completed": {"type": "int"},
+      "planned": {"type": "int"}
+    }
+  },
+  "aiClassificationAiRunningUnknown": "AI analysis: {completed} items complete · analyzing",
+  "@aiClassificationAiRunningUnknown": {
+    "placeholders": {"completed": {"type": "int"}}
+  },
+  "aiClassificationAiCompletedKnown": "AI analysis: {completed} / {planned} items complete · completed",
+  "@aiClassificationAiCompletedKnown": {
+    "placeholders": {
+      "completed": {"type": "int"},
+      "planned": {"type": "int"}
+    }
+  },
+  "aiClassificationAiCompletedUnknown": "AI analysis: {completed} items complete · completed",
+  "@aiClassificationAiCompletedUnknown": {
+    "placeholders": {"completed": {"type": "int"}}
+  },
+  "aiClassificationAiPaused": "AI analysis is paused; shown results are partial.",
+  "aiClassificationAiFailed": "AI analysis failed; shown results are partial.",
+  "aiClassificationAiNotRequired": "No AI request was needed for this run.",
+  "aiClassificationLocalRulesProgress": "Local rules {percent}%",
+  "@aiClassificationLocalRulesProgress": {"placeholders": {"percent": {"type": "int"}}},
+  "aiClassificationLocalRulesPreparing": "Preparing local rules",
+  "aiClassificationAiWaitingForLocal": "AI analysis waits for local rules to finish.",
+  "aiAnalysisStageCandidateTitle": "Candidate preclassification",
+  "aiAnalysisStageCandidateDetail": "{count} items available for optional cleanup",
+  "@aiAnalysisStageCandidateDetail": {"placeholders": {"count": {"type": "int"}}},
+  "aiAnalysisStageLocalTitle": "Local coverage rules",
+  "aiAnalysisStageLocalPreparing": "Preparing local rules",
+  "aiAnalysisStageLocalProgress": "{resolved} / {planned} items classified locally",
+  "@aiAnalysisStageLocalProgress": {"placeholders": {"resolved": {"type": "int"}, "planned": {"type": "int"}}},
+  "aiAnalysisStageAiTitle": "AI coverage analysis",
+  "aiAnalysisStageAiProgress": "{resolved} / {planned} items analyzed by AI",
+  "@aiAnalysisStageAiProgress": {"placeholders": {"resolved": {"type": "int"}, "planned": {"type": "int"}}},
+  "aiAnalysisPlanDetails": "View plan details",
   "aiConclusionNarrativeLoading": "Summarizing conclusions…",
   "aiConclusionNarrativeGenerate": "Generate AI summary",
+  "aiConclusionNarrativeDisabled": "AI summary is disabled. The structured classification results above are complete and ready to use.",
+  "aiConclusionNarrativeUnavailable": "AI summary is not available yet. The structured classification results above are ready to use.",
   "aiConclusionNarrativePlatformCreditHint": "Uses 1 extra credit.",
   "aiPrecheckNarrativeCreditHint": "Conclusion summary adds 1 credit.",
   "aiConclusionsByDirectory": "By folder",

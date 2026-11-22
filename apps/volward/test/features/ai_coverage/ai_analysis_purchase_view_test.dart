@@ -28,6 +28,8 @@ void main() {
     );
 
     expect(find.byKey(AiAnalysisWorkspaceKeys.settingsKey), findsOneWidget);
+    expect(find.text('Buy credits'), findsNothing);
+    expect(find.text('AI Analysis'), findsOneWidget);
   });
 
   testWidgets('purchase shows insufficient-credit prompt for platform mode', (
@@ -51,6 +53,7 @@ void main() {
     );
 
     expect(find.byKey(AiAnalysisWorkspaceKeys.settingsKey), findsOneWidget);
+    expect(find.text('Buy credits'), findsOneWidget);
   });
 
   testWidgets('purchase hides settings prompt when context is usable', (
@@ -66,6 +69,29 @@ void main() {
               mode: AiMode.platform,
               hasProvider: true,
               platformCredits: 10,
+            ),
+            onOpenSettings: _noop,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(AiAnalysisWorkspaceKeys.settingsKey), findsNothing);
+  });
+
+  testWidgets('purchase hides prompts while candidate context is loading', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: AiAnalysisPurchaseView(
+            precheck: AiWorkspacePrecheckState(
+              mode: AiMode.byok,
+              hasProvider: false,
+              candidatesBootstrapPending: true,
             ),
             onOpenSettings: _noop,
           ),

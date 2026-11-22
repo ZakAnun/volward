@@ -250,8 +250,9 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                               context,
                               filtered: false,
                             ),
-                            onOpenDetailPage: ({String? directoryPath}) =>
-                                actions.openDetailPage(
+                            onOpenDetailList: (filter, {directoryPath}) =>
+                                actions.openDetailList(
+                                  initialFilter: filter,
                                   directoryPath: directoryPath,
                                 ),
                             onOpenReviewQueue: actions.openReviewQueue,
@@ -328,7 +329,7 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                         key: AiAnalysisWorkspaceKeys.showAllResultsKey,
                         label: l10n.aiResultsViewFullList,
                         variant: AppleButtonVariant.pearl,
-                        onPressed: actions.openDetailPage,
+                        onPressed: actions.openDetailList,
                       ),
                     ],
                   ],
