@@ -47,8 +47,10 @@ Future<int> flushLocalVerdictsInChunks({
   required String snapshotId,
   required FetchLocalVerdictPage fetchPage,
   int chunkSize = 1000,
+  int initialCursor = 0,
+  Future<void> Function(int written, int? nextCursor)? onPageFlushed,
 }) async {
-  var cursor = 0;
+  var cursor = initialCursor;
   var flushed = 0;
   while (true) {
     final page = await fetchPage(cursor);
@@ -61,6 +63,7 @@ Future<int> flushLocalVerdictsInChunks({
       await verdictStore.appendAll(snapshotId, page.verdicts.sublist(i, end));
     }
     final next = page.nextCursor;
+    await onPageFlushed?.call(page.verdicts.length, next);
     if (next == null) break;
     cursor = next;
   }
@@ -382,6 +385,10 @@ class CoverageJobController {
         treeQueueCursor: guard.treeQueueCursor,
         tailQueueCursor: guard.tailQueueCursor,
         localResolvedFiles: guard.localResolvedFiles,
+        localRuleFiles: guard.localRuleFiles,
+        localFlushCursor: guard.localFlushCursor,
+        localPhaseComplete: guard.localPhaseComplete,
+        aiResolvedFiles: guard.aiResolvedFiles,
         treeNodesCompleted: guard.treeNodesCompleted,
         estimatedTreeCredits:
             plan.estimatedTreeCredits ?? guard.estimatedTreeCredits,
@@ -391,7 +398,7 @@ class CoverageJobController {
       await stateStore.save(_state!);
       _emit();
 
-      if (plan.planVersion >= 3 && _state!.localResolvedFiles == 0) {
+      if (plan.planVersion >= 3 && !_state!.localPhaseComplete) {
         final localExpected =
             (plan.localSafeFiles ?? 0) + (plan.localKeepFiles ?? 0);
         try {
@@ -404,6 +411,18 @@ class CoverageJobController {
                 cursor: cursor,
               );
               return (verdicts: page.verdicts, nextCursor: page.nextCursor);
+            },
+            initialCursor: _state!.localFlushCursor,
+            onPageFlushed: (written, nextCursor) async {
+              final current = _state!;
+              _state = current.copyWith(
+                localResolvedFiles: current.localResolvedFiles + written,
+                localRuleFiles: current.localRuleFiles + written,
+                analyzedFiles: current.analyzedFiles + written,
+                localFlushCursor: nextCursor ?? current.localFlushCursor,
+              );
+              await stateStore.save(_state!);
+              _emit();
             },
           );
           if (localExpected > 0 && flushed == 0) {
@@ -432,12 +451,9 @@ class CoverageJobController {
           }
           debugPrint('Coverage: skip local verdict flush ($e)');
         }
-        if (localExpected > 0 && _state != null) {
+        if (_state != null) {
           final current = _state!;
-          _state = current.copyWith(
-            localResolvedFiles: localExpected,
-            analyzedFiles: current.analyzedFiles + localExpected,
-          );
+          _state = current.copyWith(localPhaseComplete: true);
           await stateStore.save(_state!);
           _emit();
         }
@@ -551,6 +567,7 @@ class CoverageJobController {
             _state = current.copyWith(
               cursor: waveCursor,
               analyzedFiles: current.analyzedFiles + waveAnalyzed,
+              aiResolvedFiles: current.aiResolvedFiles + waveAnalyzed,
               usedTokens: current.usedTokens + waveTokens,
               usedCredits: current.usedCredits + waveCredits,
               updatedAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -702,6 +719,7 @@ class CoverageJobController {
             usedCredits: current.usedCredits + waveCredits,
             localResolvedFiles: current.localResolvedFiles + waveLocalResolved,
             analyzedFiles: current.analyzedFiles + waveAnalyzedFiles,
+            aiResolvedFiles: current.aiResolvedFiles + waveAnalyzedFiles,
             updatedAtMs: DateTime.now().millisecondsSinceEpoch,
           );
           await stateStore.save(_state!);
@@ -802,6 +820,7 @@ class CoverageJobController {
           _state = current.copyWith(
             tailQueueCursor: waveTailCursor,
             analyzedFiles: current.analyzedFiles + waveAnalyzed,
+            aiResolvedFiles: current.aiResolvedFiles + waveAnalyzed,
             usedTokens: current.usedTokens + waveTokens,
             usedCredits: current.usedCredits + waveCredits,
             updatedAtMs: DateTime.now().millisecondsSinceEpoch,

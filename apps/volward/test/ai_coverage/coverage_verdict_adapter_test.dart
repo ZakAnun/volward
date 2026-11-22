@@ -47,4 +47,29 @@ void main() {
     expect(mapped.first.path, '/a');
     expect(mapped.last.path, '/b');
   });
+
+  test('coverageVerdictsToAiVerdicts omits tree drill directives', () {
+    const verdicts = [
+      CoverageVerdict(
+        path: '/scan/cache',
+        verdict: 'drill_down',
+        confidence: 'high',
+        reason: 'inspect children',
+        coverageSource: 'dir:/scan/cache',
+        sizeBytes: 200,
+      ),
+      CoverageVerdict(
+        path: '/scan/cache/a.bin',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'retained child',
+        coverageSource: 'file',
+        sizeBytes: 100,
+      ),
+    ];
+
+    final mapped = coverageVerdictsToAiVerdicts(verdicts);
+
+    expect(mapped.map((item) => item.path), ['/scan/cache/a.bin']);
+  });
 }

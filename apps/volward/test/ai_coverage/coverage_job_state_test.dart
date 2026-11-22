@@ -142,6 +142,8 @@ void main() {
     expect(restored.treeQueueCursor, 7);
     expect(restored.tailQueueCursor, 3);
     expect(restored.localResolvedFiles, 12);
+    expect(restored.localRuleFiles, 0);
+    expect(restored.aiResolvedFiles, 0);
     expect(restored.treeNodesCompleted, 4);
     expect(restored.estimatedTreeCredits, 20);
     expect(restored.estimatedTailCredits, 8);
@@ -168,8 +170,35 @@ void main() {
     expect(loaded.treeQueueCursor, 0);
     expect(loaded.tailQueueCursor, 0);
     expect(loaded.localResolvedFiles, 0);
+    expect(loaded.localRuleFiles, 0);
+    expect(loaded.aiResolvedFiles, 0);
     expect(loaded.treeNodesCompleted, 0);
     expect(loaded.estimatedTreeCredits, isNull);
     expect(loaded.estimatedTailCredits, isNull);
+  });
+
+  test('source-specific classification progress round trips', () {
+    const state = CoverageJobState(
+      snapshotId: 's-source-progress',
+      rootPath: '/',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 10,
+      analyzedFiles: 7,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.running,
+      usedTokens: 0,
+      usedCredits: 1,
+      budgetTokens: 0,
+      budgetCredits: 10,
+      updatedAtMs: 1,
+      localRuleFiles: 2,
+      aiResolvedFiles: 5,
+    );
+
+    final restored = CoverageJobState.fromJson(state.toJson());
+
+    expect(restored.localRuleFiles, 2);
+    expect(restored.aiResolvedFiles, 5);
   });
 }

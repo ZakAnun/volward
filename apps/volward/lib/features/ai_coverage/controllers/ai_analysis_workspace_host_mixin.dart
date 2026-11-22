@@ -221,17 +221,12 @@ mixin AiAnalysisWorkspaceHostMixin
   void openReviewQueueWorkspace({String? directoryPath}) =>
       openReviewQueue(directoryPath: directoryPath);
   void openDetailListWorkspace({
+    WorkspaceResultFilter? initialFilter,
     String? directoryPath,
-    required bool showOverview,
   }) {
-    openDetailList(
-      initialFilter: showOverview ? WorkspaceResultFilter.all : null,
-      directoryPath: directoryPath,
-    );
+    openDetailList(initialFilter: initialFilter, directoryPath: directoryPath);
   }
 
-  void openDetailPageWorkspace({String? directoryPath}) =>
-      openDetailPage(directoryPath: directoryPath);
   void toggleScopeExpandedWorkspace() => toggleEmbeddedScopeExpanded();
   void goBackWorkspace() => handleWorkspaceBack();
   void notifyResultsScrollStartWorkspace() => onResultsScrollStart();

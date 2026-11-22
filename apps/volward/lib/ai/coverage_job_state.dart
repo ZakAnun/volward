@@ -37,6 +37,10 @@ class CoverageJobState {
     this.treeQueueCursor = 0,
     this.tailQueueCursor = 0,
     this.localResolvedFiles = 0,
+    this.localRuleFiles = 0,
+    this.localFlushCursor = 0,
+    this.localPhaseComplete = false,
+    this.aiResolvedFiles = 0,
     this.treeNodesCompleted = 0,
     this.estimatedTreeCredits,
     this.estimatedTailCredits,
@@ -81,6 +85,10 @@ class CoverageJobState {
     treeQueueCursor: (json['tree_queue_cursor'] as num?)?.toInt() ?? 0,
     tailQueueCursor: (json['tail_queue_cursor'] as num?)?.toInt() ?? 0,
     localResolvedFiles: (json['local_resolved_files'] as num?)?.toInt() ?? 0,
+    localRuleFiles: (json['local_rule_files'] as num?)?.toInt() ?? 0,
+    localFlushCursor: (json['local_flush_cursor'] as num?)?.toInt() ?? 0,
+    localPhaseComplete: json['local_phase_complete'] == true,
+    aiResolvedFiles: (json['ai_resolved_files'] as num?)?.toInt() ?? 0,
     treeNodesCompleted: (json['tree_nodes_completed'] as num?)?.toInt() ?? 0,
     estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
     estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
@@ -110,6 +118,10 @@ class CoverageJobState {
   final int treeQueueCursor;
   final int tailQueueCursor;
   final int localResolvedFiles;
+  final int localRuleFiles;
+  final int localFlushCursor;
+  final bool localPhaseComplete;
+  final int aiResolvedFiles;
   final int treeNodesCompleted;
   final int? estimatedTreeCredits;
   final int? estimatedTailCredits;
@@ -134,6 +146,10 @@ class CoverageJobState {
     int? treeQueueCursor,
     int? tailQueueCursor,
     int? localResolvedFiles,
+    int? localRuleFiles,
+    int? localFlushCursor,
+    bool? localPhaseComplete,
+    int? aiResolvedFiles,
     int? treeNodesCompleted,
     int? Function()? estimatedTreeCredits,
     int? Function()? estimatedTailCredits,
@@ -165,6 +181,10 @@ class CoverageJobState {
     treeQueueCursor: treeQueueCursor ?? this.treeQueueCursor,
     tailQueueCursor: tailQueueCursor ?? this.tailQueueCursor,
     localResolvedFiles: localResolvedFiles ?? this.localResolvedFiles,
+    localRuleFiles: localRuleFiles ?? this.localRuleFiles,
+    localFlushCursor: localFlushCursor ?? this.localFlushCursor,
+    localPhaseComplete: localPhaseComplete ?? this.localPhaseComplete,
+    aiResolvedFiles: aiResolvedFiles ?? this.aiResolvedFiles,
     treeNodesCompleted: treeNodesCompleted ?? this.treeNodesCompleted,
     estimatedTreeCredits: estimatedTreeCredits != null
         ? estimatedTreeCredits()
@@ -202,6 +222,10 @@ class CoverageJobState {
     if (treeQueueCursor != 0) 'tree_queue_cursor': treeQueueCursor,
     if (tailQueueCursor != 0) 'tail_queue_cursor': tailQueueCursor,
     if (localResolvedFiles != 0) 'local_resolved_files': localResolvedFiles,
+    if (localRuleFiles != 0) 'local_rule_files': localRuleFiles,
+    if (localFlushCursor != 0) 'local_flush_cursor': localFlushCursor,
+    if (localPhaseComplete) 'local_phase_complete': true,
+    if (aiResolvedFiles != 0) 'ai_resolved_files': aiResolvedFiles,
     if (treeNodesCompleted != 0) 'tree_nodes_completed': treeNodesCompleted,
     if (estimatedTreeCredits != null)
       'estimated_tree_credits': estimatedTreeCredits,

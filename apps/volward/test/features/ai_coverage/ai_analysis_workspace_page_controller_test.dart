@@ -10,6 +10,7 @@ import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_models.dart';
+import 'package:volward/ai/coverage_verdict_store.dart';
 import 'package:volward/capabilities/capability_models.dart';
 import 'package:volward/features/ai_coverage/ai_analysis_workspace_config.dart';
 import 'package:volward/features/ai_coverage/controllers/ai_analysis_workspace_controller.dart';
@@ -195,6 +196,56 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets(
+    'coverage verdict completion merges its size into immutable bootstrap state',
+    (tester) async {
+      final gateway = _FakeGateway()
+        ..candidatesJson =
+            '{"pre_classified":[],"unknown_candidates":[],'
+            '"estimated_input_tokens":0}';
+      late AiAnalysisWorkspacePageController controller;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Builder(
+            builder: (context) {
+              controller = AiAnalysisWorkspacePageController(
+                AiAnalysisWorkspaceConfig(
+                  snapshotId: 'snapshot-1',
+                  targetLabel: 'Downloads',
+                  onExit: () {},
+                  onOpenSettings: () {},
+                  onDeletingChanged: (_) {},
+                  onDeleteCompleted: () {},
+                  gateway: gateway,
+                ),
+              )..initialize(bootstrap: false);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.runAsync(controller.bootstrapForTest);
+
+      await controller.applyCoverageVerdictRowsAsync(const [
+        CoverageVerdict(
+          path: '/tmp/completed-result',
+          verdict: 'review_needed',
+          confidence: 'high',
+          reason: 'large cache',
+          coverageSource: 'ai',
+          sizeBytes: 42,
+        ),
+      ]);
+
+      expect(controller.sizeByPath['/tmp/completed-result'], 42);
+      expect(controller.verdicts.single.path, '/tmp/completed-result');
+      controller.dispose();
+    },
+  );
 }
 
 class _FakeGateway implements AiAnalysisGateway {

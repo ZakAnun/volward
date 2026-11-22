@@ -134,6 +134,8 @@ void main() {
       expect(done.usedCredits, 2);
       expect(treeBatches, 2);
       expect(done.treeNodesCompleted, 2);
+      expect(done.localRuleFiles, 0);
+      expect(done.aiResolvedFiles, 1);
       final saved = await verdictStore.readAll('v3-tree');
       expect(saved.any((v) => v.path == '/root/storage/nested/a.dat'), isTrue);
     },
@@ -279,6 +281,8 @@ void main() {
 
     expect(done.status, CoverageJobStatus.completed);
     expect(done.localResolvedFiles, 2500);
+    expect(done.localRuleFiles, 2500);
+    expect(done.aiResolvedFiles, 0);
     expect(appendAllCalls, 3);
     expect(await verdictStore.readAll('v3-local'), hasLength(2500));
   });
@@ -353,6 +357,8 @@ void main() {
     );
     expect(done.status, CoverageJobStatus.completed);
     expect(done.analyzedFiles, 80);
+    expect(done.localRuleFiles, 0);
+    expect(done.aiResolvedFiles, 80);
     expect(analyzed, 80);
     expect(await verdictStore.readAll('s1'), hasLength(80));
   });

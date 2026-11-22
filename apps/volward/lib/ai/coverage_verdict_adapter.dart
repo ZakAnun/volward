@@ -10,4 +10,10 @@ AiVerdict coverageVerdictToAiVerdict(CoverageVerdict verdict) => AiVerdict(
 
 List<AiVerdict> coverageVerdictsToAiVerdicts(
   Iterable<CoverageVerdict> verdicts,
-) => verdicts.map(coverageVerdictToAiVerdict).toList(growable: false);
+) => verdicts
+    // Tree coverage uses this internal directive to request child nodes.
+    // Its size is an aggregate of those children, so displaying it alongside
+    // their terminal verdicts would double-count the analyzed total.
+    .where((verdict) => verdict.verdict != 'drill_down')
+    .map(coverageVerdictToAiVerdict)
+    .toList(growable: false);

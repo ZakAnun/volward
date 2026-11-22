@@ -3,13 +3,14 @@ import '../../../ai/ai_settings_store.dart';
 import '../../../ai/ai_analysis_activity_model.dart';
 import '../../../ai/coverage_job_state.dart';
 import '../../../ai/coverage_models.dart';
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../ai/coverage_verdict_store.dart';
 import '../../../ai/ai_result_groups.dart';
 import '../../../ai/ai_result_overview.dart';
 import '../models/ai_analysis_workspace_display_state.dart';
 
 /// Public result filters mirroring the workspace's filter segments.
-enum WorkspaceResultFilter { all, review, selected, safeToRemove }
+enum WorkspaceResultFilter { all, review, selected, safeToRemove, keep }
 
 /// Public result sort orders.
 enum WorkspaceResultSort { priority, size }
@@ -209,6 +210,13 @@ final class AiWorkspaceResultsState {
     this.canStartWorkspaceAnalysis = false,
     this.resultsLayoutPending = false,
     this.showsLocalPreviewHint = false,
+    this.classificationProvenance = const ClassificationProvenanceSummary(
+      bootstrapLocalCount: 0,
+      localRuleCount: 0,
+      aiResolvedCount: 0,
+      aiPlannedCount: null,
+      phase: ClassificationAiPhase.notStarted,
+    ),
     this.errorMessage,
     this.directoryTypeFilter = WorkspaceDirectoryTypeFilter.safe,
     this.reviewQueueDirectoryFilter,
@@ -251,6 +259,7 @@ final class AiWorkspaceResultsState {
   final bool canStartWorkspaceAnalysis;
   final bool resultsLayoutPending;
   final bool showsLocalPreviewHint;
+  final ClassificationProvenanceSummary classificationProvenance;
   final String? errorMessage;
   final WorkspaceDirectoryTypeFilter directoryTypeFilter;
   final String? reviewQueueDirectoryFilter;

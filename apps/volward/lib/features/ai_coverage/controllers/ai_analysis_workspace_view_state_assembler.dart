@@ -2,6 +2,7 @@ import '../../../ai/ai_analysis_activity_model.dart';
 import '../../../ai/ai_provider.dart';
 import '../../../ai/coverage_job_state.dart';
 import '../../../ai/coverage_models.dart';
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../ai/coverage_verdict_store.dart';
 import '../../../ai/ai_settings_store.dart';
 import '../../../widgets/ai_results_hub.dart';
@@ -220,6 +221,11 @@ abstract final class AiAnalysisWorkspaceViewStateAssembler {
   static AiWorkspaceResultsState buildResultsState(
     AiAnalysisWorkspaceViewStateSource source,
   ) {
+    final activeSnapshotId = source.precheckOwnerState.snapshotId;
+    final job = source.coverageJobState ?? source.debugCoverageJobState;
+    final activeJob = job?.snapshotId == activeSnapshotId ? job : null;
+    final plan = source.coveragePlanSummary;
+    final activePlan = plan?.snapshotId == activeSnapshotId ? plan : null;
     final pending = pendingReviewVerdicts(
       verdicts: source.verdicts,
       reviewDecisions: source.reviewDecisions,
@@ -253,6 +259,13 @@ abstract final class AiAnalysisWorkspaceViewStateAssembler {
       canStartWorkspaceAnalysis: source.canStartWorkspaceAnalysis,
       resultsLayoutPending: source.resultsLayoutPending,
       showsLocalPreviewHint: source.showsLocalPreviewHint,
+      classificationProvenance: buildClassificationProvenanceSummary(
+        job: activeJob,
+        plan: activePlan,
+        bootstrapPreclassifiedCount: source.displayPreClassifiedCount,
+        hasProvider: source.hasProvider,
+        isLocalOnlyPlan: source.coveragePlanIsLocalOnly,
+      ),
       errorMessage: source.error,
       directoryTypeFilter: source.directoryTypeFilter,
       reviewQueueDirectoryFilter: source.reviewQueueDirectoryFilter,

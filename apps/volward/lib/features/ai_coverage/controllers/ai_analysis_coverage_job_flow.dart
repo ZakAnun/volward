@@ -155,16 +155,6 @@ Future<void> coverageJobApplyState(
     }
     return;
   }
-  final inResults =
-      host.phase == AiWorkspaceDisplayState.results ||
-      host.phase == AiWorkspaceDisplayState.deleting;
-  if (inResults &&
-      aiCoverageJobStateIsTerminal(state) &&
-      host.verdicts.isNotEmpty &&
-      state.pauseReason != CoveragePauseReason.failed) {
-    coverageJobPaintState(host, state);
-    return;
-  }
   // Persisted jobs surface on precheck as the banner only until the user
   // explicitly starts or resumes full coverage this visit.
   if (host.resultsHubMode != ResultsHubMode.ready &&
@@ -214,9 +204,6 @@ Future<void> coverageJobApplyState(
   var shouldRefreshVerdicts =
       !lightweightAnalyzing &&
       (state.analyzedFiles > 0 || state.status == CoverageJobStatus.completed);
-  if (inResults && terminal && host.verdicts.isNotEmpty) {
-    shouldRefreshVerdicts = false;
-  }
   if (shouldRefreshVerdicts) {
     final now = DateTime.now();
     final running = state.status == CoverageJobStatus.running;
@@ -362,11 +349,10 @@ Future<void> coverageJobApplyVerdictRows(
             withCandidateMeta(verdict, host.bootstrapController.unknownByPath),
       )
       .toList();
-  for (final verdict in coverageVerdicts) {
-    if (verdict.sizeBytes > 0) {
-      host.sizeByPath[verdict.path] = verdict.sizeBytes;
-    }
-  }
+  host.bootstrapController.addSizes({
+    for (final verdict in coverageVerdicts)
+      if (verdict.sizeBytes > 0) verdict.path: verdict.sizeBytes,
+  });
   if (verdicts.length >= _heavyResultsLayoutThreshold) {
     if (!host.disposed) {
       host.mutate(() {

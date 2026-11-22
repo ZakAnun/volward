@@ -1,9 +1,205 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_provider.dart';
+import 'package:volward/ai/coverage_job_state.dart';
+import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/coverage_ui_helpers.dart';
 import 'package:volward/ai/coverage_verdict_store.dart';
 
 void main() {
+  const treePlan = CoveragePlanSummary(
+    snapshotId: 'snapshot',
+    planVersion: 3,
+    rootPath: '/root',
+    totalUnclassified: 20,
+    preClassifiedCount: 0,
+    groupRows: 0,
+    fileRows: 0,
+    estimatedPages: 0,
+    treePendingFiles: 12,
+    tailFiles: 8,
+  );
+
+  CoverageJobState job({
+    CoverageJobStatus status = CoverageJobStatus.running,
+    CoveragePauseReason? pauseReason,
+    int localRuleFiles = 0,
+    int aiResolvedFiles = 0,
+  }) {
+    return CoverageJobState(
+      snapshotId: 'snapshot',
+      rootPath: '/root',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 20,
+      analyzedFiles: localRuleFiles + aiResolvedFiles,
+      preClassifiedCount: 0,
+      status: status,
+      pauseReason: pauseReason,
+      usedTokens: 0,
+      usedCredits: 0,
+      budgetTokens: 0,
+      budgetCredits: 0,
+      updatedAtMs: 1,
+      localRuleFiles: localRuleFiles,
+      aiResolvedFiles: aiResolvedFiles,
+    );
+  }
+
+  test(
+    'buildClassificationProvenanceSummary separates sources and running AI',
+    () {
+      final summary = buildClassificationProvenanceSummary(
+        job: job(localRuleFiles: 4, aiResolvedFiles: 7),
+        plan: treePlan,
+        bootstrapPreclassifiedCount: 3,
+        hasProvider: true,
+        isLocalOnlyPlan: false,
+      );
+
+      expect(summary.bootstrapLocalCount, 3);
+      expect(summary.localRuleCount, 4);
+      expect(summary.aiResolvedCount, 7);
+      expect(summary.aiPlannedCount, 20);
+      expect(summary.phase, ClassificationAiPhase.running);
+    },
+  );
+
+  test(
+    'buildClassificationProvenanceSummary resolves terminal and local-only phases',
+    () {
+      expect(
+        buildClassificationProvenanceSummary(
+          job: job(status: CoverageJobStatus.completed),
+          plan: treePlan,
+          bootstrapPreclassifiedCount: 0,
+          hasProvider: true,
+          isLocalOnlyPlan: false,
+        ).phase,
+        ClassificationAiPhase.completed,
+      );
+      expect(
+        buildClassificationProvenanceSummary(
+          job: job(
+            status: CoverageJobStatus.paused,
+            pauseReason: CoveragePauseReason.failed,
+          ),
+          plan: treePlan,
+          bootstrapPreclassifiedCount: 0,
+          hasProvider: true,
+          isLocalOnlyPlan: false,
+        ).phase,
+        ClassificationAiPhase.failed,
+      );
+      expect(
+        buildClassificationProvenanceSummary(
+          job: job(status: CoverageJobStatus.paused),
+          plan: treePlan,
+          bootstrapPreclassifiedCount: 0,
+          hasProvider: true,
+          isLocalOnlyPlan: false,
+        ).phase,
+        ClassificationAiPhase.paused,
+      );
+      expect(
+        buildClassificationProvenanceSummary(
+          job: null,
+          plan: treePlan,
+          bootstrapPreclassifiedCount: 2,
+          hasProvider: false,
+          isLocalOnlyPlan: true,
+        ).phase,
+        ClassificationAiPhase.notRequired,
+      );
+    },
+  );
+
+  test(
+    'buildClassificationProvenanceSummary keeps old or absent plans unknown',
+    () {
+      final summary = buildClassificationProvenanceSummary(
+        job: job(),
+        plan: null,
+        bootstrapPreclassifiedCount: 0,
+        hasProvider: true,
+        isLocalOnlyPlan: false,
+      );
+
+      expect(summary.localRuleCount, 0);
+      expect(summary.aiResolvedCount, 0);
+      expect(summary.aiPlannedCount, isNull);
+      expect(summary.phase, ClassificationAiPhase.running);
+    },
+  );
+
+  test(
+    'buildClassificationProvenanceSummary reports not started without a provider or job',
+    () {
+      final summary = buildClassificationProvenanceSummary(
+        job: null,
+        plan: null,
+        bootstrapPreclassifiedCount: 0,
+        hasProvider: false,
+        isLocalOnlyPlan: false,
+      );
+
+      expect(summary.phase, ClassificationAiPhase.notStarted);
+    },
+  );
+
+  test('classification progress presentation exposes bounded AI progress', () {
+    const provenance = ClassificationProvenanceSummary(
+      bootstrapLocalCount: 3,
+      localRuleCount: 4,
+      aiResolvedCount: 7,
+      aiPlannedCount: 20,
+      phase: ClassificationAiPhase.running,
+    );
+
+    final presentation = buildClassificationProgressPresentation(provenance);
+
+    expect(presentation.progressFraction, 0.35);
+    expect(presentation.progressPercent, 35);
+    expect(presentation.showsAiProgress, isTrue);
+  });
+
+  test(
+    'classification progress presentation suppresses unreliable progress',
+    () {
+      final unknown = buildClassificationProgressPresentation(
+        const ClassificationProvenanceSummary(
+          bootstrapLocalCount: 0,
+          localRuleCount: 0,
+          aiResolvedCount: 7,
+          aiPlannedCount: null,
+          phase: ClassificationAiPhase.running,
+        ),
+      );
+      final localOnly = buildClassificationProgressPresentation(
+        const ClassificationProvenanceSummary(
+          bootstrapLocalCount: 0,
+          localRuleCount: 4,
+          aiResolvedCount: 0,
+          aiPlannedCount: 0,
+          phase: ClassificationAiPhase.notRequired,
+        ),
+      );
+      final stalePlan = buildClassificationProgressPresentation(
+        const ClassificationProvenanceSummary(
+          bootstrapLocalCount: 0,
+          localRuleCount: 0,
+          aiResolvedCount: 30,
+          aiPlannedCount: 20,
+          phase: ClassificationAiPhase.running,
+        ),
+      );
+
+      expect(unknown.progressFraction, isNull);
+      expect(localOnly.progressFraction, isNull);
+      expect(stalePlan.progressFraction, 1);
+      expect(stalePlan.progressPercent, 100);
+    },
+  );
+
   test('computeCoverageSourceStats counts file and group sources', () {
     const verdicts = [
       CoverageVerdict(
