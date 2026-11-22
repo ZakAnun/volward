@@ -807,6 +807,7 @@ extension AiAnalysisResultsProjection on AiAnalysisResultsController {
       WorkspaceResultFilter.review => _isPendingReview(input, item),
       WorkspaceResultFilter.selected => input.selected.contains(item.path),
       WorkspaceResultFilter.safeToRemove => item.verdict == 'safe_to_remove',
+      WorkspaceResultFilter.keep => item.verdict == 'keep',
     };
   }
 

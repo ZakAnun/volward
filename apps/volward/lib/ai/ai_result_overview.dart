@@ -229,7 +229,7 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverview(
   final pendingReview = input.isPendingReview ?? (_) => true;
 
   for (final verdict in input.verdicts) {
-    if (verdict.verdict == 'unanalyzed') continue;
+    if (!_isTerminalClassification(verdict)) continue;
     analyzedItemCount++;
     final bytes = input.sizeByPath[verdict.path] ?? 0;
     analyzedTotalBytes += bytes;
@@ -257,7 +257,7 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverview(
 
   final directoryVerdicts = <String, List<AiVerdict>>{};
   for (final verdict in input.verdicts) {
-    if (verdict.verdict == 'unanalyzed') continue;
+    if (!_isTerminalClassification(verdict)) continue;
     final bucket = normalizedRoot.isEmpty
         ? _fallbackBucket(verdict.path)
         : (firstLevelDirectoryUnderRoot(verdict.path, normalizedRoot) ??
@@ -329,6 +329,11 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverview(
     directories: capped,
   );
 }
+
+bool _isTerminalClassification(AiVerdict verdict) => switch (verdict.verdict) {
+  'safe_to_remove' || 'review_needed' || 'keep' => true,
+  _ => false,
+};
 
 /// Picks representative [reason] strings from analysis verdicts (no extra AI).
 List<String> extractReasonHighlights(

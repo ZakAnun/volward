@@ -60,9 +60,10 @@ abstract interface class AiAnalysisWorkspaceViewActions {
 
   void openReviewQueue({String? directoryPath});
 
-  void openDetailList({String? directoryPath, required bool showOverview});
-
-  void openDetailPage({String? directoryPath});
+  void openDetailList({
+    WorkspaceResultFilter? initialFilter,
+    String? directoryPath,
+  });
 
   void toggleScopeExpanded();
 

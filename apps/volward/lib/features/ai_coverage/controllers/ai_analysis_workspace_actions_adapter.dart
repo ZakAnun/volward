@@ -37,10 +37,9 @@ abstract interface class AiAnalysisWorkspaceActionsTarget {
   void openOverviewWorkspace();
   void openReviewQueueWorkspace({String? directoryPath});
   void openDetailListWorkspace({
+    WorkspaceResultFilter? initialFilter,
     String? directoryPath,
-    required bool showOverview,
   });
-  void openDetailPageWorkspace({String? directoryPath});
   void toggleScopeExpandedWorkspace();
   void goBackWorkspace();
   void notifyResultsScrollStartWorkspace();
@@ -168,15 +167,13 @@ final class AiAnalysisWorkspaceViewActionsAdapter
       _controller.openReviewQueueWorkspace(directoryPath: directoryPath);
 
   @override
-  void openDetailList({String? directoryPath, required bool showOverview}) =>
-      _controller.openDetailListWorkspace(
-        directoryPath: directoryPath,
-        showOverview: showOverview,
-      );
-
-  @override
-  void openDetailPage({String? directoryPath}) =>
-      _controller.openDetailPageWorkspace(directoryPath: directoryPath);
+  void openDetailList({
+    WorkspaceResultFilter? initialFilter,
+    String? directoryPath,
+  }) => _controller.openDetailListWorkspace(
+    initialFilter: initialFilter,
+    directoryPath: directoryPath,
+  );
 
   @override
   void toggleScopeExpanded() => _controller.toggleScopeExpandedWorkspace();

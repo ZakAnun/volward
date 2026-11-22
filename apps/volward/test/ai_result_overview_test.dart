@@ -72,6 +72,37 @@ void main() {
     expect(highlights.first, 'Large build artifact');
   });
 
+  test('excludes tree drill directives from analyzed totals', () {
+    const verdicts = [
+      AiVerdict(
+        path: '/scan/cache',
+        verdict: 'drill_down',
+        confidence: 'high',
+        reason: 'inspect children',
+      ),
+      AiVerdict(
+        path: '/scan/cache/a.bin',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'retained child',
+      ),
+    ];
+
+    final overview = buildAiAnalysisConclusionOverview(
+      const AiResultOverviewBuildInput(
+        targetLabel: 'scan',
+        rootPath: '/scan',
+        verdicts: verdicts,
+        sizeByPath: {'/scan/cache': 200, '/scan/cache/a.bin': 100},
+        rootSizeBytesHint: 100,
+      ),
+    );
+
+    expect(overview.analyzedItemCount, 1);
+    expect(overview.analyzedTotalBytes, 100);
+    expect(overview.keepCount, 1);
+  });
+
   test('buildAiAnalysisConclusionOverviewFromGroups uses group aggregates', () {
     final verdicts = List.generate(
       10,

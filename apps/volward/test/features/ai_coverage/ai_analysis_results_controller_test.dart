@@ -128,4 +128,56 @@ void main() {
       expect(() => projection.visibleGroups.clear(), throwsUnsupportedError);
     },
   );
+
+  test('keep filter only exposes retained verdicts', () {
+    final results = AiAnalysisResultsController.forTest();
+    const safe = AiVerdict(
+      path: '/tmp/safe.cache',
+      verdict: 'safe_to_remove',
+      confidence: 'high',
+      reason: 'cache',
+    );
+    const keep = AiVerdict(
+      path: '/tmp/keep.db',
+      verdict: 'keep',
+      confidence: 'high',
+      reason: 'database',
+    );
+    final projection = results.buildProjection(
+      const AiResultsProjectionInput(
+        verdicts: [safe, keep],
+        selected: {},
+        reviewDecisions: {},
+        expandedGroupPaths: {},
+        expandedGroupItemLimits: {},
+        expandedReviewPaths: {},
+        sizeByPath: {'/tmp/safe.cache': 10, '/tmp/keep.db': 20},
+        searchTextByPath: {
+          '/tmp/safe.cache': '/tmp/safe.cache cache',
+          '/tmp/keep.db': '/tmp/keep.db database',
+        },
+        preClassified: [],
+        unanalyzedVerdicts: [],
+        rootPath: '/tmp',
+        targetLabel: 'tmp',
+        useFullCoverage: false,
+        truncated: false,
+        filter: WorkspaceResultFilter.keep,
+        sort: WorkspaceResultSort.size,
+        query: '',
+        directoryFilter: null,
+        showsFilteredItems: true,
+        heavyResultsLayoutThreshold: 200,
+        aiResultGroupDisplayItemCap: 512,
+        firstLevelDirectoryPaths: {'/tmp'},
+        directoryPathsForGrouping: {'/tmp'},
+        coverageResultsLoadTruncated: false,
+        analyzedItemCountOverride: null,
+      ),
+    );
+
+    expect(projection.visibleGroups.single.items.map((item) => item.path), [
+      '/tmp/keep.db',
+    ]);
+  });
 }

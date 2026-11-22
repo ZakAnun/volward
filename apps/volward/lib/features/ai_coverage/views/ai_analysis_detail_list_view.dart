@@ -223,6 +223,7 @@ final class AiAnalysisDetailListView extends StatelessWidget {
     final segments = <(WorkspaceResultFilter, String)>[
       (WorkspaceResultFilter.review, l10n.aiResultsFilterReview),
       (WorkspaceResultFilter.safeToRemove, l10n.aiResultsFilterSafeToRemove),
+      (WorkspaceResultFilter.keep, l10n.aiResultsMetricKeepTitle),
       (WorkspaceResultFilter.selected, l10n.aiResultsFilterSelected),
       (WorkspaceResultFilter.all, l10n.aiResultsFilterAll),
     ];
