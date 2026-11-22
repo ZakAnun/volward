@@ -628,6 +628,13 @@ Future<void> _pumpUntilScopePrecheckContent(
   await _pumpUntilFound(tester, finder, maxAttempts: 240);
 }
 
+Future<void> _expandCoveragePlanDetails(WidgetTester tester) async {
+  final details = find.byKey(const Key('ai-analysis-coverage-plan-details'));
+  await _pumpUntilScopePrecheckContent(tester, details);
+  await tester.tap(details.hitTestable());
+  await tester.pumpAndSettle();
+}
+
 Future<void> _tapWorkspaceStartAnalysis(WidgetTester tester) async {
   Future<void> tapWhenFound(Finder control) async {
     if (control.hitTestable().evaluate().isNotEmpty) {
@@ -1218,6 +1225,7 @@ void main() {
     expect(find.text('Ready'), findsOneWidget);
   });
 
+  // Restore these platform-credit UI cases when platform mode is exposed again.
   testWidgets('precheck shows v3 plan breakdown from plan summary', (
     tester,
   ) async {
@@ -1233,10 +1241,7 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilScopePrecheckContent(
-      tester,
-      find.textContaining('Locally resolved: 1000 files'),
-    );
+    await _expandCoveragePlanDetails(tester);
 
     expect(find.textContaining('Locally resolved: 1000 files'), findsOneWidget);
     expect(find.textContaining('Estimated tree rounds: ~15'), findsOneWidget);
@@ -1248,7 +1253,7 @@ void main() {
       find.textContaining('Account balance: 100 credits'),
     );
     expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
-  });
+  }, skip: true);
 
   testWidgets('precheck shows estimated credits from plan summary', (
     tester,
@@ -1265,15 +1270,12 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilScopePrecheckContent(
-      tester,
-      find.textContaining('Estimated for full analysis'),
-    );
+    await _expandCoveragePlanDetails(tester);
 
     expect(find.textContaining('Estimated for full analysis'), findsOneWidget);
     expect(find.textContaining('Account balance: 100 credits'), findsOneWidget);
     expect(find.textContaining('40–80 credits'), findsOneWidget);
-  });
+  }, skip: true);
 
   testWidgets('precheck shows run cap from resolveRunBudgetCredits', (
     tester,
@@ -1305,16 +1307,13 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilScopePrecheckContent(
-      tester,
-      find.textContaining('Run cap for this scan: $expectedRunCap credits'),
-    );
+    await _expandCoveragePlanDetails(tester);
 
     expect(
       find.textContaining('Run cap for this scan: $expectedRunCap credits'),
       findsOneWidget,
     );
-  });
+  }, skip: true);
 
   testWidgets('precheck blocks start when estimate exceeds platform balance', (
     tester,
@@ -1353,7 +1352,7 @@ void main() {
     await tester.pump();
     final startButton = tester.widget<AppleButton>(startFinder);
     expect(startButton.onPressed, isNull);
-  });
+  }, skip: true);
 
   testWidgets(
     'precheck shows cap-below-buffered copy when run cap is below estimate buffer',
@@ -1384,6 +1383,7 @@ void main() {
         ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
       await tester.pumpWidget(_workspaceShell(gateway));
+      await _expandCoveragePlanDetails(tester);
       await _pumpUntilScopePrecheckContent(
         tester,
         find.textContaining('Single-run limit (1 credits)'),
@@ -1393,6 +1393,7 @@ void main() {
         findsOneWidget,
       );
     },
+    skip: true,
   );
 
   testWidgets('raising run cap clears cap-below-buffered and enables start', (
@@ -1424,6 +1425,7 @@ void main() {
       ..candidatesJson = _candidatePayload(hasExistingResult: false);
 
     await tester.pumpWidget(_workspaceShell(gateway));
+    await _expandCoveragePlanDetails(tester);
     await _pumpUntilScopePrecheckContent(
       tester,
       find.text('Raise limit to match estimate'),
@@ -1444,8 +1446,9 @@ void main() {
     );
     await tester.pump();
     expect(tester.widget<AppleButton>(startFinder).onPressed, isNotNull);
-  });
+  }, skip: true);
 
+  // Restore this platform-credit loading-state case when platform mode is exposed again.
   testWidgets('precheck keeps start enabled while coverage plan is loading', (
     tester,
   ) async {
@@ -1479,7 +1482,7 @@ void main() {
 
     planGate.complete(_coveragePlanSummary23);
     await tester.pumpAndSettle();
-  });
+  }, skip: true);
 
   testWidgets('precheck shows local unknown token truncation and quota data', (
     tester,
@@ -1716,7 +1719,7 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(_resultItem('/tmp/safe.cache'));
+    await tester.tap(find.byKey(const Key('ai-item-toggle:/tmp/safe.cache')));
     await tester.pumpAndSettle();
     expect(find.text('0 items selected · 0 B'), findsOneWidget);
   });
@@ -2767,7 +2770,7 @@ void main() {
     expect(_resultEntryTitle('/tmp/project-b/b.cache'), findsNothing);
   });
 
-  testWidgets('full coverage All segment keeps a shell for keep-only folders', (
+  testWidgets('keep metric opens a filtered retained-results list', (
     tester,
   ) async {
     AiCoverageCoordinator.debugForceAvailable = true;
@@ -2796,12 +2799,9 @@ void main() {
       tester,
       find.byKey(AiAnalysisWorkspace.detailListKey),
     );
-    expect(
-      find.byKey(AiAnalysisWorkspace.resultsKeepExpandHintKey),
-      findsOneWidget,
-    );
     expect(find.byKey(AiAnalysisWorkspace.resultsListKey), findsOneWidget);
     expect(_resultGroup('/tmp'), findsOneWidget);
+    expect(_resultEntryTitle('/tmp/keep.db'), findsOneWidget);
   });
 
   testWidgets('primary CTA opens review queue from overview', (tester) async {
@@ -2845,16 +2845,13 @@ void main() {
     );
   });
 
-  testWidgets('directory card asks host to open the detail page', (
+  testWidgets('directory card opens its filtered internal result list', (
     tester,
   ) async {
-    final opened = <String>[];
     final gateway = _FakeGateway()
       ..candidatesJson = _candidatePayload(hasExistingResult: false)
       ..provider = _ResultProvider(verdicts);
-    await tester.pumpWidget(
-      _workspaceShell(gateway, onOpenDetailPage: opened.add),
-    );
+    await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilOverviewHub(tester);
     await _tapWorkspaceStartAnalysis(tester);
     await _pumpUntilAnalyzedOverview(tester);
@@ -2864,67 +2861,27 @@ void main() {
       find.byKey(AiAnalysisWorkspace.directoryCardKey('/tmp')),
     );
     await tester.pump();
-    expect(opened, ['/tmp']);
-    expect(
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      findsOneWidget,
-    );
+    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    expect(_resultEntryTitle('/tmp/safe.cache'), findsOneWidget);
+    expect(_resultEntryTitle('/tmp/keep.db'), findsNothing);
   });
 
-  testWidgets('view full list asks host to open the detail page', (
+  testWidgets('view full list opens the unfiltered internal result list', (
     tester,
   ) async {
-    final opened = <String>[];
     final gateway = _FakeGateway()
       ..candidatesJson = _candidatePayload(hasExistingResult: false)
       ..provider = _ResultProvider(verdicts);
-    await tester.pumpWidget(
-      _workspaceShell(gateway, onOpenDetailPage: opened.add),
-    );
+    await tester.pumpWidget(_workspaceShell(gateway));
     await _pumpUntilOverviewHub(tester);
     await _tapWorkspaceStartAnalysis(tester);
     await _pumpUntilAnalyzedOverview(tester);
 
     await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
     await tester.pump();
-    expect(opened, isNotEmpty);
-    expect(
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      findsOneWidget,
-    );
-    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsNothing);
-  });
-
-  testWidgets('safe and keep metrics ask host to open the detail page', (
-    tester,
-  ) async {
-    final opened = <String>[];
-    final gateway = _FakeGateway()
-      ..candidatesJson = _candidatePayload(hasExistingResult: false)
-      ..provider = _ResultProvider(verdicts);
-    await tester.pumpWidget(
-      _workspaceShell(gateway, onOpenDetailPage: opened.add),
-    );
-    await _pumpUntilOverviewHub(tester);
-    await _tapWorkspaceStartAnalysis(tester);
-    await _pumpUntilAnalyzedOverview(tester);
-
-    await _tapOverviewFinder(
-      tester,
-      find.byKey(AiAnalysisWorkspace.resultsMetricSafeKey),
-    );
-    await tester.pump();
-    await _tapOverviewFinder(
-      tester,
-      find.byKey(AiAnalysisWorkspace.resultsMetricKeepKey),
-    );
-    await tester.pump();
-    expect(opened, ['/tmp', '/tmp']);
-    expect(
-      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      findsOneWidget,
-    );
-    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsNothing);
+    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    expect(_resultEntryTitle('/tmp/safe.cache'), findsOneWidget);
+    expect(_resultGroup('/tmp'), findsOneWidget);
   });
 
   testWidgets('directory type segments filter the by-folder grid', (
@@ -3197,9 +3154,13 @@ void main() {
   });
 
   testWidgets('empty result filters offer a reset action', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await _openResults(tester, _FakeGateway());
 
-    await tester.tap(find.byKey(AiAnalysisWorkspace.searchToggleKey));
+    final searchToggle = find.byKey(AiAnalysisWorkspace.searchToggleKey);
+    await tester.ensureVisible(searchToggle);
+    await tester.tap(searchToggle);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'does-not-exist');
     await tester.pumpAndSettle();
@@ -3960,7 +3921,7 @@ void main() {
       );
     });
 
-    testWidgets('synthesis failure silently keeps template overview', (
+    testWidgets('synthesis failure keeps template overview and explains it', (
       tester,
     ) async {
       await configureNarrative(tester, enabled: true, auto: true);
@@ -3988,8 +3949,8 @@ void main() {
 
       expect(provider.synthesisRequests, hasLength(1));
       expect(
-        find.byKey(AiAnalysisWorkspace.conclusionNarrativeKey),
-        findsNothing,
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeUnavailableKey),
+        findsOneWidget,
       );
       expect(
         find.byKey(AiAnalysisWorkspace.conclusionNarrativeLoadingKey),
@@ -3997,7 +3958,7 @@ void main() {
       );
       expect(
         find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
-        findsNothing,
+        findsOneWidget,
       );
       expect(find.byKey(AiAnalysisWorkspace.showAllResultsKey), findsOneWidget);
     });
@@ -4019,8 +3980,8 @@ void main() {
 
       expect(provider.synthesisRequests, isEmpty);
       expect(
-        find.byKey(AiAnalysisWorkspace.conclusionNarrativeGenerateKey),
-        findsNothing,
+        find.byKey(AiAnalysisWorkspace.conclusionNarrativeUnavailableKey),
+        findsOneWidget,
       );
     });
 
@@ -4054,10 +4015,10 @@ void main() {
       expect(provider.synthesisRequests, isEmpty);
       await _scrollConclusionsUntilVisible(
         tester,
-        find.textContaining('These conclusions come from AI'),
+        find.textContaining("These are this run's classification conclusions"),
       );
       expect(
-        find.textContaining('These conclusions come from AI'),
+        find.textContaining("These are this run's classification conclusions"),
         findsOneWidget,
       );
       final overviewScroll = find.descendant(

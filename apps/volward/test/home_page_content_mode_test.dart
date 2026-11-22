@@ -1095,162 +1095,148 @@ void main() {
     },
   );
 
-  testWidgets(
-    'AI view full list opens detail page and logo returns to analysis',
-    (tester) async {
-      final themeSettings = VolwardThemeSettings();
-      final updater = AppUpdater.test();
-      final gateway =
-          _HomeAiGateway(
-              candidates: Future<String?>.value(_homeDeleteCandidates),
-            )
-            ..mode = AiMode.byok
-            ..provider = _HomeResultProvider(
-              Future.value(const [
-                AiVerdict(
-                  path: '/tmp/home-cache',
-                  verdict: 'safe_to_remove',
-                  confidence: 'high',
-                  reason: 'Build cache',
-                ),
-              ]),
-            );
-      final session = _Session(aiSessionApi: true)
-        ..snapshotForTest = _completedSnapshot()
-        ..rootExistsForTest = ((_) => true);
-      addTearDown(themeSettings.dispose);
-      addTearDown(updater.dispose);
+  testWidgets('AI view full list stays in the filtered analysis workspace', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final gateway =
+        _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
+          ..mode = AiMode.byok
+          ..provider = _HomeResultProvider(
+            Future.value(const [
+              AiVerdict(
+                path: '/tmp/home-cache',
+                verdict: 'safe_to_remove',
+                confidence: 'high',
+                reason: 'Build cache',
+              ),
+            ]),
+          );
+    final session = _Session(aiSessionApi: true)
+      ..snapshotForTest = _completedSnapshot()
+      ..rootExistsForTest = ((_) => true);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
 
-      await _pumpHome(
-        tester,
-        _shell(
-          session,
-          themeSettings,
-          updater,
-          storageOverviewProvider: _OverviewProvider(),
-          aiAnalysisGateway: gateway,
-        ),
-      );
-      await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
-      await tester.pump();
-      await _pumpUntilFound(tester, find.text('Start AI Analysis'));
-      await tester.tap(find.text('Start AI Analysis'));
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+        aiAnalysisGateway: gateway,
+      ),
+    );
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.pump();
+    await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+    await tester.tap(find.text('Start AI Analysis'));
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    expect(find.text('home-cache'), findsOneWidget);
+    expect(find.byKey(HomePage.logoKey), findsNothing);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.backKey));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      findsOneWidget,
+    );
+    expect(find.byKey(HomePage.logoKey), findsNothing);
+  });
+
+  testWidgets('AI by-folder directory opens a filtered analysis result list', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final gateway =
+        _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
+          ..mode = AiMode.byok
+          ..provider = _HomeResultProvider(
+            Future.value(const [
+              AiVerdict(
+                path: '/tmp/home-cache',
+                verdict: 'safe_to_remove',
+                confidence: 'high',
+                reason: 'Build cache',
+              ),
+            ]),
+          );
+    final session = _Session(aiSessionApi: true)
+      ..snapshotForTest = _completedSnapshot()
+      ..rootExistsForTest = ((_) => true)
+      ..hasIndexApiForTest = true
+      ..catalogChildrenForTest = {
+        '/': const [
+          SnapshotNodeRecord(
+            path: '/tmp',
+            name: 'tmp',
+            isDirectory: true,
+            sizeBytes: 4096,
+          ),
+        ],
+        '/tmp': const [
+          SnapshotNodeRecord(
+            path: '/tmp/home-cache',
+            name: 'home-cache',
+            isDirectory: false,
+            sizeBytes: 100,
+          ),
+        ],
+      };
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+        aiAnalysisGateway: gateway,
+      ),
+    );
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.pump();
+    await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+    await tester.tap(find.text('Start AI Analysis'));
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+
+    final card = find.byKey(AiAnalysisWorkspace.directoryCardKey('/tmp'));
+    final overviewScroll = find.descendant(
+      of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      card,
+      160,
+      scrollable: overviewScroll.first,
+    );
+    if (card.hitTestable().evaluate().isEmpty) {
+      await tester.drag(overviewScroll.first, const Offset(0, -180));
       await tester.pumpAndSettle();
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      );
-
-      await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
-      await tester.pumpAndSettle();
-      expect(find.byKey(HomePage.logoKey), findsOneWidget);
-      expect(
-        find.byKey(AiAnalysisWorkspace.workspaceKey, skipOffstage: false),
-        findsOneWidget,
-      );
-      expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsNothing);
-
-      await tester.tap(find.byKey(HomePage.logoKey));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-        findsOneWidget,
-      );
-      expect(find.byKey(HomePage.logoKey), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'AI by-folder directory opens catalog-backed browse at that path',
-    (tester) async {
-      final themeSettings = VolwardThemeSettings();
-      final updater = AppUpdater.test();
-      final gateway =
-          _HomeAiGateway(
-              candidates: Future<String?>.value(_homeDeleteCandidates),
-            )
-            ..mode = AiMode.byok
-            ..provider = _HomeResultProvider(
-              Future.value(const [
-                AiVerdict(
-                  path: '/tmp/home-cache',
-                  verdict: 'safe_to_remove',
-                  confidence: 'high',
-                  reason: 'Build cache',
-                ),
-              ]),
-            );
-      final session = _Session(aiSessionApi: true)
-        ..snapshotForTest = _completedSnapshot()
-        ..rootExistsForTest = ((_) => true)
-        ..hasIndexApiForTest = true
-        ..catalogChildrenForTest = {
-          '/': const [
-            SnapshotNodeRecord(
-              path: '/tmp',
-              name: 'tmp',
-              isDirectory: true,
-              sizeBytes: 4096,
-            ),
-          ],
-          '/tmp': const [
-            SnapshotNodeRecord(
-              path: '/tmp/home-cache',
-              name: 'home-cache',
-              isDirectory: false,
-              sizeBytes: 100,
-            ),
-          ],
-        };
-      addTearDown(themeSettings.dispose);
-      addTearDown(updater.dispose);
-
-      await _pumpHome(
-        tester,
-        _shell(
-          session,
-          themeSettings,
-          updater,
-          storageOverviewProvider: _OverviewProvider(),
-          aiAnalysisGateway: gateway,
-        ),
-      );
-      await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
-      await tester.pump();
-      await _pumpUntilFound(tester, find.text('Start AI Analysis'));
-      await tester.tap(find.text('Start AI Analysis'));
-      await tester.pumpAndSettle();
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      );
-
-      final card = find.byKey(AiAnalysisWorkspace.directoryCardKey('/tmp'));
-      final overviewScroll = find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-        matching: find.byType(Scrollable),
-      );
-      await tester.scrollUntilVisible(
-        card,
-        160,
-        scrollable: overviewScroll.first,
-      );
-      if (card.hitTestable().evaluate().isEmpty) {
-        await tester.drag(overviewScroll.first, const Offset(0, -180));
-        await tester.pumpAndSettle();
-      }
-      await tester.tap(card);
-      await tester.pumpAndSettle();
-      expect(find.byType(ScanColumnView), findsOneWidget);
-      expect(
-        tester
-            .widget<ScanColumnView>(find.byType(ScanColumnView))
-            .selectionChain
-            .map((node) => node.path),
-        ['/tmp'],
-      );
-    },
-  );
+    }
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    expect(find.text('home-cache'), findsOneWidget);
+    expect(find.byType(ScanColumnView), findsNothing);
+  });
 
   testWidgets('AI workspace stays open when snapshot flickers to null', (
     tester,
