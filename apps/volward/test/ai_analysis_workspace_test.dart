@@ -3609,7 +3609,13 @@ void main() {
       ..candidatesJson = _candidatePayload();
 
     await tester.pumpWidget(_workspaceShell(gateway));
-    await _pumpUntilScopePrecheckContent(
+    await _pumpUntilOverviewHub(tester);
+    final scopeToggle = find.byKey(AiAnalysisScopePanel.toggleKey);
+    if (find.text('Candidate preclassification').evaluate().isEmpty) {
+      await tester.tap(scopeToggle);
+      await tester.pump();
+    }
+    await _pumpUntilFound(
       tester,
       find.text('No API calls needed for this scan'),
     );
@@ -3617,6 +3623,17 @@ void main() {
     expect(find.text('Review local results'), findsOneWidget);
     expect(find.textContaining('Total estimated credits'), findsNothing);
     expect(find.text('Start AI Analysis'), findsNothing);
+
+    expect(
+      find.byKey(const Key('ai-analysis-coverage-plan-details')),
+      findsOneWidget,
+    );
+    await tester.tap(scopeToggle);
+    await tester.pump();
+    expect(
+      find.byKey(const Key('ai-analysis-coverage-plan-details')),
+      findsOneWidget,
+    );
   });
 
   testWidgets(

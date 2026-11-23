@@ -24,6 +24,7 @@ void main() {
     CoveragePauseReason? pauseReason,
     int localRuleFiles = 0,
     int aiResolvedFiles = 0,
+    bool localPhaseComplete = false,
   }) {
     return CoverageJobState(
       snapshotId: 'snapshot',
@@ -42,6 +43,7 @@ void main() {
       updatedAtMs: 1,
       localRuleFiles: localRuleFiles,
       aiResolvedFiles: aiResolvedFiles,
+      localPhaseComplete: localPhaseComplete,
     );
   }
 
@@ -145,6 +147,93 @@ void main() {
       expect(summary.phase, ClassificationAiPhase.notStarted);
     },
   );
+
+  test('coverage run presentation rejects a job from another snapshot', () {
+    final presentation = buildCoverageRunPresentation(
+      snapshotId: 'current',
+      job: job(),
+      plan: treePlan,
+    );
+
+    expect(presentation.localPhase, CoverageLocalPhase.notStarted);
+    expect(presentation.localProgressFraction, isNull);
+    expect(presentation.aiPhase, ClassificationAiPhase.notStarted);
+  });
+
+  test(
+    'coverage run presentation keeps AI progress hidden until local rules finish',
+    () {
+      const plan = CoveragePlanSummary(
+        snapshotId: 'snapshot',
+        planVersion: 3,
+        rootPath: '/root',
+        totalUnclassified: 20,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 0,
+        estimatedPages: 0,
+        localSafeFiles: 12,
+        localKeepFiles: 8,
+        treePendingFiles: 12,
+        tailFiles: 8,
+      );
+      final presentation = buildCoverageRunPresentation(
+        snapshotId: 'snapshot',
+        job: job(localRuleFiles: 5),
+        plan: plan,
+      );
+
+      expect(presentation.localPhase, CoverageLocalPhase.running);
+      expect(presentation.localProgressFraction, 0.25);
+      expect(presentation.aiPhase, ClassificationAiPhase.notStarted);
+      expect(presentation.aiProgressFraction, isNull);
+    },
+  );
+
+  test('coverage run presentation preserves a failed local terminal state', () {
+    final presentation = buildCoverageRunPresentation(
+      snapshotId: 'snapshot',
+      job: job(
+        status: CoverageJobStatus.paused,
+        pauseReason: CoveragePauseReason.failed,
+        localRuleFiles: 5,
+      ),
+      plan: treePlan,
+    );
+
+    expect(presentation.localPhase, CoverageLocalPhase.failed);
+    expect(presentation.aiPhase, ClassificationAiPhase.failed);
+    expect(presentation.aiProgressFraction, isNull);
+  });
+
+  test('coverage run presentation starts AI only after local completion', () {
+    final presentation = buildCoverageRunPresentation(
+      snapshotId: 'snapshot',
+      job: job(
+        localRuleFiles: 20,
+        aiResolvedFiles: 4,
+        localPhaseComplete: true,
+      ),
+      plan: const CoveragePlanSummary(
+        snapshotId: 'snapshot',
+        planVersion: 3,
+        rootPath: '/root',
+        totalUnclassified: 20,
+        preClassifiedCount: 0,
+        groupRows: 0,
+        fileRows: 0,
+        estimatedPages: 0,
+        localSafeFiles: 12,
+        localKeepFiles: 8,
+        treePendingFiles: 12,
+        tailFiles: 8,
+      ),
+    );
+
+    expect(presentation.localPhase, CoverageLocalPhase.completed);
+    expect(presentation.aiPhase, ClassificationAiPhase.running);
+    expect(presentation.aiProgressFraction, 0.2);
+  });
 
   test('classification progress presentation exposes bounded AI progress', () {
     const provenance = ClassificationProvenanceSummary(

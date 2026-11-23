@@ -13,6 +13,132 @@ enum ClassificationAiPhase {
   notRequired,
 }
 
+/// The lifecycle of the persisted local-rule pass for one scan snapshot.
+///
+/// This is intentionally separate from [ClassificationAiPhase]: local rules
+/// and provider-backed AI are two consecutive stages and must not share a
+/// percentage or a terminal state.
+enum CoverageLocalPhase {
+  notStarted,
+  running,
+  completed,
+  paused,
+  failed,
+  notRequired,
+}
+
+/// A snapshot-validated runtime presentation for the two coverage stages.
+///
+/// A job or plan from another snapshot is deliberately ignored. In
+/// particular, this prevents a newly selected scan from displaying an
+/// inherited `0 / N` local progress bar while no work has started for it.
+class CoverageRunPresentation {
+  const CoverageRunPresentation({
+    required this.localPhase,
+    required this.localResolvedFiles,
+    required this.localPlannedFiles,
+    required this.localProgressFraction,
+    required this.aiPhase,
+    required this.aiResolvedFiles,
+    required this.aiPlannedFiles,
+    required this.aiProgressFraction,
+  });
+
+  final CoverageLocalPhase localPhase;
+  final int localResolvedFiles;
+  final int? localPlannedFiles;
+  final double? localProgressFraction;
+  final ClassificationAiPhase aiPhase;
+  final int aiResolvedFiles;
+  final int? aiPlannedFiles;
+  final double? aiProgressFraction;
+
+  bool get showsLocalProgress => localProgressFraction != null;
+  bool get showsAiProgress => aiProgressFraction != null;
+}
+
+/// Produces one authoritative stage model for [snapshotId].
+///
+/// The plan only supplies denominators; persisted job counters supply actual
+/// progress. This keeps plan details descriptive and prevents stale plan/job
+/// pairs from leaking into a later scan's status UI.
+CoverageRunPresentation buildCoverageRunPresentation({
+  required String snapshotId,
+  required CoverageJobState? job,
+  required CoveragePlanSummary? plan,
+}) {
+  final activeJob = job?.snapshotId == snapshotId ? job : null;
+  final activePlan = plan?.snapshotId == snapshotId ? plan : null;
+  final localPlannedFiles = _plannedLocalFiles(activePlan);
+  final aiPlannedFiles = _plannedAiFiles(activePlan);
+  final localPhase = _coverageLocalPhase(
+    job: activeJob,
+    plannedFiles: localPlannedFiles,
+  );
+  final jobAiPhase = _classificationAiPhase(
+    job: activeJob,
+    hasProvider: true,
+    isLocalOnlyPlan: localPhase == CoverageLocalPhase.notRequired,
+  );
+  final aiPhase = localPhase == CoverageLocalPhase.running
+      ? ClassificationAiPhase.notStarted
+      : jobAiPhase;
+  return CoverageRunPresentation(
+    localPhase: localPhase,
+    localResolvedFiles: activeJob?.localRuleFiles ?? 0,
+    localPlannedFiles: localPlannedFiles,
+    localProgressFraction: _stageProgress(
+      resolved: activeJob?.localRuleFiles ?? 0,
+      planned: localPlannedFiles,
+      phase:
+          localPhase == CoverageLocalPhase.running ||
+          localPhase == CoverageLocalPhase.completed,
+    ),
+    aiPhase: aiPhase,
+    aiResolvedFiles: activeJob?.aiResolvedFiles ?? 0,
+    aiPlannedFiles: aiPlannedFiles,
+    aiProgressFraction: _stageProgress(
+      resolved: activeJob?.aiResolvedFiles ?? 0,
+      planned: aiPlannedFiles,
+      phase:
+          aiPhase == ClassificationAiPhase.running ||
+          aiPhase == ClassificationAiPhase.completed,
+    ),
+  );
+}
+
+CoverageLocalPhase _coverageLocalPhase({
+  required CoverageJobState? job,
+  required int? plannedFiles,
+}) {
+  if (plannedFiles != null && plannedFiles <= 0) {
+    return CoverageLocalPhase.notRequired;
+  }
+  if (job == null || job.status == CoverageJobStatus.idle) {
+    return CoverageLocalPhase.notStarted;
+  }
+  if (job.localPhaseComplete) return CoverageLocalPhase.completed;
+  if (job.status == CoverageJobStatus.paused ||
+      job.status == CoverageJobStatus.cancelled) {
+    return job.pauseReason == CoveragePauseReason.failed
+        ? CoverageLocalPhase.failed
+        : CoverageLocalPhase.paused;
+  }
+  if (job.status == CoverageJobStatus.completed) {
+    return CoverageLocalPhase.completed;
+  }
+  return CoverageLocalPhase.running;
+}
+
+double? _stageProgress({
+  required int resolved,
+  required int? planned,
+  required bool phase,
+}) {
+  if (!phase || planned == null || planned <= 0) return null;
+  return (resolved / planned).clamp(0, 1).toDouble();
+}
+
 /// Snapshot-wide classification counts, kept independent from paged verdict UI.
 ///
 /// [bootstrapLocalCount] belongs to candidate construction, while

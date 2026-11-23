@@ -6,6 +6,7 @@ import '../../../ai/ai_settings_store.dart';
 import '../../../ai/ai_token_estimate.dart';
 import '../../../ai/coverage_client_logic.dart';
 import '../../../ai/coverage_job_state.dart';
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../l10n/l10n.dart';
 import '../../../theme/apple_tokens.dart';
 import '../../../theme/volward_tokens.dart';
@@ -26,12 +27,16 @@ class AiAnalysisPrecheckView extends StatelessWidget {
     required this.coverage,
     required this.actions,
     required this.onOpenSettings,
+    this.runPresentation,
+    this.showPlanDetails = true,
   });
 
   final AiWorkspacePrecheckState precheck;
   final AiWorkspaceCoverageState coverage;
   final AiAnalysisWorkspaceViewActions actions;
   final VoidCallback onOpenSettings;
+  final CoverageRunPresentation? runPresentation;
+  final bool showPlanDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +123,13 @@ class AiAnalysisPrecheckView extends StatelessWidget {
       if (precheck.useFullCoverage)
         Text(l10n.aiPrecheckDataScopeHint, style: context.vwCaption),
       if (precheck.useFullCoverage) const SizedBox(height: AppleSpacing.xs),
-      ..._buildEstimateLines(context, minApiCalls, showsV3Breakdown),
+      ..._buildCoverageEstimateLines(
+        context,
+        precheck,
+        coverage,
+        minApiCalls,
+        showsV3Breakdown,
+      ),
       ..._buildUnknownScopeSampleSection(context),
       if (mode == AiMode.platform && precheck.narrativeEnabled) ...[
         const SizedBox(height: AppleSpacing.xs),
@@ -314,21 +325,23 @@ class AiAnalysisPrecheckView extends StatelessWidget {
   List<Widget> _buildFullCoverageChildren(BuildContext context) {
     final l10n = context.l10n;
     final tokens = context.volward;
-    final summary = coverage.planSummary;
-    final localPlanned = summary == null || summary.planVersion < 3
-        ? null
-        : (summary.localSafeFiles ?? 0) + (summary.localKeepFiles ?? 0);
-    final localResolved = coverage.jobState?.localRuleFiles ?? 0;
+    final presentation =
+        runPresentation ??
+        buildCoverageRunPresentation(
+          snapshotId:
+              coverage.jobState?.snapshotId ??
+              coverage.planSummary?.snapshotId ??
+              '',
+          job: coverage.jobState,
+          plan: coverage.planSummary,
+        );
     final localComplete =
-        coverage.jobState?.localPhaseComplete == true ||
-        (localPlanned != null &&
-            localPlanned > 0 &&
-            localResolved >= localPlanned);
-    final aiPlanned = summary == null
-        ? precheck.displayUnknownCount
-        : (summary.treePendingFiles ?? 0) +
-              (summary.tailFiles ?? summary.tailFileCount ?? 0);
-    final aiResolved = coverage.jobState?.aiResolvedFiles ?? 0;
+        presentation.localPhase == CoverageLocalPhase.completed ||
+        presentation.localPhase == CoverageLocalPhase.notRequired;
+    final planIsLocalOnly =
+        coverage.planSummary != null &&
+        coverage.planSummary!.planVersion >= 3 &&
+        !coveragePlanRequiresApi(coverage.planSummary!);
 
     return [
       if (precheck.candidatesBootstrapPending) ...[
@@ -389,20 +402,24 @@ class AiAnalysisPrecheckView extends StatelessWidget {
       _CoverageStageRow(
         icon: Icons.rule_folder_outlined,
         title: l10n.aiAnalysisStageLocalTitle,
-        detail: localPlanned == null || localPlanned <= 0
+        detail: presentation.localProgressFraction == null
             ? l10n.aiAnalysisStageLocalPreparing
-            : l10n.aiAnalysisStageLocalProgress(localResolved, localPlanned),
+            : l10n.aiAnalysisStageLocalProgress(
+                presentation.localResolvedFiles,
+                presentation.localPlannedFiles!,
+              ),
         color: localComplete ? Colors.green.shade700 : tokens.primary,
-        progress: localPlanned == null || localPlanned <= 0
-            ? null
-            : (localResolved / localPlanned).clamp(0, 1).toDouble(),
+        progress: presentation.localProgressFraction,
       ),
       const SizedBox(height: AppleSpacing.sm),
       _CoverageStageRow(
         icon: Icons.auto_awesome_outlined,
         title: l10n.aiAnalysisStageAiTitle,
         detail: localComplete
-            ? l10n.aiAnalysisStageAiProgress(aiResolved, aiPlanned)
+            ? l10n.aiAnalysisStageAiProgress(
+                presentation.aiResolvedFiles,
+                presentation.aiPlannedFiles ?? 0,
+              )
             : l10n.aiClassificationAiWaitingForLocal,
         color: localComplete ? tokens.primary : AppleColors.inkMuted48,
       ),
@@ -418,13 +435,47 @@ class AiAnalysisPrecheckView extends StatelessWidget {
           style: AppleTypography.caption.copyWith(color: tokens.warning),
         ),
       ],
-      const SizedBox(height: AppleSpacing.sm),
-      _PlanDetailsDisclosure(
-        key: AiAnalysisWorkspaceKeys.coveragePlanDetailsKey,
-        title: l10n.aiAnalysisPlanDetails,
-        children: _buildPlanDetailLines(context),
-      ),
+      if (precheck.coverageHydrated && planIsLocalOnly) ...[
+        const SizedBox(height: AppleSpacing.md),
+        Text(l10n.aiPreCheckLocalOnlyTitle, style: context.vwBodyStrong),
+        const SizedBox(height: AppleSpacing.xxs),
+        Text(l10n.aiPreCheckLocalOnlyBody, style: context.vwCaption),
+        const SizedBox(height: AppleSpacing.sm),
+        AppleButton(
+          label: l10n.aiStartLocalOnly,
+          icon: Icons.checklist_outlined,
+          expanded: true,
+          onPressed: () => unawaited(actions.openLocalOnlyResults()),
+        ),
+      ],
+      if (showPlanDetails) ...[
+        const SizedBox(height: AppleSpacing.sm),
+        AiAnalysisPlanDetailsView(precheck: precheck, coverage: coverage),
+      ],
     ];
+  }
+}
+
+/// Independent disclosure for static plan facts. It deliberately lives outside
+/// the runtime stage panel so users can inspect the plan after collapsing
+/// "Awaiting AI analysis".
+class AiAnalysisPlanDetailsView extends StatelessWidget {
+  const AiAnalysisPlanDetailsView({
+    super.key,
+    required this.precheck,
+    required this.coverage,
+  });
+
+  final AiWorkspacePrecheckState precheck;
+  final AiWorkspaceCoverageState coverage;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PlanDetailsDisclosure(
+      key: AiAnalysisWorkspaceKeys.coveragePlanDetailsKey,
+      title: context.l10n.aiAnalysisPlanDetails,
+      children: _buildPlanDetailLines(context),
+    );
   }
 
   List<Widget> _buildPlanDetailLines(BuildContext context) {
@@ -435,8 +486,10 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         ? null
         : coveragePlanMinApiCalls(summary);
     return [
-      ..._buildEstimateLines(
+      ..._buildCoverageEstimateLines(
         context,
+        precheck,
+        coverage,
         minApiCalls,
         coveragePlanSummaryShowsV3PrecheckBreakdown(summary),
       ),
@@ -470,55 +523,36 @@ class AiAnalysisPrecheckView extends StatelessWidget {
       ],
     ];
   }
+}
 
-  List<Widget> _buildEstimateLines(
-    BuildContext context,
-    int? minApiCalls,
-    bool showsV3Breakdown,
-  ) {
-    final l10n = context.l10n;
-    final tokens = context.volward;
-    if (precheck.useFullCoverage) {
-      if (precheck.coverageHydrating &&
-          precheck.estimatedCoverageCredits == null) {
-        return [
-          Text(
-            l10n.aiPreCheckCoverageEstimatePending,
-            style: context.vwCaption,
-          ),
-        ];
-      }
-      final summary = coverage.planSummary;
-      if (summary != null && summary.planVersion >= 3) {
-        final treePending = summary.treePendingFiles ?? 0;
-        final tailFiles = summary.tailFiles ?? summary.tailFileCount ?? 0;
-        final minCalls = coveragePlanMinApiCalls(summary);
-        final credits = precheck.estimatedCoverageCredits ?? minCalls;
-        if (showsV3Breakdown) {
-          return [
-            Text(
-              l10n.aiPreCheckAiScopeV2(treePending, tailFiles, minCalls),
-              style: context.vwCaption,
-            ),
-            if (treePending > 0) ...[
-              const SizedBox(height: AppleSpacing.xxs),
-              Text(
-                l10n.aiPreCheckTreeCreditsMayGrow,
-                style: context.vwFinePrint.copyWith(color: tokens.inkMuted80),
-              ),
-            ],
-          ];
-        }
+List<Widget> _buildCoverageEstimateLines(
+  BuildContext context,
+  AiWorkspacePrecheckState precheck,
+  AiWorkspaceCoverageState coverage,
+  int? minApiCalls,
+  bool showsV3Breakdown,
+) {
+  final l10n = context.l10n;
+  final tokens = context.volward;
+  if (precheck.useFullCoverage) {
+    if (precheck.coverageHydrating &&
+        precheck.estimatedCoverageCredits == null) {
+      return [
+        Text(l10n.aiPreCheckCoverageEstimatePending, style: context.vwCaption),
+      ];
+    }
+    final summary = coverage.planSummary;
+    if (summary != null && summary.planVersion >= 3) {
+      final treePending = summary.treePendingFiles ?? 0;
+      final tailFiles = summary.tailFiles ?? summary.tailFileCount ?? 0;
+      final minCalls = coveragePlanMinApiCalls(summary);
+      final credits = precheck.estimatedCoverageCredits ?? minCalls;
+      if (showsV3Breakdown) {
         return [
           Text(
             l10n.aiPreCheckAiScopeV2(treePending, tailFiles, minCalls),
             style: context.vwCaption,
           ),
-          if (minCalls > 0)
-            Text(
-              l10n.aiPreCheckFullCoverageEstimate(credits, minCalls),
-              style: context.vwCaptionStrong,
-            ),
           if (treePending > 0) ...[
             const SizedBox(height: AppleSpacing.xxs),
             Text(
@@ -528,40 +562,60 @@ class AiAnalysisPrecheckView extends StatelessWidget {
           ],
         ];
       }
+      return [
+        Text(
+          l10n.aiPreCheckAiScopeV2(treePending, tailFiles, minCalls),
+          style: context.vwCaption,
+        ),
+        if (minCalls > 0)
+          Text(
+            l10n.aiPreCheckFullCoverageEstimate(credits, minCalls),
+            style: context.vwCaptionStrong,
+          ),
+        if (treePending > 0) ...[
+          const SizedBox(height: AppleSpacing.xxs),
+          Text(
+            l10n.aiPreCheckTreeCreditsMayGrow,
+            style: context.vwFinePrint.copyWith(color: tokens.inkMuted80),
+          ),
+        ],
+      ];
     }
-    final unknown = precheck.unknown;
-    final batchCount = precheck.truncated
-        ? unknown.length.clamp(0, kDefaultAiCandidateCap)
-        : (unknown.isNotEmpty
-              ? unknown.length
-              : precheck.displayUnknownCount.clamp(0, kDefaultAiCandidateCap));
-    final batchTokens = precheck.estimatedByokBatchTokens > 0
-        ? precheck.estimatedByokBatchTokens
-        : (unknown.isNotEmpty
-              ? estimateByokBatchInputTokens(unknown, kByokAnalyzeBatchSize)
-              : precheck.estimatedTokens);
-    return [
+  }
+  final unknown = precheck.unknown;
+  final batchCount = precheck.truncated
+      ? unknown.length.clamp(0, kDefaultAiCandidateCap)
+      : (unknown.isNotEmpty
+            ? unknown.length
+            : precheck.displayUnknownCount.clamp(0, kDefaultAiCandidateCap));
+  final batchTokens = precheck.estimatedByokBatchTokens > 0
+      ? precheck.estimatedByokBatchTokens
+      : (unknown.isNotEmpty
+            ? estimateByokBatchInputTokens(unknown, kByokAnalyzeBatchSize)
+            : precheck.estimatedTokens);
+  return [
+    Text(
+      l10n.aiPreCheckUnknownTitle(
+        precheck.displayUnknownCount,
+        batchTokens,
+        kByokAnalyzeBatchSize,
+        kDefaultAiCandidateCap,
+      ),
+      style: context.vwCaption,
+    ),
+    if (precheck.truncated && !precheck.useFullCoverage)
       Text(
-        l10n.aiPreCheckUnknownTitle(
-          precheck.displayUnknownCount,
-          batchTokens,
-          kByokAnalyzeBatchSize,
+        l10n.aiTruncatedNotice(
+          batchCount,
+          precheck.candidatesBeforeCap,
           kDefaultAiCandidateCap,
         ),
-        style: context.vwCaption,
+        style: AppleTypography.caption.copyWith(color: tokens.warning),
       ),
-      if (precheck.truncated && !precheck.useFullCoverage)
-        Text(
-          l10n.aiTruncatedNotice(
-            batchCount,
-            precheck.candidatesBeforeCap,
-            kDefaultAiCandidateCap,
-          ),
-          style: AppleTypography.caption.copyWith(color: tokens.warning),
-        ),
-    ];
-  }
+  ];
+}
 
+extension on AiAnalysisPrecheckView {
   List<Widget> _buildUnknownScopeSampleSection(BuildContext context) {
     final l10n = context.l10n;
     if (precheck.displayUnknownCount == 0 ||
@@ -599,17 +653,15 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         ),
     ];
   }
+}
 
-  static String _formatBytes(num? bytes) {
-    if (bytes == null) return '-';
-    final value = bytes.toInt();
-    if (value < 1024) return '$value B';
-    if (value < 1048576) return '${(value / 1024).toStringAsFixed(1)} KB';
-    if (value < 1073741824) {
-      return '${(value / 1048576).toStringAsFixed(1)} MB';
-    }
-    return '${(value / 1073741824).toStringAsFixed(2)} GB';
-  }
+String _formatBytes(num? bytes) {
+  if (bytes == null) return '-';
+  final value = bytes.toInt();
+  if (value < 1024) return '$value B';
+  if (value < 1048576) return '${(value / 1024).toStringAsFixed(1)} KB';
+  if (value < 1073741824) return '${(value / 1048576).toStringAsFixed(1)} MB';
+  return '${(value / 1073741824).toStringAsFixed(2)} GB';
 }
 
 class _CoverageStageRow extends StatelessWidget {

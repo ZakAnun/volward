@@ -17,6 +17,7 @@ import 'ai_analysis_activity_view.dart';
 import 'ai_analysis_coverage_banner_view.dart';
 import 'ai_analysis_detail_list_view.dart';
 import 'ai_analysis_overview_view.dart';
+import 'ai_analysis_precheck_view.dart';
 import 'ai_analysis_review_item_view.dart';
 import 'ai_analysis_results_view.dart';
 import 'ai_analysis_scope_panel_view.dart';
@@ -157,6 +158,7 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
     return AiAnalysisScopePanelView(
       precheck: state.precheck,
       coverage: state.coverage,
+      runPresentation: state.results.coverageRunPresentation,
       actions: actions,
       onOpenSettings: onOpenSettings,
       banner: includeCoverageBanner ? state.coverageBanner : null,
@@ -224,6 +226,13 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                             expanded: _embeddedScopeExpanded(),
                             onToggle: actions.toggleScopeExpanded,
                           ),
+                          if (state.coverage.useFullCoverage) ...[
+                            const SizedBox(height: AppleSpacing.xs),
+                            AiAnalysisPlanDetailsView(
+                              precheck: state.precheck,
+                              coverage: state.coverage,
+                            ),
+                          ],
                           if (_embeddedScopeExpanded()) ...[
                             const SizedBox(height: AppleSpacing.sm),
                             _buildScopePanelExpandedBody(
@@ -246,6 +255,8 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                             canGenerateNarrative: state.precheck.hasProvider,
                             showNarrativeCreditHint:
                                 state.precheck.mode == AiMode.platform,
+                            showClassificationProvenance:
+                                !state.coverage.useFullCoverage,
                             emptyState: _buildResultsEmptyState(
                               context,
                               filtered: false,

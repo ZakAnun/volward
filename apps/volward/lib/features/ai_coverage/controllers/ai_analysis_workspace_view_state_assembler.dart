@@ -266,6 +266,11 @@ abstract final class AiAnalysisWorkspaceViewStateAssembler {
         hasProvider: source.hasProvider,
         isLocalOnlyPlan: source.coveragePlanIsLocalOnly,
       ),
+      coverageRunPresentation: buildCoverageRunPresentation(
+        snapshotId: activeSnapshotId,
+        job: job,
+        plan: plan,
+      ),
       errorMessage: source.error,
       directoryTypeFilter: source.directoryTypeFilter,
       reviewQueueDirectoryFilter: source.reviewQueueDirectoryFilter,

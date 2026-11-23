@@ -26,6 +26,7 @@ final class AiAnalysisOverviewView extends StatelessWidget {
     required this.analyzing,
     required this.canGenerateNarrative,
     required this.showNarrativeCreditHint,
+    this.showClassificationProvenance = true,
     required this.emptyState,
     required this.onOpenDetailList,
     required this.onOpenReviewQueue,
@@ -39,6 +40,7 @@ final class AiAnalysisOverviewView extends StatelessWidget {
   final bool analyzing;
   final bool canGenerateNarrative;
   final bool showNarrativeCreditHint;
+  final bool showClassificationProvenance;
   final Widget emptyState;
   final void Function(WorkspaceResultFilter filter, {String? directoryPath})
   onOpenDetailList;
@@ -69,10 +71,12 @@ final class AiAnalysisOverviewView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (hasVerdicts) ...[
-          _ClassificationProvenanceSection(
-            provenance: state.results.classificationProvenance,
-          ),
-          const SizedBox(height: AppleSpacing.xxs),
+          if (showClassificationProvenance) ...[
+            _ClassificationProvenanceSection(
+              provenance: state.results.classificationProvenance,
+            ),
+            const SizedBox(height: AppleSpacing.xxs),
+          ],
           Text(
             l10n.aiConclusionsScanLine(
               overview.targetLabel,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../theme/apple_tokens.dart';
 import 'ai_analysis_coverage_banner_view.dart';
 import 'ai_analysis_precheck_view.dart';
@@ -13,6 +14,7 @@ class AiAnalysisScopePanelView extends StatelessWidget {
     super.key,
     required this.precheck,
     required this.coverage,
+    required this.runPresentation,
     required this.actions,
     required this.onOpenSettings,
     required this.banner,
@@ -25,6 +27,7 @@ class AiAnalysisScopePanelView extends StatelessWidget {
 
   final AiWorkspacePrecheckState precheck;
   final AiWorkspaceCoverageState coverage;
+  final CoverageRunPresentation runPresentation;
   final AiAnalysisWorkspaceViewActions actions;
   final VoidCallback onOpenSettings;
   final AiWorkspaceCoverageBannerState? banner;
@@ -54,6 +57,8 @@ class AiAnalysisScopePanelView extends StatelessWidget {
           coverage: coverage,
           actions: actions,
           onOpenSettings: onOpenSettings,
+          runPresentation: runPresentation,
+          showPlanDetails: false,
         ),
       ],
     );

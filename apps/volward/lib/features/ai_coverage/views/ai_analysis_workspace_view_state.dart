@@ -217,6 +217,16 @@ final class AiWorkspaceResultsState {
       aiPlannedCount: null,
       phase: ClassificationAiPhase.notStarted,
     ),
+    this.coverageRunPresentation = const CoverageRunPresentation(
+      localPhase: CoverageLocalPhase.notStarted,
+      localResolvedFiles: 0,
+      localPlannedFiles: null,
+      localProgressFraction: null,
+      aiPhase: ClassificationAiPhase.notStarted,
+      aiResolvedFiles: 0,
+      aiPlannedFiles: null,
+      aiProgressFraction: null,
+    ),
     this.errorMessage,
     this.directoryTypeFilter = WorkspaceDirectoryTypeFilter.safe,
     this.reviewQueueDirectoryFilter,
@@ -260,6 +270,7 @@ final class AiWorkspaceResultsState {
   final bool resultsLayoutPending;
   final bool showsLocalPreviewHint;
   final ClassificationProvenanceSummary classificationProvenance;
+  final CoverageRunPresentation coverageRunPresentation;
   final String? errorMessage;
   final WorkspaceDirectoryTypeFilter directoryTypeFilter;
   final String? reviewQueueDirectoryFilter;
