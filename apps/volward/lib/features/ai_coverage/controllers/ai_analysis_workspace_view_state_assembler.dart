@@ -322,6 +322,7 @@ abstract final class AiAnalysisWorkspaceViewStateAssembler {
     return switch (source.resultsHubMode) {
       ResultsHubMode.awaitingAnalysis => WorkspaceHubStatus.awaitingAnalysis,
       ResultsHubMode.analyzing => WorkspaceHubStatus.analyzing,
+      ResultsHubMode.partial => WorkspaceHubStatus.partial,
       ResultsHubMode.ready => WorkspaceHubStatus.ready,
     };
   }

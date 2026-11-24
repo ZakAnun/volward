@@ -22,6 +22,8 @@ void main() {
   CoverageJobState job({
     CoverageJobStatus status = CoverageJobStatus.running,
     CoveragePauseReason? pauseReason,
+    int totalUnclassified = 20,
+    int? analyzedFiles,
     int localRuleFiles = 0,
     int aiResolvedFiles = 0,
     bool localPhaseComplete = false,
@@ -31,8 +33,8 @@ void main() {
       rootPath: '/root',
       planVersion: 3,
       cursor: 0,
-      totalUnclassified: 20,
-      analyzedFiles: localRuleFiles + aiResolvedFiles,
+      totalUnclassified: totalUnclassified,
+      analyzedFiles: analyzedFiles ?? localRuleFiles + aiResolvedFiles,
       preClassifiedCount: 0,
       status: status,
       pauseReason: pauseReason,
@@ -233,6 +235,34 @@ void main() {
     expect(presentation.localPhase, CoverageLocalPhase.completed);
     expect(presentation.aiPhase, ClassificationAiPhase.running);
     expect(presentation.aiProgressFraction, 0.2);
+  });
+
+  test('terminal incomplete coverage reports a partial completion truth', () {
+    final truth = coverageCompletionTruth(
+      job(
+        status: CoverageJobStatus.completed,
+        totalUnclassified: 4610,
+        analyzedFiles: 317,
+      ),
+    );
+
+    expect(truth.phase, CoverageCompletionPhase.partial);
+    expect(truth.analyzedFiles, 317);
+    expect(truth.totalFiles, 4610);
+    expect(truth.remainingFiles, 4293);
+  });
+
+  test('terminal fully covered job reports a complete completion truth', () {
+    final truth = coverageCompletionTruth(
+      job(
+        status: CoverageJobStatus.completed,
+        totalUnclassified: 4610,
+        analyzedFiles: 4610,
+      ),
+    );
+
+    expect(truth.phase, CoverageCompletionPhase.completed);
+    expect(truth.remainingFiles, 0);
   });
 
   test('classification progress presentation exposes bounded AI progress', () {

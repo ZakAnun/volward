@@ -1501,6 +1501,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsHubStatusAnalyzing => 'Analyzing';
 
   @override
+  String get aiResultsHubStatusPartial => 'Partially complete';
+
+  @override
   String get aiResultsHubStatusReady => 'Ready';
 
   @override

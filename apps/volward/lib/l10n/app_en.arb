@@ -1084,6 +1084,7 @@
   "aiResultsPhaseDetailList": "Full list",
   "aiResultsHubStatusAwaiting": "Awaiting analysis",
   "aiResultsHubStatusAnalyzing": "Analyzing",
+  "aiResultsHubStatusPartial": "Partially complete",
   "aiResultsHubStatusReady": "Ready",
   "aiResultsHeroLine": "{bytes} reclaimable · {review} need your decision before delete",
   "@aiResultsHeroLine": {

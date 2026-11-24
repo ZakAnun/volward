@@ -27,6 +27,54 @@ enum CoverageLocalPhase {
   notRequired,
 }
 
+/// The trustworthy completion state of a coverage job.
+///
+/// A terminal job is not necessarily fully covered: native processing can
+/// stop with persisted verdicts while unclassified files remain. UI that
+/// presents a final result must consume this value rather than infer
+/// completion from verdict presence.
+enum CoverageCompletionPhase { indeterminate, running, partial, completed }
+
+class CoverageCompletionTruth {
+  const CoverageCompletionTruth({
+    required this.phase,
+    required this.analyzedFiles,
+    required this.totalFiles,
+  });
+
+  final CoverageCompletionPhase phase;
+  final int analyzedFiles;
+  final int? totalFiles;
+
+  int? get remainingFiles => totalFiles == null
+      ? null
+      : (totalFiles! - analyzedFiles).clamp(0, totalFiles!).toInt();
+}
+
+CoverageCompletionTruth coverageCompletionTruth(CoverageJobState? job) {
+  final total = job?.totalUnclassified;
+  if (job == null || total == null || total <= 0) {
+    return const CoverageCompletionTruth(
+      phase: CoverageCompletionPhase.indeterminate,
+      analyzedFiles: 0,
+      totalFiles: null,
+    );
+  }
+  final analyzed = job.analyzedFiles.clamp(0, total).toInt();
+  final phase = switch (job.status) {
+    CoverageJobStatus.running => CoverageCompletionPhase.running,
+    CoverageJobStatus.completed when analyzed == total =>
+      CoverageCompletionPhase.completed,
+    CoverageJobStatus.completed => CoverageCompletionPhase.partial,
+    _ => CoverageCompletionPhase.indeterminate,
+  };
+  return CoverageCompletionTruth(
+    phase: phase,
+    analyzedFiles: analyzed,
+    totalFiles: total,
+  );
+}
+
 /// A snapshot-validated runtime presentation for the two coverage stages.
 ///
 /// A job or plan from another snapshot is deliberately ignored. In

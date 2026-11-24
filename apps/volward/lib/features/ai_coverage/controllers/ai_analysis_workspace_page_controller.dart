@@ -320,6 +320,9 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
       analyzing: analyzing,
       hasAnalyzedVerdicts: verdicts.isNotEmpty,
       coverageRunning: coverageRunning,
+      coverageCompletion: coverageCompletionTruth(
+        job?.snapshotId == page.snapshotId ? job : null,
+      ).phase,
     );
   }
 

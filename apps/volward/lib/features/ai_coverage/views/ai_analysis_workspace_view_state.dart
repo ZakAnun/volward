@@ -25,7 +25,7 @@ enum WorkspaceResultsView { overview, reviewQueue, detailList }
 enum WorkspaceDirectoryTypeFilter { safe, review, keep }
 
 /// Context-free status shown on the workspace header hub chip.
-enum WorkspaceHubStatus { awaitingAnalysis, analyzing, ready }
+enum WorkspaceHubStatus { awaitingAnalysis, analyzing, partial, ready }
 
 /// Immutable snapshot of bootstrap and candidate loading state.
 final class AiWorkspaceBootstrapState {

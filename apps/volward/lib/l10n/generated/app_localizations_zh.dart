@@ -1429,6 +1429,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultsHubStatusAnalyzing => '分析中';
 
   @override
+  String get aiResultsHubStatusPartial => '部分完成';
+
+  @override
   String get aiResultsHubStatusReady => '已完成';
 
   @override

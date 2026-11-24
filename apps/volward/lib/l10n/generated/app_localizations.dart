@@ -2440,6 +2440,12 @@ abstract class AppLocalizations {
   /// **'Analyzing'**
   String get aiResultsHubStatusAnalyzing;
 
+  /// No description provided for @aiResultsHubStatusPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Partially complete'**
+  String get aiResultsHubStatusPartial;
+
   /// No description provided for @aiResultsHubStatusReady.
   ///
   /// In en, this message translates to:

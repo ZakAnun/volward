@@ -46,6 +46,7 @@ class AiAnalysisWorkspaceHeader extends StatelessWidget {
     return switch (shell.hubStatus) {
       WorkspaceHubStatus.awaitingAnalysis => l10n.aiResultsHubStatusAwaiting,
       WorkspaceHubStatus.analyzing => l10n.aiResultsHubStatusAnalyzing,
+      WorkspaceHubStatus.partial => l10n.aiResultsHubStatusPartial,
       WorkspaceHubStatus.ready => l10n.aiResultsHubStatusReady,
       null => null,
     };
