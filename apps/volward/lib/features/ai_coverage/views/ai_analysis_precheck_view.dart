@@ -11,6 +11,7 @@ import '../../../l10n/l10n.dart';
 import '../../../theme/apple_tokens.dart';
 import '../../../theme/volward_tokens.dart';
 import '../../../widgets/ai_analysis_activity_card.dart';
+import '../../../widgets/ai_analysis_scope_panel.dart';
 import '../../../widgets/ai_results_hub.dart';
 import '../../../widgets/apple_widgets.dart';
 import 'ai_analysis_purchase_view.dart';
@@ -473,6 +474,7 @@ class AiAnalysisPlanDetailsView extends StatelessWidget {
   Widget build(BuildContext context) {
     return _PlanDetailsDisclosure(
       key: AiAnalysisWorkspaceKeys.coveragePlanDetailsKey,
+      cardKey: AiAnalysisWorkspaceKeys.analysisPlanCardKey,
       title: context.l10n.aiAnalysisPlanDetails,
       children: _buildPlanDetailLines(context),
     );
@@ -714,10 +716,12 @@ class _CoverageStageRow extends StatelessWidget {
 class _PlanDetailsDisclosure extends StatefulWidget {
   const _PlanDetailsDisclosure({
     super.key,
+    required this.cardKey,
     required this.title,
     required this.children,
   });
 
+  final Key cardKey;
   final String title;
   final List<Widget> children;
 
@@ -731,51 +735,46 @@ class _PlanDetailsDisclosureState extends State<_PlanDetailsDisclosure> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.volward;
-    return Material(
-      color: Colors.transparent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(AppleRadius.md),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: AppleSpacing.sm,
-                horizontal: AppleSpacing.xs,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(widget.title, style: context.vwBodyStrong),
+    return AiAnalysisDisclosureCard(
+      key: widget.cardKey,
+      header: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(AppleRadius.md),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: AppleSpacing.sm,
+              horizontal: AppleSpacing.xs,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(widget.title, style: context.vwBodyStrong),
+                ),
+                Text(
+                  _expanded ? '▴' : '▾',
+                  style: context.vwBodyStrong.copyWith(
+                    color: tokens.inkMuted80,
                   ),
-                  Text(
-                    _expanded ? '▴' : '▾',
-                    style: context.vwBodyStrong.copyWith(
-                      color: tokens.inkMuted80,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            child: _expanded
-                ? Padding(
-                    padding: const EdgeInsets.only(
-                      top: AppleSpacing.xs,
-                      bottom: AppleSpacing.sm,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: widget.children,
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ],
+        ),
+      ),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        child: _expanded
+            ? Padding(
+                padding: const EdgeInsets.only(top: AppleSpacing.xs),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: widget.children,
+                ),
+              )
+            : const SizedBox.shrink(),
       ),
     );
   }

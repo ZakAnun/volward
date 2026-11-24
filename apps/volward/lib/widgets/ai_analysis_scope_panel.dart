@@ -4,6 +4,43 @@ import '../theme/apple_tokens.dart';
 import '../theme/volward_tokens.dart';
 import 'ai_results_hub.dart';
 
+/// Shared surface that keeps a disclosure header and its expanded content
+/// visually contiguous without owning either disclosure's expansion state.
+class AiAnalysisDisclosureCard extends StatelessWidget {
+  const AiAnalysisDisclosureCard({super.key, required this.header, this.child});
+
+  final Widget header;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.surfacePearl,
+        borderRadius: BorderRadius.circular(AppleRadius.md),
+        border: Border.all(color: tokens.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          if (child != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppleSpacing.sm,
+                0,
+                AppleSpacing.sm,
+                AppleSpacing.sm,
+              ),
+              child: child,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Collapsible header row for the analysis scope block.
 class AiAnalysisScopeSummaryRow extends StatelessWidget {
   const AiAnalysisScopeSummaryRow({

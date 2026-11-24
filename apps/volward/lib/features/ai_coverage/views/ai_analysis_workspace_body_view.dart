@@ -220,23 +220,26 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          AiAnalysisScopeSummaryRow(
-                            key: AiAnalysisWorkspaceKeys.resultsScopePanelKey,
-                            summaryLine: _resultsScopeSummaryLine(l10n),
-                            expanded: _embeddedScopeExpanded(),
-                            onToggle: actions.toggleScopeExpanded,
+                          AiAnalysisDisclosureCard(
+                            key:
+                                AiAnalysisWorkspaceKeys.analysisProgressCardKey,
+                            header: AiAnalysisScopeSummaryRow(
+                              key: AiAnalysisWorkspaceKeys.resultsScopePanelKey,
+                              summaryLine: _resultsScopeSummaryLine(l10n),
+                              expanded: _embeddedScopeExpanded(),
+                              onToggle: actions.toggleScopeExpanded,
+                            ),
+                            child: _embeddedScopeExpanded()
+                                ? _buildScopePanelExpandedBody(
+                                    includeCoverageBanner: false,
+                                  )
+                                : null,
                           ),
                           if (state.coverage.useFullCoverage) ...[
                             const SizedBox(height: AppleSpacing.xs),
                             AiAnalysisPlanDetailsView(
                               precheck: state.precheck,
                               coverage: state.coverage,
-                            ),
-                          ],
-                          if (_embeddedScopeExpanded()) ...[
-                            const SizedBox(height: AppleSpacing.sm),
-                            _buildScopePanelExpandedBody(
-                              includeCoverageBanner: false,
                             ),
                           ],
                           if (showCompactActivity) ...[

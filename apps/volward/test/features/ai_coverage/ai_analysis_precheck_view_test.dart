@@ -110,6 +110,10 @@ void main() {
       find.byKey(AiAnalysisWorkspaceKeys.coveragePlanDetailsKey),
       findsOneWidget,
     );
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.analysisPlanCardKey),
+      findsOneWidget,
+    );
     expect(find.text('▾'), findsOneWidget);
     expect(find.textContaining('Directory AI scope:'), findsNothing);
 

@@ -36,6 +36,8 @@ abstract final class AiAnalysisWorkspaceKeys {
     'ai-analysis-classification-local-preparing',
   );
   static const coveragePlanDetails = Key('ai-analysis-coverage-plan-details');
+  static const analysisProgressCard = Key('ai-analysis-progress-card');
+  static const analysisPlanCard = Key('ai-analysis-plan-card');
   static const searchToggle = Key('ai-analysis-search-toggle');
   static const searchSortSheet = Key('ai-analysis-search-sort-sheet');
   static const resultsFilter = Key('ai-analysis-results-filter');
@@ -102,6 +104,8 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const classificationLocalProgressKey = classificationLocalProgress;
   static const classificationLocalPreparingKey = classificationLocalPreparing;
   static const coveragePlanDetailsKey = coveragePlanDetails;
+  static const analysisProgressCardKey = analysisProgressCard;
+  static const analysisPlanCardKey = analysisPlanCard;
   static const searchToggleKey = searchToggle;
   static const searchSortSheetKey = searchSortSheet;
   static const resultsFilterKey = resultsFilter;
