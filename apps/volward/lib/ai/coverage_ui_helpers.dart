@@ -22,6 +22,7 @@ enum CoverageLocalPhase {
   notStarted,
   running,
   completed,
+  incomplete,
   paused,
   failed,
   notRequired,
@@ -128,7 +129,9 @@ CoverageRunPresentation buildCoverageRunPresentation({
     hasProvider: true,
     isLocalOnlyPlan: localPhase == CoverageLocalPhase.notRequired,
   );
-  final aiPhase = localPhase == CoverageLocalPhase.running
+  final aiPhase =
+      localPhase == CoverageLocalPhase.running ||
+          localPhase == CoverageLocalPhase.incomplete
       ? ClassificationAiPhase.notStarted
       : jobAiPhase;
   return CoverageRunPresentation(
@@ -140,7 +143,8 @@ CoverageRunPresentation buildCoverageRunPresentation({
       planned: localPlannedFiles,
       phase:
           localPhase == CoverageLocalPhase.running ||
-          localPhase == CoverageLocalPhase.completed,
+          localPhase == CoverageLocalPhase.completed ||
+          localPhase == CoverageLocalPhase.incomplete,
     ),
     aiPhase: aiPhase,
     aiResolvedFiles: activeJob?.aiResolvedFiles ?? 0,
@@ -165,7 +169,18 @@ CoverageLocalPhase _coverageLocalPhase({
   if (job == null || job.status == CoverageJobStatus.idle) {
     return CoverageLocalPhase.notStarted;
   }
-  if (job.localPhaseComplete) return CoverageLocalPhase.completed;
+  final persistedPlan = job.localPlannedFiles;
+  if (persistedPlan != null &&
+      plannedFiles != null &&
+      persistedPlan != plannedFiles) {
+    return CoverageLocalPhase.incomplete;
+  }
+  if (job.localPhaseComplete) {
+    if (plannedFiles == null) return CoverageLocalPhase.completed;
+    return persistedPlan != null && job.localRuleFiles == persistedPlan
+        ? CoverageLocalPhase.completed
+        : CoverageLocalPhase.incomplete;
+  }
   if (job.status == CoverageJobStatus.paused ||
       job.status == CoverageJobStatus.cancelled) {
     return job.pauseReason == CoveragePauseReason.failed
@@ -173,7 +188,10 @@ CoverageLocalPhase _coverageLocalPhase({
         : CoverageLocalPhase.paused;
   }
   if (job.status == CoverageJobStatus.completed) {
-    return CoverageLocalPhase.completed;
+    if (plannedFiles == null) return CoverageLocalPhase.completed;
+    return job.localRuleFiles == plannedFiles
+        ? CoverageLocalPhase.completed
+        : CoverageLocalPhase.incomplete;
   }
   return CoverageLocalPhase.running;
 }

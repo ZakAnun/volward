@@ -1095,7 +1095,8 @@
   "aiResultsHubStatusAnalyzing": "分析中",
   "aiResultsHubStatusPartial": "部分完成",
   "aiResultsHubStatusReady": "已完成",
-  "aiCoverageContinuationTitle": "继续 AI 覆盖",
+  "aiCoverageContinuationTitle": "继续覆盖分析",
+  "aiAnalysisStageLocalIncomplete": "本地规则结果不完整，请重新分析。",
   "aiCoverageContinuationScope": "本轮范围：{target} · {total} 项",
   "@aiCoverageContinuationScope": {
     "placeholders": {"target": {"type": "String"}, "total": {"type": "int"}}
@@ -1104,7 +1105,7 @@
   "@aiCoverageContinuationCovered": {"placeholders": {"count": {"type": "int"}}},
   "aiCoverageContinuationRemaining": "待覆盖：{count} 项",
   "@aiCoverageContinuationRemaining": {"placeholders": {"count": {"type": "int"}}},
-  "aiCoverageContinuationAction": "继续 AI 覆盖",
+  "aiCoverageContinuationAction": "继续覆盖分析",
   "aiResultsHeroLine": "可释放 {bytes}，{review} 项需你确认后再删",
   "@aiResultsHeroLine": {
     "placeholders": {

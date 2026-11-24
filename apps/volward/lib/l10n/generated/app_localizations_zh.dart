@@ -1448,7 +1448,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultsHubStatusReady => '已完成';
 
   @override
-  String get aiCoverageContinuationTitle => '继续 AI 覆盖';
+  String get aiCoverageContinuationTitle => '继续覆盖分析';
+
+  @override
+  String get aiAnalysisStageLocalIncomplete => '本地规则结果不完整，请重新分析。';
 
   @override
   String aiCoverageContinuationScope(String target, int total) {
@@ -1466,7 +1469,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get aiCoverageContinuationAction => '继续 AI 覆盖';
+  String get aiCoverageContinuationAction => '继续覆盖分析';
 
   @override
   String aiResultsHeroLine(String bytes, int review) {

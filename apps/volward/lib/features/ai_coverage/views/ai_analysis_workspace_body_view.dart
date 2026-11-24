@@ -199,6 +199,17 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
     final hasVerdicts = state.results.verdicts.isNotEmpty;
     final showCompactActivity = state.activity.showCompact;
     final continuationTruth = coverageCompletionTruth(state.coverage.jobState);
+    final continuationRun = buildCoverageRunPresentation(
+      snapshotId:
+          state.coverage.jobState?.snapshotId ??
+          state.coverage.planSummary?.snapshotId ??
+          '',
+      job: state.coverage.jobState,
+      plan: state.coverage.planSummary,
+    );
+    final localCoverageVerified =
+        continuationRun.localPhase == CoverageLocalPhase.completed ||
+        continuationRun.localPhase == CoverageLocalPhase.notRequired;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -237,8 +248,9 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                                   )
                                 : null,
                           ),
-                          if (continuationTruth.phase ==
-                              CoverageCompletionPhase.partial) ...[
+                          if (localCoverageVerified &&
+                              continuationTruth.phase ==
+                                  CoverageCompletionPhase.partial) ...[
                             const SizedBox(height: AppleSpacing.sm),
                             AiAnalysisCoverageContinuationCard(
                               targetLabel:

@@ -25,6 +25,7 @@ void main() {
     int totalUnclassified = 20,
     int? analyzedFiles,
     int localRuleFiles = 0,
+    int? localPlannedFiles,
     int aiResolvedFiles = 0,
     bool localPhaseComplete = false,
   }) {
@@ -44,6 +45,7 @@ void main() {
       budgetCredits: 0,
       updatedAtMs: 1,
       localRuleFiles: localRuleFiles,
+      localPlannedFiles: localPlannedFiles,
       aiResolvedFiles: aiResolvedFiles,
       localPhaseComplete: localPhaseComplete,
     );
@@ -213,6 +215,7 @@ void main() {
       snapshotId: 'snapshot',
       job: job(
         localRuleFiles: 20,
+        localPlannedFiles: 20,
         aiResolvedFiles: 4,
         localPhaseComplete: true,
       ),
@@ -236,6 +239,38 @@ void main() {
     expect(presentation.aiPhase, ClassificationAiPhase.running);
     expect(presentation.aiProgressFraction, 0.2);
   });
+
+  test(
+    'completed job with an incomplete local count is not local complete',
+    () {
+      final presentation = buildCoverageRunPresentation(
+        snapshotId: 'snapshot',
+        job: job(
+          status: CoverageJobStatus.completed,
+          localRuleFiles: 0,
+          localPlannedFiles: 20,
+        ),
+        plan: const CoveragePlanSummary(
+          snapshotId: 'snapshot',
+          planVersion: 3,
+          rootPath: '/root',
+          totalUnclassified: 20,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          localSafeFiles: 12,
+          localKeepFiles: 8,
+          treePendingFiles: 0,
+          tailFiles: 0,
+        ),
+      );
+
+      expect(presentation.localPhase, CoverageLocalPhase.incomplete);
+      expect(presentation.localProgressFraction, 0);
+      expect(presentation.aiPhase, ClassificationAiPhase.notStarted);
+    },
+  );
 
   test('terminal incomplete coverage reports a partial completion truth', () {
     final truth = coverageCompletionTruth(

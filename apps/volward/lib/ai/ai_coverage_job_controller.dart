@@ -386,6 +386,7 @@ class CoverageJobController {
         tailQueueCursor: guard.tailQueueCursor,
         localResolvedFiles: guard.localResolvedFiles,
         localRuleFiles: guard.localRuleFiles,
+        localPlannedFiles: guard.localPlannedFiles,
         localFlushCursor: guard.localFlushCursor,
         localPhaseComplete: guard.localPhaseComplete,
         aiResolvedFiles: guard.aiResolvedFiles,
@@ -398,9 +399,32 @@ class CoverageJobController {
       await stateStore.save(_state!);
       _emit();
 
+      final localExpected =
+          (plan.localSafeFiles ?? 0) + (plan.localKeepFiles ?? 0);
+      final persistedLocalPlan = _state!.localPlannedFiles;
+      if (plan.planVersion >= 3 &&
+          persistedLocalPlan != null &&
+          persistedLocalPlan != localExpected) {
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'local coverage plan changed; restart full coverage',
+        );
+        return;
+      }
+      if (plan.planVersion >= 3 &&
+          _state!.localPhaseComplete &&
+          (_state!.localPlannedFiles == null ||
+              _state!.localRuleFiles != localExpected)) {
+        await _pause(
+          CoveragePauseReason.failed,
+          message: 'local coverage state incomplete; restart full coverage',
+        );
+        return;
+      }
       if (plan.planVersion >= 3 && !_state!.localPhaseComplete) {
-        final localExpected =
-            (plan.localSafeFiles ?? 0) + (plan.localKeepFiles ?? 0);
+        _state = _state!.copyWith(localPlannedFiles: () => localExpected);
+        await stateStore.save(_state!);
+        _emit();
         try {
           final flushed = await flushLocalVerdictsInChunks(
             verdictStore: verdictStore,
@@ -425,7 +449,7 @@ class CoverageJobController {
               _emit();
             },
           );
-          if (localExpected > 0 && flushed == 0) {
+          if (localExpected > 0 && _state!.localRuleFiles != localExpected) {
             await _pause(
               CoveragePauseReason.failed,
               detail: CoveragePauseDetail.api,

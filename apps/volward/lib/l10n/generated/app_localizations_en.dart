@@ -1520,7 +1520,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsHubStatusReady => 'Ready';
 
   @override
-  String get aiCoverageContinuationTitle => 'Continue AI coverage';
+  String get aiCoverageContinuationTitle => 'Continue coverage analysis';
+
+  @override
+  String get aiAnalysisStageLocalIncomplete =>
+      'Local rule results are incomplete. Re-run analysis.';
 
   @override
   String aiCoverageContinuationScope(String target, int total) {
@@ -1538,7 +1542,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get aiCoverageContinuationAction => 'Continue AI coverage';
+  String get aiCoverageContinuationAction => 'Continue coverage analysis';
 
   @override
   String aiResultsHeroLine(String bytes, int review) {

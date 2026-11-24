@@ -2473,8 +2473,14 @@ abstract class AppLocalizations {
   /// No description provided for @aiCoverageContinuationTitle.
   ///
   /// In en, this message translates to:
-  /// **'Continue AI coverage'**
+  /// **'Continue coverage analysis'**
   String get aiCoverageContinuationTitle;
+
+  /// No description provided for @aiAnalysisStageLocalIncomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Local rule results are incomplete. Re-run analysis.'**
+  String get aiAnalysisStageLocalIncomplete;
 
   /// No description provided for @aiCoverageContinuationScope.
   ///
@@ -2497,7 +2503,7 @@ abstract class AppLocalizations {
   /// No description provided for @aiCoverageContinuationAction.
   ///
   /// In en, this message translates to:
-  /// **'Continue AI coverage'**
+  /// **'Continue coverage analysis'**
   String get aiCoverageContinuationAction;
 
   /// No description provided for @aiResultsHeroLine.

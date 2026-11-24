@@ -38,6 +38,7 @@ class CoverageJobState {
     this.tailQueueCursor = 0,
     this.localResolvedFiles = 0,
     this.localRuleFiles = 0,
+    this.localPlannedFiles,
     this.localFlushCursor = 0,
     this.localPhaseComplete = false,
     this.aiResolvedFiles = 0,
@@ -86,6 +87,7 @@ class CoverageJobState {
     tailQueueCursor: (json['tail_queue_cursor'] as num?)?.toInt() ?? 0,
     localResolvedFiles: (json['local_resolved_files'] as num?)?.toInt() ?? 0,
     localRuleFiles: (json['local_rule_files'] as num?)?.toInt() ?? 0,
+    localPlannedFiles: (json['local_planned_files'] as num?)?.toInt(),
     localFlushCursor: (json['local_flush_cursor'] as num?)?.toInt() ?? 0,
     localPhaseComplete: json['local_phase_complete'] == true,
     aiResolvedFiles: (json['ai_resolved_files'] as num?)?.toInt() ?? 0,
@@ -119,6 +121,7 @@ class CoverageJobState {
   final int tailQueueCursor;
   final int localResolvedFiles;
   final int localRuleFiles;
+  final int? localPlannedFiles;
   final int localFlushCursor;
   final bool localPhaseComplete;
   final int aiResolvedFiles;
@@ -147,6 +150,7 @@ class CoverageJobState {
     int? tailQueueCursor,
     int? localResolvedFiles,
     int? localRuleFiles,
+    int? Function()? localPlannedFiles,
     int? localFlushCursor,
     bool? localPhaseComplete,
     int? aiResolvedFiles,
@@ -182,6 +186,9 @@ class CoverageJobState {
     tailQueueCursor: tailQueueCursor ?? this.tailQueueCursor,
     localResolvedFiles: localResolvedFiles ?? this.localResolvedFiles,
     localRuleFiles: localRuleFiles ?? this.localRuleFiles,
+    localPlannedFiles: localPlannedFiles != null
+        ? localPlannedFiles()
+        : this.localPlannedFiles,
     localFlushCursor: localFlushCursor ?? this.localFlushCursor,
     localPhaseComplete: localPhaseComplete ?? this.localPhaseComplete,
     aiResolvedFiles: aiResolvedFiles ?? this.aiResolvedFiles,
@@ -223,6 +230,7 @@ class CoverageJobState {
     if (tailQueueCursor != 0) 'tail_queue_cursor': tailQueueCursor,
     if (localResolvedFiles != 0) 'local_resolved_files': localResolvedFiles,
     if (localRuleFiles != 0) 'local_rule_files': localRuleFiles,
+    if (localPlannedFiles != null) 'local_planned_files': localPlannedFiles,
     if (localFlushCursor != 0) 'local_flush_cursor': localFlushCursor,
     if (localPhaseComplete) 'local_phase_complete': true,
     if (aiResolvedFiles != 0) 'ai_resolved_files': aiResolvedFiles,

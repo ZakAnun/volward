@@ -347,6 +347,8 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         presentation.localPhase == CoverageLocalPhase.notRequired;
     final localFailed = presentation.localPhase == CoverageLocalPhase.failed;
     final localPaused = presentation.localPhase == CoverageLocalPhase.paused;
+    final localIncomplete =
+        presentation.localPhase == CoverageLocalPhase.incomplete;
     final aiProgressVisible =
         completion.phase == CoverageCompletionPhase.running ||
         completion.phase == CoverageCompletionPhase.completed;
@@ -403,6 +405,8 @@ class AiAnalysisPrecheckView extends StatelessWidget {
             ? l10n.aiConclusionsAnalysisFailed
             : localPaused
             ? l10n.aiConclusionsAnalysisPaused
+            : localIncomplete
+            ? l10n.aiAnalysisStageLocalIncomplete
             : presentation.localProgressFraction == null
             ? l10n.aiAnalysisStageLocalPreparing
             : l10n.aiAnalysisStageLocalProgress(
@@ -412,6 +416,8 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         color: localFailed
             ? tokens.danger
             : localPaused
+            ? tokens.warning
+            : localIncomplete
             ? tokens.warning
             : localComplete
             ? Colors.green.shade700
@@ -424,7 +430,7 @@ class AiAnalysisPrecheckView extends StatelessWidget {
       _CoverageStageRow(
         icon: Icons.auto_awesome_outlined,
         title: l10n.aiAnalysisStageAiTitle,
-        detail: localFailed || localPaused
+        detail: localFailed || localPaused || localIncomplete
             ? l10n.aiClassificationAiNotStarted
             : completion.totalFiles != null &&
                   (completion.phase == CoverageCompletionPhase.running ||

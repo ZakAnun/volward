@@ -1095,7 +1095,8 @@
   "aiResultsHubStatusAnalyzing": "Analyzing",
   "aiResultsHubStatusPartial": "Partially complete",
   "aiResultsHubStatusReady": "Ready",
-  "aiCoverageContinuationTitle": "Continue AI coverage",
+  "aiCoverageContinuationTitle": "Continue coverage analysis",
+  "aiAnalysisStageLocalIncomplete": "Local rule results are incomplete. Re-run analysis.",
   "aiCoverageContinuationScope": "This run: {target} · {total} items",
   "@aiCoverageContinuationScope": {
     "placeholders": {"target": {"type": "String"}, "total": {"type": "int"}}
@@ -1104,7 +1105,7 @@
   "@aiCoverageContinuationCovered": {"placeholders": {"count": {"type": "int"}}},
   "aiCoverageContinuationRemaining": "Remaining: {count} items",
   "@aiCoverageContinuationRemaining": {"placeholders": {"count": {"type": "int"}}},
-  "aiCoverageContinuationAction": "Continue AI coverage",
+  "aiCoverageContinuationAction": "Continue coverage analysis",
   "aiResultsHeroLine": "{bytes} reclaimable · {review} need your decision before delete",
   "@aiResultsHeroLine": {
     "placeholders": {
