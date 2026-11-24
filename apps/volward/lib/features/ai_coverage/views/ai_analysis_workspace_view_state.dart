@@ -200,6 +200,7 @@ final class AiWorkspaceResultsState {
     List<AiWorkspaceVisibleResultGroup> visibleGroups = const [],
     this.overview,
     this.safeBytes = 0,
+    this.safeItemCount = 0,
     this.reviewCount = 0,
     this.selectedBytes = 0,
     this.directoryBucketCount = 0,
@@ -259,6 +260,7 @@ final class AiWorkspaceResultsState {
   final List<AiWorkspaceVisibleResultGroup> visibleGroups;
   final AiAnalysisConclusionOverview? overview;
   final int safeBytes;
+  final int safeItemCount;
   final int reviewCount;
   final int selectedBytes;
   final int directoryBucketCount;

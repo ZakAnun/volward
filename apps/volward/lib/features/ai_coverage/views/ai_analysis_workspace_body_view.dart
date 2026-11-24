@@ -250,7 +250,7 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                           AiAnalysisOverviewView(
                             state: state,
                             hasVerdicts: hasVerdicts,
-                            safeCount: _conclusionSafeItemCount(),
+                            safeCount: state.results.safeItemCount,
                             analyzing: state.overview.analyzing,
                             canGenerateNarrative: state.precheck.hasProvider,
                             showNarrativeCreditHint:
@@ -356,22 +356,6 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
         );
       },
     );
-  }
-
-  int _conclusionSafeItemCount() {
-    final results = state.results;
-    if (results.overview == null) return 0;
-    if (state.coverage.useFullCoverage &&
-        results.overview!.analyzedItemCount > results.verdicts.length) {
-      return results.groups.fold<int>(
-        0,
-        (total, group) => total + group.safeCount,
-      );
-    }
-    return results.groups
-        .expand((group) => group.items)
-        .where((item) => item.verdict == 'safe_to_remove')
-        .length;
   }
 
   Widget _buildReviewQueue() {

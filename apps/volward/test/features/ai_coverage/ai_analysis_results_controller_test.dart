@@ -122,10 +122,56 @@ void main() {
       );
 
       expect(projection.safeBytes, 10);
+      expect(projection.safeItemCount, 1);
       expect(projection.reviewCount, 1);
       expect(projection.normalizedGroups, isNotEmpty);
       expect(projection.overview.analyzedItemCount, 2);
       expect(() => projection.visibleGroups.clear(), throwsUnsupportedError);
+    },
+  );
+
+  test(
+    'full coverage projection keeps aggregate safe counts beyond visible rows',
+    () {
+      final results = AiAnalysisResultsController.forTest();
+      const safe = AiVerdict(
+        path: '/tmp/cache/a.bin',
+        verdict: 'safe_to_remove',
+        confidence: 'high',
+        reason: 'cache',
+      );
+      final projection = results.buildProjection(
+        const AiResultsProjectionInput(
+          verdicts: [safe],
+          selected: {},
+          reviewDecisions: {},
+          expandedGroupPaths: {},
+          expandedGroupItemLimits: {},
+          expandedReviewPaths: {},
+          sizeByPath: {'/tmp/cache/a.bin': 10},
+          searchTextByPath: {'/tmp/cache/a.bin': '/tmp/cache/a.bin cache'},
+          preClassified: [],
+          unanalyzedVerdicts: [],
+          rootPath: '/tmp',
+          targetLabel: 'tmp',
+          useFullCoverage: true,
+          truncated: false,
+          filter: WorkspaceResultFilter.all,
+          sort: WorkspaceResultSort.size,
+          query: '',
+          directoryFilter: null,
+          showsFilteredItems: false,
+          heavyResultsLayoutThreshold: 0,
+          aiResultGroupDisplayItemCap: 0,
+          firstLevelDirectoryPaths: {'/tmp/cache'},
+          directoryPathsForGrouping: {'/tmp/cache'},
+          coverageResultsLoadTruncated: true,
+          analyzedItemCountOverride: 10,
+        ),
+      );
+
+      expect(projection.overview.analyzedItemCount, 10);
+      expect(projection.safeItemCount, 1);
     },
   );
 

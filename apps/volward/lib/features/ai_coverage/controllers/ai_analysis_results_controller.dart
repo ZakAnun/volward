@@ -495,6 +495,7 @@ final class AiResultsProjection {
     required this.visibleGroups,
     required this.overview,
     required this.safeBytes,
+    required this.safeItemCount,
     required this.reviewCount,
     required this.directoryBucketCount,
   });
@@ -503,6 +504,7 @@ final class AiResultsProjection {
   final List<AiWorkspaceVisibleResultGroup> visibleGroups;
   final AiAnalysisConclusionOverview overview;
   final int safeBytes;
+  final int safeItemCount;
   final int reviewCount;
   final int directoryBucketCount;
 }
@@ -514,11 +516,25 @@ extension AiAnalysisResultsProjection on AiAnalysisResultsController {
     final visibleGroups = _visibleGroupsFor(input, normalizedGroups);
     final summary = _overallSummaryFor(input, normalizedGroups);
     final overview = _overviewFor(input, normalizedGroups);
+    final safeItemCount = input.useFullCoverage
+        ? normalizedGroups.fold<int>(
+            0,
+            (total, group) => total + group.safeCount,
+          )
+        : normalizedGroups.fold<int>(
+            0,
+            (total, group) =>
+                total +
+                group.items
+                    .where((item) => item.verdict == 'safe_to_remove')
+                    .length,
+          );
     return AiResultsProjection(
       normalizedGroups: normalizedGroups,
       visibleGroups: visibleGroups,
       overview: overview,
       safeBytes: summary.safeBytes,
+      safeItemCount: safeItemCount,
       reviewCount: summary.reviewCount,
       directoryBucketCount: _directoryBucketCountFor(
         input.rootPath,

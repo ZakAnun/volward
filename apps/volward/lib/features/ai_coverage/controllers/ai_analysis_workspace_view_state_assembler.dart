@@ -249,6 +249,7 @@ abstract final class AiAnalysisWorkspaceViewStateAssembler {
       visibleGroups: projection.visibleGroups,
       overview: projection.overview,
       safeBytes: projection.safeBytes,
+      safeItemCount: projection.safeItemCount,
       reviewCount: projection.reviewCount,
       selectedBytes: source.selectedBytes ?? 0,
       directoryBucketCount: projection.directoryBucketCount,
