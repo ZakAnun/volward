@@ -54,6 +54,8 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const reviewQueue = Key('ai-analysis-review-queue');
   static const detailList = Key('ai-analysis-detail-list');
   static const resultsHero = Key('ai-analysis-results-hero');
+  static const cleanupDashboard = Key('ai-analysis-cleanup-dashboard');
+  static const cleanupReclaimRing = Key('ai-analysis-cleanup-reclaim-ring');
   static const resultsMetricSafe = Key('ai-analysis-results-metric-safe');
   static const resultsMetricReview = Key('ai-analysis-results-metric-review');
   static const resultsMetricKeep = Key('ai-analysis-results-metric-keep');
@@ -118,6 +120,8 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const reviewQueueKey = reviewQueue;
   static const detailListKey = detailList;
   static const resultsHeroKey = resultsHero;
+  static const cleanupDashboardKey = cleanupDashboard;
+  static const cleanupReclaimRingKey = cleanupReclaimRing;
   static const resultsMetricSafeKey = resultsMetricSafe;
   static const resultsMetricReviewKey = resultsMetricReview;
   static const resultsMetricKeepKey = resultsMetricKeep;

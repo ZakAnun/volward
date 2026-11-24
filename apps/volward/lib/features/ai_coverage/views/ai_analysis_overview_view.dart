@@ -70,59 +70,29 @@ final class AiAnalysisOverviewView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (hasVerdicts) ...[
-          if (showClassificationProvenance) ...[
-            _ClassificationProvenanceSection(
-              provenance: state.results.classificationProvenance,
-            ),
-            const SizedBox(height: AppleSpacing.xxs),
-          ],
-          Text(
-            l10n.aiConclusionsScanLine(
-              overview.targetLabel,
-              overview.analyzedItemCount,
-              _formatBytes(overview.analyzedTotalBytes),
-            ),
-            style: context.vwCaption,
+        if (hasVerdicts && showClassificationProvenance) ...[
+          _ClassificationProvenanceSection(
+            provenance: state.results.classificationProvenance,
           ),
           const SizedBox(height: AppleSpacing.xxs),
-          Text(
-            overview.fullCoverage
-                ? l10n.aiConclusionsModeFull
-                : l10n.aiConclusionsModeQuick,
-            style: context.vwCaption,
-          ),
-          if (overview.truncated) ...[
-            const SizedBox(height: AppleSpacing.xxs),
-            Text(l10n.aiConclusionsTruncated, style: context.vwCaption),
-          ],
         ],
         const SizedBox(height: AppleSpacing.sm),
         Opacity(
           opacity: staleUpdating ? 0.55 : 1,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ResultsHero(
-                overview: overview,
-                shareRoot: shareRoot,
-                placeholder: !hasVerdicts,
-                analyzing: analyzing,
-              ),
-              const SizedBox(height: AppleSpacing.sm),
-              _ResultsMetricCards(
-                overview: overview,
-                placeholder: !hasVerdicts,
-                safeCount: safeCount,
-                onOpenDetailList: onOpenDetailList,
-                onOpenReviewQueue: onOpenReviewQueue,
-              ),
-              const SizedBox(height: AppleSpacing.sm),
-              if (state.results.loadedEmptySuggestions && !hasVerdicts)
-                emptyState,
-            ],
+          child: _AiCleanupDashboardSummary(
+            overview: overview,
+            shareRoot: shareRoot,
+            placeholder: !hasVerdicts,
+            analyzing: analyzing,
+            safeCount: safeCount,
+            onOpenDetailList: onOpenDetailList,
+            onOpenReviewQueue: onOpenReviewQueue,
           ),
         ),
+        if (state.results.loadedEmptySuggestions && !hasVerdicts) ...[
+          const SizedBox(height: AppleSpacing.sm),
+          emptyState,
+        ],
         if (hasVerdicts) ...[
           const SizedBox(height: AppleSpacing.sm),
           Text(l10n.aiConclusionsLead, style: context.vwBody),
@@ -464,6 +434,99 @@ class _ResultsHero extends StatelessWidget {
             Text(shareRoot, style: context.vwCaption),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _AiCleanupDashboardSummary extends StatelessWidget {
+  const _AiCleanupDashboardSummary({
+    required this.overview,
+    required this.shareRoot,
+    required this.placeholder,
+    required this.analyzing,
+    required this.safeCount,
+    required this.onOpenDetailList,
+    required this.onOpenReviewQueue,
+  });
+
+  final AiAnalysisConclusionOverview overview;
+  final String shareRoot;
+  final bool placeholder;
+  final bool analyzing;
+  final int safeCount;
+  final void Function(WorkspaceResultFilter filter, {String? directoryPath})
+  onOpenDetailList;
+  final VoidCallback onOpenReviewQueue;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.volward;
+    final fraction = overview.shareOfRootPct == null
+        ? null
+        : (overview.shareOfRootPct! / 100).clamp(0, 1).toDouble();
+    return KeyedSubtree(
+      key: AiAnalysisWorkspaceKeys.cleanupDashboardKey,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surfacePearl,
+          borderRadius: BorderRadius.circular(AppleRadius.md),
+          border: Border.all(color: tokens.hairline),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppleSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (!placeholder && fraction != null) ...[
+                    SizedBox(
+                      key: AiAnalysisWorkspaceKeys.cleanupReclaimRingKey,
+                      width: 64,
+                      height: 64,
+                      child: CircularProgressIndicator(
+                        value: fraction,
+                        strokeWidth: 7,
+                        backgroundColor: tokens.hairline,
+                      ),
+                    ),
+                    const SizedBox(width: AppleSpacing.sm),
+                  ],
+                  Expanded(
+                    child: _ResultsHero(
+                      overview: overview,
+                      shareRoot: shareRoot,
+                      placeholder: placeholder,
+                      analyzing: analyzing,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppleSpacing.sm),
+              _ResultsMetricCards(
+                overview: overview,
+                placeholder: placeholder,
+                safeCount: safeCount,
+                onOpenDetailList: onOpenDetailList,
+                onOpenReviewQueue: onOpenReviewQueue,
+              ),
+              if (!placeholder) ...[
+                const SizedBox(height: AppleSpacing.sm),
+                Text(
+                  context.l10n.aiConclusionsScanLine(
+                    overview.targetLabel,
+                    overview.analyzedItemCount,
+                    AiAnalysisOverviewView._formatBytes(
+                      overview.analyzedTotalBytes,
+                    ),
+                  ),
+                  style: context.vwCaption,
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

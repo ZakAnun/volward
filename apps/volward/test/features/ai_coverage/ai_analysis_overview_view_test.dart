@@ -8,6 +8,85 @@ import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_st
 import 'package:volward/l10n/generated/app_localizations.dart';
 
 void main() {
+  testWidgets('dashboard presents reclaimable outcome from conclusion data', (
+    tester,
+  ) async {
+    final state = AiAnalysisWorkspaceViewState(
+      results: AiWorkspaceResultsState(overview: _dashboardOverview()),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: AiAnalysisOverviewView(
+            state: state,
+            hasVerdicts: true,
+            safeCount: 30,
+            analyzing: true,
+            canGenerateNarrative: false,
+            showNarrativeCreditHint: false,
+            emptyState: const SizedBox.shrink(),
+            onOpenDetailList: (_, {directoryPath}) {},
+            onOpenReviewQueue: () {},
+            onDirectoryTypeFilterChanged: (_) {},
+            onGenerateNarrative: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.cleanupDashboardKey),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.cleanupReclaimRingKey),
+      findsOneWidget,
+    );
+    expect(find.text('156.3 MB'), findsOneWidget);
+    expect(find.text('30 items'), findsOneWidget);
+  });
+
+  testWidgets('dashboard omits reclaim percentage when root size is unknown', (
+    tester,
+  ) async {
+    final state = AiAnalysisWorkspaceViewState(
+      results: AiWorkspaceResultsState(
+        overview: _dashboardOverview(shareOfRootPct: null),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: AiAnalysisOverviewView(
+            state: state,
+            hasVerdicts: true,
+            safeCount: 30,
+            analyzing: false,
+            canGenerateNarrative: false,
+            showNarrativeCreditHint: false,
+            emptyState: const SizedBox.shrink(),
+            onOpenDetailList: (_, {directoryPath}) {},
+            onOpenReviewQueue: () {},
+            onDirectoryTypeFilterChanged: (_) {},
+            onGenerateNarrative: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.cleanupReclaimRingKey),
+      findsNothing,
+    );
+    expect(find.textContaining('14.6%'), findsNothing);
+  });
+
   testWidgets('overview view renders conclusions and directory summaries', (
     tester,
   ) async {
@@ -370,5 +449,24 @@ AiAnalysisConclusionOverview _overview() {
         reasonHighlights: [],
       ),
     ],
+  );
+}
+
+AiAnalysisConclusionOverview _dashboardOverview({
+  double? shareOfRootPct = 14.6,
+}) {
+  return AiAnalysisConclusionOverview(
+    targetLabel: 'testDir',
+    rootPath: '/tmp/testDir',
+    safeBytes: 163892429,
+    reviewCount: 0,
+    keepCount: 2470,
+    analyzedItemCount: 94592,
+    analyzedTotalBytes: 1406601789,
+    rootSizeBytes: shareOfRootPct == null ? 0 : 963173019,
+    shareOfRootPct: shareOfRootPct,
+    truncated: false,
+    fullCoverage: true,
+    directories: const [],
   );
 }
