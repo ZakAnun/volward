@@ -1047,6 +1047,15 @@
   "aiClassificationLocalRulesPreparing": "正在准备本地覆盖规则",
   "aiClassificationAiWaitingForLocal": "等待本地规则完成后开始 AI 分析",
   "aiAnalysisStageCandidateTitle": "候选预判",
+  "aiAnalysisStageDiscoveryTitle": "候选发现",
+  "aiAnalysisStageDiscoveryLoading": "正在发现候选 · 已发现 {count} 项",
+  "@aiAnalysisStageDiscoveryLoading": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "aiAnalysisStageRemaining": "仍有 {count} 项待覆盖",
+  "@aiAnalysisStageRemaining": {
+    "placeholders": {"count": {"type": "int"}}
+  },
   "aiAnalysisStageCandidateDetail": "{count} 项可选清理，尚未经过 AI 终审",
   "@aiAnalysisStageCandidateDetail": {"placeholders": {"count": {"type": "int"}}},
   "aiAnalysisStageLocalTitle": "本地覆盖规则",

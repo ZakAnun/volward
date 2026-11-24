@@ -29,7 +29,7 @@ class AiAnalysisDisclosureCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppleSpacing.sm,
-                0,
+                AppleSpacing.sm,
                 AppleSpacing.sm,
                 AppleSpacing.sm,
               ),

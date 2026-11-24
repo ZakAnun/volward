@@ -1422,6 +1422,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiAnalysisStageCandidateTitle => 'Candidate preclassification';
 
   @override
+  String get aiAnalysisStageDiscoveryTitle => 'Candidate discovery';
+
+  @override
+  String aiAnalysisStageDiscoveryLoading(int count) {
+    return 'Discovering candidates · $count found';
+  }
+
+  @override
+  String aiAnalysisStageRemaining(int count) {
+    return '$count items remain';
+  }
+
+  @override
   String aiAnalysisStageCandidateDetail(int count) {
     return '$count items available for optional cleanup';
   }

@@ -11,6 +11,7 @@ import '../../../ai/ai_result_overview.dart';
 import '../../../ai/ai_settings_store.dart';
 import '../../../ai/coverage_client_logic.dart';
 import '../../../ai/coverage_job_state.dart';
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../ai/coverage_verdict_store.dart';
 import '../../../widgets/ai_results_hub.dart';
 import '../ai_analysis_workspace_config.dart';

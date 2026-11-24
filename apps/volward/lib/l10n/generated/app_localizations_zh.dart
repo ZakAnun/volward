@@ -1353,6 +1353,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiAnalysisStageCandidateTitle => '候选预判';
 
   @override
+  String get aiAnalysisStageDiscoveryTitle => '候选发现';
+
+  @override
+  String aiAnalysisStageDiscoveryLoading(int count) {
+    return '正在发现候选 · 已发现 $count 项';
+  }
+
+  @override
+  String aiAnalysisStageRemaining(int count) {
+    return '仍有 $count 项待覆盖';
+  }
+
+  @override
   String aiAnalysisStageCandidateDetail(int count) {
     return '$count 项可选清理，尚未经过 AI 终审';
   }

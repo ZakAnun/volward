@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/coverage_models.dart';
+import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_ui_helpers.dart';
 import 'package:volward/features/ai_coverage/ai_analysis_workspace_keys.dart';
 import 'package:volward/features/ai_coverage/views/ai_analysis_precheck_view.dart';
@@ -9,6 +10,7 @@ import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_ac
 import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_state.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/widgets/ai_analysis_activity_card.dart';
+import 'package:volward/widgets/ai_analysis_scope_panel.dart';
 
 void main() {
   testWidgets('precheck shows settings prompt when provider is missing', (
@@ -104,7 +106,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
 
-    expect(find.text('Candidate preclassification'), findsOneWidget);
+    expect(find.text('Candidate discovery'), findsOneWidget);
     expect(find.text('Local coverage rules'), findsOneWidget);
     expect(find.text('AI coverage analysis'), findsOneWidget);
     expect(
@@ -167,7 +169,90 @@ void main() {
     );
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
+
+  testWidgets('discovery and partial coverage keep their progress separate', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AiAnalysisPrecheckView(
+          precheck: const AiWorkspacePrecheckState(
+            mode: AiMode.byok,
+            hasProvider: true,
+            useFullCoverage: true,
+            candidatesBootstrapPending: true,
+            displayUnknownCount: 77,
+          ),
+          coverage: AiWorkspaceCoverageState(
+            jobState: _completedJob(analyzedFiles: 317),
+            planSummary: _coveragePlan,
+          ),
+          actions: _NoopActions(),
+          onOpenSettings: _noop,
+        ),
+      ),
+    );
+
+    expect(find.byType(AiAnalysisActivityInlineSpinner), findsOneWidget);
+    expect(find.text('Discovering candidates · 77 found'), findsOneWidget);
+    expect(find.textContaining('317 / 4610'), findsOneWidget);
+    expect(find.textContaining('4293'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('disclosure content starts twelve pixels below its header', (
+    tester,
+  ) async {
+    const headerKey = Key('disclosure-header');
+    const childKey = Key('disclosure-child');
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AiAnalysisDisclosureCard(
+          header: SizedBox(key: headerKey, height: 20),
+          child: SizedBox(key: childKey, height: 20),
+        ),
+      ),
+    );
+
+    final headerBottom = tester.getBottomLeft(find.byKey(headerKey)).dy;
+    final childTop = tester.getTopLeft(find.byKey(childKey)).dy;
+    expect(childTop - headerBottom, 12);
+  });
 }
+
+const _coveragePlan = CoveragePlanSummary(
+  snapshotId: 'snapshot',
+  planVersion: 3,
+  rootPath: '/tmp',
+  totalUnclassified: 4610,
+  preClassifiedCount: 0,
+  groupRows: 0,
+  fileRows: 4610,
+  estimatedPages: 2,
+  treePendingFiles: 4610,
+);
+
+CoverageJobState _completedJob({required int analyzedFiles}) =>
+    CoverageJobState(
+      snapshotId: 'snapshot',
+      rootPath: '/tmp',
+      planVersion: 3,
+      cursor: analyzedFiles,
+      totalUnclassified: 4610,
+      analyzedFiles: analyzedFiles,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.completed,
+      usedTokens: 0,
+      usedCredits: 0,
+      budgetTokens: 0,
+      budgetCredits: 0,
+      updatedAtMs: 1,
+      localRuleFiles: 0,
+      aiResolvedFiles: analyzedFiles,
+      localPhaseComplete: true,
+    );
 
 void _noop() {}
 

@@ -1047,6 +1047,15 @@
   "aiClassificationLocalRulesPreparing": "Preparing local rules",
   "aiClassificationAiWaitingForLocal": "AI analysis waits for local rules to finish.",
   "aiAnalysisStageCandidateTitle": "Candidate preclassification",
+  "aiAnalysisStageDiscoveryTitle": "Candidate discovery",
+  "aiAnalysisStageDiscoveryLoading": "Discovering candidates · {count} found",
+  "@aiAnalysisStageDiscoveryLoading": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "aiAnalysisStageRemaining": "{count} items remain",
+  "@aiAnalysisStageRemaining": {
+    "placeholders": {"count": {"type": "int"}}
+  },
   "aiAnalysisStageCandidateDetail": "{count} items available for optional cleanup",
   "@aiAnalysisStageCandidateDetail": {"placeholders": {"count": {"type": "int"}}},
   "aiAnalysisStageLocalTitle": "Local coverage rules",

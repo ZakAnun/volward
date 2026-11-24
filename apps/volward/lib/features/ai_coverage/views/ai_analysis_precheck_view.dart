@@ -336,40 +336,26 @@ class AiAnalysisPrecheckView extends StatelessWidget {
           job: coverage.jobState,
           plan: coverage.planSummary,
         );
+    final activeJob =
+        coverage.planSummary != null &&
+            coverage.jobState?.snapshotId != coverage.planSummary?.snapshotId
+        ? null
+        : coverage.jobState;
+    final completion = coverageCompletionTruth(activeJob);
     final localComplete =
         presentation.localPhase == CoverageLocalPhase.completed ||
         presentation.localPhase == CoverageLocalPhase.notRequired;
     final localFailed = presentation.localPhase == CoverageLocalPhase.failed;
     final localPaused = presentation.localPhase == CoverageLocalPhase.paused;
     final aiProgressVisible =
-        presentation.aiPhase == ClassificationAiPhase.running ||
-        presentation.aiPhase == ClassificationAiPhase.completed;
+        completion.phase == CoverageCompletionPhase.running ||
+        completion.phase == CoverageCompletionPhase.completed;
     final planIsLocalOnly =
         coverage.planSummary != null &&
         coverage.planSummary!.planVersion >= 3 &&
         !coveragePlanRequiresApi(coverage.planSummary!);
 
     return [
-      if (precheck.candidatesBootstrapPending) ...[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            AiAnalysisActivityInlineSpinner(
-              color: tokens.primary,
-              size: 14,
-              strokeWidth: 2,
-            ),
-            const SizedBox(width: AppleSpacing.sm),
-            Expanded(
-              child: Text(
-                l10n.aiCandidatesBootstrapLoading,
-                style: context.vwCaption,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppleSpacing.sm),
-      ],
       AiAnalysisPurchaseView(
         precheck: precheck,
         onOpenSettings: onOpenSettings,
@@ -397,12 +383,17 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         const SizedBox(height: AppleSpacing.sm),
       ],
       _CoverageStageRow(
-        icon: Icons.shield_outlined,
-        title: l10n.aiAnalysisStageCandidateTitle,
-        detail: l10n.aiAnalysisStageCandidateDetail(
-          precheck.displayPreClassifiedCount,
-        ),
-        color: Colors.green.shade700,
+        icon: Icons.folder_open_outlined,
+        title: l10n.aiAnalysisStageDiscoveryTitle,
+        detail: precheck.candidatesBootstrapPending
+            ? l10n.aiAnalysisStageDiscoveryLoading(precheck.displayUnknownCount)
+            : l10n.aiAnalysisStageCandidateDetail(
+                precheck.displayPreClassifiedCount,
+              ),
+        color: precheck.candidatesBootstrapPending
+            ? tokens.primary
+            : Colors.green.shade700,
+        activity: precheck.candidatesBootstrapPending,
       ),
       const SizedBox(height: AppleSpacing.sm),
       _CoverageStageRow(
@@ -435,13 +426,17 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         title: l10n.aiAnalysisStageAiTitle,
         detail: localFailed || localPaused
             ? l10n.aiClassificationAiNotStarted
-            : aiProgressVisible
-            ? l10n.aiAnalysisStageAiProgress(
-                presentation.aiResolvedFiles,
-                presentation.aiPlannedFiles ?? 0,
-              )
+            : completion.totalFiles != null &&
+                  (completion.phase == CoverageCompletionPhase.running ||
+                      completion.phase == CoverageCompletionPhase.partial ||
+                      completion.phase == CoverageCompletionPhase.completed)
+            ? '${l10n.aiCoverageProgress(completion.analyzedFiles, completion.totalFiles!)}${completion.phase == CoverageCompletionPhase.partial ? ' · ${l10n.aiAnalysisStageRemaining(completion.remainingFiles ?? 0)}' : ''}'
             : l10n.aiClassificationAiWaitingForLocal,
-        color: aiProgressVisible ? tokens.primary : AppleColors.inkMuted48,
+        color: completion.phase == CoverageCompletionPhase.partial
+            ? tokens.warning
+            : aiProgressVisible
+            ? tokens.primary
+            : AppleColors.inkMuted48,
         progress: aiProgressVisible ? presentation.aiProgressFraction : null,
       ),
       if (precheck.platformCredits != null &&
@@ -693,6 +688,7 @@ class _CoverageStageRow extends StatelessWidget {
     required this.detail,
     required this.color,
     this.progress,
+    this.activity = false,
   });
 
   final IconData icon;
@@ -700,6 +696,7 @@ class _CoverageStageRow extends StatelessWidget {
   final String detail;
   final Color color;
   final double? progress;
+  final bool activity;
 
   @override
   Widget build(BuildContext context) {
@@ -707,7 +704,7 @@ class _CoverageStageRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 18, color: color),
-        const SizedBox(width: AppleSpacing.sm),
+        const SizedBox(width: AppleSpacing.xs),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -715,6 +712,14 @@ class _CoverageStageRow extends StatelessWidget {
               Text(title, style: context.vwCaptionStrong),
               const SizedBox(height: AppleSpacing.xxs),
               Text(detail, style: context.vwCaption),
+              if (activity) ...[
+                const SizedBox(height: AppleSpacing.xxs),
+                AiAnalysisActivityInlineSpinner(
+                  color: color,
+                  size: 14,
+                  strokeWidth: 2,
+                ),
+              ],
               if (progress case final value?) ...[
                 const SizedBox(height: AppleSpacing.xxs),
                 LinearProgressIndicator(
@@ -783,19 +788,16 @@ class _PlanDetailsDisclosureState extends State<_PlanDetailsDisclosure> {
           ),
         ),
       ),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        child: _expanded
-            ? Padding(
-                padding: const EdgeInsets.only(top: AppleSpacing.xs),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: widget.children,
-                ),
-              )
-            : const SizedBox.shrink(),
-      ),
+      child: _expanded
+          ? AnimatedSize(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: widget.children,
+              ),
+            )
+          : null,
     );
   }
 }

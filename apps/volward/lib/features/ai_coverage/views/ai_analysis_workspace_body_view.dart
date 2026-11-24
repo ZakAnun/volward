@@ -236,7 +236,7 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                                 : null,
                           ),
                           if (state.coverage.useFullCoverage) ...[
-                            const SizedBox(height: AppleSpacing.xs),
+                            const SizedBox(height: AppleSpacing.sm),
                             AiAnalysisPlanDetailsView(
                               precheck: state.precheck,
                               coverage: state.coverage,

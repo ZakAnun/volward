@@ -2308,6 +2308,24 @@ abstract class AppLocalizations {
   /// **'Candidate preclassification'**
   String get aiAnalysisStageCandidateTitle;
 
+  /// No description provided for @aiAnalysisStageDiscoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Candidate discovery'**
+  String get aiAnalysisStageDiscoveryTitle;
+
+  /// No description provided for @aiAnalysisStageDiscoveryLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovering candidates · {count} found'**
+  String aiAnalysisStageDiscoveryLoading(int count);
+
+  /// No description provided for @aiAnalysisStageRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items remain'**
+  String aiAnalysisStageRemaining(int count);
+
   /// No description provided for @aiAnalysisStageCandidateDetail.
   ///
   /// In en, this message translates to:
