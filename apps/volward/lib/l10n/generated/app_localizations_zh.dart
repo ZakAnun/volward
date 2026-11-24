@@ -1448,6 +1448,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultsHubStatusReady => '已完成';
 
   @override
+  String get aiCoverageContinuationTitle => '继续 AI 覆盖';
+
+  @override
+  String aiCoverageContinuationScope(String target, int total) {
+    return '本轮范围：$target · $total 项';
+  }
+
+  @override
+  String aiCoverageContinuationCovered(int count) {
+    return '已覆盖：$count 项';
+  }
+
+  @override
+  String aiCoverageContinuationRemaining(int count) {
+    return '待覆盖：$count 项';
+  }
+
+  @override
+  String get aiCoverageContinuationAction => '继续 AI 覆盖';
+
+  @override
   String aiResultsHeroLine(String bytes, int review) {
     return '可释放 $bytes，$review 项需你确认后再删';
   }

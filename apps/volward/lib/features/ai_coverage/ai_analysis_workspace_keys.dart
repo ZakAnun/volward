@@ -6,6 +6,7 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const loadPrevious = Key('ai-analysis-load-previous');
   static const analyzeAgain = Key('ai-analysis-analyze-again');
   static const startAnalysis = Key('ai-analysis-start-analysis');
+  static const continueCoverage = Key('ai-analysis-continue-coverage');
   static const settings = Key('ai-analysis-open-settings');
   static const resultsList = Key('ai-analysis-results-list');
   static const summary = Key('ai-analysis-summary');
@@ -90,6 +91,7 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const loadPreviousKey = loadPrevious;
   static const analyzeAgainKey = analyzeAgain;
   static const startAnalysisKey = startAnalysis;
+  static const continueCoverageKey = continueCoverage;
   static const settingsKey = settings;
   static const resultsListKey = resultsList;
   static const summaryKey = summary;

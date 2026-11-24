@@ -5,9 +5,12 @@ import 'package:volward/ai/coverage_models.dart';
 import 'package:volward/ai/coverage_job_state.dart';
 import 'package:volward/ai/coverage_ui_helpers.dart';
 import 'package:volward/features/ai_coverage/ai_analysis_workspace_keys.dart';
+import 'package:volward/features/ai_coverage/models/ai_analysis_workspace_display_state.dart';
 import 'package:volward/features/ai_coverage/views/ai_analysis_precheck_view.dart';
+import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_body_view.dart';
 import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_actions.dart';
 import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_state.dart';
+import 'package:volward/ai/ai_result_overview.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/widgets/ai_analysis_activity_card.dart';
 import 'package:volward/widgets/ai_analysis_scope_panel.dart';
@@ -220,6 +223,149 @@ void main() {
     final childTop = tester.getTopLeft(find.byKey(childKey)).dy;
     expect(childTop - headerBottom, 12);
   });
+
+  testWidgets('partial coverage explains its range and continues in place', (
+    tester,
+  ) async {
+    var resumed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AiAnalysisCoverageContinuationCard(
+          targetLabel: 'testDir',
+          truth: const CoverageCompletionTruth(
+            phase: CoverageCompletionPhase.partial,
+            analyzedFiles: 317,
+            totalFiles: 4610,
+          ),
+          onContinue: () => resumed = true,
+        ),
+      ),
+    );
+
+    expect(find.textContaining('testDir'), findsOneWidget);
+    expect(find.textContaining('317'), findsOneWidget);
+    expect(find.textContaining('4293'), findsOneWidget);
+    final button = find.byKey(AiAnalysisWorkspaceKeys.continueCoverageKey);
+    expect(button, findsOneWidget);
+
+    await tester.tap(button);
+    expect(resumed, isTrue);
+  });
+
+  testWidgets('complete coverage does not offer continuation', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AiAnalysisCoverageContinuationCard(
+          targetLabel: 'testDir',
+          truth: const CoverageCompletionTruth(
+            phase: CoverageCompletionPhase.completed,
+            analyzedFiles: 4610,
+            totalFiles: 4610,
+          ),
+          onContinue: () {},
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.continueCoverageKey),
+      findsNothing,
+    );
+  });
+
+  testWidgets('non-partial coverage states do not offer continuation', (
+    tester,
+  ) async {
+    const ineligibleTruths = [
+      CoverageCompletionTruth(
+        phase: CoverageCompletionPhase.running,
+        analyzedFiles: 317,
+        totalFiles: 4610,
+      ),
+      CoverageCompletionTruth(
+        phase: CoverageCompletionPhase.indeterminate,
+        analyzedFiles: 317,
+        totalFiles: 4610,
+      ),
+      CoverageCompletionTruth(
+        phase: CoverageCompletionPhase.indeterminate,
+        analyzedFiles: 0,
+        totalFiles: null,
+      ),
+    ];
+
+    for (final truth in ineligibleTruths) {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: AiAnalysisCoverageContinuationCard(
+            targetLabel: 'testDir',
+            truth: truth,
+            onContinue: () {},
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(AiAnalysisWorkspaceKeys.continueCoverageKey),
+        findsNothing,
+      );
+    }
+  });
+
+  testWidgets(
+    'partial results continue through the persisted coverage action',
+    (tester) async {
+      final actions = _TrackingActions();
+      final scrollController = ScrollController();
+      final searchController = TextEditingController();
+      addTearDown(scrollController.dispose);
+      addTearDown(searchController.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: SizedBox(
+            height: 900,
+            child: AiAnalysisWorkspaceBodyView(
+              state: AiAnalysisWorkspaceViewState(
+                precheck: const AiWorkspacePrecheckState(useFullCoverage: true),
+                coverage: AiWorkspaceCoverageState(
+                  useFullCoverage: true,
+                  jobState: _completedJob(analyzedFiles: 317),
+                  planSummary: _coveragePlan,
+                ),
+                results: AiWorkspaceResultsState(overview: _partialOverview),
+                overview: const AiWorkspaceOverviewState(
+                  displayState: AiWorkspaceDisplayState.results,
+                  resultsView: WorkspaceResultsView.overview,
+                ),
+              ),
+              actions: actions,
+              onOpenSettings: _noop,
+              scrollController: scrollController,
+              searchController: searchController,
+            ),
+          ),
+        ),
+      );
+
+      final button = find.byKey(AiAnalysisWorkspaceKeys.continueCoverageKey);
+      expect(button, findsOneWidget);
+
+      await tester.tap(button);
+      await tester.pump();
+
+      expect(actions.resumeCoverageCalls, 1);
+      expect(actions.startAnalysisCalls, 0);
+    },
+  );
 }
 
 const _coveragePlan = CoveragePlanSummary(
@@ -254,9 +400,39 @@ CoverageJobState _completedJob({required int analyzedFiles}) =>
       localPhaseComplete: true,
     );
 
+const _partialOverview = AiAnalysisConclusionOverview(
+  targetLabel: 'testDir',
+  rootPath: '/tmp',
+  safeBytes: 0,
+  reviewCount: 0,
+  keepCount: 0,
+  analyzedItemCount: 317,
+  analyzedTotalBytes: 0,
+  rootSizeBytes: 0,
+  shareOfRootPct: null,
+  truncated: false,
+  fullCoverage: true,
+  directories: [],
+);
+
 void _noop() {}
 
 class _NoopActions implements AiAnalysisWorkspaceViewActions {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TrackingActions extends _NoopActions {
+  var resumeCoverageCalls = 0;
+  var startAnalysisCalls = 0;
+
+  @override
+  Future<void> resumeCoverage() async {
+    resumeCoverageCalls++;
+  }
+
+  @override
+  Future<void> startAnalysis({required bool fullCoverage}) async {
+    startAnalysisCalls++;
+  }
 }

@@ -4,6 +4,7 @@ import '../../../ai/ai_analysis_activity_model.dart';
 import '../../../ai/ai_settings_store.dart';
 import '../../../ai/coverage_job_state.dart';
 import '../../../ai/coverage_pause_messages.dart';
+import '../../../ai/coverage_ui_helpers.dart';
 import '../../../l10n/l10n.dart';
 import '../../../l10n/generated/app_localizations.dart';
 import '../../../theme/apple_tokens.dart';
@@ -197,6 +198,7 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
     final overview = state.results.overview;
     final hasVerdicts = state.results.verdicts.isNotEmpty;
     final showCompactActivity = state.activity.showCompact;
+    final continuationTruth = coverageCompletionTruth(state.coverage.jobState);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -235,6 +237,18 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
                                   )
                                 : null,
                           ),
+                          if (continuationTruth.phase ==
+                              CoverageCompletionPhase.partial) ...[
+                            const SizedBox(height: AppleSpacing.sm),
+                            AiAnalysisCoverageContinuationCard(
+                              targetLabel:
+                                  overview?.targetLabel ??
+                                  state.coverage.planSummary?.rootPath ??
+                                  '',
+                              truth: continuationTruth,
+                              onContinue: actions.resumeCoverage,
+                            ),
+                          ],
                           if (state.coverage.useFullCoverage) ...[
                             const SizedBox(height: AppleSpacing.sm),
                             AiAnalysisPlanDetailsView(
@@ -638,5 +652,73 @@ class AiAnalysisWorkspaceBodyView extends StatelessWidget {
       return '${(value / 1073741824).toStringAsFixed(1)} MB';
     }
     return '${(value / 1073741824).toStringAsFixed(2)} GB';
+  }
+}
+
+/// Gives a completed-but-incomplete coverage job one truthful next action.
+/// The callback resumes the persisted cursor; snapshot validation remains in
+/// the coverage controller rather than being duplicated in this view.
+class AiAnalysisCoverageContinuationCard extends StatelessWidget {
+  const AiAnalysisCoverageContinuationCard({
+    super.key,
+    required this.targetLabel,
+    required this.truth,
+    required this.onContinue,
+  });
+
+  final String targetLabel;
+  final CoverageCompletionTruth truth;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final tokens = context.volward;
+    final total = truth.totalFiles;
+    final remaining = truth.remainingFiles;
+    if (truth.phase != CoverageCompletionPhase.partial ||
+        total == null ||
+        remaining == null) {
+      return const SizedBox.shrink();
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.surfacePearl,
+        borderRadius: BorderRadius.circular(AppleRadius.md),
+        border: Border.all(color: tokens.hairline),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppleSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.aiCoverageContinuationTitle, style: context.vwBodyStrong),
+            const SizedBox(height: AppleSpacing.xs),
+            Text(
+              l10n.aiCoverageContinuationScope(targetLabel, total),
+              style: context.vwCaption,
+            ),
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              l10n.aiCoverageContinuationCovered(truth.analyzedFiles),
+              style: context.vwCaption,
+            ),
+            const SizedBox(height: AppleSpacing.xxs),
+            Text(
+              l10n.aiCoverageContinuationRemaining(remaining),
+              style: context.vwCaptionStrong.copyWith(color: tokens.warning),
+            ),
+            const SizedBox(height: AppleSpacing.sm),
+            AppleButton(
+              key: AiAnalysisWorkspaceKeys.continueCoverageKey,
+              label: l10n.aiCoverageContinuationAction,
+              icon: Icons.play_arrow_rounded,
+              expanded: true,
+              onPressed: onContinue,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

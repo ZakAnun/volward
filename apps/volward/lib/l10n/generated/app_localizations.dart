@@ -2470,6 +2470,36 @@ abstract class AppLocalizations {
   /// **'Ready'**
   String get aiResultsHubStatusReady;
 
+  /// No description provided for @aiCoverageContinuationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue AI coverage'**
+  String get aiCoverageContinuationTitle;
+
+  /// No description provided for @aiCoverageContinuationScope.
+  ///
+  /// In en, this message translates to:
+  /// **'This run: {target} · {total} items'**
+  String aiCoverageContinuationScope(String target, int total);
+
+  /// No description provided for @aiCoverageContinuationCovered.
+  ///
+  /// In en, this message translates to:
+  /// **'Covered: {count} items'**
+  String aiCoverageContinuationCovered(int count);
+
+  /// No description provided for @aiCoverageContinuationRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'Remaining: {count} items'**
+  String aiCoverageContinuationRemaining(int count);
+
+  /// No description provided for @aiCoverageContinuationAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue AI coverage'**
+  String get aiCoverageContinuationAction;
+
   /// No description provided for @aiResultsHeroLine.
   ///
   /// In en, this message translates to:

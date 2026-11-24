@@ -1520,6 +1520,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsHubStatusReady => 'Ready';
 
   @override
+  String get aiCoverageContinuationTitle => 'Continue AI coverage';
+
+  @override
+  String aiCoverageContinuationScope(String target, int total) {
+    return 'This run: $target · $total items';
+  }
+
+  @override
+  String aiCoverageContinuationCovered(int count) {
+    return 'Covered: $count items';
+  }
+
+  @override
+  String aiCoverageContinuationRemaining(int count) {
+    return 'Remaining: $count items';
+  }
+
+  @override
+  String get aiCoverageContinuationAction => 'Continue AI coverage';
+
+  @override
   String aiResultsHeroLine(String bytes, int review) {
     return '$bytes reclaimable · $review need your decision before delete';
   }
