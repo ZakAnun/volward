@@ -175,6 +175,61 @@ void main() {
     },
   );
 
+  test('cached provider groups do not hide local preclassified safe items', () {
+    final results = AiAnalysisResultsController.forTest();
+    const providerSafe = AiVerdict(
+      path: '/tmp/provider.cache',
+      verdict: 'safe_to_remove',
+      confidence: 'high',
+      reason: 'provider',
+    );
+    results.setNormalizedGroupsCache(
+      groupAiResults(
+        const [providerSafe],
+        const {'/tmp/provider.cache': 10},
+        rootPath: '/tmp',
+      ),
+    );
+
+    final projection = results.buildProjection(
+      const AiResultsProjectionInput(
+        verdicts: [providerSafe],
+        selected: {},
+        reviewDecisions: {},
+        expandedGroupPaths: {},
+        expandedGroupItemLimits: {},
+        expandedReviewPaths: {},
+        sizeByPath: {'/tmp/provider.cache': 10, '/tmp/local.cache': 20},
+        searchTextByPath: {
+          '/tmp/provider.cache': '/tmp/provider.cache provider',
+          '/tmp/local.cache': '/tmp/local.cache local',
+        },
+        preClassified: [
+          {'path': '/tmp/local.cache', 'deletable': true},
+        ],
+        unanalyzedVerdicts: [],
+        rootPath: '/tmp',
+        targetLabel: 'tmp',
+        useFullCoverage: true,
+        truncated: false,
+        filter: WorkspaceResultFilter.all,
+        sort: WorkspaceResultSort.size,
+        query: '',
+        directoryFilter: null,
+        showsFilteredItems: false,
+        heavyResultsLayoutThreshold: 200,
+        aiResultGroupDisplayItemCap: 512,
+        firstLevelDirectoryPaths: {'/tmp'},
+        directoryPathsForGrouping: {'/tmp'},
+        coverageResultsLoadTruncated: false,
+        analyzedItemCountOverride: null,
+      ),
+    );
+
+    expect(projection.safeItemCount, 2);
+    expect(projection.safeBytes, 30);
+  });
+
   test('keep filter only exposes retained verdicts', () {
     final results = AiAnalysisResultsController.forTest();
     const safe = AiVerdict(

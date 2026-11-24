@@ -339,6 +339,11 @@ class AiAnalysisPrecheckView extends StatelessWidget {
     final localComplete =
         presentation.localPhase == CoverageLocalPhase.completed ||
         presentation.localPhase == CoverageLocalPhase.notRequired;
+    final localFailed = presentation.localPhase == CoverageLocalPhase.failed;
+    final localPaused = presentation.localPhase == CoverageLocalPhase.paused;
+    final aiProgressVisible =
+        presentation.aiPhase == ClassificationAiPhase.running ||
+        presentation.aiPhase == ClassificationAiPhase.completed;
     final planIsLocalOnly =
         coverage.planSummary != null &&
         coverage.planSummary!.planVersion >= 3 &&
@@ -403,26 +408,41 @@ class AiAnalysisPrecheckView extends StatelessWidget {
       _CoverageStageRow(
         icon: Icons.rule_folder_outlined,
         title: l10n.aiAnalysisStageLocalTitle,
-        detail: presentation.localProgressFraction == null
+        detail: localFailed
+            ? l10n.aiConclusionsAnalysisFailed
+            : localPaused
+            ? l10n.aiConclusionsAnalysisPaused
+            : presentation.localProgressFraction == null
             ? l10n.aiAnalysisStageLocalPreparing
             : l10n.aiAnalysisStageLocalProgress(
                 presentation.localResolvedFiles,
                 presentation.localPlannedFiles!,
               ),
-        color: localComplete ? Colors.green.shade700 : tokens.primary,
-        progress: presentation.localProgressFraction,
+        color: localFailed
+            ? tokens.danger
+            : localPaused
+            ? tokens.warning
+            : localComplete
+            ? Colors.green.shade700
+            : tokens.primary,
+        progress: localFailed || localPaused
+            ? null
+            : presentation.localProgressFraction,
       ),
       const SizedBox(height: AppleSpacing.sm),
       _CoverageStageRow(
         icon: Icons.auto_awesome_outlined,
         title: l10n.aiAnalysisStageAiTitle,
-        detail: localComplete
+        detail: localFailed || localPaused
+            ? l10n.aiClassificationAiNotStarted
+            : aiProgressVisible
             ? l10n.aiAnalysisStageAiProgress(
                 presentation.aiResolvedFiles,
                 presentation.aiPlannedFiles ?? 0,
               )
             : l10n.aiClassificationAiWaitingForLocal,
-        color: localComplete ? tokens.primary : AppleColors.inkMuted48,
+        color: aiProgressVisible ? tokens.primary : AppleColors.inkMuted48,
+        progress: aiProgressVisible ? presentation.aiProgressFraction : null,
       ),
       if (precheck.platformCredits != null &&
           precheck.estimatedCoverageCredits != null &&

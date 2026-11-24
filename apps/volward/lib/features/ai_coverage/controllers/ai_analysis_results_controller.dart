@@ -545,7 +545,10 @@ extension AiAnalysisResultsProjection on AiAnalysisResultsController {
 
   List<AiResultGroup> _normalizedGroupsFor(AiResultsProjectionInput input) {
     final cached = _normalizedGroupsCache;
-    if (cached != null) return cached;
+    // Presentation-prep caches group only provider verdicts. Local
+    // preclassification is merged below, so bypass that cache whenever it is
+    // present rather than undercounting the dashboard's safe total.
+    if (cached != null && input.preClassified.isEmpty) return cached;
     final localSafe = _preClassifiedVerdicts(input.preClassified, true);
     final localKeep = _preClassifiedVerdicts(input.preClassified, false);
     final aiSafe = input.verdicts

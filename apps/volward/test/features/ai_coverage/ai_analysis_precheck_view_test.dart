@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/coverage_models.dart';
+import 'package:volward/ai/coverage_ui_helpers.dart';
 import 'package:volward/features/ai_coverage/ai_analysis_workspace_keys.dart';
 import 'package:volward/features/ai_coverage/views/ai_analysis_precheck_view.dart';
 import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_actions.dart';
@@ -128,6 +129,43 @@ void main() {
       find.text('200 items pre-identified as safe to remove'),
       findsNothing,
     );
+  });
+
+  testWidgets('failed local coverage does not show an AI waiting state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AiAnalysisPrecheckView(
+          precheck: const AiWorkspacePrecheckState(
+            mode: AiMode.byok,
+            hasProvider: true,
+            useFullCoverage: true,
+          ),
+          coverage: AiWorkspaceCoverageState(),
+          runPresentation: const CoverageRunPresentation(
+            localPhase: CoverageLocalPhase.failed,
+            localResolvedFiles: 5,
+            localPlannedFiles: 20,
+            localProgressFraction: null,
+            aiPhase: ClassificationAiPhase.notStarted,
+            aiResolvedFiles: 0,
+            aiPlannedFiles: 0,
+            aiProgressFraction: null,
+          ),
+          actions: _NoopActions(),
+          onOpenSettings: _noop,
+        ),
+      ),
+    );
+
+    expect(
+      find.text('AI analysis waits for local rules to finish.'),
+      findsNothing,
+    );
+    expect(find.byType(LinearProgressIndicator), findsNothing);
   });
 }
 
