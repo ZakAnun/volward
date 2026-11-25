@@ -59,7 +59,9 @@ class CoverageClassification {
             coverageSource: 'local:scope',
           );
     if (verdict == null) return base;
-    return _preferClassification(base, _fromVerdict(verdict));
+    final direct = _fromVerdict(verdict);
+    if (base == null) return direct;
+    return _compareVerdict(direct, base) >= 0 ? direct : base;
   }
 
   factory CoverageClassification.fromJson(Map<String, dynamic> json) =>
@@ -110,6 +112,7 @@ class CoverageReconciliation {
     required this.directory,
     required this.pendingFile,
     required this.resolvedFile,
+    required this.failedFile,
   });
 
   final String snapshotId;
@@ -119,6 +122,7 @@ class CoverageReconciliation {
   final Directory directory;
   final File pendingFile;
   final File resolvedFile;
+  final File failedFile;
 
   Stream<CoverageScopeRow> pendingRows() => _readJsonLines(
     pendingFile,
@@ -127,6 +131,9 @@ class CoverageReconciliation {
   Stream<CoverageClassification> resolvedRows() => _readJsonLines(
     resolvedFile,
   ).map((json) => CoverageClassification.fromJson(json));
+
+  Stream<CoverageScopeRow> failedRows() =>
+      _readJsonLines(failedFile).map((json) => CoverageScopeRow.fromJson(json));
 }
 
 class CoverageReconciler {
@@ -144,10 +151,46 @@ class CoverageReconciler {
 
   static const _manifestName = 'manifest.json';
 
+  Future<CoverageReconciliation?> loadCurrent(String snapshotId) async {
+    final root = Directory(
+      '${directory.path}/reconciliation_${_safeName(snapshotId)}',
+    );
+    final pointer = File('${root.path}/current.json');
+    if (!await pointer.exists()) return null;
+    final buildName = (await pointer.readAsString()).trim();
+    if (!buildName.startsWith('build_')) return null;
+    final build = Directory('${root.path}/$buildName');
+    final manifestFile = File('${build.path}/$_manifestName');
+    if (!await manifestFile.exists()) return null;
+    final manifest =
+        jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+    final counts = manifest['counts'] as Map?;
+    if (counts == null) return null;
+    return CoverageReconciliation(
+      snapshotId: manifest['snapshot_id'] as String,
+      planVersion: (manifest['plan_version'] as num).toInt(),
+      fingerprint: manifest['fingerprint'] as String,
+      counts: CoverageCounts(
+        total: (counts['total'] as num).toInt(),
+        resolved: (counts['resolved'] as num).toInt(),
+        pending: (counts['pending'] as num).toInt(),
+        failed: (counts['failed'] as num).toInt(),
+      ),
+      directory: build,
+      pendingFile: File('${build.path}/pending.jsonl'),
+      resolvedFile: File('${build.path}/resolved.jsonl'),
+      failedFile: File('${build.path}/failed.jsonl'),
+    );
+  }
+
   Future<CoverageReconciliation> reconcile({
     required String snapshotId,
     required int planVersion,
+    required String expectedFingerprint,
   }) async {
+    if (expectedFingerprint.isEmpty) {
+      throw StateError('scope fingerprint is required');
+    }
     await directory.create(recursive: true);
     final root = Directory(
       '${directory.path}/reconciliation_${_safeName(snapshotId)}',
@@ -169,7 +212,7 @@ class CoverageReconciler {
     final scopeSinks = [for (final file in scopeBuckets) file.openWrite()];
     final verdictSinks = [for (final file in verdictBuckets) file.openWrite()];
 
-    var fingerprint = '';
+    var fingerprint = expectedFingerprint;
     var cursor = 0;
     try {
       while (true) {
@@ -182,11 +225,9 @@ class CoverageReconciler {
         if (page.snapshotId != snapshotId || page.planVersion != planVersion) {
           throw StateError('scope page binding mismatch');
         }
-        if (fingerprint.isEmpty) {
-          fingerprint = page.fingerprint;
-        } else if (fingerprint != page.fingerprint) {
+        if (fingerprint != page.fingerprint) {
           throw StateError(
-            'scope page fingerprint changed during reconciliation',
+            'scope page fingerprint does not match the coverage plan',
           );
         }
         for (final row in page.rows) {
@@ -231,8 +272,10 @@ class CoverageReconciler {
 
     final pending = File('${build.path}/pending.jsonl');
     final resolved = File('${build.path}/resolved.jsonl');
+    final failed = File('${build.path}/failed.jsonl');
     final pendingSink = pending.openWrite();
     final resolvedSink = resolved.openWrite();
+    final failedSink = failed.openWrite();
     var total = 0;
     var resolvedCount = 0;
     var pendingCount = 0;
@@ -289,7 +332,10 @@ class CoverageReconciler {
             resolvedSink.write('${jsonEncode(classification!.toJson())}\n');
           } else {
             pendingCount++;
-            if (incompletePaths.contains(row.path)) failedCount++;
+            if (incompletePaths.contains(row.path)) {
+              failedCount++;
+              failedSink.write('${jsonEncode(_scopeJson(row))}\n');
+            }
             pendingSink.write('${jsonEncode(_scopeJson(row))}\n');
           }
         }
@@ -297,6 +343,7 @@ class CoverageReconciler {
     } finally {
       await pendingSink.close();
       await resolvedSink.close();
+      await failedSink.close();
     }
 
     final counts = CoverageCounts(
@@ -312,6 +359,7 @@ class CoverageReconciler {
       'counts': counts.toJson(),
       'pending_file': 'pending.jsonl',
       'resolved_file': 'resolved.jsonl',
+      'failed_file': 'failed.jsonl',
     };
     await File(
       '${build.path}/$_manifestName',
@@ -325,12 +373,16 @@ class CoverageReconciler {
       directory: build,
       pendingFile: pending,
       resolvedFile: resolved,
+      failedFile: failed,
     );
   }
 
   Future<void> _publish(Directory root, Directory build) async {
     final pointer = File('${root.path}/current.json.tmp');
-    await pointer.writeAsString(build.path, flush: true);
+    final buildName = build.uri.pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .last;
+    await pointer.writeAsString(buildName, flush: true);
     final target = File('${root.path}/current.json');
     try {
       await pointer.rename(target.path);
@@ -338,6 +390,15 @@ class CoverageReconciler {
       // Windows cannot replace an existing file with rename.
       if (await target.exists()) await target.delete();
       await pointer.rename(target.path);
+    }
+    await for (final entity in root.list(followLinks: false)) {
+      if (entity is Directory && entity.path != build.path) {
+        try {
+          await entity.delete(recursive: true);
+        } catch (_) {
+          // A later successful reconciliation will retry cleanup.
+        }
+      }
     }
   }
 
@@ -371,14 +432,6 @@ bool _isDirectFileVerdict(CoverageVerdict verdict) {
 
 CoverageClassification _fromVerdict(CoverageVerdict verdict) =>
     CoverageClassification._fromVerdict(verdict);
-
-CoverageClassification _preferClassification(
-  CoverageClassification? current,
-  CoverageClassification candidate,
-) {
-  if (current == null) return candidate;
-  return _compareVerdict(candidate, current) > 0 ? candidate : current;
-}
 
 int _compareVerdict(CoverageClassification left, CoverageClassification right) {
   final category = _verdictRank(

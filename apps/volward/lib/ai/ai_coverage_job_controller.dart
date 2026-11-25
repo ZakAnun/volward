@@ -111,6 +111,7 @@ class CoverageJobController {
   bool _cancelRequested = false;
   Completer<void>? _runCompleter;
   CoveragePauseReason? _pauseRequestReason;
+  String? _corruptCheckpointSnapshot;
   final _states = StreamController<CoverageJobState>.broadcast();
 
   /// True until every batch and final persistence operation has drained.
@@ -199,6 +200,7 @@ class CoverageJobController {
     }
     final current = await _ensureLoaded(snapshotId);
     if (current == null) return _idleFor(snapshotId);
+    if (_corruptCheckpointSnapshot == snapshotId) return current;
     _pauseRequested = false;
     _cancelRequested = false;
     _pauseRequestReason = null;
@@ -225,6 +227,7 @@ class CoverageJobController {
     _cancelToken.cancel();
     final current = await _ensureLoaded(snapshotId);
     if (current == null) return _idleFor(snapshotId);
+    if (_corruptCheckpointSnapshot == snapshotId) return current;
     if (current.status != CoverageJobStatus.running &&
         current.status != CoverageJobStatus.paused) {
       return current;
@@ -256,6 +259,7 @@ class CoverageJobController {
     }
     final current = await _ensureLoaded(snapshotId);
     if (current == null) return _idleFor(snapshotId);
+    if (_corruptCheckpointSnapshot == snapshotId) return current;
     _pauseRequested = false;
     _cancelRequested = false;
     _state = current.copyWith(
@@ -286,9 +290,21 @@ class CoverageJobController {
     if (_state != null && _state!.snapshotId == snapshotId) {
       return _state;
     }
-    final loaded = await stateStore.load(snapshotId);
-    _state = loaded;
-    return loaded;
+    try {
+      _corruptCheckpointSnapshot = null;
+      _state = await stateStore.load(snapshotId);
+      return _state;
+    } on CoverageJobStateCorruptException catch (error) {
+      _corruptCheckpointSnapshot = snapshotId;
+      final failed = _idleFor(snapshotId).copyWith(
+        status: CoverageJobStatus.paused,
+        pauseReason: () => CoveragePauseReason.failed,
+        pauseMessage: () => error.message,
+      );
+      _state = failed;
+      _emit();
+      return failed;
+    }
   }
 
   CoverageJobState _idleFor(String snapshotId) => CoverageJobState(
@@ -335,7 +351,11 @@ class CoverageJobController {
       // Let the UI thread paint (dialog dismiss) before plan/work resumes.
       await Future<void>.delayed(Duration.zero);
 
-      final plan = await _loadPlanForRun(snapshotId, guard);
+      var plan = await _loadPlanForRun(snapshotId, guard);
+      if (plan.isTreePlan &&
+          (plan.scopeFingerprint == null || plan.scopeFingerprint!.isEmpty)) {
+        plan = await engine.buildTreePlan(snapshotId);
+      }
       if (plan.snapshotId != snapshotId) {
         await _pause(
           CoveragePauseReason.failed,
@@ -367,6 +387,41 @@ class CoverageJobController {
         );
         return;
       }
+      if (plan.planVersion >= 3) {
+        final scopeFingerprint = plan.scopeFingerprint;
+        if (scopeFingerprint == null || scopeFingerprint.isEmpty) {
+          await _pause(
+            CoveragePauseReason.failed,
+            message: 'coverage scope identity unavailable; rescan required',
+          );
+          return;
+        }
+        if (guard.scopeFingerprint != null &&
+            guard.scopeFingerprint != scopeFingerprint) {
+          await _pause(
+            CoveragePauseReason.failed,
+            message: 'coverage scope changed; restart full coverage',
+          );
+          return;
+        }
+        final freshJob =
+            guard.analyzedFiles == 0 &&
+            guard.treeQueueCursor == 0 &&
+            guard.tailQueueCursor == 0 &&
+            guard.localResolvedFiles == 0 &&
+            guard.aiResolvedFiles == 0;
+        if (guard.scopeFingerprint == null &&
+            !freshJob &&
+            (guard.fingerprint == null ||
+                plan.fingerprint == null ||
+                !guard.fingerprint!.matches(plan.fingerprint!))) {
+          await _pause(
+            CoveragePauseReason.failed,
+            message: 'legacy coverage identity mismatch; restart full coverage',
+          );
+          return;
+        }
+      }
       guard = _state = CoverageJobState(
         snapshotId: plan.snapshotId,
         rootPath: plan.rootPath,
@@ -396,6 +451,8 @@ class CoverageJobController {
             plan.estimatedTreeCredits ?? guard.estimatedTreeCredits,
         estimatedTailCredits:
             plan.estimatedTailCredits ?? guard.estimatedTailCredits,
+        scopeFingerprint: plan.scopeFingerprint ?? guard.scopeFingerprint,
+        reconciliationCompleted: guard.reconciliationCompleted,
       );
       await stateStore.save(_state!);
       _emit();
@@ -881,6 +938,14 @@ class CoverageJobController {
     String snapshotId,
     CoveragePlanSummary plan,
   ) async {
+    final scopeFingerprint = plan.scopeFingerprint;
+    if (scopeFingerprint == null || scopeFingerprint.isEmpty) {
+      await _pause(
+        CoveragePauseReason.failed,
+        message: 'coverage scope identity unavailable; rescan required',
+      );
+      return false;
+    }
     final reconciler = CoverageReconciler(
       engine: engine,
       directory: verdictStore.directory,
@@ -890,6 +955,7 @@ class CoverageJobController {
       reconciled = await reconciler.reconcile(
         snapshotId: snapshotId,
         planVersion: plan.planVersion,
+        expectedFingerprint: scopeFingerprint,
       );
     } on CoverageEngineException catch (e) {
       await _pause(
@@ -906,33 +972,98 @@ class CoverageJobController {
       return false;
     }
 
+    var localBatch = <CoverageVerdict>[];
+    await for (final resolved in reconciled.resolvedRows()) {
+      if (resolved.coverageSource != 'local:scope') continue;
+      localBatch.add(
+        CoverageVerdict(
+          path: resolved.path,
+          verdict: resolved.verdict,
+          confidence: resolved.confidence,
+          reason: resolved.reason,
+          coverageSource: resolved.coverageSource,
+          sizeBytes: resolved.sizeBytes,
+        ),
+      );
+      if (localBatch.length >= 1000) {
+        await verdictStore.appendAll(snapshotId, localBatch);
+        localBatch = <CoverageVerdict>[];
+      }
+    }
+    if (localBatch.isNotEmpty) {
+      await verdictStore.appendAll(snapshotId, localBatch);
+    }
+
+    final previouslyFailed = reconciled.counts.failed == 0
+        ? <String>{}
+        : await reconciled.failedRows().map((row) => row.path).toSet();
     var batch = <CoverageRow>[];
     var rowIndex = 0;
     Future<bool> flush() async {
       if (batch.isEmpty || _pauseRequested) return !_pauseRequested;
-      if (_overBudget(_state!)) {
-        await _pause(CoveragePauseReason.budget);
-        return false;
-      }
       final rows = batch;
       batch = <CoverageRow>[];
-      final result = await _analyzeWithRetry(snapshotId, rows);
-      if (result == null) return false;
-      final current = _state!;
-      _state = current.copyWith(
-        analyzedFiles: current.analyzedFiles + result.memberFiles,
-        aiResolvedFiles: current.aiResolvedFiles + result.memberFiles,
-        usedTokens: current.usedTokens + result.usage.tokens,
-        usedCredits: current.usedCredits + result.usage.credits,
-        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-      );
-      await stateStore.save(_state!);
-      _emit();
+      final chunks = <List<CoverageRow>>[];
+      for (var start = 0; start < rows.length; start += batchSize) {
+        chunks.add(
+          rows.sublist(
+            start,
+            (start + batchSize).clamp(0, rows.length).toInt(),
+          ),
+        );
+      }
+      for (
+        var waveStart = 0;
+        waveStart < chunks.length;
+        waveStart += maxInFlight
+      ) {
+        if (_pauseRequested) return false;
+        if (_overBudget(_state!)) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+        final remaining = _remainingWaveSlots(_state!);
+        if (remaining <= 0) {
+          await _pause(CoveragePauseReason.budget);
+          return false;
+        }
+        final waveEnd = (waveStart + remaining).clamp(0, chunks.length).toInt();
+        final results = await Future.wait(
+          chunks
+              .sublist(waveStart, waveEnd)
+              .map((chunk) => _analyzeWithRetry(snapshotId, chunk)),
+        );
+        var committed = 0;
+        var analyzed = 0;
+        var tokens = 0;
+        var credits = 0;
+        for (final result in results) {
+          if (result == null) break;
+          committed++;
+          analyzed += result.memberFiles;
+          tokens += result.usage.tokens;
+          credits += result.usage.credits;
+        }
+        if (committed > 0) {
+          final current = _state!;
+          _state = current.copyWith(
+            analyzedFiles: current.analyzedFiles + analyzed,
+            aiResolvedFiles: current.aiResolvedFiles + analyzed,
+            usedTokens: current.usedTokens + tokens,
+            usedCredits: current.usedCredits + credits,
+            updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+          );
+          await stateStore.save(_state!);
+          _emit();
+        }
+        if (committed < results.length) return false;
+      }
       return true;
     }
 
     await for (final pending in reconciled.pendingRows()) {
       if (_pauseRequested) return !_pauseRequested;
+      if (previouslyFailed.contains(pending.path)) continue;
       if (_overBudget(_state!)) {
         await _pause(CoveragePauseReason.budget);
         return false;
@@ -945,7 +1076,7 @@ class CoverageJobController {
           sizeBytes: pending.sizeBytes,
         ),
       );
-      if (batch.length >= batchSize) {
+      if (batch.length >= batchSize * maxInFlight) {
         final ok = await flush();
         if (!ok) return false;
       }
@@ -955,9 +1086,14 @@ class CoverageJobController {
     final after = await reconciler.reconcile(
       snapshotId: snapshotId,
       planVersion: plan.planVersion,
+      expectedFingerprint: scopeFingerprint,
     );
     final reconciledState = _state!.copyWith(
       analyzedFiles: after.counts.resolved,
+      scopeFingerprint: scopeFingerprint,
+      reconciliationPending: after.counts.pending,
+      reconciliationFailed: after.counts.failed,
+      reconciliationCompleted: after.counts.complete,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
     _state = reconciledState;

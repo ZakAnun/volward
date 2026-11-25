@@ -11,6 +11,15 @@ enum CoveragePauseReason { manual, budget, failed, appQuit }
 /// Category persisted when [CoveragePauseReason.failed] (design §4.4).
 enum CoveragePauseDetail { parse, network, api }
 
+class CoverageJobStateCorruptException implements Exception {
+  CoverageJobStateCorruptException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class CoverageJobState {
   const CoverageJobState({
     required this.snapshotId,
@@ -45,6 +54,10 @@ class CoverageJobState {
     this.treeNodesCompleted = 0,
     this.estimatedTreeCredits,
     this.estimatedTailCredits,
+    this.scopeFingerprint,
+    this.reconciliationPending,
+    this.reconciliationFailed,
+    this.reconciliationCompleted = false,
   });
 
   factory CoverageJobState.fromJson(
@@ -94,6 +107,10 @@ class CoverageJobState {
     treeNodesCompleted: (json['tree_nodes_completed'] as num?)?.toInt() ?? 0,
     estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
     estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
+    scopeFingerprint: json['scope_fingerprint'] as String?,
+    reconciliationPending: (json['reconciliation_pending'] as num?)?.toInt(),
+    reconciliationFailed: (json['reconciliation_failed'] as num?)?.toInt(),
+    reconciliationCompleted: json['reconciliation_completed'] == true,
   );
 
   final String snapshotId;
@@ -128,6 +145,10 @@ class CoverageJobState {
   final int treeNodesCompleted;
   final int? estimatedTreeCredits;
   final int? estimatedTailCredits;
+  final String? scopeFingerprint;
+  final int? reconciliationPending;
+  final int? reconciliationFailed;
+  final bool reconciliationCompleted;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -157,6 +178,10 @@ class CoverageJobState {
     int? treeNodesCompleted,
     int? Function()? estimatedTreeCredits,
     int? Function()? estimatedTailCredits,
+    String? scopeFingerprint,
+    int? reconciliationPending,
+    int? reconciliationFailed,
+    bool? reconciliationCompleted,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -199,6 +224,11 @@ class CoverageJobState {
     estimatedTailCredits: estimatedTailCredits != null
         ? estimatedTailCredits()
         : this.estimatedTailCredits,
+    scopeFingerprint: scopeFingerprint ?? this.scopeFingerprint,
+    reconciliationPending: reconciliationPending ?? this.reconciliationPending,
+    reconciliationFailed: reconciliationFailed ?? this.reconciliationFailed,
+    reconciliationCompleted:
+        reconciliationCompleted ?? this.reconciliationCompleted,
   );
 
   Map<String, dynamic> toJson() => {
@@ -239,6 +269,12 @@ class CoverageJobState {
       'estimated_tree_credits': estimatedTreeCredits,
     if (estimatedTailCredits != null)
       'estimated_tail_credits': estimatedTailCredits,
+    if (scopeFingerprint != null) 'scope_fingerprint': scopeFingerprint,
+    if (reconciliationPending != null)
+      'reconciliation_pending': reconciliationPending,
+    if (reconciliationFailed != null)
+      'reconciliation_failed': reconciliationFailed,
+    if (reconciliationCompleted) 'reconciliation_completed': true,
   };
 }
 
@@ -266,15 +302,28 @@ class CoverageJobStateStore {
   }
 
   Future<CoverageJobState?> load(String snapshotId) async {
+    final result = await loadResult(snapshotId);
+    if (result.error != null) {
+      throw CoverageJobStateCorruptException(result.error!);
+    }
+    return result.state;
+  }
+
+  Future<({CoverageJobState? state, String? error})> loadResult(
+    String snapshotId,
+  ) async {
     final file = _fileFor(snapshotId);
-    if (!await file.exists()) return null;
+    if (!await file.exists()) return (state: null, error: null);
     try {
       final decoded = jsonDecode(await file.readAsString());
-      return CoverageJobState.fromJson(
-        Map<String, dynamic>.from(decoded as Map),
+      return (
+        state: CoverageJobState.fromJson(
+          Map<String, dynamic>.from(decoded as Map),
+        ),
+        error: null,
       );
-    } catch (_) {
-      return null;
+    } catch (error) {
+      return (state: null, error: 'coverage checkpoint is corrupt: $error');
     }
   }
 }

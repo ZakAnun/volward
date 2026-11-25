@@ -150,12 +150,7 @@ pub unsafe extern "C" fn volward_ai_next_tree_coverage_page_json(
         return ptr::null_mut();
     };
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
-    to_c_string(e.next_ai_tree_coverage_page_json(
-        &snapshot_id,
-        plan_version,
-        cursor,
-        page_size,
-    ))
+    to_c_string(e.next_ai_tree_coverage_page_json(&snapshot_id, plan_version, cursor, page_size))
 }
 
 #[no_mangle]
@@ -170,12 +165,7 @@ pub unsafe extern "C" fn volward_ai_next_tail_coverage_page_json(
         return ptr::null_mut();
     };
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
-    to_c_string(e.next_ai_tail_coverage_page_json(
-        &snapshot_id,
-        plan_version,
-        cursor,
-        page_size,
-    ))
+    to_c_string(e.next_ai_tail_coverage_page_json(&snapshot_id, plan_version, cursor, page_size))
 }
 
 #[no_mangle]
@@ -190,12 +180,7 @@ pub unsafe extern "C" fn volward_ai_next_scope_coverage_page_json(
         return ptr::null_mut();
     };
     let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
-    to_c_string(e.next_ai_scope_coverage_page_json(
-        &snapshot_id,
-        plan_version,
-        cursor,
-        page_size,
-    ))
+    to_c_string(e.next_ai_scope_coverage_page_json(&snapshot_id, plan_version, cursor, page_size))
 }
 
 #[no_mangle]

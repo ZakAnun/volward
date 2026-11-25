@@ -141,6 +141,7 @@ class CoveragePlanSummary {
     this.treePendingFiles,
     this.estimatedTreeCredits,
     this.estimatedTailCredits,
+    this.scopeFingerprint,
   });
 
   factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) {
@@ -179,6 +180,7 @@ class CoveragePlanSummary {
       treePendingFiles: (json['tree_pending_files'] as num?)?.toInt(),
       estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
       estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
+      scopeFingerprint: json['scope_fingerprint'] as String?,
     );
   }
 
@@ -199,6 +201,7 @@ class CoveragePlanSummary {
   final int? treePendingFiles;
   final int? estimatedTreeCredits;
   final int? estimatedTailCredits;
+  final String? scopeFingerprint;
 
   bool get isTreePlan => planVersion >= 3 && seedNodeCount != null;
 
@@ -222,6 +225,7 @@ class CoveragePlanSummary {
       'estimated_tree_credits': estimatedTreeCredits,
     if (estimatedTailCredits != null)
       'estimated_tail_credits': estimatedTailCredits,
+    if (scopeFingerprint != null) 'scope_fingerprint': scopeFingerprint,
   };
 }
 

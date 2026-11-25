@@ -76,11 +76,10 @@ pub unsafe extern "C" fn volward_free_string(s: *mut c_char) {
 #[cfg(test)]
 mod ai_contract_tests {
     use super::ai::{
-        volward_ai_batch_size, volward_ai_build_coverage_plan_json,
-        volward_ai_build_request_json, volward_ai_build_tree_coverage_plan_json,
-        volward_ai_next_coverage_page_json, volward_ai_next_scope_coverage_page_json,
-        volward_ai_parse_response_json, volward_ai_resolve_coverage_group_json,
-        volward_ai_tree_batch_size,
+        volward_ai_batch_size, volward_ai_build_coverage_plan_json, volward_ai_build_request_json,
+        volward_ai_build_tree_coverage_plan_json, volward_ai_next_coverage_page_json,
+        volward_ai_next_scope_coverage_page_json, volward_ai_parse_response_json,
+        volward_ai_resolve_coverage_group_json, volward_ai_tree_batch_size,
     };
     use super::scan::{volward_get_last_pause_error, volward_request_scan_pause};
     use super::{c_char, volward_free_string, VolwardEngine};
@@ -272,8 +271,7 @@ mod ai_contract_tests {
                 c"ffi-coverage".as_ptr(),
             ))
         };
-        let tree_json: serde_json::Value =
-            serde_json::from_str(&tree_summary).unwrap();
+        let tree_json: serde_json::Value = serde_json::from_str(&tree_summary).unwrap();
         let tree_plan_version = tree_json["plan_version"].as_u64().unwrap_or(1);
         let scope = unsafe {
             take(volward_ai_next_scope_coverage_page_json(

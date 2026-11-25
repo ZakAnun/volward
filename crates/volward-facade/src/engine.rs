@@ -22,18 +22,15 @@ use volward_core::SnapshotCatalog;
 use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, apply_dir_verdict, build_ai_coverage_plan,
-    coverage_group_resolution, coverage_local_verdict_page, coverage_plan_page,
-    coverage_plan_summary, coverage_scope_page, coverage_tail_page, coverage_tree_page,
-    coverage_tree_summary, write_dir_verdict_jsonl,
-    build_ai_tree_plan_from_coverage_cache,
-    coverage_group_member_paths,
-    expand_tree_drill_children_with_index, page_local_coverage_verdicts, CoverageFunnelContext, CoverageFunnelContextMap,
-    DirectoryRole, UnclassifiedCoverageCache, UnclassifiedSubtreeIndex,
-    AiCandidateBuilder,
-    AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability, CapabilityAnalysisError,
-    CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry, CleanupCandidateAnalyzer,
+    build_ai_tree_plan_from_coverage_cache, coverage_group_member_paths, coverage_group_resolution,
+    coverage_local_verdict_page, coverage_plan_page, coverage_plan_summary, coverage_scope_page,
+    coverage_tail_page, coverage_tree_page, coverage_tree_summary,
+    expand_tree_drill_children_with_index, page_local_coverage_verdicts, write_dir_verdict_jsonl,
+    AiCandidateBuilder, AiCoveragePlan, AiTreePlan, AnalysisOptions, Capability,
+    CapabilityAnalysisError, CapabilityAnalysisPhase, CapabilityJobStore, CapabilityRegistry,
+    CleanupCandidateAnalyzer, CoverageFunnelContext, CoverageFunnelContextMap, DirectoryRole,
     DuplicateFileAnalyzer, LargeFileAnalyzer, NoopProgressSink, OsKnowledgeBase,
-    SimilarPhotoAnalyzer,
+    SimilarPhotoAnalyzer, UnclassifiedCoverageCache, UnclassifiedSubtreeIndex,
     DEFAULT_CANDIDATE_CAP,
 };
 
@@ -423,8 +420,6 @@ impl VolwardEngine {
             Err(e) => serde_json::json!({ "error": e }).to_string(),
         }
     }
-
-
 }
 
 /// Encodes `snapshot` as protobuf and writes it atomically to `path`.
@@ -477,11 +472,12 @@ fn resolve_index_ai_aggregate_paths(
     let classified = index.classified_paths();
     let files = index.unclassified_files();
     let indexed_prefixes = volward_core::indexed_local_exclusion_prefixes(index);
-    let set = AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb, &indexed_prefixes)
-        .annotate_ai_cleanup_patterns()
-        .aggregate_by_dir(20)
-        .cap_top_n(DEFAULT_CANDIDATE_CAP)
-        .build();
+    let set =
+        AiCandidateBuilder::from_unclassified_files(&files, &classified, &kb, &indexed_prefixes)
+            .annotate_ai_cleanup_patterns()
+            .aggregate_by_dir(20)
+            .cap_top_n(DEFAULT_CANDIDATE_CAP)
+            .build();
     let valid = set.candidates.iter().any(|candidate| {
         candidate.path == parent && candidate.delete_target.as_deref() == Some(target)
     });
@@ -720,7 +716,11 @@ mod tests {
                 started.send(()).unwrap();
             }
             self.release.lock().unwrap().recv().unwrap();
-            Ok(capability_result_for(index, normalized_root, self.capability))
+            Ok(capability_result_for(
+                index,
+                normalized_root,
+                self.capability,
+            ))
         }
     }
 
@@ -820,11 +820,8 @@ mod tests {
     }
 
     fn start_capability_job(engine: &VolwardEngine) -> String {
-        let raw = engine.start_capability_analysis_json(
-            "test-snap",
-            "large_files",
-            &options_json(),
-        );
+        let raw =
+            engine.start_capability_analysis_json("test-snap", "large_files", &options_json());
         let value: serde_json::Value = serde_json::from_str(&raw).expect("start response JSON");
         value["job_id"].as_str().expect("job_id").to_string()
     }
@@ -833,8 +830,7 @@ mod tests {
         for _ in 0..100 {
             let raw = engine.get_capability_job_status_json(job_id);
             let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
-            if status["progress"]["phase"] == "completed"
-                || status["progress"]["cancelled"] == true
+            if status["progress"]["phase"] == "completed" || status["progress"]["cancelled"] == true
             {
                 return status;
             }
@@ -848,17 +844,21 @@ mod tests {
         let engine = VolwardEngine::new();
         engine.set_last_snapshot(minimal_snapshot());
 
-        let mismatch: serde_json::Value = serde_json::from_str(
-            &engine.analyze_capability_json("stale", "large_files", &options_json()),
-        )
+        let mismatch: serde_json::Value = serde_json::from_str(&engine.analyze_capability_json(
+            "stale",
+            "large_files",
+            &options_json(),
+        ))
         .unwrap();
         assert_eq!(mismatch["error"]["code"], "snapshot_mismatch");
 
         // All analyzer-backed capabilities are registered by `new()`; an
         // unregistered capability must still return a structured error.
-        let unsupported: serde_json::Value = serde_json::from_str(
-            &engine.analyze_capability_json("test-snap", "space_analysis", &options_json()),
-        )
+        let unsupported: serde_json::Value = serde_json::from_str(&engine.analyze_capability_json(
+            "test-snap",
+            "space_analysis",
+            &options_json(),
+        ))
         .unwrap();
         assert_eq!(unsupported["error"]["code"], "unsupported_capability");
     }
@@ -869,10 +869,8 @@ mod tests {
         let job_id = start_capability_job(&engine);
         started.recv().unwrap();
 
-        let active: serde_json::Value = serde_json::from_str(
-            &engine.get_capability_job_status_json(&job_id),
-        )
-        .unwrap();
+        let active: serde_json::Value =
+            serde_json::from_str(&engine.get_capability_job_status_json(&job_id)).unwrap();
         assert_eq!(active["progress"]["phase"], "inspecting");
         assert!(engine.cancel_capability_analysis(&job_id));
         release.send(()).unwrap();
@@ -1069,10 +1067,8 @@ mod tests {
 
         let snapshot = minimal_snapshot();
         let expected_id = snapshot.snapshot_id.clone();
-        let path = std::env::temp_dir().join(format!(
-            "volward-pb-snapshot-{}.pb",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("volward-pb-snapshot-{}.pb", std::process::id()));
         let bytes = proto::StorageSnapshot::from(&snapshot).encode_to_vec();
         std::fs::write(&path, bytes).expect("write pb snapshot");
 
@@ -1094,10 +1090,7 @@ mod tests {
 
         let index = SnapshotIndex::from(&minimal_snapshot());
         let expected_id = index.snapshot_id.clone();
-        let path = std::env::temp_dir().join(format!(
-            "volward-pb-index-{}.pb",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("volward-pb-index-{}.pb", std::process::id()));
 
         let pb = snapshot_index_to_proto(&index);
         std::fs::write(&path, pb.encode_to_vec()).expect("write pb index");
@@ -1214,10 +1207,8 @@ mod tests {
 
         let index = SnapshotIndex::from(&minimal_snapshot());
         let expected_id = index.snapshot_id.clone();
-        let path = std::env::temp_dir().join(format!(
-            "volward-async-pb-index-{}.pb",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("volward-async-pb-index-{}.pb", std::process::id()));
 
         let pb = snapshot_index_to_proto(&index);
         std::fs::write(&path, pb.encode_to_vec()).expect("write pb index");
@@ -1358,12 +1349,10 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert!(engine.get_last_index_load_error().is_none());
-        assert!(
-            engine
-                .get_index_summary_json()
-                .expect("superseding load should publish")
-                .contains(&snapshot.snapshot_id)
-        );
+        assert!(engine
+            .get_index_summary_json()
+            .expect("superseding load should publish")
+            .contains(&snapshot.snapshot_id));
 
         let _ = std::fs::remove_file(&slow_path);
         let _ = std::fs::remove_file(&fast_path);
@@ -1508,10 +1497,8 @@ mod tests {
         engine.set_last_index(index);
 
         engine.build_ai_coverage_plan_json("coverage-snap2");
-        let json = engine.resolve_ai_coverage_group_json(
-            "coverage-snap2",
-            "/Users/x/Library/Caches/cursor",
-        );
+        let json = engine
+            .resolve_ai_coverage_group_json("coverage-snap2", "/Users/x/Library/Caches/cursor");
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["members"].as_array().unwrap().len(), 251, "{json}");
     }
@@ -1580,9 +1567,7 @@ mod tests {
 
         let engine = VolwardEngine::new();
         let mut builder = SnapshotIndexBuilder::new("/Users/x");
-        builder.insert_entry(classified(
-            "/Users/x/Library/Caches/myapp/anchor.bin",
-        ));
+        builder.insert_entry(classified("/Users/x/Library/Caches/myapp/anchor.bin"));
         builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
         builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
         builder.record_file_size("/Users/x/loose.dat", 5);
@@ -1632,9 +1617,7 @@ mod tests {
         let engine = VolwardEngine::new();
         let root = "/Users/x";
         let mut builder = SnapshotIndexBuilder::new(root);
-        builder.insert_entry(classified(
-            "/Users/x/Library/Caches/myapp/anchor.bin",
-        ));
+        builder.insert_entry(classified("/Users/x/Library/Caches/myapp/anchor.bin"));
         builder.record_file_size("/Users/x/Library/Caches/myapp/sibling.bin", 100);
         builder.record_file_size("/Users/x/MyProj/Cargo.toml", 10);
         builder.record_file_size("/Users/x/MyProj/src/main.rs", 20);
@@ -1837,6 +1820,10 @@ mod tests {
         );
         let scope_parsed: serde_json::Value = serde_json::from_str(&scope_page).unwrap();
         assert_eq!(scope_parsed["snapshot_id"], "tree-coverage-snap");
+        assert_eq!(
+            scope_parsed["fingerprint"],
+            parsed["scope_fingerprint"],
+        );
         assert_eq!(scope_parsed["rows"].as_array().unwrap().len(), 1);
         assert!(scope_parsed["next_cursor"].as_u64().is_some());
 
@@ -1847,6 +1834,15 @@ mod tests {
             1,
         );
         assert_eq!(mismatch, "error:tree coverage plan mismatch");
+        assert_eq!(
+            engine.next_ai_scope_coverage_page_json(
+                "tree-coverage-snap",
+                AI_COVERAGE_TREE_PLAN_VERSION,
+                99,
+                1,
+            ),
+            "error:scope coverage cursor out of range"
+        );
     }
 
     #[test]
@@ -1924,7 +1920,10 @@ mod tests {
             .map(|line| {
                 let row: serde_json::Value = serde_json::from_str(line).unwrap();
                 assert_eq!(row["verdict"].as_str(), Some("keep"));
-                assert_eq!(row["coverage_source"].as_str(), Some("dir_propagate:/root/storage"));
+                assert_eq!(
+                    row["coverage_source"].as_str(),
+                    Some("dir_propagate:/root/storage")
+                );
                 row["path"].as_str().unwrap().to_string()
             })
             .collect();

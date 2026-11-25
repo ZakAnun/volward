@@ -54,14 +54,33 @@ class CoverageCompletionTruth {
 
 CoverageCompletionTruth coverageCompletionTruth(CoverageJobState? job) {
   final total = job?.totalUnclassified;
-  if (job == null || total == null || total <= 0) {
+  if (job == null || total == null) {
     return const CoverageCompletionTruth(
       phase: CoverageCompletionPhase.indeterminate,
       analyzedFiles: 0,
       totalFiles: null,
     );
   }
+  if (total == 0) {
+    return CoverageCompletionTruth(
+      phase: job.status == CoverageJobStatus.completed
+          ? CoverageCompletionPhase.completed
+          : CoverageCompletionPhase.indeterminate,
+      analyzedFiles: 0,
+      totalFiles: 0,
+    );
+  }
   final analyzed = job.analyzedFiles.clamp(0, total).toInt();
+  final reconciledPending = job.reconciliationPending;
+  if (job.status == CoverageJobStatus.completed && reconciledPending != null) {
+    return CoverageCompletionTruth(
+      phase: reconciledPending == 0
+          ? CoverageCompletionPhase.completed
+          : CoverageCompletionPhase.partial,
+      analyzedFiles: reconciledPending == 0 ? total : analyzed,
+      totalFiles: total,
+    );
+  }
   final phase = switch (job.status) {
     CoverageJobStatus.running => CoverageCompletionPhase.running,
     CoverageJobStatus.completed when analyzed == total =>

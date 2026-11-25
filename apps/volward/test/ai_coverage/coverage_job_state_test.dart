@@ -115,6 +115,20 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test('corrupt job reports a safe load error instead of absence', () async {
+    final dir = await Directory.systemTemp.createTemp('coverage-job-corrupt');
+    final store = CoverageJobStateStore(dir);
+    final file = File('${dir.path}/ai_coverage_job_s-corrupt.json');
+    await file.writeAsString('{"snapshot_id":');
+
+    final loaded = await store.loadResult('s-corrupt');
+
+    expect(loaded.state, isNull);
+    expect(loaded.error, contains('corrupt'));
+    expect(await file.exists(), isTrue);
+    await dir.delete(recursive: true);
+  });
+
   test('v3 tree plan fields round trip through json', () {
     const state = CoverageJobState(
       snapshotId: 's-v3',
@@ -137,6 +151,10 @@ void main() {
       treeNodesCompleted: 4,
       estimatedTreeCredits: 20,
       estimatedTailCredits: 8,
+      scopeFingerprint: '/Users/x|10|100|20|5',
+      reconciliationPending: 3,
+      reconciliationFailed: 1,
+      reconciliationCompleted: false,
     );
     final restored = CoverageJobState.fromJson(state.toJson());
     expect(restored.treeQueueCursor, 7);
@@ -148,6 +166,10 @@ void main() {
     expect(restored.estimatedTreeCredits, 20);
     expect(restored.estimatedTailCredits, 8);
     expect(restored.clientLogicVersion, 3);
+    expect(restored.scopeFingerprint, '/Users/x|10|100|20|5');
+    expect(restored.reconciliationPending, 3);
+    expect(restored.reconciliationFailed, 1);
+    expect(restored.reconciliationCompleted, isFalse);
   });
 
   test('v2 job json without tree plan fields uses defaults', () {

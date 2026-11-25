@@ -98,11 +98,16 @@ void main() {
         ),
       ]);
 
-      final reconciliation = await CoverageReconciler(
-        engine: engine,
-        directory: directory,
-        bucketCount: 2,
-      ).reconcile(snapshotId: snapshotId, planVersion: 3);
+      final reconciliation =
+          await CoverageReconciler(
+            engine: engine,
+            directory: directory,
+            bucketCount: 2,
+          ).reconcile(
+            snapshotId: snapshotId,
+            planVersion: 3,
+            expectedFingerprint: 'scope-fingerprint',
+          );
 
       expect(reconciliation.counts.total, 5);
       expect(reconciliation.counts.resolved, 3);
@@ -127,12 +132,17 @@ void main() {
     );
     addTearDown(() => directory.delete(recursive: true));
     const snapshotId = 'paged-scope';
-    final reconciliation = await CoverageReconciler(
-      engine: _GeneratedScopeEngine(total: 20000),
-      directory: directory,
-      bucketCount: 16,
-      scopePageSize: 1000,
-    ).reconcile(snapshotId: snapshotId, planVersion: 3);
+    final reconciliation =
+        await CoverageReconciler(
+          engine: _GeneratedScopeEngine(total: 20000),
+          directory: directory,
+          bucketCount: 16,
+          scopePageSize: 1000,
+        ).reconcile(
+          snapshotId: snapshotId,
+          planVersion: 3,
+          expectedFingerprint: 'generated-scope',
+        );
 
     expect(reconciliation.counts.total, 20000);
     expect(reconciliation.counts.resolved, 0);
@@ -144,6 +154,61 @@ void main() {
         .toList();
     expect(pendingSample, hasLength(2));
     expect(pendingSample.toSet(), hasLength(2));
+  });
+
+  test('reconciliation rejects a scope fingerprint mismatch', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'volward-reconcile-mismatch-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final reconciler = CoverageReconciler(
+      engine: _GeneratedScopeEngine(total: 1),
+      directory: directory,
+      bucketCount: 1,
+    );
+
+    await expectLater(
+      reconciler.reconcile(
+        snapshotId: 'paged-scope',
+        planVersion: 3,
+        expectedFingerprint: 'different-plan',
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('reconciliation publishes one current build and reopens it', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'volward-reconcile-publish-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final reconciler = CoverageReconciler(
+      engine: _GeneratedScopeEngine(total: 2),
+      directory: directory,
+      bucketCount: 2,
+    );
+    await reconciler.reconcile(
+      snapshotId: 'paged-scope',
+      planVersion: 3,
+      expectedFingerprint: 'generated-scope',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    await reconciler.reconcile(
+      snapshotId: 'paged-scope',
+      planVersion: 3,
+      expectedFingerprint: 'generated-scope',
+    );
+
+    final root = Directory('${directory.path}/reconciliation_paged-scope');
+    final builds = await root
+        .list()
+        .where((entry) => entry is Directory)
+        .cast<Directory>()
+        .toList();
+    expect(builds, hasLength(1));
+    final current = await reconciler.loadCurrent('paged-scope');
+    expect(current, isNotNull);
+    expect(current!.counts.total, 2);
   });
 }
 

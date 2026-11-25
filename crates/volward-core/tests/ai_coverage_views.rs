@@ -75,6 +75,8 @@ fn tree_summary_and_pages_are_pure_core_views() {
         },
         estimated_tree_credits: 0,
         estimated_tail_credits: 1,
+        scope_fingerprint: index.content_fingerprint(),
+        scope_file_ids: index.sorted_unclassified_file_ids(),
     };
 
     let summary = coverage_tree_summary(&index, &plan);
@@ -109,14 +111,23 @@ fn coverage_scope_pages_every_unclassified_file_once() {
             .enumerate()
             .map(|(index, path)| ((*path).to_string(), index as u64 + 1)),
     );
-    let ctx = CoverageFunnelContext::with_exclusion_prefixes(&[
-        "/Users/x/Caches".to_string(),
-    ]);
+    let ctx = CoverageFunnelContext::with_exclusion_prefixes(&["/Users/x/Caches".to_string()]);
+    let cache = volward_core::build_unclassified_coverage_cache(&index, &empty_kb(), &[], &[]);
+    let plan =
+        volward_core::build_ai_tree_plan_from_coverage_cache(&index, &empty_kb(), &[], &[], &cache);
 
     let mut cursor = 0u64;
     let mut seen = Vec::new();
     loop {
-        let page = coverage_scope_page(&index, &empty_kb(), &ctx, &Default::default(), cursor, 2);
+        let page = coverage_scope_page(
+            &index,
+            &empty_kb(),
+            &ctx,
+            &Default::default(),
+            &plan,
+            cursor,
+            2,
+        );
         assert_eq!(page.snapshot_id, "scope-snap");
         assert_eq!(page.plan_version, 3);
         assert_eq!(page.fingerprint, index.content_fingerprint());
@@ -145,6 +156,7 @@ fn coverage_scope_pages_every_unclassified_file_once() {
         &empty_kb(),
         &ctx,
         &Default::default(),
+        &plan,
         cursor,
         2,
     );
@@ -278,6 +290,8 @@ fn summary_plan_and_tree_views_serialize_exact_json_shape() {
         },
         estimated_tree_credits: 5,
         estimated_tail_credits: 6,
+        scope_fingerprint: "wire-tree|scope".to_string(),
+        scope_file_ids: vec![],
     };
     assert_eq!(
         serde_json::to_value(coverage_tree_summary(&index, &tree_plan)).unwrap(),
@@ -295,7 +309,8 @@ fn summary_plan_and_tree_views_serialize_exact_json_shape() {
             "tail_files": 3,
             "tree_pending_files": 4,
             "estimated_tree_credits": 5,
-            "estimated_tail_credits": 6
+            "estimated_tail_credits": 6,
+            "scope_fingerprint": "wire-tree|scope"
         })
     );
     assert_eq!(

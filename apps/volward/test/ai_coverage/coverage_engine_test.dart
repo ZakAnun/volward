@@ -10,6 +10,7 @@ void main() {
     const raw = '''
       {"snapshot_id":"tree-snap","plan_version":3,"root_path":"/root",
        "root_size_bytes":1000,"scanned_at_ms":42,
+       "scope_fingerprint":"/root|42|9|5|2",
        "seed_node_count":2,"tail_file_count":5,
        "local_safe_files":0,"local_keep_files":10,"tail_files":5,"tree_pending_files":3,
        "estimated_tree_credits":1,"estimated_tail_credits":2}
@@ -22,6 +23,7 @@ void main() {
     expect(summary.tailFileCount, 5);
     expect(summary.treePendingFiles, 3);
     expect(summary.estimatedTailCredits, 2);
+    expect(summary.scopeFingerprint, '/root|42|9|5|2');
     expect(summary.fingerprint?.rootSizeBytes, 1000);
   });
 

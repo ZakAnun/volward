@@ -28,6 +28,9 @@ pub mod string_table;
 pub mod unclassified_coverage_cache;
 pub mod unclassified_coverage_cache_persist;
 
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub use ai_analysis::{compute_result_cache_key, AiAnalysisResult, AiTokenUsage, AiVerdictEntry};
 pub use ai_candidates::{
     ai_aggregate_delete_target, ai_aggregate_path_from_delete_target,

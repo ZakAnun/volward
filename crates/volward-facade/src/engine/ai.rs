@@ -27,7 +27,9 @@ impl VolwardEngine {
                 snapshot.snapshot_id
             ));
         }
-        Ok(Arc::new(SnapshotIndex::from_snapshot_with_version(&snapshot, 1)))
+        Ok(Arc::new(SnapshotIndex::from_snapshot_with_version(
+            &snapshot, 1,
+        )))
     }
 
     /// Build AI candidate JSON for the given snapshot.
@@ -155,9 +157,7 @@ impl VolwardEngine {
             #[cfg(debug_assertions)]
             let build_started = std::time::Instant::now();
             #[cfg(debug_assertions)]
-            eprintln!(
-                "Volward AI: native candidates build thread started snapshot={snapshot_id}"
-            );
+            eprintln!("Volward AI: native candidates build thread started snapshot={snapshot_id}");
 
             let json = Self::build_ai_candidates_json_with(
                 &engine_index,
@@ -185,19 +185,18 @@ impl VolwardEngine {
                 } else {
                     let path = std::env::temp_dir().join(format!(
                         "volward-ai-candidates-{}-{}.pb",
-                        snapshot_id_for_path,
-                        generation
+                        snapshot_id_for_path, generation
                     ));
-                    let bytes = match crate::pb_convert::encode_ai_candidates_payload_from_json(&json)
-                    {
-                        Ok(encoded) => encoded,
-                        Err(err) => {
-                            if let Ok(mut g) = result_slot.lock() {
-                                *g = Some(err);
+                    let bytes =
+                        match crate::pb_convert::encode_ai_candidates_payload_from_json(&json) {
+                            Ok(encoded) => encoded,
+                            Err(err) => {
+                                if let Ok(mut g) = result_slot.lock() {
+                                    *g = Some(err);
+                                }
+                                return;
                             }
-                            return;
-                        }
-                    };
+                        };
                     match std::fs::write(&path, bytes) {
                         Ok(()) => {
                             if let Ok(mut spill) = spill_slot.lock() {
@@ -264,11 +263,7 @@ impl VolwardEngine {
     }
 
     /// Build coverage plan JSON on a worker thread (tree or flat plan).
-    pub fn start_build_ai_coverage_plan_async(
-        &self,
-        snapshot_id: String,
-        tree: bool,
-    ) -> String {
+    pub fn start_build_ai_coverage_plan_async(&self, snapshot_id: String, tree: bool) -> String {
         if tree && !self.is_ai_coverage_plan_building.load(Ordering::Relaxed) {
             if let Ok(guard) = self.ai_tree_coverage_plan.lock() {
                 if let Some(plan) = guard.as_ref() {
@@ -601,6 +596,9 @@ impl VolwardEngine {
         if plan.snapshot_id != snapshot_id || plan.plan_version != plan_version {
             return "error:tree coverage plan mismatch".to_string();
         }
+        if cursor > plan.scope_file_ids.len() as u64 {
+            return "error:scope coverage cursor out of range".to_string();
+        }
         let page = coverage_tree_page(plan, cursor, page_size);
         serde_json::to_string(&page)
             .unwrap_or_else(|error| format!("error:serialize tree page: {error}"))
@@ -647,13 +645,17 @@ impl VolwardEngine {
         if plan.snapshot_id != snapshot_id || plan.plan_version != plan_version {
             return "error:tree coverage plan mismatch".to_string();
         }
-        drop(guard);
-
+        if cursor > plan.scope_file_ids.len() as u64 {
+            return "error:scope coverage cursor out of range".to_string();
+        }
         let kb = OsKnowledgeBase::for_current_platform();
         let index = match self.index_for_ai(snapshot_id) {
             Ok(index) => index,
             Err(error) => return error,
         };
+        if index.content_fingerprint() != plan.scope_fingerprint {
+            return "error:scope coverage index changed".to_string();
+        }
         let protected = self.platform.protected_prefixes();
         let (funnel_map, _, base_ctx) =
             self.local_coverage_funnel_cache_for(&index, &kb, protected);
@@ -662,6 +664,7 @@ impl VolwardEngine {
             &kb,
             base_ctx.as_ref(),
             funnel_map.as_ref(),
+            plan,
             cursor,
             page_size,
         );
@@ -743,19 +746,13 @@ impl VolwardEngine {
             Err(e) => return format!("error:open verdict file: {e}"),
         };
         let mut writer = std::io::BufWriter::with_capacity(1 << 20, file);
-        let count = match write_dir_verdict_jsonl(
-            &index,
-            dir_path,
-            verdict,
-            confidence,
-            role,
-            &mut writer,
-        )
-        .and_then(|count| writer.flush().map(|()| count))
-        {
-            Ok(count) => count,
-            Err(e) => return format!("error:write verdict file: {e}"),
-        };
+        let count =
+            match write_dir_verdict_jsonl(&index, dir_path, verdict, confidence, role, &mut writer)
+                .and_then(|count| writer.flush().map(|()| count))
+            {
+                Ok(count) => count,
+                Err(e) => return format!("error:write verdict file: {e}"),
+            };
         serde_json::json!({ "count": count }).to_string()
     }
 
@@ -786,9 +783,7 @@ impl VolwardEngine {
         let pb = crate::pb_convert::encode_ai_analysis_result_pb(&result);
         let mut ok = true;
         if let Some(cache_key) = result.cache_key.as_deref() {
-            if !cache_key.is_empty()
-                && AiAnalysisResult::save_pb_for_key(cache_key, &pb).is_err()
-            {
+            if !cache_key.is_empty() && AiAnalysisResult::save_pb_for_key(cache_key, &pb).is_err() {
                 ok = false;
             }
         }

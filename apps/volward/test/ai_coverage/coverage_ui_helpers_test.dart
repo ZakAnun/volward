@@ -300,6 +300,20 @@ void main() {
     expect(truth.remainingFiles, 0);
   });
 
+  test('completed zero-file job reports complete rather than unknown', () {
+    final truth = coverageCompletionTruth(
+      job(
+        status: CoverageJobStatus.completed,
+        totalUnclassified: 0,
+        analyzedFiles: 0,
+      ),
+    );
+
+    expect(truth.phase, CoverageCompletionPhase.completed);
+    expect(truth.totalFiles, 0);
+    expect(truth.remainingFiles, 0);
+  });
+
   test('classification progress presentation exposes bounded AI progress', () {
     const provenance = ClassificationProvenanceSummary(
       bootstrapLocalCount: 3,

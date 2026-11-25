@@ -1025,6 +1025,7 @@ class _TreeBridge implements VolwardNativeBridge {
       'plan_version': 3,
       'seed_node_count': empty ? 0 : 81,
       'total_unclassified': empty ? 0 : 81,
+      'scope_fingerprint': '$snapshotId|scope',
     });
   }
 

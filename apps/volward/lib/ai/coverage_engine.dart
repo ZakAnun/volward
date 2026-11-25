@@ -156,7 +156,30 @@ class FakeCoverageEngine implements CoverageEngine {
   @override
   Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async {
     onBuildTreePlan?.call();
-    return treeSummary ?? summary;
+    final base = treeSummary ?? summary;
+    return CoveragePlanSummary(
+      snapshotId: base.snapshotId,
+      planVersion: base.planVersion,
+      rootPath: base.rootPath,
+      totalUnclassified: base.totalUnclassified,
+      preClassifiedCount: base.preClassifiedCount,
+      groupRows: base.groupRows,
+      fileRows: base.fileRows,
+      estimatedPages: base.estimatedPages,
+      fingerprint: base.fingerprint,
+      seedNodeCount: base.seedNodeCount,
+      tailFileCount: base.tailFileCount,
+      localSafeFiles: base.localSafeFiles,
+      localKeepFiles: base.localKeepFiles,
+      tailFiles: base.tailFiles,
+      treePendingFiles: base.treePendingFiles,
+      estimatedTreeCredits: base.estimatedTreeCredits,
+      estimatedTailCredits: base.estimatedTailCredits,
+      scopeFingerprint:
+          base.scopeFingerprint ??
+          scopePagesByCursor[0]?.fingerprint ??
+          '$snapshotId|fake-scope',
+    );
   }
 
   @override
@@ -204,7 +227,7 @@ class FakeCoverageEngine implements CoverageEngine {
       CoverageScopePage(
         snapshotId: snapshotId,
         planVersion: planVersion,
-        fingerprint: '',
+        fingerprint: '$snapshotId|fake-scope',
         nextCursor: null,
         rows: const [],
       );

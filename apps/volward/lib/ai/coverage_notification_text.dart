@@ -12,10 +12,12 @@ AppLocalizations coverageNotifyLocalizations() {
   AppLocalizations l10n,
   CoverageJobState state,
 ) {
-  final remaining = (state.totalUnclassified - state.analyzedFiles).clamp(
-    0,
-    state.totalUnclassified,
-  );
+  final remaining =
+      state.reconciliationPending ??
+      (state.totalUnclassified - state.analyzedFiles).clamp(
+        0,
+        state.totalUnclassified,
+      );
   return (
     title: l10n.aiCoverageNotifyTitle,
     body: remaining == 0
