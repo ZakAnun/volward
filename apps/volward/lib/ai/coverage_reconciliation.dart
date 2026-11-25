@@ -392,7 +392,11 @@ class CoverageReconciler {
       await pointer.rename(target.path);
     }
     await for (final entity in root.list(followLinks: false)) {
-      if (entity is Directory && entity.path != build.path) {
+      if (entity is Directory) {
+        final entityName = entity.uri.pathSegments
+            .where((segment) => segment.isNotEmpty)
+            .last;
+        if (entityName == buildName) continue;
         try {
           await entity.delete(recursive: true);
         } catch (_) {
