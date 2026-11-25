@@ -95,6 +95,7 @@ class _VolwardAppState extends State<VolwardApp> {
               scrollBehavior: const _VolwardScrollBehavior(),
               home: DirectoryDetailsPage(
                 session: _session,
+                coverageCoordinator: AiCoverageCoordinator.instance,
                 themeSettings: _themeSettings,
                 updater: _updater,
               ),

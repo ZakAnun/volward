@@ -40,6 +40,10 @@ class AiAnalysisConclusionOverview {
     required this.truncated,
     required this.fullCoverage,
     required this.directories,
+    this.localSafeCount = 0,
+    this.aiSafeCount = 0,
+    this.localKeepCount = 0,
+    this.aiKeepCount = 0,
   });
 
   final String targetLabel;
@@ -58,6 +62,12 @@ class AiAnalysisConclusionOverview {
   final bool truncated;
   final bool fullCoverage;
   final List<AiDirectoryConclusion> directories;
+
+  /// Source-aware totals used to keep local rules distinct from AI verdicts.
+  final int localSafeCount;
+  final int aiSafeCount;
+  final int localKeepCount;
+  final int aiKeepCount;
 }
 
 class AiResultOverviewBuildInput {
@@ -118,6 +128,10 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverviewFromGroups(
   var keepCount = 0;
   var analyzedTotalBytes = 0;
   var analyzedItemCount = 0;
+  var localSafeCount = 0;
+  var aiSafeCount = 0;
+  var localKeepCount = 0;
+  var aiKeepCount = 0;
   final directoryRows = <AiDirectoryConclusion>[];
 
   for (final group in groups) {
@@ -131,6 +145,10 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverviewFromGroups(
     }
     reviewCount += dirReview;
     keepCount += group.keepCount;
+    localSafeCount += group.localSafeCount;
+    aiSafeCount += group.aiSafeCount;
+    localKeepCount += group.localKeepCount;
+    aiKeepCount += group.aiKeepCount;
     analyzedTotalBytes += group.totalBytes;
     analyzedItemCount += group.safeCount + group.reviewCount + group.keepCount;
 
@@ -213,6 +231,10 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverviewFromGroups(
     truncated: input.truncated,
     fullCoverage: input.fullCoverage,
     directories: cappedDirs,
+    localSafeCount: localSafeCount,
+    aiSafeCount: aiSafeCount,
+    localKeepCount: localKeepCount,
+    aiKeepCount: aiKeepCount,
   );
 }
 
@@ -226,22 +248,36 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverview(
   var keepCount = 0;
   var analyzedTotalBytes = 0;
   var analyzedItemCount = 0;
+  var localSafeCount = 0;
+  var aiSafeCount = 0;
+  var localKeepCount = 0;
+  var aiKeepCount = 0;
   final pendingReview = input.isPendingReview ?? (_) => true;
 
   for (final verdict in input.verdicts) {
-    if (verdict.verdict == 'unanalyzed') continue;
+    if (!_isTerminalClassification(verdict)) continue;
     analyzedItemCount++;
     final bytes = input.sizeByPath[verdict.path] ?? 0;
     analyzedTotalBytes += bytes;
     switch (verdict.verdict) {
       case 'safe_to_remove':
         safeBytes += bytes;
+        if (isLocalRuleVerdict(verdict)) {
+          localSafeCount++;
+        } else {
+          aiSafeCount++;
+        }
         break;
       case 'review_needed':
         if (pendingReview(verdict)) reviewCount++;
         break;
       case 'keep':
         keepCount++;
+        if (isLocalRuleVerdict(verdict)) {
+          localKeepCount++;
+        } else {
+          aiKeepCount++;
+        }
         break;
     }
   }
@@ -257,7 +293,7 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverview(
 
   final directoryVerdicts = <String, List<AiVerdict>>{};
   for (final verdict in input.verdicts) {
-    if (verdict.verdict == 'unanalyzed') continue;
+    if (!_isTerminalClassification(verdict)) continue;
     final bucket = normalizedRoot.isEmpty
         ? _fallbackBucket(verdict.path)
         : (firstLevelDirectoryUnderRoot(verdict.path, normalizedRoot) ??
@@ -327,8 +363,17 @@ AiAnalysisConclusionOverview buildAiAnalysisConclusionOverview(
     truncated: input.truncated,
     fullCoverage: input.fullCoverage,
     directories: capped,
+    localSafeCount: localSafeCount,
+    aiSafeCount: aiSafeCount,
+    localKeepCount: localKeepCount,
+    aiKeepCount: aiKeepCount,
   );
 }
+
+bool _isTerminalClassification(AiVerdict verdict) => switch (verdict.verdict) {
+  'safe_to_remove' || 'review_needed' || 'keep' => true,
+  _ => false,
+};
 
 /// Picks representative [reason] strings from analysis verdicts (no extra AI).
 List<String> extractReasonHighlights(

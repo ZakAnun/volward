@@ -324,6 +324,7 @@ mod tests {
 
     #[test]
     fn invalidate_stale_sidecar_removes_mismatched_meta() {
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join("volward-sidecar-stale");
         let _ = std::fs::remove_dir_all(&dir);
         std::env::set_var("VOLWARD_CACHE_DIR", dir.to_string_lossy().as_ref());
@@ -345,6 +346,7 @@ mod tests {
 
     #[test]
     fn try_load_coverage_cache_roundtrips_via_disk() {
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join("volward-sidecar-load");
         let _ = std::fs::remove_dir_all(&dir);
         std::env::set_var("VOLWARD_CACHE_DIR", dir.to_string_lossy().as_ref());

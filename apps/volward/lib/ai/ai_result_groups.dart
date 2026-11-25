@@ -1,3 +1,4 @@
+import 'dart:collection';
 import '../scan_tree.dart';
 import 'ai_provider.dart';
 
@@ -9,6 +10,10 @@ class AiResultGroup {
     required this.safeCount,
     required this.reviewCount,
     required this.keepCount,
+    required this.localSafeCount,
+    required this.aiSafeCount,
+    required this.localKeepCount,
+    required this.aiKeepCount,
   });
 
   final String path;
@@ -17,6 +22,10 @@ class AiResultGroup {
   final int safeCount;
   final int reviewCount;
   final int keepCount;
+  final int localSafeCount;
+  final int aiSafeCount;
+  final int localKeepCount;
+  final int aiKeepCount;
 }
 
 class _GroupBuilder {
@@ -28,6 +37,10 @@ class _GroupBuilder {
   int safeCount = 0;
   int reviewCount = 0;
   int keepCount = 0;
+  int localSafeCount = 0;
+  int aiSafeCount = 0;
+  int localKeepCount = 0;
+  int aiKeepCount = 0;
   int unanalyzedCount = 0;
 
   void add(AiVerdict item, int bytes) {
@@ -36,6 +49,11 @@ class _GroupBuilder {
     switch (item.verdict) {
       case 'safe_to_remove':
         safeCount++;
+        if (isLocalRuleVerdict(item)) {
+          localSafeCount++;
+        } else {
+          aiSafeCount++;
+        }
         break;
       case 'review_needed':
         reviewCount++;
@@ -45,6 +63,13 @@ class _GroupBuilder {
         break;
       default:
         keepCount++;
+        if (item.verdict == 'keep') {
+          if (isLocalRuleVerdict(item)) {
+            localKeepCount++;
+          } else {
+            aiKeepCount++;
+          }
+        }
         break;
     }
   }
@@ -57,6 +82,10 @@ class _GroupBuilder {
       safeCount: safeCount,
       reviewCount: reviewCount,
       keepCount: keepCount,
+      localSafeCount: localSafeCount,
+      aiSafeCount: aiSafeCount,
+      localKeepCount: localKeepCount,
+      aiKeepCount: aiKeepCount,
     );
   }
 }
@@ -80,6 +109,10 @@ extension AiResultGroupDisplayCap on AiResultGroup {
       safeCount: safeCount,
       reviewCount: reviewCount,
       keepCount: keepCount,
+      localSafeCount: localSafeCount,
+      aiSafeCount: aiSafeCount,
+      localKeepCount: localKeepCount,
+      aiKeepCount: aiKeepCount,
     );
   }
 }
@@ -112,6 +145,31 @@ List<AiResultGroup> groupAiResults(
   final groups = builders.values.map((builder) => builder.build()).toList()
     ..sort(_compareAiResultGroups);
   return groups;
+}
+
+List<AiResultGroup> mergeUnanalyzedGroups(
+  List<AiResultGroup> classified,
+  List<AiResultGroup> pending,
+) {
+  final groups = {for (final group in classified) group.path: group};
+  for (final group in pending) {
+    final base = groups[group.path];
+    groups[group.path] = base == null
+        ? group
+        : AiResultGroup._(
+            path: base.path,
+            items: _JoinedVerdicts(base.items, group.items),
+            totalBytes: base.totalBytes + group.totalBytes,
+            safeCount: base.safeCount,
+            reviewCount: base.reviewCount,
+            keepCount: base.keepCount,
+            localSafeCount: base.localSafeCount,
+            aiSafeCount: base.aiSafeCount,
+            localKeepCount: base.localKeepCount,
+            aiKeepCount: base.aiKeepCount,
+          );
+  }
+  return groups.values.toList()..sort(_compareAiResultGroups);
 }
 
 /// Scan root's immediate child directory for [path], or [rootPath] itself when
@@ -168,12 +226,19 @@ List<AiResultGroup> ensureFirstLevelDirectoryGroups(
         safeCount: 0,
         reviewCount: 0,
         keepCount: 0,
+        localSafeCount: 0,
+        aiSafeCount: 0,
+        localKeepCount: 0,
+        aiKeepCount: 0,
       ),
     );
   }
   final out = byPath.values.toList()..sort(_compareAiResultGroups);
   return out;
 }
+
+bool isLocalRuleVerdict(AiVerdict verdict) =>
+    verdict.classificationSource?.startsWith('local:') ?? false;
 
 /// Caps each group's [AiResultGroup.items] for UI while preserving counts.
 List<AiResultGroup> capAiResultGroupsForDisplay(
@@ -231,4 +296,65 @@ String _pathKey(String path) {
 
 bool _isWithinRoot(String path, String root) {
   return isUnderFsRoot(path, root);
+}
+
+class _JoinedVerdicts extends ListBase<AiVerdict> {
+  _JoinedVerdicts(this.classified, this.pending);
+  final List<AiVerdict> classified;
+  final List<AiVerdict> pending;
+
+  @override
+  int get length => classified.length + pending.length;
+  @override
+  set length(int value) => throw UnsupportedError('Immutable result group');
+
+  @override
+  void operator []=(int index, AiVerdict value) =>
+      throw UnsupportedError('Immutable result group');
+
+  @override
+  AiVerdict operator [](int index) => index < classified.length
+      ? classified[index]
+      : pending[index - classified.length];
+}
+
+List<AiVerdict> classifiedVerdictsForGroups(
+  List<AiVerdict> verdicts,
+  List<Map<String, dynamic>> preClassified,
+) {
+  final localSafe = _preClassifiedVerdicts(preClassified, true);
+  final localKeep = _preClassifiedVerdicts(preClassified, false);
+  final aiSafe = verdicts
+      .where((verdict) => verdict.verdict == 'safe_to_remove')
+      .toList();
+  final aiPaths = verdicts.map((verdict) => verdict.path).toSet();
+  return [
+    ...localSafe.where((verdict) => !aiPaths.contains(verdict.path)),
+    ...aiSafe,
+    ...localKeep,
+    ...verdicts.where((verdict) => verdict.verdict == 'review_needed'),
+    ...verdicts.where((verdict) => verdict.verdict == 'keep'),
+  ];
+}
+
+List<AiVerdict> _preClassifiedVerdicts(
+  List<Map<String, dynamic>> preClassified,
+  bool deletable,
+) {
+  final items = <AiVerdict>[];
+  for (final entry in preClassified) {
+    if ((entry['deletable'] == true) != deletable) continue;
+    final path = entry['path'] as String? ?? '';
+    if (path.isEmpty) continue;
+    items.add(
+      AiVerdict(
+        path: path,
+        verdict: deletable ? 'safe_to_remove' : 'keep',
+        confidence: entry['confidence']?.toString() ?? 'high',
+        reason: entry['reason']?.toString() ?? '',
+        classificationSource: 'local:bootstrap',
+      ),
+    );
+  }
+  return items;
 }

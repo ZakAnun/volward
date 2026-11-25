@@ -434,6 +434,7 @@
 		};
 		VWRD0001228B24CF009A79C8 /* Build Rust */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);

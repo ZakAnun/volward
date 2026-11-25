@@ -19,6 +19,11 @@ class AiVerdict {
   final String verdict;
   final String confidence;
   final String reason;
+
+  /// Where this classification was produced. Native local rules use the
+  /// `local:` prefix; coverage API verdicts use `file`, `group:` or `dir:`.
+  /// A null value is a direct provider verdict and is therefore AI-originated.
+  final String? classificationSource;
   final String? cleanupSource;
   final String? cleanupHint;
   final int? retentionDays;
@@ -27,6 +32,7 @@ class AiVerdict {
     required this.verdict,
     required this.confidence,
     required this.reason,
+    this.classificationSource,
     this.cleanupSource,
     this.cleanupHint,
     this.retentionDays,
@@ -36,6 +42,7 @@ class AiVerdict {
     verdict: j['verdict'] as String,
     confidence: j['confidence'] as String,
     reason: j['reason'] as String,
+    classificationSource: _optionalString(j['classification_source']),
     cleanupSource: _optionalString(j['cleanup_source']),
     cleanupHint: _optionalString(j['cleanup_hint']),
     retentionDays: _optionalInt(j['retention_days']),

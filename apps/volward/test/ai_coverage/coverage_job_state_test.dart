@@ -115,6 +115,20 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test('corrupt job reports a safe load error instead of absence', () async {
+    final dir = await Directory.systemTemp.createTemp('coverage-job-corrupt');
+    final store = CoverageJobStateStore(dir);
+    final file = File('${dir.path}/ai_coverage_job_s-corrupt.json');
+    await file.writeAsString('{"snapshot_id":');
+
+    final loaded = await store.loadResult('s-corrupt');
+
+    expect(loaded.state, isNull);
+    expect(loaded.error, contains('corrupt'));
+    expect(await file.exists(), isTrue);
+    await dir.delete(recursive: true);
+  });
+
   test('v3 tree plan fields round trip through json', () {
     const state = CoverageJobState(
       snapshotId: 's-v3',
@@ -137,15 +151,25 @@ void main() {
       treeNodesCompleted: 4,
       estimatedTreeCredits: 20,
       estimatedTailCredits: 8,
+      scopeFingerprint: '/Users/x|10|100|20|5',
+      reconciliationPending: 3,
+      reconciliationFailed: 1,
+      reconciliationCompleted: false,
     );
     final restored = CoverageJobState.fromJson(state.toJson());
     expect(restored.treeQueueCursor, 7);
     expect(restored.tailQueueCursor, 3);
     expect(restored.localResolvedFiles, 12);
+    expect(restored.localRuleFiles, 0);
+    expect(restored.aiResolvedFiles, 0);
     expect(restored.treeNodesCompleted, 4);
     expect(restored.estimatedTreeCredits, 20);
     expect(restored.estimatedTailCredits, 8);
     expect(restored.clientLogicVersion, 3);
+    expect(restored.scopeFingerprint, '/Users/x|10|100|20|5');
+    expect(restored.reconciliationPending, 3);
+    expect(restored.reconciliationFailed, 1);
+    expect(restored.reconciliationCompleted, isFalse);
   });
 
   test('v2 job json without tree plan fields uses defaults', () {
@@ -168,8 +192,35 @@ void main() {
     expect(loaded.treeQueueCursor, 0);
     expect(loaded.tailQueueCursor, 0);
     expect(loaded.localResolvedFiles, 0);
+    expect(loaded.localRuleFiles, 0);
+    expect(loaded.aiResolvedFiles, 0);
     expect(loaded.treeNodesCompleted, 0);
     expect(loaded.estimatedTreeCredits, isNull);
     expect(loaded.estimatedTailCredits, isNull);
+  });
+
+  test('source-specific classification progress round trips', () {
+    const state = CoverageJobState(
+      snapshotId: 's-source-progress',
+      rootPath: '/',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 10,
+      analyzedFiles: 7,
+      preClassifiedCount: 0,
+      status: CoverageJobStatus.running,
+      usedTokens: 0,
+      usedCredits: 1,
+      budgetTokens: 0,
+      budgetCredits: 10,
+      updatedAtMs: 1,
+      localRuleFiles: 2,
+      aiResolvedFiles: 5,
+    );
+
+    final restored = CoverageJobState.fromJson(state.toJson());
+
+    expect(restored.localRuleFiles, 2);
+    expect(restored.aiResolvedFiles, 5);
   });
 }

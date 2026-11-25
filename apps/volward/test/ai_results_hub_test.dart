@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/ai/coverage_ui_helpers.dart';
 import 'package:volward/widgets/ai_results_hub.dart';
 
 void main() {
@@ -43,6 +44,18 @@ void main() {
         coverageRunning: false,
       ),
       ResultsHubMode.awaitingAnalysis,
+    );
+  });
+
+  test('partial coverage with verdicts is not ready', () {
+    expect(
+      resolveResultsHubMode(
+        analyzing: false,
+        hasAnalyzedVerdicts: true,
+        coverageRunning: false,
+        coverageCompletion: CoverageCompletionPhase.partial,
+      ),
+      ResultsHubMode.partial,
     );
   });
 }

@@ -7,10 +7,9 @@ import 'ai/platform_auth_messages.dart';
 import 'ai/platform_auth_store.dart';
 import 'analytics/analytics.dart';
 import 'analytics/analytics_events.dart';
-import 'l10n/l10n.dart';
+import 'features/scan/scan_preferences.dart';
 import 'l10n/generated/app_localizations.dart';
-import 'widgets/ai_purchase_dialog.dart';
-import 'widgets/platform_link_email_section.dart';
+import 'l10n/l10n.dart';
 import 'theme/apple_tokens.dart';
 import 'theme/volward_theme_settings.dart';
 import 'theme/volward_tokens.dart';
@@ -18,7 +17,9 @@ import 'updater/app_updater.dart';
 import 'updater/update_error_message.dart';
 import 'updater/update_models.dart';
 import 'volward_session.dart';
+import 'widgets/ai_purchase_dialog.dart';
 import 'widgets/apple_widgets.dart';
+import 'widgets/platform_link_email_section.dart';
 import 'widgets/top_toast.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -42,6 +43,8 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  ScanPreferences get _scanPreferences => widget.session;
+
   late bool _deletableOnly;
   final _apiKeyController = TextEditingController();
   final _coverageBudgetTokensController = TextEditingController();
@@ -326,7 +329,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ),
       body: ListenableBuilder(
-        listenable: Listenable.merge([widget.themeSettings, widget.session]),
+        listenable: Listenable.merge([widget.themeSettings, _scanPreferences]),
         builder: (context, _) {
           return ListView(
             padding: const EdgeInsets.fromLTRB(
@@ -704,7 +707,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: l10n.settingsDeletableOnlyTitle,
                       subtitle: l10n.settingsDeletableOnlyDescription,
                       value: _deletableOnly,
-                      enabled: !widget.session.scanning,
+                      enabled: !_scanPreferences.scanning,
                       onChanged: (value) {
                         setState(() => _deletableOnly = value);
                         widget.onDeletableOnlyChanged(value);
@@ -713,14 +716,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     const Divider(height: AppleSpacing.lg),
                     _SettingsSwitch(
                       title: l10n.settingsIncrementalScanTitle,
-                      subtitle: widget.session.canUseIncrementalScan
+                      subtitle: _scanPreferences.canUseIncrementalScan
                           ? l10n.settingsIncrementalScanDescription
                           : l10n.settingsIncrementalScanUnsupported,
-                      value: widget.session.incrementalScan,
+                      value: _scanPreferences.incrementalScan,
                       enabled:
-                          !widget.session.scanning &&
-                          widget.session.canUseIncrementalScan,
-                      onChanged: widget.session.setIncrementalScan,
+                          !_scanPreferences.scanning &&
+                          _scanPreferences.canUseIncrementalScan,
+                      onChanged: _scanPreferences.setIncrementalScan,
                     ),
                   ],
                 ),

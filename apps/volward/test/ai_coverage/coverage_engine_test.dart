@@ -10,6 +10,7 @@ void main() {
     const raw = '''
       {"snapshot_id":"tree-snap","plan_version":3,"root_path":"/root",
        "root_size_bytes":1000,"scanned_at_ms":42,
+       "scope_fingerprint":"/root|42|9|5|2",
        "seed_node_count":2,"tail_file_count":5,
        "local_safe_files":0,"local_keep_files":10,"tail_files":5,"tree_pending_files":3,
        "estimated_tree_credits":1,"estimated_tail_credits":2}
@@ -22,6 +23,7 @@ void main() {
     expect(summary.tailFileCount, 5);
     expect(summary.treePendingFiles, 3);
     expect(summary.estimatedTailCredits, 2);
+    expect(summary.scopeFingerprint, '/root|42|9|5|2');
     expect(summary.fingerprint?.rootSizeBytes, 1000);
   });
 
@@ -35,6 +37,21 @@ void main() {
     expect(page.nextCursor, 80);
     expect(page.nodes.single.path, '/root/a');
     expect(page.nodes.single.topExtensions.single.extension, '.dat');
+  });
+
+  test('parseCoverageScopePage decodes snapshot-bound rows', () {
+    const raw = '''
+      {"snapshot_id":"scope-snap","plan_version":3,
+       "fingerprint":"root|1|2|3|4","next_cursor":17,
+       "rows":[{"path":"/root/a","size_bytes":9,
+                "resolution":"local_safe"}]}
+    ''';
+    final page = parseCoverageScopePage(raw);
+    expect(page.snapshotId, 'scope-snap');
+    expect(page.fingerprint, 'root|1|2|3|4');
+    expect(page.nextCursor, 17);
+    expect(page.rows.single.path, '/root/a');
+    expect(page.rows.single.resolution, CoverageScopeResolution.localSafe);
   });
 
   test('FakeCoverageEngine pages rows by cursor', () async {

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volward/features/browse/scan_sort_mode.dart';
+import 'package:volward/features/browse/widgets/scan_filter_bar.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/theme/volward_theme.dart';
-import 'package:volward/widgets/scan_filter_bar.dart';
 
 void main() {
   Widget wrap(Widget child, {Locale locale = const Locale('en')}) {

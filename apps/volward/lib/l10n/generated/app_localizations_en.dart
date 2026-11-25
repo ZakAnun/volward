@@ -1170,6 +1170,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiCoverageNotifyPartial(int remaining, int total) {
+    return 'Analysis paused with $remaining of $total files still pending. Open Volward to continue coverage.';
+  }
+
+  @override
   String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
     return 'Paused at this run\'s credit limit ($used/$budget). Open Volward to raise the limit and continue.';
   }
@@ -1336,13 +1341,144 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aiConclusionsLead =>
-      'These conclusions come from AI classifications in this run. Review folder highlights below, then open the full list to adjust selections.';
+      'These are this run\'s classification conclusions. Review folder highlights below, then open the full list to adjust selections.';
+
+  @override
+  String get aiConclusionsPartialResults =>
+      'AI analysis is still running. These are partial classifications and will continue to update.';
+
+  @override
+  String get aiConclusionsComplete =>
+      'AI analysis is complete. These are the complete classifications for this run.';
+
+  @override
+  String get aiConclusionsAnalysisPaused =>
+      'Classification is paused; shown results remain partial.';
+
+  @override
+  String get aiConclusionsAnalysisFailed =>
+      'Classification stopped after an error; shown results remain partial.';
+
+  @override
+  String get aiConclusionsLocalOnly =>
+      'This run was classified by local rules.';
+
+  @override
+  String get aiClassificationProvenanceTitle => 'Classification sources';
+
+  @override
+  String aiClassificationBootstrapLocal(int count) {
+    return 'Candidate-stage local preclassification: $count items';
+  }
+
+  @override
+  String aiClassificationCoverageLocal(int count) {
+    return 'Coverage local rules: $count items';
+  }
+
+  @override
+  String get aiClassificationAiNotStarted => 'AI analysis has not started yet.';
+
+  @override
+  String aiClassificationAiRunningKnown(int completed, int planned) {
+    return 'AI analysis: $completed / $planned items complete · analyzing';
+  }
+
+  @override
+  String aiClassificationAiRunningUnknown(int completed) {
+    return 'AI analysis: $completed items complete · analyzing';
+  }
+
+  @override
+  String aiClassificationAiCompletedKnown(int completed, int planned) {
+    return 'AI analysis: $completed / $planned items complete · completed';
+  }
+
+  @override
+  String aiClassificationAiCompletedUnknown(int completed) {
+    return 'AI analysis: $completed items complete · completed';
+  }
+
+  @override
+  String get aiClassificationAiPaused =>
+      'AI analysis is paused; shown results are partial.';
+
+  @override
+  String get aiClassificationAiFailed =>
+      'AI analysis failed; shown results are partial.';
+
+  @override
+  String get aiClassificationAiNotRequired =>
+      'No AI request was needed for this run.';
+
+  @override
+  String aiClassificationLocalRulesProgress(int percent) {
+    return 'Local rules $percent%';
+  }
+
+  @override
+  String get aiClassificationLocalRulesPreparing => 'Preparing local rules';
+
+  @override
+  String get aiClassificationAiWaitingForLocal =>
+      'AI analysis waits for local rules to finish.';
+
+  @override
+  String get aiAnalysisStageCandidateTitle => 'Candidate preclassification';
+
+  @override
+  String get aiAnalysisStageDiscoveryTitle => 'Candidate discovery';
+
+  @override
+  String aiAnalysisStageDiscoveryLoading(int count) {
+    return 'Discovering candidates · $count found';
+  }
+
+  @override
+  String aiAnalysisStageRemaining(int count) {
+    return '$count items remain';
+  }
+
+  @override
+  String aiAnalysisStageCandidateDetail(int count) {
+    return '$count items available for optional cleanup';
+  }
+
+  @override
+  String get aiAnalysisStageLocalTitle => 'Local coverage rules';
+
+  @override
+  String get aiAnalysisStageLocalPreparing => 'Preparing local rules';
+
+  @override
+  String aiAnalysisStageLocalProgress(int resolved, int planned) {
+    return '$resolved / $planned items classified locally';
+  }
+
+  @override
+  String get aiAnalysisStageAiTitle => 'AI coverage analysis';
+
+  @override
+  String aiAnalysisStageAiProgress(int resolved, int planned) {
+    return '$resolved / $planned items analyzed by AI';
+  }
+
+  @override
+  String get aiAnalysisPlanDetails => 'View plan details';
 
   @override
   String get aiConclusionNarrativeLoading => 'Summarizing conclusions…';
 
   @override
   String get aiConclusionNarrativeGenerate => 'Generate AI summary';
+
+  @override
+  String get aiConclusionNarrativeDisabled =>
+      'AI summary is disabled. The structured classification results above are complete and ready to use.';
+
+  @override
+  String get aiConclusionNarrativeUnavailable =>
+      'AI summary is not available yet. The structured classification results above are ready to use.';
 
   @override
   String get aiConclusionNarrativePlatformCreditHint => 'Uses 1 extra credit.';
@@ -1383,7 +1519,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsHubStatusAnalyzing => 'Analyzing';
 
   @override
+  String get aiResultsHubStatusPartial => 'Partially complete';
+
+  @override
   String get aiResultsHubStatusReady => 'Ready';
+
+  @override
+  String get aiCoverageContinuationTitle => 'Continue coverage analysis';
+
+  @override
+  String get aiAnalysisStageLocalIncomplete =>
+      'Local rule results are incomplete. Re-run analysis.';
+
+  @override
+  String aiCoverageContinuationScope(String target, int total) {
+    return 'This run: $target · $total items';
+  }
+
+  @override
+  String aiCoverageContinuationCovered(int count) {
+    return 'Covered: $count items';
+  }
+
+  @override
+  String aiCoverageContinuationRemaining(int count) {
+    return 'Remaining: $count items';
+  }
+
+  @override
+  String get aiCoverageContinuationAction => 'Continue coverage analysis';
 
   @override
   String aiResultsHeroLine(String bytes, int review) {
@@ -1414,7 +1578,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsMetricReviewSubtitle => 'Pending';
 
   @override
-  String get aiResultsMetricKeepSubtitle => 'AI kept';
+  String get aiResultsMetricSafeLocalSubtitle => 'Local rule confirmed';
+
+  @override
+  String get aiResultsMetricSafeAiSubtitle => 'AI confirmed';
+
+  @override
+  String get aiResultsMetricSafeCombinedSubtitle => 'Local + AI confirmed';
+
+  @override
+  String get aiResultsMetricKeepLocalSubtitle => 'Local rule kept';
+
+  @override
+  String get aiResultsMetricKeepAiSubtitle => 'AI kept';
+
+  @override
+  String get aiResultsMetricKeepCombinedSubtitle => 'Local + AI kept';
+
+  @override
+  String get aiResultsMetricKeepUnknownSubtitle => 'Confirmed kept';
 
   @override
   String get aiResultsPreviewSafeTitle => 'Safe to remove';

@@ -3,7 +3,7 @@ use axum::http::HeaderMap;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::middleware::{require_device, require_user};
+use crate::auth::{require_device, require_user};
 use crate::error::AppError;
 use crate::AppState;
 

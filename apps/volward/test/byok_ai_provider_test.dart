@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_conclusion_synthesis_body.dart';
-import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_contract_api.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 

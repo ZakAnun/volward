@@ -39,6 +39,8 @@ pub struct AiTreePlan {
     pub funnel_stats: CoverageFunnelStats,
     pub estimated_tree_credits: u64,
     pub estimated_tail_credits: u64,
+    pub scope_fingerprint: String,
+    pub scope_file_ids: Vec<u32>,
 }
 
 impl AiTreePlan {
@@ -56,11 +58,7 @@ impl AiTreePlan {
         (self.seed_nodes[start..end].to_vec(), next)
     }
 
-    pub fn tail_page(
-        &self,
-        cursor: u64,
-        page_size: usize,
-    ) -> (Vec<(String, u64)>, Option<u64>) {
+    pub fn tail_page(&self, cursor: u64, page_size: usize) -> (Vec<(String, u64)>, Option<u64>) {
         if page_size == 0 || self.tail_file_paths.is_empty() {
             return (Vec::new(), None);
         }
@@ -72,6 +70,163 @@ impl AiTreePlan {
             None
         };
         (self.tail_file_paths[start..end].to_vec(), next)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTreeSummary {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub root_path: String,
+    pub root_size_bytes: u64,
+    pub scanned_at_ms: i64,
+    pub total_unclassified: u64,
+    pub seed_node_count: u64,
+    pub tail_file_count: u64,
+    pub local_safe_files: u64,
+    pub local_keep_files: u64,
+    pub tail_files: u64,
+    pub tree_pending_files: u64,
+    pub estimated_tree_credits: u64,
+    pub estimated_tail_credits: u64,
+    pub scope_fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTreePage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub next_cursor: Option<u64>,
+    pub nodes: Vec<AiTreeNode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTailRow {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageTailPage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub next_cursor: Option<u64>,
+    pub rows: Vec<CoverageTailRow>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageScopeResolution {
+    LocalSafe,
+    LocalKeep,
+    TailCandidate,
+    TreeCandidate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoverageScopeRow {
+    pub path: String,
+    pub size_bytes: u64,
+    pub resolution: CoverageScopeResolution,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageScopePage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub fingerprint: String,
+    pub next_cursor: Option<u64>,
+    pub rows: Vec<CoverageScopeRow>,
+}
+
+pub fn coverage_tree_summary(index: &SnapshotIndex, plan: &AiTreePlan) -> CoverageTreeSummary {
+    let funnel = plan.funnel_stats;
+    CoverageTreeSummary {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: AI_COVERAGE_TREE_PLAN_VERSION,
+        root_path: plan.root_path.clone(),
+        root_size_bytes: index.summary().root_size_bytes,
+        scanned_at_ms: index.scanned_at_ms,
+        total_unclassified: funnel.local_safe_files
+            + funnel.local_keep_files
+            + funnel.tail_files
+            + funnel.tree_pending_files,
+        seed_node_count: plan.seed_nodes.len() as u64,
+        tail_file_count: plan.tail_file_paths.len() as u64,
+        local_safe_files: funnel.local_safe_files,
+        local_keep_files: funnel.local_keep_files,
+        tail_files: funnel.tail_files,
+        tree_pending_files: funnel.tree_pending_files,
+        estimated_tree_credits: plan.estimated_tree_credits,
+        estimated_tail_credits: plan.estimated_tail_credits,
+        scope_fingerprint: plan.scope_fingerprint.clone(),
+    }
+}
+
+pub fn coverage_tree_page(plan: &AiTreePlan, cursor: u64, page_size: usize) -> CoverageTreePage {
+    let (nodes, next_cursor) = plan.tree_page(cursor, page_size);
+    CoverageTreePage {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: plan.plan_version,
+        next_cursor,
+        nodes,
+    }
+}
+
+pub fn coverage_tail_page(plan: &AiTreePlan, cursor: u64, page_size: usize) -> CoverageTailPage {
+    let (rows, next_cursor) = plan.tail_page(cursor, page_size);
+    CoverageTailPage {
+        snapshot_id: plan.snapshot_id.clone(),
+        plan_version: plan.plan_version,
+        next_cursor,
+        rows: rows
+            .into_iter()
+            .map(|(path, size_bytes)| CoverageTailRow { path, size_bytes })
+            .collect(),
+    }
+}
+
+/// Pages every unclassified file in the same funnel used to build the tree
+/// plan. The cursor is an opaque index position, not a row count.
+pub fn coverage_scope_page(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    ctx: &CoverageFunnelContext,
+    funnel_map: &CoverageFunnelContextMap,
+    plan: &AiTreePlan,
+    cursor: u64,
+    page_size: usize,
+) -> CoverageScopePage {
+    let limit = page_size.max(1);
+    let mut rows = Vec::with_capacity(limit);
+    let mut ctx = ctx.clone();
+    let next_cursor = index.visit_unclassified_file_ids_from(
+        &plan.scope_file_ids,
+        cursor as usize,
+        |path, size| {
+            ctx.project_ancestor = funnel_map.get(path).cloned().flatten();
+            let resolution = match resolve_unclassified_for_coverage(path, size, kb, &ctx) {
+                CoverageFileResolution::LocalSafe(_) => CoverageScopeResolution::LocalSafe,
+                CoverageFileResolution::LocalKeep { .. } => CoverageScopeResolution::LocalKeep,
+                CoverageFileResolution::TailCandidate { .. } => {
+                    CoverageScopeResolution::TailCandidate
+                }
+                CoverageFileResolution::TreeCandidate => CoverageScopeResolution::TreeCandidate,
+            };
+            rows.push(CoverageScopeRow {
+                path: path.to_string(),
+                size_bytes: size,
+                resolution,
+            });
+            rows.len() < limit
+        },
+    );
+    CoverageScopePage {
+        snapshot_id: index.snapshot_id.clone(),
+        plan_version: AI_COVERAGE_TREE_PLAN_VERSION,
+        fingerprint: plan.scope_fingerprint.clone(),
+        next_cursor: next_cursor.map(|cursor| cursor as u64),
+        rows,
     }
 }
 
@@ -87,13 +242,7 @@ pub fn build_ai_tree_plan(
         protected_prefixes,
         personal_prefixes,
     );
-    build_ai_tree_plan_from_coverage_cache(
-        index,
-        kb,
-        protected_prefixes,
-        personal_prefixes,
-        &cache,
-    )
+    build_ai_tree_plan_from_coverage_cache(index, kb, protected_prefixes, personal_prefixes, &cache)
 }
 
 pub fn build_ai_tree_plan_from_coverage_cache(
@@ -121,6 +270,8 @@ pub fn build_ai_tree_plan_from_coverage_cache(
             .tail_file_paths
             .len()
             .div_ceil(TAIL_FILE_BATCH_SIZE as usize) as u64,
+        scope_fingerprint: index.content_fingerprint(),
+        scope_file_ids: index.sorted_unclassified_file_ids(),
         seed_nodes,
         tail_file_paths: cache.tail_file_paths.clone(),
         funnel_stats: cache.funnel_stats,
@@ -160,14 +311,8 @@ pub fn build_unclassified_subtree_index(
     personal_prefixes: &[String],
     funnel_map: &CoverageFunnelContextMap,
 ) -> UnclassifiedSubtreeIndex {
-    scan_unclassified_for_coverage(
-        index,
-        kb,
-        protected_prefixes,
-        personal_prefixes,
-        funnel_map,
-    )
-    .subtree_index
+    scan_unclassified_for_coverage(index, kb, protected_prefixes, personal_prefixes, funnel_map)
+        .subtree_index
 }
 
 pub fn scan_unclassified_for_coverage(
@@ -200,8 +345,9 @@ pub fn scan_unclassified_for_coverage(
             }
 
             let (is_local, is_ai) = match &resolution {
-                CoverageFileResolution::LocalSafe(_)
-                | CoverageFileResolution::LocalKeep { .. } => (true, false),
+                CoverageFileResolution::LocalSafe(_) | CoverageFileResolution::LocalKeep { .. } => {
+                    (true, false)
+                }
                 CoverageFileResolution::TailCandidate { .. }
                 | CoverageFileResolution::TreeCandidate => (false, true),
             };
@@ -322,7 +468,13 @@ fn collect_seed_nodes_under(
         if subtree_all_local_resolved(subtree_index, &dir_path) {
             continue;
         }
-        nodes.push(build_tree_node(index, &dir_path, role, markers, subtree_index));
+        nodes.push(build_tree_node(
+            index,
+            &dir_path,
+            role,
+            markers,
+            subtree_index,
+        ));
     }
     nodes.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.path.cmp(&b.path)));
     nodes
@@ -534,7 +686,10 @@ mod tests {
         );
 
         let stats = &plan.funnel_stats;
-        assert!(stats.local_keep_files >= 2, "project files → local keep: {stats:?}");
+        assert!(
+            stats.local_keep_files >= 2,
+            "project files → local keep: {stats:?}"
+        );
         assert_eq!(stats.tail_files, 1, "{stats:?}");
         assert_eq!(stats.tree_pending_files, 1, "{stats:?}");
 

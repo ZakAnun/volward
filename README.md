@@ -146,6 +146,8 @@ Dart 通过 `VolwardNativeBridge` 调用 Rust；`VolwardSession` 统一编排扫
 
 ### 仓库结构
 
+[架构与模块边界](ARCHITECTURE.md) · [结构整理验收记录](docs/architecture/2026-11-13-acceptance.md)
+
 ```text
 volward/
 ├── apps/volward/              # Flutter 桌面应用（见 apps/volward/README.md 模块表）

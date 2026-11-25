@@ -70,6 +70,223 @@ impl UpstreamClient for MockUpstream {
     }
 }
 
+struct LedgerObservingUpstream {
+    pool: Mutex<Option<sqlx::SqlitePool>>,
+    observed: Mutex<Vec<(i64, String, String)>>,
+    fail: bool,
+}
+
+#[async_trait]
+impl UpstreamClient for LedgerObservingUpstream {
+    async fn complete(&self, _: String) -> Result<String, AppError> {
+        let pool = self.pool.lock().unwrap().clone().unwrap();
+        let row: (i64, String, String) = sqlx::query_as(
+            "SELECT u.credits_sandbox, t.kind, t.device_id FROM users u JOIN transactions t ON t.user_id = u.id WHERE u.email = 'order@example.com'",
+        ).fetch_one(&pool).await.unwrap();
+        self.observed.lock().unwrap().push(row);
+        if self.fail {
+            return Err(AppError::BadGateway);
+        }
+        sqlx::query("UPDATE users SET credits_sandbox = 9 WHERE email = 'order@example.com'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        Ok(r#"{"choices":[{"message":{"content":"[]"}}]}"#.into())
+    }
+}
+
+#[tokio::test]
+async fn analyze_charges_before_upstream_and_reads_balance_afterwards() {
+    let upstream = Arc::new(LedgerObservingUpstream {
+        pool: Mutex::new(None),
+        observed: Mutex::new(vec![]),
+        fail: false,
+    });
+    let ctx = test_ctx_with_upstream(upstream.clone()).await;
+    *upstream.pool.lock().unwrap() = Some(ctx.pool.clone());
+    let token = register_and_link(&ctx, "order-device", "order@example.com", 5).await;
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["credits_remaining"], 9);
+    assert_eq!(
+        *upstream.observed.lock().unwrap(),
+        vec![(4, "usage".into(), "order-device".into())]
+    );
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM transactions WHERE kind = 'refund'")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(count.0, 0);
+}
+
+#[tokio::test]
+async fn analyze_failed_upstream_refunds_but_failed_charge_never_calls_upstream() {
+    let upstream = Arc::new(LedgerObservingUpstream {
+        pool: Mutex::new(None),
+        observed: Mutex::new(vec![]),
+        fail: true,
+    });
+    let ctx = test_ctx_with_upstream(upstream.clone()).await;
+    *upstream.pool.lock().unwrap() = Some(ctx.pool.clone());
+    let token = register_and_link(&ctx, "order-device", "order@example.com", 1).await;
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        body,
+        json!({"error":"upstream_error", "message":"bad gateway"})
+    );
+    assert_eq!(
+        *upstream.observed.lock().unwrap(),
+        vec![(0, "usage".into(), "order-device".into())]
+    );
+    let row: (i64, i64) = sqlx::query_as("SELECT credits_sandbox, (SELECT COUNT(*) FROM transactions WHERE kind = 'refund') FROM users WHERE email = 'order@example.com'").fetch_one(&ctx.pool).await.unwrap();
+    assert_eq!(row, (1, 1));
+    sqlx::query("UPDATE users SET credits_sandbox = 0 WHERE email = 'order@example.com'")
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, ONE_CANDIDATE).await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+    assert_eq!(
+        body,
+        json!({"error":"insufficient_credits", "message":"insufficient_credits"})
+    );
+    assert_eq!(upstream.observed.lock().unwrap().len(), 1);
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM transactions WHERE kind = 'refund'")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(count.0, 1);
+}
+
+#[tokio::test]
+async fn synthesis_charges_before_upstream_and_failed_charge_skips_upstream() {
+    let upstream = Arc::new(LedgerObservingUpstream {
+        pool: Mutex::new(None),
+        observed: Mutex::new(vec![]),
+        fail: false,
+    });
+    let ctx = test_ctx_with_upstream(upstream.clone()).await;
+    *upstream.pool.lock().unwrap() = Some(ctx.pool.clone());
+    let token = register_and_link(&ctx, "order-device", "order@example.com", 5).await;
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/ai/synthesize-conclusion",
+        &token,
+        ONE_SYNTHESIS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"text": "[]"}));
+    assert_eq!(
+        *upstream.observed.lock().unwrap(),
+        vec![(4, "usage".into(), "order-device".into())]
+    );
+    sqlx::query("UPDATE users SET credits_sandbox = 0 WHERE email = 'order@example.com'")
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/ai/synthesize-conclusion",
+        &token,
+        ONE_SYNTHESIS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+    assert_eq!(
+        body,
+        json!({"error": "insufficient_credits", "message": "insufficient_credits"})
+    );
+    assert_eq!(upstream.observed.lock().unwrap().len(), 1);
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM transactions WHERE kind = 'refund'")
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(count.0, 0);
+}
+
+#[tokio::test]
+async fn synthesis_refunds_after_observed_committed_debit() {
+    let upstream = Arc::new(LedgerObservingUpstream {
+        pool: Mutex::new(None),
+        observed: Mutex::new(vec![]),
+        fail: true,
+    });
+    let ctx = test_ctx_with_upstream(upstream.clone()).await;
+    *upstream.pool.lock().unwrap() = Some(ctx.pool.clone());
+    let token = register_and_link(&ctx, "order-device", "order@example.com", 5).await;
+    let (status, body) = post_auth(
+        &ctx.app,
+        "/v1/ai/synthesize-conclusion",
+        &token,
+        ONE_SYNTHESIS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        body,
+        json!({"error": "upstream_error", "message": "bad gateway"})
+    );
+    assert_eq!(
+        *upstream.observed.lock().unwrap(),
+        vec![(4, "usage".into(), "order-device".into())]
+    );
+    let row: (i64, i64) = sqlx::query_as(
+        "SELECT credits_sandbox, (SELECT COUNT(*) FROM transactions WHERE kind = 'refund') FROM users WHERE email = 'order@example.com'",
+    ).fetch_one(&ctx.pool).await.unwrap();
+    assert_eq!(row, (5, 1));
+}
+
+#[tokio::test]
+async fn refund_failure_preserves_original_upstream_error_for_both_ai_endpoints() {
+    for (route, request) in [
+        ("/v1/ai/analyze", ONE_CANDIDATE),
+        ("/v1/ai/synthesize-conclusion", ONE_SYNTHESIS),
+    ] {
+        let upstream = Arc::new(LedgerObservingUpstream {
+            pool: Mutex::new(None),
+            observed: Mutex::new(vec![]),
+            fail: true,
+        });
+        let ctx = test_ctx_with_upstream(upstream.clone()).await;
+        *upstream.pool.lock().unwrap() = Some(ctx.pool.clone());
+        let token = register_and_link(&ctx, "order-device", "order@example.com", 5).await;
+        // Fail the refund insert after its balance update; the ledger must roll back.
+        sqlx::query("CREATE TRIGGER reject_refund BEFORE INSERT ON transactions WHEN NEW.kind = 'refund' BEGIN SELECT RAISE(ABORT, 'test refund failure'); END")
+            .execute(&ctx.pool).await.unwrap();
+        let (status, body) = post_auth(&ctx.app, route, &token, request).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY, "{route}");
+        assert_eq!(
+            body,
+            json!({"error": "upstream_error", "message": "bad gateway"}),
+            "{route}"
+        );
+        assert_eq!(
+            *upstream.observed.lock().unwrap(),
+            vec![(4, "usage".into(), "order-device".into())]
+        );
+        let row: (i64, i64) = sqlx::query_as(
+            "SELECT credits_sandbox, (SELECT COUNT(*) FROM transactions WHERE kind = 'refund') FROM users WHERE email = 'order@example.com'",
+        ).fetch_one(&ctx.pool).await.unwrap();
+        assert_eq!(row, (4, 0), "{route}");
+    }
+}
+
+#[tokio::test]
+async fn analyze_rejects_auth_and_validation_before_charging() {
+    let ctx = test_ctx().await;
+    let (status, body) = post_json(&ctx.app, "/v1/ai/analyze", "{}").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body, json!({"error":"unauthorized", "message":"unauthorized"}));
+    let token = register_and_link(&ctx, "validation-device", "validation@example.com", 1).await;
+    let (status, body) = post_auth(&ctx.app, "/v1/ai/analyze", &token, "{}").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body, json!({"error":"bad_request", "message":"candidates_empty"}));
+    let row: (i64, i64) = sqlx::query_as("SELECT credits_sandbox, (SELECT COUNT(*) FROM transactions WHERE kind = 'usage') FROM users WHERE email = 'validation@example.com'").fetch_one(&ctx.pool).await.unwrap();
+    assert_eq!(row, (1, 0));
+}
+
 async fn test_ctx_with_config(
     upstream: Arc<dyn UpstreamClient>,
     configure: impl FnOnce(&mut crate::config::Config),

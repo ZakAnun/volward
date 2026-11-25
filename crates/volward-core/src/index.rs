@@ -892,6 +892,45 @@ impl SnapshotIndex {
         None
     }
 
+    /// Stable path-ordered IDs for all unclassified file rows. Build once for
+    /// cursor-based scopes so each page is O(page_size), not O(cursor).
+    pub fn sorted_unclassified_file_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .file_size_by_path
+            .keys()
+            .copied()
+            .filter(|path_id| {
+                !self.entry_id_by_path.contains_key(path_id)
+                    && !self.directory_by_id.contains_key(path_id)
+            })
+            .collect();
+        ids.sort_unstable_by(|left, right| {
+            self.table.resolve(*left).cmp(self.table.resolve(*right))
+        });
+        ids
+    }
+
+    /// Visits the ordered-ID scope produced by [`sorted_unclassified_file_ids`].
+    pub fn visit_unclassified_file_ids_from<F>(
+        &self,
+        ids: &[u32],
+        start: usize,
+        mut visit: F,
+    ) -> Option<usize>
+    where
+        F: FnMut(&str, u64) -> bool,
+    {
+        for (pos, path_id) in ids.iter().enumerate().skip(start) {
+            let Some(size) = self.file_size_by_path.get(path_id) else {
+                continue;
+            };
+            if !visit(self.table.resolve(*path_id), *size) {
+                return Some(pos + 1);
+            }
+        }
+        None
+    }
+
     /// Visits unclassified files at or under `path` by walking only that subtree.
     pub fn visit_unclassified_files_under<F>(&self, path: &str, mut visit: F)
     where

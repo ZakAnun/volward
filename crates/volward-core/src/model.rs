@@ -132,6 +132,10 @@ pub struct ScanProgress {
 pub struct ScanRoot {
     pub path: String,
     pub label: String,
+    /// True when the user explicitly picked this root. Such scans account for
+    /// every accessible child, including build and VCS directories.
+    #[serde(default)]
+    pub user_selected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

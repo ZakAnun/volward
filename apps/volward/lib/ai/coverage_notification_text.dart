@@ -11,10 +11,20 @@ AppLocalizations coverageNotifyLocalizations() {
 ({String title, String body}) coverageCompleteNotification(
   AppLocalizations l10n,
   CoverageJobState state,
-) => (
-  title: l10n.aiCoverageNotifyTitle,
-  body: l10n.aiCoverageNotifyComplete(state.analyzedFiles),
-);
+) {
+  final remaining =
+      state.reconciliationPending ??
+      (state.totalUnclassified - state.analyzedFiles).clamp(
+        0,
+        state.totalUnclassified,
+      );
+  return (
+    title: l10n.aiCoverageNotifyTitle,
+    body: remaining == 0
+        ? l10n.aiCoverageNotifyComplete(state.analyzedFiles)
+        : l10n.aiCoverageNotifyPartial(remaining, state.totalUnclassified),
+  );
+}
 
 ({String title, String body}) coverageBudgetPausedNotification(
   AppLocalizations l10n,

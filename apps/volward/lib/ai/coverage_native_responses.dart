@@ -79,6 +79,9 @@ CoverageTreePage parseCoverageTreePage(String raw) =>
 CoverageTailPage parseCoverageTailPage(String raw) =>
     CoverageTailPage.fromJson(decodeCoverageObjectJson(raw));
 
+CoverageScopePage parseCoverageScopePage(String raw) =>
+    CoverageScopePage.fromJson(decodeCoverageObjectJson(raw));
+
 List<CoverageTreeNode> parseCoverageTreeExpandNodes(String raw) {
   final map = decodeCoverageObjectJson(raw);
   final nodes = map['nodes'];

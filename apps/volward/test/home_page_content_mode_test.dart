@@ -4,7 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_analysis_gateway.dart';
-import 'package:volward/ai/ai_contract.dart';
+import 'package:volward/ai/ai_coverage_coordinator.dart';
+import 'package:volward/ai/coverage_job_state.dart';
+import 'package:volward/ai/coverage_models.dart';
+import 'package:volward/ai/ai_contract_api.dart';
 import 'package:volward/ai/ai_conclusion_synthesis.dart';
 import 'package:volward/ai/ai_conclusion_synthesis_body.dart';
 import 'package:volward/ai/ai_provider.dart';
@@ -12,6 +15,8 @@ import 'package:volward/ai/cancel_token.dart';
 import 'package:volward/ai/ai_settings_store.dart';
 import 'package:volward/ai/byok_ai_provider.dart';
 import 'package:volward/capabilities/capability_models.dart';
+import 'package:volward/features/browse/widgets/scan_column_view.dart';
+import 'package:volward/features/browse/widgets/scan_filter_bar.dart';
 import 'package:volward/home_page.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
 import 'package:volward/scan_preview.dart';
@@ -25,8 +30,6 @@ import 'package:volward/theme/volward_theme_settings.dart';
 import 'package:volward/theme/volward_tokens.dart';
 import 'package:volward/updater/app_updater.dart';
 import 'package:volward/volward_session.dart';
-import 'package:volward/widgets/scan_column_view.dart';
-import 'package:volward/widgets/scan_filter_bar.dart';
 import 'package:volward/widgets/home/largest_items_panel.dart';
 import 'package:volward/widgets/ai_analysis_activity_card.dart';
 import 'package:volward/widgets/ai_analysis_workspace.dart';
@@ -196,6 +199,24 @@ class _HomeAiGateway implements AiAnalysisGateway {
     if (deleteResponses.isEmpty) return const {};
     return deleteResponses.removeAt(0);
   }
+}
+
+class _CoverageTestGateway extends ProductionAiAnalysisGateway {
+  _CoverageTestGateway(VolwardSession session) : super(session: session);
+
+  @override
+  Future<AiMode> getMode() async => AiMode.byok;
+
+  @override
+  Future<AiProvider?> resolveProvider() async =>
+      _HomeResultProvider(Future.value(const []));
+
+  @override
+  Future<bool> isPrivacyAccepted() async => true;
+
+  @override
+  Future<String?> buildCandidates(String snapshotId) async =>
+      _homeDeleteCandidates;
 }
 
 class _HomeResultProvider implements AiProvider {
@@ -511,6 +532,47 @@ class _RestoringSession extends _Session {
   }
 }
 
+class _RecordingCoverageCoordinator extends AiCoverageCoordinator {
+  _RecordingCoverageCoordinator(VolwardSession session)
+    : super.forSession(session);
+
+  final planRequests = <String>[];
+  final startRequests = <String>[];
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<CoverageJobState?> loadJobState(String snapshotId) async => null;
+
+  @override
+  Future<CoveragePlanSummary?> planSummary(String snapshotId) async {
+    planRequests.add(snapshotId);
+    return CoveragePlanSummary(
+      snapshotId: snapshotId,
+      planVersion: 2,
+      rootPath: '/',
+      totalUnclassified: 1,
+      preClassifiedCount: 0,
+      groupRows: 0,
+      fileRows: 1,
+      estimatedPages: 1,
+    );
+  }
+
+  @override
+  Future<StartFullCoverageResult> startFullCoverage({
+    required String snapshotId,
+    required AiMode mode,
+    required AiProvider provider,
+    int? budgetCredits,
+    CoveragePlanSummary? preloadedPlanSummary,
+  }) async {
+    startRequests.add(snapshotId);
+    return const StartFullCoverageUnavailable();
+  }
+}
+
 Widget _shell(
   VolwardSession session,
   VolwardThemeSettings themeSettings,
@@ -520,6 +582,7 @@ Widget _shell(
   StorageOverviewProvider storageOverviewProvider =
       const MethodChannelStorageOverviewProvider(),
   AiAnalysisGateway aiAnalysisGateway = const ProductionAiAnalysisGateway(),
+  AiCoverageCoordinator? coverageCoordinator,
 }) {
   return ListenableBuilder(
     listenable: themeSettings,
@@ -537,6 +600,7 @@ Widget _shell(
           directoryPicker: directoryPicker,
           storageOverviewProvider: storageOverviewProvider,
           aiAnalysisGateway: aiAnalysisGateway,
+          coverageCoordinator: coverageCoordinator,
         ),
       );
     },
@@ -578,6 +642,14 @@ Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  test(
+    'DirectoryDetailsPage delegates orchestration below its file budget',
+    () {
+      final lines = File('lib/directory_details_page.dart').readAsLinesSync();
+      expect(lines.length, lessThan(1000));
+    },
+  );
+
   testWidgets('home dashboard follows ThemeMode after a preference change', (
     tester,
   ) async {
@@ -649,6 +721,18 @@ void main() {
     await _pumpHome(tester, _shell(session, themeSettings, updater));
 
     expect(find.byKey(StorageStewardHome.aiActionKey), findsOneWidget);
+    final home = tester.widget<StorageStewardHome>(
+      find.byType(StorageStewardHome),
+    );
+    final gateway = home.aiAnalysisGateway as ProductionAiAnalysisGateway;
+    expect(gateway.session, same(session));
+    await tester.pump();
+    expect(
+      tester
+          .widget<StorageStewardHome>(find.byType(StorageStewardHome))
+          .aiAnalysisGateway,
+      same(gateway),
+    );
   });
 
   testWidgets('unsupported completed scan hides home AI action', (
@@ -664,6 +748,106 @@ void main() {
     await _pumpHome(tester, _shell(session, themeSettings, updater));
 
     expect(find.byKey(StorageStewardHome.aiActionKey), findsNothing);
+  });
+
+  testWidgets('home uses its Session for Coverage planning and job start', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final original = _Session(aiSessionApi: true)
+      ..snapshotForTest = _completedSnapshot()
+      ..rootExistsForTest = ((_) => true);
+    final replacement = _Session(aiSessionApi: true)
+      ..snapshotForTest = _completedSnapshot()
+      ..rootExistsForTest = ((_) => true);
+    final originalCoordinator = _RecordingCoverageCoordinator(original);
+    final replacementCoordinator = _RecordingCoverageCoordinator(replacement);
+    final overview = _OverviewProvider();
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+    addTearDown(original.dispose);
+    addTearDown(replacement.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        original,
+        themeSettings,
+        updater,
+        storageOverviewProvider: overview,
+        coverageCoordinator: originalCoordinator,
+      ),
+    );
+    final home = find.byType(StorageStewardHome);
+    final originalHome = tester.widget<StorageStewardHome>(home);
+    expect(originalHome.coverageJobs, same(originalCoordinator));
+    final originalGateway =
+        originalHome.aiAnalysisGateway as ProductionAiAnalysisGateway;
+    expect(originalCoordinator.isAttachedTo(originalGateway.session!), isTrue);
+
+    await tester.pumpWidget(
+      _shell(
+        replacement,
+        themeSettings,
+        updater,
+        storageOverviewProvider: overview,
+        coverageCoordinator: originalCoordinator,
+        aiAnalysisGateway: originalGateway,
+      ),
+    );
+    final reboundHome = tester.widget<StorageStewardHome>(home);
+    final reboundCoordinator =
+        reboundHome.coverageJobs as AiCoverageCoordinator;
+    final reboundGateway =
+        reboundHome.aiAnalysisGateway as ProductionAiAnalysisGateway;
+    expect(reboundCoordinator, same(originalCoordinator));
+    expect(reboundGateway.session, same(replacement));
+    expect(reboundCoordinator.isAttachedTo(reboundGateway.session!), isTrue);
+
+    final gateway = _CoverageTestGateway(replacement);
+    await tester.pumpWidget(
+      _shell(
+        replacement,
+        themeSettings,
+        updater,
+        storageOverviewProvider: overview,
+        aiAnalysisGateway: gateway,
+        coverageCoordinator: replacementCoordinator,
+      ),
+    );
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.pump();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.startAnalysisKey),
+    );
+    for (
+      var attempt = 0;
+      attempt < 20 && replacementCoordinator.planRequests.isEmpty;
+      attempt++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    await tester.pump();
+    final workspace = tester.widget<AiAnalysisWorkspace>(
+      find.byType(AiAnalysisWorkspace),
+    );
+    expect(workspace.gateway, same(gateway));
+    expect(workspace.coverageJobs, same(replacementCoordinator));
+    expect(replacementCoordinator.isAttachedTo(gateway.session!), isTrue);
+    expect(replacementCoordinator.planRequests, ['cached-scan']);
+    await tester.tap(find.byKey(AiAnalysisWorkspace.startAnalysisKey));
+    await _pumpUntil(
+      tester,
+      () => replacementCoordinator.startRequests.isNotEmpty,
+    );
+    expect(replacementCoordinator.startRequests, ['cached-scan']);
+    expect(originalCoordinator.planRequests, isEmpty);
+    expect(originalCoordinator.startRequests, isEmpty);
   });
 
   testWidgets('preview snapshot hides home AI action', (tester) async {
@@ -826,14 +1010,13 @@ void main() {
   });
 
   testWidgets(
-    'AI view full list opens detail page and logo returns to analysis',
+    'same-snapshot Session replacement releases the pending AI deletion lock',
     (tester) async {
       final themeSettings = VolwardThemeSettings();
       final updater = AppUpdater.test();
+      final deleteGate = Completer<Map<String, dynamic>>();
       final gateway =
-          _HomeAiGateway(
-              candidates: Future<String?>.value(_homeDeleteCandidates),
-            )
+          _HomeAiGateway(candidates: Future.value(_homeDeleteCandidates))
             ..mode = AiMode.byok
             ..provider = _HomeResultProvider(
               Future.value(const [
@@ -844,104 +1027,30 @@ void main() {
                   reason: 'Build cache',
                 ),
               ]),
-            );
-      final session = _Session(aiSessionApi: true)
+            )
+            ..deleteResponses.add(
+              Future.value({'deleted_count': 1, 'freed_bytes': 100}),
+            )
+            ..deleteResponses.add(deleteGate.future);
+      final original = _Session(aiSessionApi: true)
         ..snapshotForTest = _completedSnapshot()
         ..rootExistsForTest = ((_) => true);
-      addTearDown(themeSettings.dispose);
-      addTearDown(updater.dispose);
-
-      await _pumpHome(
-        tester,
-        _shell(
-          session,
-          themeSettings,
-          updater,
-          storageOverviewProvider: _OverviewProvider(),
-          aiAnalysisGateway: gateway,
-        ),
-      );
-      await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
-      await tester.pump();
-      await _pumpUntilFound(tester, find.text('Start AI Analysis'));
-      await tester.tap(find.text('Start AI Analysis'));
-      await tester.pumpAndSettle();
-      await _pumpUntilFound(
-        tester,
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-      );
-
-      await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
-      await tester.pumpAndSettle();
-      expect(find.byKey(HomePage.logoKey), findsOneWidget);
-      expect(
-        find.byKey(AiAnalysisWorkspace.workspaceKey, skipOffstage: false),
-        findsOneWidget,
-      );
-      expect(find.byKey(AiAnalysisWorkspace.workspaceKey), findsNothing);
-
-      await tester.tap(find.byKey(HomePage.logoKey));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-        findsOneWidget,
-      );
-      expect(find.byKey(HomePage.logoKey), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'AI by-folder directory opens catalog-backed browse at that path',
-    (tester) async {
-      final themeSettings = VolwardThemeSettings();
-      final updater = AppUpdater.test();
-      final gateway =
-          _HomeAiGateway(
-              candidates: Future<String?>.value(_homeDeleteCandidates),
-            )
-            ..mode = AiMode.byok
-            ..provider = _HomeResultProvider(
-              Future.value(const [
-                AiVerdict(
-                  path: '/tmp/home-cache',
-                  verdict: 'safe_to_remove',
-                  confidence: 'high',
-                  reason: 'Build cache',
-                ),
-              ]),
-            );
-      final session = _Session(aiSessionApi: true)
+      final replacement = _Session(aiSessionApi: true)
         ..snapshotForTest = _completedSnapshot()
-        ..rootExistsForTest = ((_) => true)
-        ..hasIndexApiForTest = true
-        ..catalogChildrenForTest = {
-          '/': const [
-            SnapshotNodeRecord(
-              path: '/tmp',
-              name: 'tmp',
-              isDirectory: true,
-              sizeBytes: 4096,
-            ),
-          ],
-          '/tmp': const [
-            SnapshotNodeRecord(
-              path: '/tmp/home-cache',
-              name: 'home-cache',
-              isDirectory: false,
-              sizeBytes: 100,
-            ),
-          ],
-        };
+        ..rootExistsForTest = ((_) => true);
+      final overview = _OverviewProvider();
       addTearDown(themeSettings.dispose);
       addTearDown(updater.dispose);
+      addTearDown(original.dispose);
+      addTearDown(replacement.dispose);
 
       await _pumpHome(
         tester,
         _shell(
-          session,
+          original,
           themeSettings,
           updater,
-          storageOverviewProvider: _OverviewProvider(),
+          storageOverviewProvider: overview,
           aiAnalysisGateway: gateway,
         ),
       );
@@ -954,33 +1063,180 @@ void main() {
         tester,
         find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
       );
-
-      final card = find.byKey(AiAnalysisWorkspace.directoryCardKey('/tmp'));
-      final overviewScroll = find.descendant(
-        of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
-        matching: find.byType(Scrollable),
-      );
-      await tester.scrollUntilVisible(
-        card,
-        160,
-        scrollable: overviewScroll.first,
-      );
-      if (card.hitTestable().evaluate().isEmpty) {
-        await tester.drag(overviewScroll.first, const Offset(0, -180));
-        await tester.pumpAndSettle();
-      }
-      await tester.tap(card);
+      await tester.tap(find.byKey(AiAnalysisWorkspace.deleteKey));
       await tester.pumpAndSettle();
-      expect(find.byType(ScanColumnView), findsOneWidget);
-      expect(
-        tester
-            .widget<ScanColumnView>(find.byType(ScanColumnView))
-            .selectionChain
-            .map((node) => node.path),
-        ['/tmp'],
+      await tester.tap(find.text('Delete'));
+      await tester.pump();
+      expect(gateway.deleteCalls.last.dryRun, isFalse);
+
+      final workspace = find.byType(AiAnalysisWorkspace);
+      final workspaceState = tester.state(workspace);
+      await tester.pumpWidget(
+        _shell(
+          replacement,
+          themeSettings,
+          updater,
+          storageOverviewProvider: overview,
+        ),
       );
+      await tester.pump();
+      expect(tester.state(workspace), same(workspaceState));
+      await tester.tap(find.byKey(AiAnalysisWorkspace.backKey));
+      await tester.pump();
+      expect(workspace, findsOneWidget);
+
+      deleteGate.complete({'deleted_count': 1, 'freed_bytes': 100});
+      await tester.pumpAndSettle();
+      expect(workspace, findsOneWidget);
+      await tester.tap(find.byKey(AiAnalysisWorkspace.backKey));
+      await tester.pumpAndSettle();
+      expect(workspace, findsNothing);
+      expect(find.byKey(StorageStewardHome.chooseFolderKey), findsOneWidget);
     },
   );
+
+  testWidgets('AI view full list stays in the filtered analysis workspace', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final gateway =
+        _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
+          ..mode = AiMode.byok
+          ..provider = _HomeResultProvider(
+            Future.value(const [
+              AiVerdict(
+                path: '/tmp/home-cache',
+                verdict: 'safe_to_remove',
+                confidence: 'high',
+                reason: 'Build cache',
+              ),
+            ]),
+          );
+    final session = _Session(aiSessionApi: true)
+      ..snapshotForTest = _completedSnapshot()
+      ..rootExistsForTest = ((_) => true);
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+        aiAnalysisGateway: gateway,
+      ),
+    );
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.pump();
+    await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+    await tester.tap(find.text('Start AI Analysis'));
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.showAllResultsKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    expect(find.text('home-cache'), findsOneWidget);
+    expect(find.byKey(HomePage.logoKey), findsNothing);
+
+    await tester.tap(find.byKey(AiAnalysisWorkspace.backKey));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      findsOneWidget,
+    );
+    expect(find.byKey(HomePage.logoKey), findsNothing);
+  });
+
+  testWidgets('AI by-folder directory opens a filtered analysis result list', (
+    tester,
+  ) async {
+    final themeSettings = VolwardThemeSettings();
+    final updater = AppUpdater.test();
+    final gateway =
+        _HomeAiGateway(candidates: Future<String?>.value(_homeDeleteCandidates))
+          ..mode = AiMode.byok
+          ..provider = _HomeResultProvider(
+            Future.value(const [
+              AiVerdict(
+                path: '/tmp/home-cache',
+                verdict: 'safe_to_remove',
+                confidence: 'high',
+                reason: 'Build cache',
+              ),
+            ]),
+          );
+    final session = _Session(aiSessionApi: true)
+      ..snapshotForTest = _completedSnapshot()
+      ..rootExistsForTest = ((_) => true)
+      ..hasIndexApiForTest = true
+      ..catalogChildrenForTest = {
+        '/': const [
+          SnapshotNodeRecord(
+            path: '/tmp',
+            name: 'tmp',
+            isDirectory: true,
+            sizeBytes: 4096,
+          ),
+        ],
+        '/tmp': const [
+          SnapshotNodeRecord(
+            path: '/tmp/home-cache',
+            name: 'home-cache',
+            isDirectory: false,
+            sizeBytes: 100,
+          ),
+        ],
+      };
+    addTearDown(themeSettings.dispose);
+    addTearDown(updater.dispose);
+
+    await _pumpHome(
+      tester,
+      _shell(
+        session,
+        themeSettings,
+        updater,
+        storageOverviewProvider: _OverviewProvider(),
+        aiAnalysisGateway: gateway,
+      ),
+    );
+    await tester.tap(find.byKey(StorageStewardHome.aiActionKey));
+    await tester.pump();
+    await _pumpUntilFound(tester, find.text('Start AI Analysis'));
+    await tester.tap(find.text('Start AI Analysis'));
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+    );
+
+    final card = find.byKey(AiAnalysisWorkspace.directoryCardKey('/tmp'));
+    final overviewScroll = find.descendant(
+      of: find.byKey(AiAnalysisWorkspace.conclusionsOverviewKey),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      card,
+      160,
+      scrollable: overviewScroll.first,
+    );
+    if (card.hitTestable().evaluate().isEmpty) {
+      await tester.drag(overviewScroll.first, const Offset(0, -180));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(find.byKey(AiAnalysisWorkspace.detailListKey), findsOneWidget);
+    expect(find.text('home-cache'), findsOneWidget);
+    expect(find.byType(ScanColumnView), findsNothing);
+  });
 
   testWidgets('AI workspace stays open when snapshot flickers to null', (
     tester,
@@ -2887,4 +3143,57 @@ void main() {
 
     expect(find.byKey(StorageStewardHome.panelKey), findsNothing);
   });
+
+  testWidgets(
+    'real directory page composes browse body, columns, filter and preview',
+    (tester) async {
+      final session = _Session(exposePreview: true)
+        ..snapshotForTest = ScanSnapshotState(
+          snapshotId: 'composition-page',
+          scannedAtMs: 1,
+          stats: const {'scan_state': 'Done', 'files_seen': 2},
+          reclaimableEstimateBytes: 10,
+          tree: ScanTreeNode(
+            name: '/',
+            path: '/',
+            isDirectory: true,
+            sizeBytes: 10,
+            children: [
+              ScanTreeNode(
+                name: 'cache',
+                path: '/cache',
+                isDirectory: true,
+                sizeBytes: 10,
+              ),
+            ],
+          ),
+          entryCount: 2,
+          categoryCounts: const {'Cache': 2},
+          deletableCategoryCounts: const {'Cache': 2},
+          deletableCount: 2,
+          extraFields: const {},
+        )
+        ..sessionStateFileForTest = File(
+          '${Directory.systemTemp.path}/volward-page-composition.json',
+        )
+        ..rootExistsForTest = ((_) => true);
+      final themeSettings = VolwardThemeSettings();
+      final updater = AppUpdater.test();
+      addTearDown(themeSettings.dispose);
+      addTearDown(updater.dispose);
+
+      await _pumpHome(tester, _shell(session, themeSettings, updater));
+      await _openLastScan(tester);
+      await _pumpUntil(
+        tester,
+        () => find.byType(ScanColumnView).evaluate().isNotEmpty,
+      );
+
+      expect(find.byType(ScanFilterBar), findsOneWidget);
+      expect(find.byType(ScanColumnView), findsOneWidget);
+      expect(find.text('All'), findsOneWidget);
+      expect(find.text('Cache'), findsWidgets);
+      expect(find.text('Temp'), findsNothing);
+    },
+  );
 }

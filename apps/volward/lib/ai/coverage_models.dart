@@ -141,6 +141,7 @@ class CoveragePlanSummary {
     this.treePendingFiles,
     this.estimatedTreeCredits,
     this.estimatedTailCredits,
+    this.scopeFingerprint,
   });
 
   factory CoveragePlanSummary.fromJson(Map<String, dynamic> json) {
@@ -179,6 +180,7 @@ class CoveragePlanSummary {
       treePendingFiles: (json['tree_pending_files'] as num?)?.toInt(),
       estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
       estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
+      scopeFingerprint: json['scope_fingerprint'] as String?,
     );
   }
 
@@ -199,6 +201,7 @@ class CoveragePlanSummary {
   final int? treePendingFiles;
   final int? estimatedTreeCredits;
   final int? estimatedTailCredits;
+  final String? scopeFingerprint;
 
   bool get isTreePlan => planVersion >= 3 && seedNodeCount != null;
 
@@ -222,6 +225,7 @@ class CoveragePlanSummary {
       'estimated_tree_credits': estimatedTreeCredits,
     if (estimatedTailCredits != null)
       'estimated_tail_credits': estimatedTailCredits,
+    if (scopeFingerprint != null) 'scope_fingerprint': scopeFingerprint,
   };
 }
 
@@ -286,6 +290,65 @@ class CoverageTailPage {
   final int planVersion;
   final int? nextCursor;
   final List<CoverageTailRow> rows;
+}
+
+enum CoverageScopeResolution {
+  localSafe,
+  localKeep,
+  tailCandidate,
+  treeCandidate,
+}
+
+class CoverageScopeRow {
+  const CoverageScopeRow({
+    required this.path,
+    required this.sizeBytes,
+    required this.resolution,
+  });
+
+  factory CoverageScopeRow.fromJson(Map<String, dynamic> json) =>
+      CoverageScopeRow(
+        path: json['path'] as String,
+        sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+        resolution: switch (json['resolution']) {
+          'local_safe' => CoverageScopeResolution.localSafe,
+          'local_keep' => CoverageScopeResolution.localKeep,
+          'tail_candidate' => CoverageScopeResolution.tailCandidate,
+          _ => CoverageScopeResolution.treeCandidate,
+        },
+      );
+
+  final String path;
+  final int sizeBytes;
+  final CoverageScopeResolution resolution;
+}
+
+class CoverageScopePage {
+  const CoverageScopePage({
+    required this.snapshotId,
+    required this.planVersion,
+    required this.fingerprint,
+    required this.nextCursor,
+    required this.rows,
+  });
+
+  factory CoverageScopePage.fromJson(Map<String, dynamic> json) =>
+      CoverageScopePage(
+        snapshotId: json['snapshot_id'] as String,
+        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+        fingerprint: json['fingerprint'] as String? ?? '',
+        nextCursor: (json['next_cursor'] as num?)?.toInt(),
+        rows: ((json['rows'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CoverageScopeRow.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false),
+      );
+
+  final String snapshotId;
+  final int planVersion;
+  final String fingerprint;
+  final int? nextCursor;
+  final List<CoverageScopeRow> rows;
 }
 
 class CoveragePage {

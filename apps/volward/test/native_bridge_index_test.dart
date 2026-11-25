@@ -1,8 +1,11 @@
 // Tests that verify the catalog API surface of VolwardNativeBridge compiles
 // correctly without requiring a live dylib.  Runtime invocation against the
 // real native library is covered by integration tests on device/simulator.
+import 'dart:ffi';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/bridge/native_bridge.dart';
+import 'package:volward/infrastructure/bridge/index_bridge.dart';
 
 void main() {
   group('VolwardNativeBridge catalog API surface (compile-time)', () {
@@ -39,5 +42,37 @@ void main() {
       ].map((t) => t.toString()).toList();
       expect(checkTypes.length, 8);
     });
+
+    test('catalog queries delegate through the split index family', () {
+      final index = _CatalogIndexBridge();
+      final bridge = VolwardNativeBridge.test(index: index);
+
+      expect(bridge.queryDirectoryJson(Pointer<Void>.fromAddress(1), '/tmp'), {
+        'children': <dynamic>[],
+      });
+      expect(index.queryCalls, 1);
+    });
   });
+}
+
+class _CatalogIndexBridge implements IndexBridge {
+  int queryCalls = 0;
+
+  @override
+  bool get hasIndexApi => true;
+
+  @override
+  Map<String, dynamic> queryDirectoryJson(
+    Pointer<Void> engine,
+    String path, {
+    String? categoryFilter,
+    bool deletableOnly = false,
+    String sortMode = 'size_desc',
+  }) {
+    queryCalls++;
+    return {'children': <dynamic>[]};
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

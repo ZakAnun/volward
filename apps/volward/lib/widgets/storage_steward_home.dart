@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../ai/ai_analysis_gateway.dart';
+import '../ai/ai_coverage_coordinator.dart';
 import '../ai/coverage_desktop_notify.dart';
+import '../infrastructure/ai/ai_workspace_ports.dart';
 import '../l10n/l10n.dart';
 import '../storage_home_summary.dart';
 import '../storage_overview.dart';
@@ -124,6 +126,8 @@ class StorageStewardHome extends StatefulWidget {
     this.aiActionFocusNode,
     this.aiSnapshotId,
     this.aiAnalysisGateway = const ProductionAiAnalysisGateway(),
+    this.coverageJobs,
+    this.coverageOwner,
     this.onAiDeleteCompleted,
     this.onOpenDetailPage,
     this.updater,
@@ -167,6 +171,8 @@ class StorageStewardHome extends StatefulWidget {
   final FocusNode? aiActionFocusNode;
   final String? aiSnapshotId;
   final AiAnalysisGateway aiAnalysisGateway;
+  final AiCoverageJobs? coverageJobs;
+  final Object? coverageOwner;
   final VoidCallback? onAiDeleteCompleted;
   final ValueChanged<String>? onOpenDetailPage;
   final AppUpdater? updater;
@@ -301,6 +307,11 @@ class _StorageStewardHomeState extends State<StorageStewardHome> {
         widget.summary.selectedLocation?.path ?? '',
       ),
       gateway: widget.aiAnalysisGateway,
+      coverageJobs: widget.coverageJobs,
+      coverageOwner: widget.coverageOwner,
+      ports: createProductionAiWorkspacePorts(
+        coverageJobs: widget.coverageJobs,
+      ),
       onExit: _closeAi,
       onOpenSettings: widget.onOpenSettings ?? () {},
       onDeletingChanged: _setAiDeleting,
@@ -957,11 +968,10 @@ class _StatPanel extends StatelessWidget {
     final l10n = context.l10n;
     final volume = summary.selectedVolume;
     final usableVolume = summary.hasUsableCapacity ? volume : null;
-    final used = formatStorageBytes(usableVolume?.usedBytes);
+    final used = formatStorageBytes(summary.displayedUsedBytes);
     final total = formatStorageBytes(usableVolume?.totalBytes);
     final available = formatStorageBytes(usableVolume?.availableBytes);
-    final rawCapacityPath =
-        volume?.rootPath ?? summary.selectedLocation?.path ?? '';
+    final rawCapacityPath = summary.displayedCapacityPath;
     final capacityPath = rawCapacityPath.isEmpty ? '—' : rawCapacityPath;
 
     return Semantics(
@@ -1008,7 +1018,9 @@ class _StatPanel extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        l10n.homeCapacityUsed,
+                        summary.usesScopedCapacity
+                            ? l10n.homeScannedSize(used)
+                            : l10n.homeCapacityUsed,
                         style: context.vwFinePrint.copyWith(
                           color: dashboardOn(context).withValues(alpha: 0.72),
                         ),
@@ -1087,9 +1099,7 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = summary.hasUsableCapacity
-        ? summary.selectedVolume?.usedFraction
-        : null;
+    final progress = summary.displayedCapacityFraction;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,

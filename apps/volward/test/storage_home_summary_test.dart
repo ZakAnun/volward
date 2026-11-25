@@ -94,6 +94,24 @@ void main() {
     expect(summary.reclaimableBytes, 25);
   });
 
+  test('completed custom folder uses scanned bytes for scoped capacity', () {
+    final summary = StorageHomeSummary.fromInputs(
+      overview: liveOverview,
+      targetPath: '/Users/me/Work/client',
+      matchingSnapshot: snapshot(
+        rootPath: '/Users/me/Work/client',
+        sizeBytes: 50,
+      ),
+      scanning: false,
+      scanProgress: null,
+    );
+
+    expect(summary.selectedLocation?.kind, StorageLocationKind.custom);
+    expect(summary.usesScopedCapacity, isTrue);
+    expect(summary.displayedUsedBytes, 50);
+    expect(summary.displayedCapacityFraction, closeTo(0.025, 0.0001));
+  });
+
   test('known location volume id wins for a symlink-style path', () {
     final overview = StorageOverviewData(
       selectedVolumeId: 'system',

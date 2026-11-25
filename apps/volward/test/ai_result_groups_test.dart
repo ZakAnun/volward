@@ -1,9 +1,26 @@
+import 'dart:collection';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/ai_provider.dart';
 import 'package:volward/ai/ai_result_groups.dart';
 import 'package:volward/scan_tree.dart';
 
 void main() {
+  test('pending overlay never traverses the classified group', () {
+    final classified = _LargeClassifiedGroup();
+    final pending = groupAiResults(const [
+      AiVerdict(
+        path: '/tmp/new',
+        verdict: 'unanalyzed',
+        confidence: '',
+        reason: '',
+      ),
+    ], const {});
+    final merged = mergeUnanalyzedGroups([classified], pending).single;
+    expect(merged.items.length, 1000001);
+    expect(merged.items.last.path, '/tmp/new');
+    expect(merged.safeCount, 1000000);
+    expect(classified.items.reads, 0);
+  });
   test('groups preserve paths and summarize verdicts', () {
     final groups = groupAiResults(
       const [
@@ -243,4 +260,44 @@ void main() {
     expect(capped.single.safeCount, 20);
     expect(capped.single.totalBytes, 210);
   });
+}
+
+class _LargeClassifiedGroup extends Fake implements AiResultGroup {
+  @override
+  final _UnreadClassifiedItems items = _UnreadClassifiedItems();
+  @override
+  String get path => '/tmp';
+  @override
+  int get safeCount => items.length;
+  @override
+  int get totalBytes => 0;
+  @override
+  int get reviewCount => 0;
+  @override
+  int get keepCount => 0;
+  @override
+  int get aiSafeCount => safeCount;
+  @override
+  int get localSafeCount => 0;
+  @override
+  int get localKeepCount => 0;
+  @override
+  int get aiKeepCount => 0;
+}
+
+class _UnreadClassifiedItems extends ListBase<AiVerdict> {
+  int reads = 0;
+  @override
+  int get length => 1000000;
+  @override
+  AiVerdict operator [](int index) {
+    reads++;
+    throw StateError('classified row unexpectedly read');
+  }
+
+  @override
+  set length(int value) => throw UnsupportedError('immutable');
+  @override
+  void operator []=(int index, AiVerdict value) =>
+      throw UnsupportedError('immutable');
 }

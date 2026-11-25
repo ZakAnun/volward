@@ -313,14 +313,37 @@ impl PlatformStorage for DesktopPlatform {
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| "Selected".to_string()),
+                    user_selected: true,
                 });
             }
         }
+        roots.sort_by(|left, right| {
+            left.path
+                .len()
+                .cmp(&right.path.len())
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        let mut non_overlapping_roots = Vec::new();
+        for root in roots {
+            let covered_by_existing_root = non_overlapping_roots.iter().any(|other: &ScanRoot| {
+                other.path == root.path
+                    || other.path == "/"
+                    || root
+                        .path
+                        .strip_prefix(&other.path)
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+            });
+            if !covered_by_existing_root {
+                non_overlapping_roots.push(root);
+            }
+        }
+        roots = non_overlapping_roots;
         if roots.is_empty() {
             if let Some(home) = dirs::home_dir() {
                 roots.push(ScanRoot {
                     path: normalize_path_string(&home.to_string_lossy()),
                     label: "Home".to_string(),
+                    user_selected: false,
                 });
             }
         }
@@ -342,6 +365,7 @@ impl PlatformStorage for DesktopPlatform {
                 return Err(PlatformError::Cancelled);
             }
             let root_path = Path::new(&root.path);
+            let prune_named_directories = !root.user_selected;
             if !root_path.exists() {
                 continue;
             }
@@ -375,7 +399,8 @@ impl PlatformStorage for DesktopPlatform {
                         if subtree_skipped {
                             children.clear();
                         }
-                        let pruned_flags = prune_child_directories(children, &protected);
+                        let pruned_flags =
+                            prune_child_directories(children, &protected, prune_named_directories);
                         if pruned_flags != 0 {
                             if let Ok(mut cache) = pruned_child_flags_cache.lock() {
                                 *cache.entry(path.to_path_buf()).or_insert(0) |= pruned_flags;
@@ -803,6 +828,7 @@ mod tests {
         let roots = vec![ScanRoot {
             path: root_path.to_string_lossy().to_string(),
             label: "test".to_string(),
+            user_selected: true,
         }];
         let cancel = AtomicBool::new(false);
         let mut root_fingerprint = None;
@@ -848,6 +874,7 @@ mod tests {
         let roots = vec![ScanRoot {
             path: root_path.to_string_lossy().to_string(),
             label: "test".to_string(),
+            user_selected: false,
         }];
         let cancel = AtomicBool::new(false);
         let mut root_flags = 0u32;
@@ -868,6 +895,47 @@ mod tests {
             .expect("walk should succeed");
 
         assert_eq!(root_flags, PRUNED_CHILD_VCS);
+
+        fs::remove_dir_all(root_path).expect("remove test directory");
+    }
+
+    #[test]
+    fn explicit_selected_root_keeps_named_child_payloads() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root_path = std::env::temp_dir().join(format!(
+            "volward-explicit-root-{}-{unique}",
+            std::process::id()
+        ));
+        let payload = root_path.join("node_modules").join("payload.bin");
+        fs::create_dir_all(payload.parent().expect("payload parent")).expect("create node_modules");
+        fs::write(&payload, vec![0_u8; 4096]).expect("write payload");
+
+        let platform = DesktopPlatform::new();
+        let roots = vec![ScanRoot {
+            path: root_path.to_string_lossy().to_string(),
+            label: "selected".to_string(),
+            user_selected: true,
+        }];
+        let cancel = AtomicBool::new(false);
+        let mut paths = Vec::new();
+        platform
+            .walk_entries(
+                &roots,
+                WalkOptions {
+                    baseline_fingerprints: None,
+                },
+                &cancel,
+                &mut |entry| {
+                    paths.push(entry.path);
+                    WalkAction::Continue
+                },
+            )
+            .expect("walk should succeed");
+
+        assert!(paths.contains(&payload.to_string_lossy().to_string()));
 
         fs::remove_dir_all(root_path).expect("remove test directory");
     }
@@ -1017,6 +1085,37 @@ mod tests {
         let platform = DesktopPlatform::new();
         let result = platform.quick_list_dir("/definitely/does/not/exist/volward-test");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn discover_roots_drops_selected_descendant_of_an_existing_root() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let parent = std::env::temp_dir().join(format!(
+            "volward-overlapping-roots-{}-{unique}",
+            std::process::id()
+        ));
+        let child = parent.join("child");
+        fs::create_dir_all(&child).expect("mkdir child");
+
+        let platform = DesktopPlatform::new();
+        let roots = platform
+            .discover_roots(&[
+                parent.to_string_lossy().to_string(),
+                child.to_string_lossy().to_string(),
+                parent.to_string_lossy().to_string(),
+            ])
+            .expect("discover roots");
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(
+            roots[0].path,
+            normalize_path_string(&parent.to_string_lossy())
+        );
+
+        fs::remove_dir_all(parent).expect("cleanup");
     }
 
     #[cfg(unix)]

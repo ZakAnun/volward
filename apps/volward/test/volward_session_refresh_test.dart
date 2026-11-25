@@ -63,9 +63,6 @@ void main() {
       session.rememberCustomRoot('/Users/test/Projects');
       session.rememberCustomRoot('/Users/test/Archives');
       session.rememberCustomRoot('/Users/test/Projects');
-      for (var i = 0; i < 10 && !await file.exists(); i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
 
       expect(session.lastCustomRoot, '/Users/test/Projects');
       expect(session.recentCustomRoots, [
@@ -73,9 +70,33 @@ void main() {
         '/Users/test/Archives',
       ]);
 
-      final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      expect(raw['last_custom_root'], '/Users/test/Projects');
-      expect(raw['last_custom_roots'], [
+      // Each MRU update is intentionally persisted in the background. Waiting
+      // only for the file to exist can observe the first queued write rather
+      // than the final MRU state when the full suite is under load.
+      Map<String, dynamic>? raw;
+      for (var i = 0; i < 100; i++) {
+        if (await file.exists()) {
+          final decoded = jsonDecode(await file.readAsString());
+          final roots = decoded is Map<String, dynamic>
+              ? decoded['last_custom_roots']
+              : null;
+          if (decoded is Map<String, dynamic> &&
+              decoded['last_custom_root'] == '/Users/test/Projects' &&
+              roots is List &&
+              roots.length == 2 &&
+              roots[0] == '/Users/test/Projects' &&
+              roots[1] == '/Users/test/Archives') {
+            raw = decoded;
+            break;
+          }
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(raw, isNotNull);
+      final persisted = raw!;
+      expect(persisted['last_custom_root'], '/Users/test/Projects');
+      expect(persisted['last_custom_roots'], [
         '/Users/test/Projects',
         '/Users/test/Archives',
       ]);

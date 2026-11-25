@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/ai/coverage_verdict_store.dart';
@@ -16,6 +17,53 @@ void main() {
   tearDown(() async {
     await dir.delete(recursive: true);
   });
+
+  test(
+    'terminal snapshot and incremental reads advance only over complete rows',
+    () async {
+      const row = CoverageVerdict(
+        path: '/a',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'test',
+        coverageSource: 'file',
+        sizeBytes: 1,
+      );
+      final line = jsonEncode(row.toJson());
+      final second = line.replaceAll('/a', '/b');
+      final file = File('${dir.path}/ai_coverage_verdicts_s.jsonl');
+      await file.writeAsString('$line\n${second.substring(0, 10)}');
+      for (final preferAll in [false, true]) {
+        final snapshot = await store.readSnapshot(
+          's',
+          pageCount: 1,
+          pageSize: 100,
+          preferAll: preferAll,
+        );
+        expect(snapshot.rows.single.path, '/a');
+        expect(snapshot.end, utf8.encode('$line\n').length);
+        final pending = await store.readAppendedSince('s', snapshot.end);
+        expect(pending.fileLength, snapshot.end);
+        await store.appendAll('s', const [
+          CoverageVerdict(
+            path: '/b',
+            verdict: 'keep',
+            confidence: 'high',
+            reason: 'test',
+            coverageSource: 'file',
+            sizeBytes: 2,
+          ),
+        ]);
+        final appended = await store.readAppendedSince('s', snapshot.end);
+        expect(appended.appended.single.path, '/b');
+        expect(
+          File('${dir.path}/ai_coverage_verdicts_s.jsonl').readAsLinesSync(),
+          hasLength(2),
+        );
+        await file.writeAsString('$line\n${second.substring(0, 10)}');
+      }
+    },
+  );
 
   test('fitsInlineReadBudget rejects large verdict files', () async {
     final file = File('${dir.path}/ai_coverage_verdicts_big.jsonl');
@@ -113,6 +161,23 @@ void main() {
     expect(verdicts.single.path, '/a');
   });
 
+  test(
+    'exclusive lock file serializes appends from separate isolates',
+    () async {
+      await Future.wait([
+        Isolate.run(() => _appendFromIsolate(dir.path, 'a')),
+        Isolate.run(() => _appendFromIsolate(dir.path, 'b')),
+      ]);
+      final lines = File(
+        '${dir.path}/ai_coverage_verdicts_s.jsonl',
+      ).readAsLinesSync();
+      expect(lines, hasLength(200));
+      for (final line in lines) {
+        expect(() => jsonDecode(line), returnsNormally);
+      }
+    },
+  );
+
   test('large files decode off-isolate with same merge and paging', () async {
     final reason = 'r' * 200;
     List<CoverageVerdict> batch(int start, int count, String verdict) => [
@@ -139,6 +204,16 @@ void main() {
     expect(pages.map((v) => v.path), [
       for (var i = 0; i < 10; i++) '/f/${i.toString().padLeft(6, '0')}',
     ]);
+    expect(
+      File('${dir.path}/ai_coverage_verdicts_big.jsonl.page_meta').existsSync(),
+      isTrue,
+    );
+    expect(
+      File(
+        '${dir.path}/ai_coverage_verdicts_big.jsonl.page_paths',
+      ).existsSync(),
+      isTrue,
+    );
 
     final appended = await store.readAppendedSince('big', offset);
     expect(appended.fileLength, await store.fileByteLength('big'));
@@ -274,4 +349,19 @@ void main() {
     expect(chunk.appended.single.path, '/b');
     expect(chunk.fileLength, greaterThan(offset));
   });
+}
+
+Future<void> _appendFromIsolate(String directoryPath, String prefix) async {
+  final store = CoverageVerdictStore(Directory(directoryPath));
+  await store.appendAll('s', [
+    for (var i = 0; i < 100; i++)
+      CoverageVerdict(
+        path: '/$prefix/$i',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'isolate',
+        coverageSource: 'file',
+        sizeBytes: i,
+      ),
+  ]);
 }

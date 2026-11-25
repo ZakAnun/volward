@@ -302,7 +302,9 @@ export function initProductTour({ root, onStepView }: ProductTourOptions): () =>
     typeof ResizeObserver !== 'undefined' && fitTarget
       ? new ResizeObserver(requestFit)
       : null;
-  resizeObserver?.observe(fitTarget);
+  if (resizeObserver && fitTarget) {
+    resizeObserver.observe(fitTarget);
+  }
 
   const onWindowResize = () => {
     requestFit();

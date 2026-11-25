@@ -23,6 +23,13 @@ abstract interface class CoverageEngine {
     int? pageSize,
   });
 
+  Future<CoverageScopePage> nextScopePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  });
+
   Future<List<CoverageTreeNode>> expandTreeNode(
     String snapshotId,
     String dirPath,
@@ -89,6 +96,7 @@ class FakeCoverageEngine implements CoverageEngine {
     this.treeSummary,
     this.treePages = const [],
     this.tailPages = const [],
+    this.scopePagesByCursor = const {},
     this.expandNodes = const [],
     this.groupMembers = const [],
     this.onBuildPlan,
@@ -104,6 +112,7 @@ class FakeCoverageEngine implements CoverageEngine {
   final CoveragePlanSummary? treeSummary;
   final List<CoverageTreePage> treePages;
   final List<CoverageTailPage> tailPages;
+  final Map<int, CoverageScopePage> scopePagesByCursor;
   final List<CoverageTreeNode> expandNodes;
   final List<Map<String, dynamic>> groupMembers;
   final void Function()? onBuildPlan;
@@ -147,7 +156,30 @@ class FakeCoverageEngine implements CoverageEngine {
   @override
   Future<CoveragePlanSummary> buildTreePlan(String snapshotId) async {
     onBuildTreePlan?.call();
-    return treeSummary ?? summary;
+    final base = treeSummary ?? summary;
+    return CoveragePlanSummary(
+      snapshotId: base.snapshotId,
+      planVersion: base.planVersion,
+      rootPath: base.rootPath,
+      totalUnclassified: base.totalUnclassified,
+      preClassifiedCount: base.preClassifiedCount,
+      groupRows: base.groupRows,
+      fileRows: base.fileRows,
+      estimatedPages: base.estimatedPages,
+      fingerprint: base.fingerprint,
+      seedNodeCount: base.seedNodeCount,
+      tailFileCount: base.tailFileCount,
+      localSafeFiles: base.localSafeFiles,
+      localKeepFiles: base.localKeepFiles,
+      tailFiles: base.tailFiles,
+      treePendingFiles: base.treePendingFiles,
+      estimatedTreeCredits: base.estimatedTreeCredits,
+      estimatedTailCredits: base.estimatedTailCredits,
+      scopeFingerprint:
+          base.scopeFingerprint ??
+          scopePagesByCursor[0]?.fingerprint ??
+          '$snapshotId|fake-scope',
+    );
   }
 
   @override
@@ -183,6 +215,22 @@ class FakeCoverageEngine implements CoverageEngine {
       rows: const [],
     );
   }
+
+  @override
+  Future<CoverageScopePage> nextScopePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async =>
+      scopePagesByCursor[cursor] ??
+      CoverageScopePage(
+        snapshotId: snapshotId,
+        planVersion: planVersion,
+        fingerprint: '$snapshotId|fake-scope',
+        nextCursor: null,
+        rows: const [],
+      );
 
   @override
   Future<List<CoverageTreeNode>> expandTreeNode(

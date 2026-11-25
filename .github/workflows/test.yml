@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test-rust:
@@ -57,3 +58,48 @@ jobs:
       - name: Run tests
         run: bash ../../scripts/test_core.sh flutter
         working-directory: apps/volward
+
+  test-windows-filesystem:
+    name: Windows filesystem and coverage scope
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: choco install protoc -y --no-progress
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Rust Windows coverage scope tests
+        run: cargo test -p volward-facade coverage_tree_plan_builds_and_pages
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+        working-directory: apps/volward
+
+      - name: Windows verdict append and reconciliation regressions
+        shell: bash
+        working-directory: apps/volward
+        run: |
+          flutter test \
+            test/ai_coverage/coverage_verdict_store_test.dart \
+            test/ai_coverage/coverage_reconciliation_test.dart \
+            test/ai_coverage/ai_coverage_job_controller_test.dart

@@ -188,10 +188,7 @@ mod tests {
     use super::*;
     use crate::ai_candidates::{AiCandidate, AiCandidateSet, PreClassifiedEntry};
     use crate::model::EntryCategory;
-    use std::sync::Mutex;
     use tempfile::TempDir;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn empty_set() -> AiCandidateSet {
         AiCandidateSet {
@@ -236,7 +233,7 @@ mod tests {
 
     #[test]
     fn save_and_load_round_trip() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().expect("temp dir");
         std::env::set_var("VOLWARD_CACHE_DIR", tmp.path());
 
@@ -287,7 +284,7 @@ mod tests {
 
     #[test]
     fn exists_returns_false_before_save() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().expect("temp dir");
         std::env::set_var("VOLWARD_CACHE_DIR", tmp.path());
 
@@ -296,7 +293,7 @@ mod tests {
 
     #[test]
     fn save_overwrites_atomically() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().expect("temp dir");
         std::env::set_var("VOLWARD_CACHE_DIR", tmp.path());
 
@@ -312,7 +309,7 @@ mod tests {
 
     #[test]
     fn save_for_reuse_writes_cache_key_and_snapshot_alias() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().expect("temp dir");
         std::env::set_var("VOLWARD_CACHE_DIR", tmp.path());
 

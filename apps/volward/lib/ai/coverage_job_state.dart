@@ -11,6 +11,15 @@ enum CoveragePauseReason { manual, budget, failed, appQuit }
 /// Category persisted when [CoveragePauseReason.failed] (design §4.4).
 enum CoveragePauseDetail { parse, network, api }
 
+class CoverageJobStateCorruptException implements Exception {
+  CoverageJobStateCorruptException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class CoverageJobState {
   const CoverageJobState({
     required this.snapshotId,
@@ -37,9 +46,18 @@ class CoverageJobState {
     this.treeQueueCursor = 0,
     this.tailQueueCursor = 0,
     this.localResolvedFiles = 0,
+    this.localRuleFiles = 0,
+    this.localPlannedFiles,
+    this.localFlushCursor = 0,
+    this.localPhaseComplete = false,
+    this.aiResolvedFiles = 0,
     this.treeNodesCompleted = 0,
     this.estimatedTreeCredits,
     this.estimatedTailCredits,
+    this.scopeFingerprint,
+    this.reconciliationPending,
+    this.reconciliationFailed,
+    this.reconciliationCompleted = false,
   });
 
   factory CoverageJobState.fromJson(
@@ -81,9 +99,18 @@ class CoverageJobState {
     treeQueueCursor: (json['tree_queue_cursor'] as num?)?.toInt() ?? 0,
     tailQueueCursor: (json['tail_queue_cursor'] as num?)?.toInt() ?? 0,
     localResolvedFiles: (json['local_resolved_files'] as num?)?.toInt() ?? 0,
+    localRuleFiles: (json['local_rule_files'] as num?)?.toInt() ?? 0,
+    localPlannedFiles: (json['local_planned_files'] as num?)?.toInt(),
+    localFlushCursor: (json['local_flush_cursor'] as num?)?.toInt() ?? 0,
+    localPhaseComplete: json['local_phase_complete'] == true,
+    aiResolvedFiles: (json['ai_resolved_files'] as num?)?.toInt() ?? 0,
     treeNodesCompleted: (json['tree_nodes_completed'] as num?)?.toInt() ?? 0,
     estimatedTreeCredits: (json['estimated_tree_credits'] as num?)?.toInt(),
     estimatedTailCredits: (json['estimated_tail_credits'] as num?)?.toInt(),
+    scopeFingerprint: json['scope_fingerprint'] as String?,
+    reconciliationPending: (json['reconciliation_pending'] as num?)?.toInt(),
+    reconciliationFailed: (json['reconciliation_failed'] as num?)?.toInt(),
+    reconciliationCompleted: json['reconciliation_completed'] == true,
   );
 
   final String snapshotId;
@@ -110,9 +137,18 @@ class CoverageJobState {
   final int treeQueueCursor;
   final int tailQueueCursor;
   final int localResolvedFiles;
+  final int localRuleFiles;
+  final int? localPlannedFiles;
+  final int localFlushCursor;
+  final bool localPhaseComplete;
+  final int aiResolvedFiles;
   final int treeNodesCompleted;
   final int? estimatedTreeCredits;
   final int? estimatedTailCredits;
+  final String? scopeFingerprint;
+  final int? reconciliationPending;
+  final int? reconciliationFailed;
+  final bool reconciliationCompleted;
 
   CoverageJobState copyWith({
     int? cursor,
@@ -134,9 +170,18 @@ class CoverageJobState {
     int? treeQueueCursor,
     int? tailQueueCursor,
     int? localResolvedFiles,
+    int? localRuleFiles,
+    int? Function()? localPlannedFiles,
+    int? localFlushCursor,
+    bool? localPhaseComplete,
+    int? aiResolvedFiles,
     int? treeNodesCompleted,
     int? Function()? estimatedTreeCredits,
     int? Function()? estimatedTailCredits,
+    String? scopeFingerprint,
+    int? reconciliationPending,
+    int? reconciliationFailed,
+    bool? reconciliationCompleted,
   }) => CoverageJobState(
     snapshotId: snapshotId,
     rootPath: rootPath,
@@ -165,6 +210,13 @@ class CoverageJobState {
     treeQueueCursor: treeQueueCursor ?? this.treeQueueCursor,
     tailQueueCursor: tailQueueCursor ?? this.tailQueueCursor,
     localResolvedFiles: localResolvedFiles ?? this.localResolvedFiles,
+    localRuleFiles: localRuleFiles ?? this.localRuleFiles,
+    localPlannedFiles: localPlannedFiles != null
+        ? localPlannedFiles()
+        : this.localPlannedFiles,
+    localFlushCursor: localFlushCursor ?? this.localFlushCursor,
+    localPhaseComplete: localPhaseComplete ?? this.localPhaseComplete,
+    aiResolvedFiles: aiResolvedFiles ?? this.aiResolvedFiles,
     treeNodesCompleted: treeNodesCompleted ?? this.treeNodesCompleted,
     estimatedTreeCredits: estimatedTreeCredits != null
         ? estimatedTreeCredits()
@@ -172,6 +224,11 @@ class CoverageJobState {
     estimatedTailCredits: estimatedTailCredits != null
         ? estimatedTailCredits()
         : this.estimatedTailCredits,
+    scopeFingerprint: scopeFingerprint ?? this.scopeFingerprint,
+    reconciliationPending: reconciliationPending ?? this.reconciliationPending,
+    reconciliationFailed: reconciliationFailed ?? this.reconciliationFailed,
+    reconciliationCompleted:
+        reconciliationCompleted ?? this.reconciliationCompleted,
   );
 
   Map<String, dynamic> toJson() => {
@@ -202,11 +259,22 @@ class CoverageJobState {
     if (treeQueueCursor != 0) 'tree_queue_cursor': treeQueueCursor,
     if (tailQueueCursor != 0) 'tail_queue_cursor': tailQueueCursor,
     if (localResolvedFiles != 0) 'local_resolved_files': localResolvedFiles,
+    if (localRuleFiles != 0) 'local_rule_files': localRuleFiles,
+    if (localPlannedFiles != null) 'local_planned_files': localPlannedFiles,
+    if (localFlushCursor != 0) 'local_flush_cursor': localFlushCursor,
+    if (localPhaseComplete) 'local_phase_complete': true,
+    if (aiResolvedFiles != 0) 'ai_resolved_files': aiResolvedFiles,
     if (treeNodesCompleted != 0) 'tree_nodes_completed': treeNodesCompleted,
     if (estimatedTreeCredits != null)
       'estimated_tree_credits': estimatedTreeCredits,
     if (estimatedTailCredits != null)
       'estimated_tail_credits': estimatedTailCredits,
+    if (scopeFingerprint != null) 'scope_fingerprint': scopeFingerprint,
+    if (reconciliationPending != null)
+      'reconciliation_pending': reconciliationPending,
+    if (reconciliationFailed != null)
+      'reconciliation_failed': reconciliationFailed,
+    if (reconciliationCompleted) 'reconciliation_completed': true,
   };
 }
 
@@ -234,15 +302,28 @@ class CoverageJobStateStore {
   }
 
   Future<CoverageJobState?> load(String snapshotId) async {
+    final result = await loadResult(snapshotId);
+    if (result.error != null) {
+      throw CoverageJobStateCorruptException(result.error!);
+    }
+    return result.state;
+  }
+
+  Future<({CoverageJobState? state, String? error})> loadResult(
+    String snapshotId,
+  ) async {
     final file = _fileFor(snapshotId);
-    if (!await file.exists()) return null;
+    if (!await file.exists()) return (state: null, error: null);
     try {
       final decoded = jsonDecode(await file.readAsString());
-      return CoverageJobState.fromJson(
-        Map<String, dynamic>.from(decoded as Map),
+      return (
+        state: CoverageJobState.fromJson(
+          Map<String, dynamic>.from(decoded as Map),
+        ),
+        error: null,
       );
-    } catch (_) {
-      return null;
+    } catch (error) {
+      return (state: null, error: 'coverage checkpoint is corrupt: $error');
     }
   }
 }

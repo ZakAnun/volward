@@ -38,6 +38,7 @@ AiVerdict coerceTreeVerdict(CoverageTreeNode node, AiVerdict verdict) {
       confidence: verdict.confidence,
       reason:
           '${verdict.reason} (coerced safe_to_remove → drill_down for ${node.role})',
+      classificationSource: verdict.classificationSource,
       cleanupSource: verdict.cleanupSource,
       cleanupHint: verdict.cleanupHint,
       retentionDays: verdict.retentionDays,
