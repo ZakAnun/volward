@@ -187,6 +187,9 @@ void main() {
       directory: directory,
       bucketCount: 2,
     );
+    final root = Directory('${directory.path}/reconciliation_paged-scope');
+    await root.create(recursive: true);
+    await File('${root.path}/current.json').writeAsString('stale-build');
     await reconciler.reconcile(
       snapshotId: 'paged-scope',
       planVersion: 3,
@@ -199,7 +202,6 @@ void main() {
       expectedFingerprint: 'generated-scope',
     );
 
-    final root = Directory('${directory.path}/reconciliation_paged-scope');
     final builds = await root
         .list()
         .where((entry) => entry is Directory)
