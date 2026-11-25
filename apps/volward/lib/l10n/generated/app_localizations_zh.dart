@@ -1120,6 +1120,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String aiCoverageNotifyPartial(int remaining, int total) {
+    return '分析已结束，仍有 $remaining/$total 个文件待覆盖。打开 Volward 继续覆盖分析。';
+  }
+
+  @override
   String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
     return '已用完本次设定的积分上限（$used/$budget），分析已暂停。打开 Volward 可提高上限后继续。';
   }

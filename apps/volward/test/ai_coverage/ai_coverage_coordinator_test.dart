@@ -369,6 +369,29 @@ void main() {
     final copy = coverageCompleteNotification(l10n, state);
     expect(notifications.single, '${copy.title}::${copy.body}::s1');
   });
+
+  test('completed notification does not claim partial jobs are finished', () {
+    const state = CoverageJobState(
+      snapshotId: 's-partial',
+      rootPath: '/',
+      planVersion: 3,
+      cursor: 0,
+      totalUnclassified: 94892,
+      analyzedFiles: 94591,
+      preClassifiedCount: 94575,
+      status: CoverageJobStatus.completed,
+      usedTokens: 0,
+      usedCredits: 0,
+      budgetTokens: 0,
+      budgetCredits: 0,
+      updatedAtMs: 1,
+    );
+    final copy = coverageCompleteNotification(AppLocalizationsEn(), state);
+
+    expect(copy.body, contains('301'));
+    expect(copy.body, contains('pending'));
+    expect(copy.body, isNot(contains('Analysis finished')));
+  });
 }
 
 class _SnapshotReader implements CoverageSnapshotReader {

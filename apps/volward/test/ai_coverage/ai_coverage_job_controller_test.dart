@@ -67,6 +67,31 @@ void main() {
             nodes: [parentNode],
           ),
         },
+        scopePagesByCursor: {
+          0: const CoverageScopePage(
+            snapshotId: 'v3-tree',
+            planVersion: 3,
+            fingerprint: 'v3-tree-scope',
+            nextCursor: null,
+            rows: [
+              CoverageScopeRow(
+                path: '/root/storage/nested/a.dat',
+                sizeBytes: 10,
+                resolution: CoverageScopeResolution.treeCandidate,
+              ),
+              CoverageScopeRow(
+                path: '/root/local-safe.cache',
+                sizeBytes: 10,
+                resolution: CoverageScopeResolution.localSafe,
+              ),
+              CoverageScopeRow(
+                path: '/root/local-keep.db',
+                sizeBytes: 10,
+                resolution: CoverageScopeResolution.localKeep,
+              ),
+            ],
+          ),
+        },
         expandNodes: [childNode],
         applyDirVerdictHandler: (_, verdict, __, ___) async {
           if (verdict != 'keep') return const [];
@@ -187,6 +212,31 @@ void main() {
           await sink.close();
           return 3;
         },
+        scopePagesByCursor: {
+          0: const CoverageScopePage(
+            snapshotId: 'v3-direct',
+            planVersion: 3,
+            fingerprint: 'v3-direct-scope',
+            nextCursor: null,
+            rows: [
+              CoverageScopeRow(
+                path: '/root/cache/f0',
+                sizeBytes: 100,
+                resolution: CoverageScopeResolution.treeCandidate,
+              ),
+              CoverageScopeRow(
+                path: '/root/cache/f1',
+                sizeBytes: 100,
+                resolution: CoverageScopeResolution.treeCandidate,
+              ),
+              CoverageScopeRow(
+                path: '/root/cache/f2',
+                sizeBytes: 100,
+                resolution: CoverageScopeResolution.treeCandidate,
+              ),
+            ],
+          ),
+        },
       );
       final controller = CoverageJobController(
         engine: engine,
@@ -222,6 +272,104 @@ void main() {
         saved.where((v) => v.coverageSource == 'dir_propagate:$nodePath'),
         hasLength(3),
       );
+    },
+  );
+
+  test(
+    'v3 inconclusive directory verdict falls back to pending files',
+    () async {
+      const nodePath = '/root/unknown';
+      const scopeRows = [
+        CoverageScopeRow(
+          path: '/root/unknown/a.bin',
+          sizeBytes: 10,
+          resolution: CoverageScopeResolution.treeCandidate,
+        ),
+        CoverageScopeRow(
+          path: '/root/unknown/b.bin',
+          sizeBytes: 20,
+          resolution: CoverageScopeResolution.treeCandidate,
+        ),
+        CoverageScopeRow(
+          path: '/root/direct.bin',
+          sizeBytes: 30,
+          resolution: CoverageScopeResolution.treeCandidate,
+        ),
+      ];
+      final engine = FakeCoverageEngine(
+        summary: const CoveragePlanSummary(
+          snapshotId: 'v3-fallback',
+          planVersion: 3,
+          rootPath: '/root',
+          totalUnclassified: 3,
+          preClassifiedCount: 0,
+          groupRows: 0,
+          fileRows: 0,
+          estimatedPages: 0,
+          seedNodeCount: 1,
+        ),
+        pages: const [],
+        treePagesByCursor: {
+          0: const CoverageTreePage(
+            snapshotId: 'v3-fallback',
+            planVersion: 3,
+            nextCursor: null,
+            nodes: [
+              CoverageTreeNode(
+                path: nodePath,
+                sizeBytes: 30,
+                fileCount: 2,
+                subdirCount: 0,
+                role: 'unknown',
+              ),
+            ],
+          ),
+        },
+        scopePagesByCursor: {
+          0: const CoverageScopePage(
+            snapshotId: 'v3-fallback',
+            planVersion: 3,
+            fingerprint: 'scope-fingerprint',
+            nextCursor: null,
+            rows: scopeRows,
+          ),
+        },
+      );
+      final analyzedPaths = <String>[];
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        analyzeBatch: (rows) async {
+          analyzedPaths.addAll(rows.map((row) => row.path));
+          return successBatchOutcome(rows);
+        },
+        preferTreeCoveragePlan: true,
+        analyzeTreeBatch: (nodes) async => const BatchOutcome(
+          usage: BatchUsage(tokens: 1, credits: 1),
+          verdicts: [
+            CoverageVerdict(
+              path: nodePath,
+              verdict: 'keep',
+              confidence: 'medium',
+              reason: 'uncertain',
+              coverageSource: 'dir:/root/unknown',
+              sizeBytes: 30,
+            ),
+          ],
+        ),
+      );
+
+      final done = await controller.start(
+        'v3-fallback',
+        budgetTokens: 100000,
+        budgetCredits: 10,
+      );
+
+      expect(done.status, CoverageJobStatus.completed);
+      expect(analyzedPaths, unorderedEquals(scopeRows.map((row) => row.path)));
+      expect(done.aiResolvedFiles, 3);
+      expect(done.analyzedFiles, 3);
     },
   );
 
@@ -1744,6 +1892,102 @@ void main() {
     expect(resumed.budgetTokens, 200000);
     expect(resumed.analyzedFiles, 80);
   });
+
+  test(
+    'resume repairs a legacy completed v3 job from scope reconciliation',
+    () async {
+      await stateStore.save(
+        const CoverageJobState(
+          snapshotId: 'legacy-partial',
+          rootPath: '/root',
+          planVersion: 3,
+          cursor: 0,
+          totalUnclassified: 3,
+          analyzedFiles: 2,
+          preClassifiedCount: 2,
+          status: CoverageJobStatus.completed,
+          usedTokens: 0,
+          usedCredits: 0,
+          budgetTokens: 1000,
+          budgetCredits: 10,
+          updatedAtMs: 1,
+          treeQueueCursor: 1,
+          tailQueueCursor: 16,
+          localResolvedFiles: 2,
+          localRuleFiles: 2,
+          localPlannedFiles: 2,
+          localPhaseComplete: true,
+          aiResolvedFiles: 0,
+          treeNodesCompleted: 7,
+        ),
+      );
+      const plan = CoveragePlanSummary(
+        snapshotId: 'legacy-partial',
+        planVersion: 3,
+        rootPath: '/root',
+        totalUnclassified: 3,
+        preClassifiedCount: 2,
+        groupRows: 0,
+        fileRows: 0,
+        estimatedPages: 0,
+        seedNodeCount: 0,
+        tailFileCount: 0,
+        localSafeFiles: 1,
+        localKeepFiles: 1,
+        tailFiles: 0,
+        treePendingFiles: 1,
+      );
+      final engine = FakeCoverageEngine(
+        summary: plan,
+        pages: const [],
+        scopePagesByCursor: {
+          0: const CoverageScopePage(
+            snapshotId: 'legacy-partial',
+            planVersion: 3,
+            fingerprint: 'legacy-scope',
+            nextCursor: null,
+            rows: [
+              CoverageScopeRow(
+                path: '/root/local-safe.cache',
+                sizeBytes: 10,
+                resolution: CoverageScopeResolution.localSafe,
+              ),
+              CoverageScopeRow(
+                path: '/root/local-keep.db',
+                sizeBytes: 20,
+                resolution: CoverageScopeResolution.localKeep,
+              ),
+              CoverageScopeRow(
+                path: '/root/missed.bin',
+                sizeBytes: 30,
+                resolution: CoverageScopeResolution.treeCandidate,
+              ),
+            ],
+          ),
+        },
+      );
+      final analyzed = <String>[];
+      final controller = CoverageJobController(
+        engine: engine,
+        verdictStore: verdictStore,
+        stateStore: stateStore,
+        resumePlanLoader: (_, _) async => plan,
+        analyzeBatch: (rows) async {
+          analyzed.addAll(rows.map((row) => row.path));
+          return successBatchOutcome(rows);
+        },
+        preferTreeCoveragePlan: true,
+        analyzeTreeBatch: (_) async => throw StateError('no tree nodes remain'),
+      );
+
+      final resumed = await controller.resume('legacy-partial');
+
+      expect(resumed.status, CoverageJobStatus.completed);
+      expect(analyzed, ['/root/missed.bin']);
+      expect(resumed.analyzedFiles, 3);
+      expect(resumed.aiResolvedFiles, 1);
+    },
+  );
 
   test('resume reuses plan from loader without rebuilding', () async {
     var buildPlanCalls = 0;

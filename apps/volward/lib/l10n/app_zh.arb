@@ -874,6 +874,17 @@
       }
     }
   },
+  "aiCoverageNotifyPartial": "分析已结束，仍有 {remaining}/{total} 个文件待覆盖。打开 Volward 继续覆盖分析。",
+  "@aiCoverageNotifyPartial": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoverageNotifyBudgetPausedCredits": "已用完本次设定的积分上限（{used}/{budget}），分析已暂停。打开 Volward 可提高上限后继续。",
   "@aiCoverageNotifyBudgetPausedCredits": {
     "placeholders": {

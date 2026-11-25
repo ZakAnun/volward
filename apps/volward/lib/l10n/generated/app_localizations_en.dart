@@ -1170,6 +1170,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String aiCoverageNotifyPartial(int remaining, int total) {
+    return 'Analysis paused with $remaining of $total files still pending. Open Volward to continue coverage.';
+  }
+
+  @override
   String aiCoverageNotifyBudgetPausedCredits(int used, int budget) {
     return 'Paused at this run\'s credit limit ($used/$budget). Open Volward to raise the limit and continue.';
   }

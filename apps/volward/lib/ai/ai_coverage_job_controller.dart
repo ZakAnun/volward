@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'cancel_token.dart';
 import 'coverage_analyze_batch.dart';
 import 'coverage_analyze_tree_batch.dart';
+import 'coverage_reconciliation.dart';
 import 'coverage_client_logic.dart';
 import 'coverage_engine.dart';
 import 'coverage_native_responses.dart';
@@ -513,6 +514,14 @@ class CoverageJobController {
           await _finishPauseOrCancel();
           return;
         }
+        final reconciliationOk = await _runReconciliationFallback(
+          snapshotId,
+          plan,
+        );
+        if (!reconciliationOk) {
+          await _finishPauseOrCancel();
+          return;
+        }
         if (!_pauseRequested) {
           await _complete();
         } else {
@@ -866,6 +875,104 @@ class CoverageJobController {
       await _persistJobState(tailQueueCursor: tailCursor);
     }
     return !_pauseRequested;
+  }
+
+  Future<bool> _runReconciliationFallback(
+    String snapshotId,
+    CoveragePlanSummary plan,
+  ) async {
+    final reconciler = CoverageReconciler(
+      engine: engine,
+      directory: verdictStore.directory,
+    );
+    CoverageReconciliation reconciled;
+    try {
+      reconciled = await reconciler.reconcile(
+        snapshotId: snapshotId,
+        planVersion: plan.planVersion,
+      );
+    } on CoverageEngineException catch (e) {
+      await _pause(
+        CoveragePauseReason.failed,
+        detail: CoveragePauseDetail.api,
+        message: e.message,
+      );
+      return false;
+    } catch (e) {
+      await _pause(
+        CoveragePauseReason.failed,
+        message: 'coverage reconciliation failed: $e',
+      );
+      return false;
+    }
+
+    var batch = <CoverageRow>[];
+    var rowIndex = 0;
+    Future<bool> flush() async {
+      if (batch.isEmpty || _pauseRequested) return !_pauseRequested;
+      if (_overBudget(_state!)) {
+        await _pause(CoveragePauseReason.budget);
+        return false;
+      }
+      final rows = batch;
+      batch = <CoverageRow>[];
+      final result = await _analyzeWithRetry(snapshotId, rows);
+      if (result == null) return false;
+      final current = _state!;
+      _state = current.copyWith(
+        analyzedFiles: current.analyzedFiles + result.memberFiles,
+        aiResolvedFiles: current.aiResolvedFiles + result.memberFiles,
+        usedTokens: current.usedTokens + result.usage.tokens,
+        usedCredits: current.usedCredits + result.usage.credits,
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      await stateStore.save(_state!);
+      _emit();
+      return true;
+    }
+
+    await for (final pending in reconciled.pendingRows()) {
+      if (_pauseRequested) return !_pauseRequested;
+      if (_overBudget(_state!)) {
+        await _pause(CoveragePauseReason.budget);
+        return false;
+      }
+      batch.add(
+        CoverageRow(
+          rowIndex: rowIndex++,
+          kind: CoverageRowKind.file,
+          path: pending.path,
+          sizeBytes: pending.sizeBytes,
+        ),
+      );
+      if (batch.length >= batchSize) {
+        final ok = await flush();
+        if (!ok) return false;
+      }
+    }
+    if (!await flush()) return false;
+
+    final after = await reconciler.reconcile(
+      snapshotId: snapshotId,
+      planVersion: plan.planVersion,
+    );
+    final reconciledState = _state!.copyWith(
+      analyzedFiles: after.counts.resolved,
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    _state = reconciledState;
+    await stateStore.save(reconciledState);
+    _emit();
+    if (after.counts.pending > 0) {
+      await _pause(
+        CoveragePauseReason.failed,
+        detail: CoveragePauseDetail.api,
+        message:
+            'coverage incomplete: ${after.counts.pending} file(s) still pending',
+      );
+      return false;
+    }
+    return true;
   }
 
   Future<void> _persistJobState({

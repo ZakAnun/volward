@@ -1918,6 +1918,12 @@ abstract class AppLocalizations {
   /// **'Analysis finished for {analyzed} files. Open Volward to review cleanup suggestions.'**
   String aiCoverageNotifyComplete(int analyzed);
 
+  /// No description provided for @aiCoverageNotifyPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Analysis paused with {remaining} of {total} files still pending. Open Volward to continue coverage.'**
+  String aiCoverageNotifyPartial(int remaining, int total);
+
   /// No description provided for @aiCoverageNotifyBudgetPausedCredits.
   ///
   /// In en, this message translates to:

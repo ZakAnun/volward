@@ -874,6 +874,17 @@
       }
     }
   },
+  "aiCoverageNotifyPartial": "Analysis paused with {remaining} of {total} files still pending. Open Volward to continue coverage.",
+  "@aiCoverageNotifyPartial": {
+    "placeholders": {
+      "remaining": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "aiCoverageNotifyBudgetPausedCredits": "Paused at this run's credit limit ({used}/{budget}). Open Volward to raise the limit and continue.",
   "@aiCoverageNotifyBudgetPausedCredits": {
     "placeholders": {
