@@ -1066,6 +1066,20 @@ class _TreeBridge implements VolwardNativeBridge {
     'rows': [],
   });
   @override
+  String? nextAiScopeCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  }) => jsonEncode({
+    'snapshot_id': snapshotId,
+    'plan_version': planVersion,
+    'fingerprint': '$snapshotId|scope',
+    'next_cursor': null,
+    'rows': [],
+  });
+  @override
   String? listLocalCoverageVerdictsJson(
     Pointer<Void> engine,
     String snapshotId,

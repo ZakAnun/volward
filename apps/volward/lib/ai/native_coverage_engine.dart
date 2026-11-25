@@ -294,6 +294,30 @@ class NativeCoverageEngine implements CoverageEngine {
   });
 
   @override
+  Future<CoverageScopePage> nextScopePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async => _guard(() async {
+    final raw = _requireJson(
+      bridge.nextAiScopeCoveragePageJson(
+        engine,
+        snapshotId,
+        planVersion,
+        cursor,
+        pageSize: pageSize ?? 1000,
+      ),
+      'next scope coverage page',
+    );
+    final page = parseCoverageScopePage(raw);
+    if (page.snapshotId != snapshotId || page.planVersion != planVersion) {
+      throw CoverageEngineException('error:scope coverage page mismatch');
+    }
+    return page;
+  });
+
+  @override
   Future<List<CoverageTreeNode>> expandTreeNode(
     String snapshotId,
     String dirPath,

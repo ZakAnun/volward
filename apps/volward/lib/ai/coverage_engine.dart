@@ -23,6 +23,13 @@ abstract interface class CoverageEngine {
     int? pageSize,
   });
 
+  Future<CoverageScopePage> nextScopePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  });
+
   Future<List<CoverageTreeNode>> expandTreeNode(
     String snapshotId,
     String dirPath,
@@ -89,6 +96,7 @@ class FakeCoverageEngine implements CoverageEngine {
     this.treeSummary,
     this.treePages = const [],
     this.tailPages = const [],
+    this.scopePagesByCursor = const {},
     this.expandNodes = const [],
     this.groupMembers = const [],
     this.onBuildPlan,
@@ -104,6 +112,7 @@ class FakeCoverageEngine implements CoverageEngine {
   final CoveragePlanSummary? treeSummary;
   final List<CoverageTreePage> treePages;
   final List<CoverageTailPage> tailPages;
+  final Map<int, CoverageScopePage> scopePagesByCursor;
   final List<CoverageTreeNode> expandNodes;
   final List<Map<String, dynamic>> groupMembers;
   final void Function()? onBuildPlan;
@@ -183,6 +192,22 @@ class FakeCoverageEngine implements CoverageEngine {
       rows: const [],
     );
   }
+
+  @override
+  Future<CoverageScopePage> nextScopePage(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int? pageSize,
+  }) async =>
+      scopePagesByCursor[cursor] ??
+      CoverageScopePage(
+        snapshotId: snapshotId,
+        planVersion: planVersion,
+        fingerprint: '',
+        nextCursor: null,
+        rows: const [],
+      );
 
   @override
   Future<List<CoverageTreeNode>> expandTreeNode(

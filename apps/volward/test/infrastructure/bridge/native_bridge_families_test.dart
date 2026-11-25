@@ -71,6 +71,7 @@ void main() {
           'volward_ai_build_tree_coverage_plan_json',
           'volward_ai_next_tree_coverage_page_json',
           'volward_ai_next_tail_coverage_page_json',
+          'volward_ai_next_scope_coverage_page_json',
           'volward_ai_expand_tree_node_json',
           'volward_ai_apply_dir_verdict_json',
           'volward_ai_apply_dir_verdict_to_file',

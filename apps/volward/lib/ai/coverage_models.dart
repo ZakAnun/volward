@@ -288,6 +288,65 @@ class CoverageTailPage {
   final List<CoverageTailRow> rows;
 }
 
+enum CoverageScopeResolution {
+  localSafe,
+  localKeep,
+  tailCandidate,
+  treeCandidate,
+}
+
+class CoverageScopeRow {
+  const CoverageScopeRow({
+    required this.path,
+    required this.sizeBytes,
+    required this.resolution,
+  });
+
+  factory CoverageScopeRow.fromJson(Map<String, dynamic> json) =>
+      CoverageScopeRow(
+        path: json['path'] as String,
+        sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+        resolution: switch (json['resolution']) {
+          'local_safe' => CoverageScopeResolution.localSafe,
+          'local_keep' => CoverageScopeResolution.localKeep,
+          'tail_candidate' => CoverageScopeResolution.tailCandidate,
+          _ => CoverageScopeResolution.treeCandidate,
+        },
+      );
+
+  final String path;
+  final int sizeBytes;
+  final CoverageScopeResolution resolution;
+}
+
+class CoverageScopePage {
+  const CoverageScopePage({
+    required this.snapshotId,
+    required this.planVersion,
+    required this.fingerprint,
+    required this.nextCursor,
+    required this.rows,
+  });
+
+  factory CoverageScopePage.fromJson(Map<String, dynamic> json) =>
+      CoverageScopePage(
+        snapshotId: json['snapshot_id'] as String,
+        planVersion: (json['plan_version'] as num?)?.toInt() ?? 0,
+        fingerprint: json['fingerprint'] as String? ?? '',
+        nextCursor: (json['next_cursor'] as num?)?.toInt(),
+        rows: ((json['rows'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CoverageScopeRow.fromJson(Map<String, dynamic>.from(e)))
+            .toList(growable: false),
+      );
+
+  final String snapshotId;
+  final int planVersion;
+  final String fingerprint;
+  final int? nextCursor;
+  final List<CoverageScopeRow> rows;
+}
+
 class CoveragePage {
   const CoveragePage({
     required this.snapshotId,

@@ -179,6 +179,26 @@ pub unsafe extern "C" fn volward_ai_next_tail_coverage_page_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn volward_ai_next_scope_coverage_page_json(
+    engine: *mut VolwardEngine,
+    snapshot_id: *const c_char,
+    plan_version: u64,
+    cursor: u64,
+    page_size: u32,
+) -> *mut c_char {
+    let Some(e) = engine_ref(engine) else {
+        return ptr::null_mut();
+    };
+    let snapshot_id = cstr_to_string(snapshot_id).unwrap_or_default();
+    to_c_string(e.next_ai_scope_coverage_page_json(
+        &snapshot_id,
+        plan_version,
+        cursor,
+        page_size,
+    ))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn volward_ai_expand_tree_node_json(
     engine: *mut VolwardEngine,
     snapshot_id: *const c_char,

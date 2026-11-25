@@ -96,6 +96,19 @@ mixin AiBridgeFacade {
     cursor,
     pageSize: pageSize,
   );
+  String? nextAiScopeCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  }) => aiBridge.nextAiScopeCoveragePageJson(
+    engine,
+    snapshotId,
+    planVersion,
+    cursor,
+    pageSize: pageSize,
+  );
   String? expandAiTreeNodeJson(
     Pointer<Void> engine,
     String snapshotId,

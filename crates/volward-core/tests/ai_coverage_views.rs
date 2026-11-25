@@ -3,10 +3,10 @@ use volward_core::index::SnapshotIndexBuilder;
 use volward_core::model::ScanStats;
 use volward_core::{
     build_ai_coverage_plan, coverage_group_member_paths, coverage_group_resolution,
-    coverage_local_verdict_page, coverage_plan_page, coverage_plan_summary, coverage_tail_page,
-    coverage_tree_page, coverage_tree_summary, AiCoveragePlan, AiCoverageRow, AiCoverageRowKind,
-    AiTreeNode, AiTreePlan, CoverageFunnelStats, CoverageLocalVerdict, DirectoryRole,
-    OsKnowledgeBase,
+    coverage_local_verdict_page, coverage_plan_page, coverage_plan_summary, coverage_scope_page,
+    coverage_tail_page, coverage_tree_page, coverage_tree_summary, AiCoveragePlan, AiCoverageRow,
+    AiCoverageRowKind, AiTreeNode, AiTreePlan, CoverageFunnelContext, CoverageFunnelStats,
+    CoverageLocalVerdict, CoverageScopeResolution, DirectoryRole, OsKnowledgeBase,
 };
 
 fn empty_kb() -> OsKnowledgeBase {
@@ -90,6 +90,66 @@ fn tree_summary_and_pages_are_pure_core_views() {
     assert_eq!(tail.rows.len(), 1);
     assert_eq!(tail.rows[0].path, "/Users/x/a.bin");
     assert_eq!(tail.next_cursor, None);
+}
+
+#[test]
+fn coverage_scope_pages_every_unclassified_file_once() {
+    let paths = [
+        "/Users/x/root.bin",
+        "/Users/x/project/src/main.rs",
+        "/Users/x/Caches/cache.bin",
+        "/Users/x/deep/a/one.log",
+        "/Users/x/deep/a/two.log",
+        "/Users/x/deep/b/three.log",
+    ];
+    let index = build_index(
+        "scope-snap",
+        paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| ((*path).to_string(), index as u64 + 1)),
+    );
+    let ctx = CoverageFunnelContext::with_exclusion_prefixes(&[
+        "/Users/x/Caches".to_string(),
+    ]);
+
+    let mut cursor = 0u64;
+    let mut seen = Vec::new();
+    loop {
+        let page = coverage_scope_page(&index, &empty_kb(), &ctx, &Default::default(), cursor, 2);
+        assert_eq!(page.snapshot_id, "scope-snap");
+        assert_eq!(page.plan_version, 3);
+        assert_eq!(page.fingerprint, index.content_fingerprint());
+        seen.extend(page.rows);
+        let Some(next) = page.next_cursor else {
+            break;
+        };
+        assert!(next > cursor);
+        cursor = next;
+    }
+
+    let mut actual_paths = seen.iter().map(|row| row.path.as_str()).collect::<Vec<_>>();
+    actual_paths.sort_unstable();
+    let mut expected_paths = paths.to_vec();
+    expected_paths.sort_unstable();
+    assert_eq!(actual_paths, expected_paths);
+    assert_eq!(
+        seen.iter()
+            .filter(|row| row.resolution == CoverageScopeResolution::LocalSafe)
+            .count(),
+        1
+    );
+
+    let exhausted = coverage_scope_page(
+        &index,
+        &empty_kb(),
+        &ctx,
+        &Default::default(),
+        cursor,
+        2,
+    );
+    assert!(exhausted.rows.is_empty());
+    assert_eq!(exhausted.next_cursor, None);
 }
 
 #[test]

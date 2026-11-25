@@ -115,6 +115,31 @@ pub struct CoverageTailPage {
     pub rows: Vec<CoverageTailRow>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageScopeResolution {
+    LocalSafe,
+    LocalKeep,
+    TailCandidate,
+    TreeCandidate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoverageScopeRow {
+    pub path: String,
+    pub size_bytes: u64,
+    pub resolution: CoverageScopeResolution,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CoverageScopePage {
+    pub snapshot_id: String,
+    pub plan_version: u64,
+    pub fingerprint: String,
+    pub next_cursor: Option<u64>,
+    pub rows: Vec<CoverageScopeRow>,
+}
+
 pub fn coverage_tree_summary(index: &SnapshotIndex, plan: &AiTreePlan) -> CoverageTreeSummary {
     let funnel = plan.funnel_stats;
     CoverageTreeSummary {
@@ -158,6 +183,45 @@ pub fn coverage_tail_page(plan: &AiTreePlan, cursor: u64, page_size: usize) -> C
             .into_iter()
             .map(|(path, size_bytes)| CoverageTailRow { path, size_bytes })
             .collect(),
+    }
+}
+
+/// Pages every unclassified file in the same funnel used to build the tree
+/// plan. The cursor is an opaque index position, not a row count.
+pub fn coverage_scope_page(
+    index: &SnapshotIndex,
+    kb: &OsKnowledgeBase,
+    ctx: &CoverageFunnelContext,
+    funnel_map: &CoverageFunnelContextMap,
+    cursor: u64,
+    page_size: usize,
+) -> CoverageScopePage {
+    let limit = page_size.max(1);
+    let mut rows = Vec::with_capacity(limit);
+    let mut ctx = ctx.clone();
+    let next_cursor = index.visit_unclassified_files_from(cursor as usize, |path, size| {
+        ctx.project_ancestor = funnel_map.get(path).cloned().flatten();
+        let resolution = match resolve_unclassified_for_coverage(path, size, kb, &ctx) {
+            CoverageFileResolution::LocalSafe(_) => CoverageScopeResolution::LocalSafe,
+            CoverageFileResolution::LocalKeep { .. } => CoverageScopeResolution::LocalKeep,
+            CoverageFileResolution::TailCandidate { .. } => {
+                CoverageScopeResolution::TailCandidate
+            }
+            CoverageFileResolution::TreeCandidate => CoverageScopeResolution::TreeCandidate,
+        };
+        rows.push(CoverageScopeRow {
+            path: path.to_string(),
+            size_bytes: size,
+            resolution,
+        });
+        rows.len() < limit
+    });
+    CoverageScopePage {
+        snapshot_id: index.snapshot_id.clone(),
+        plan_version: AI_COVERAGE_TREE_PLAN_VERSION,
+        fingerprint: index.content_fingerprint(),
+        next_cursor: next_cursor.map(|cursor| cursor as u64),
+        rows,
     }
 }
 

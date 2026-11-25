@@ -334,6 +334,13 @@ class _UnavailableAiPort implements AiEnginePort {
     int pageSize = 40,
   }) => _unavailable();
   @override
+  String? nextAiScopeCoveragePageJson(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  }) => _unavailable();
+  @override
   String? expandAiTreeNodeJson(String snapshotId, String dirPath) =>
       _unavailable();
   @override

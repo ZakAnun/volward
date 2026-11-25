@@ -47,11 +47,12 @@ pub use ai_coverage::{
 pub use ai_coverage_propagate::{apply_dir_verdict, write_dir_verdict_jsonl, CoverageLocalVerdict};
 pub use ai_coverage_tree::{
     build_ai_tree_plan, build_ai_tree_plan_from_coverage_cache,
-    build_unclassified_subtree_index, coverage_tail_page, coverage_tree_page,
-    coverage_tree_summary, expand_tree_drill_children,
+    build_unclassified_subtree_index, coverage_scope_page, coverage_tail_page,
+    coverage_tree_page, coverage_tree_summary, expand_tree_drill_children,
     expand_tree_drill_children_with_index, scan_unclassified_for_coverage, AiTreeNode,
-    AiTreePlan, CoverageTailPage, CoverageTailRow, CoverageTreePage,
-    CoverageTreeSummary, UnclassifiedCoverageScan, UnclassifiedSubtreeIndex,
+    AiTreePlan, CoverageScopePage, CoverageScopeResolution, CoverageScopeRow,
+    CoverageTailPage, CoverageTailRow, CoverageTreePage, CoverageTreeSummary,
+    UnclassifiedCoverageScan, UnclassifiedSubtreeIndex,
     AI_COVERAGE_TREE_PLAN_VERSION,
 };
 pub use unclassified_coverage_cache::{

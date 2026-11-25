@@ -37,6 +37,21 @@ void main() {
     expect(page.nodes.single.topExtensions.single.extension, '.dat');
   });
 
+  test('parseCoverageScopePage decodes snapshot-bound rows', () {
+    const raw = '''
+      {"snapshot_id":"scope-snap","plan_version":3,
+       "fingerprint":"root|1|2|3|4","next_cursor":17,
+       "rows":[{"path":"/root/a","size_bytes":9,
+                "resolution":"local_safe"}]}
+    ''';
+    final page = parseCoverageScopePage(raw);
+    expect(page.snapshotId, 'scope-snap');
+    expect(page.fingerprint, 'root|1|2|3|4');
+    expect(page.nextCursor, 17);
+    expect(page.rows.single.path, '/root/a');
+    expect(page.rows.single.resolution, CoverageScopeResolution.localSafe);
+  });
+
   test('FakeCoverageEngine pages rows by cursor', () async {
     final engine = FakeCoverageEngine(
       summary: const CoveragePlanSummary(

@@ -126,6 +126,12 @@ abstract interface class AiEnginePort {
     int cursor, {
     int pageSize = 40,
   });
+  String? nextAiScopeCoveragePageJson(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  });
   String? expandAiTreeNodeJson(String snapshotId, String dirPath);
   String? applyAiDirVerdictJson(
     String snapshotId,

@@ -336,6 +336,19 @@ class _BoundAiPort extends _BoundPort implements AiEnginePort {
     pageSize: pageSize,
   );
   @override
+  String? nextAiScopeCoveragePageJson(
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  }) => bridge.nextAiScopeCoveragePageJson(
+    engine,
+    snapshotId,
+    planVersion,
+    cursor,
+    pageSize: pageSize,
+  );
+  @override
   String? expandAiTreeNodeJson(String snapshotId, String dirPath) =>
       bridge.expandAiTreeNodeJson(engine, snapshotId, dirPath);
   @override

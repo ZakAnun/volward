@@ -105,6 +105,16 @@ typedef VolwardAiNextTailCoveragePageJsonNative =
     );
 typedef VolwardAiNextTailCoveragePageJson =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
+typedef VolwardAiNextScopeCoveragePageJsonNative =
+    Pointer<Utf8> Function(
+      Pointer<Void>,
+      Pointer<Utf8>,
+      Uint64,
+      Uint64,
+      Uint32,
+    );
+typedef VolwardAiNextScopeCoveragePageJson =
+    Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int, int, int);
 typedef VolwardAiExpandTreeNodeJsonNative =
     Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef VolwardAiExpandTreeNodeJson =

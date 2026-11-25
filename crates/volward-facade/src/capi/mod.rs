@@ -50,7 +50,7 @@ mod export_tests {
             .iter()
             .map(|source| source.matches(marker).count())
             .sum::<usize>();
-        assert_eq!(count, 71);
+        assert_eq!(count, 72);
     }
 }
 
@@ -76,9 +76,11 @@ pub unsafe extern "C" fn volward_free_string(s: *mut c_char) {
 #[cfg(test)]
 mod ai_contract_tests {
     use super::ai::{
-        volward_ai_batch_size, volward_ai_build_coverage_plan_json, volward_ai_build_request_json,
-        volward_ai_next_coverage_page_json, volward_ai_parse_response_json,
-        volward_ai_resolve_coverage_group_json, volward_ai_tree_batch_size,
+        volward_ai_batch_size, volward_ai_build_coverage_plan_json,
+        volward_ai_build_request_json, volward_ai_build_tree_coverage_plan_json,
+        volward_ai_next_coverage_page_json, volward_ai_next_scope_coverage_page_json,
+        volward_ai_parse_response_json, volward_ai_resolve_coverage_group_json,
+        volward_ai_tree_batch_size,
     };
     use super::scan::{volward_get_last_pause_error, volward_request_scan_pause};
     use super::{c_char, volward_free_string, VolwardEngine};
@@ -203,6 +205,9 @@ mod ai_contract_tests {
 
     #[test]
     fn coverage_ffi_round_trips_summary_page_and_group() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use crate::engine::VolwardEngine;
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::ScanStats;
@@ -260,5 +265,27 @@ mod ai_contract_tests {
         };
         let parsed_group: serde_json::Value = serde_json::from_str(&group).unwrap();
         assert_eq!(parsed_group["members"].as_array().unwrap().len(), 90);
+
+        let tree_summary = unsafe {
+            take(volward_ai_build_tree_coverage_plan_json(
+                &mut engine as *mut VolwardEngine,
+                c"ffi-coverage".as_ptr(),
+            ))
+        };
+        let tree_json: serde_json::Value =
+            serde_json::from_str(&tree_summary).unwrap();
+        let tree_plan_version = tree_json["plan_version"].as_u64().unwrap_or(1);
+        let scope = unsafe {
+            take(volward_ai_next_scope_coverage_page_json(
+                &mut engine as *mut VolwardEngine,
+                c"ffi-coverage".as_ptr(),
+                tree_plan_version,
+                0,
+                40,
+            ))
+        };
+        let scope_json: serde_json::Value = serde_json::from_str(&scope).unwrap();
+        assert_eq!(scope_json["rows"].as_array().unwrap().len(), 40);
+        assert!(scope_json["next_cursor"].as_u64().is_some());
     }
 }

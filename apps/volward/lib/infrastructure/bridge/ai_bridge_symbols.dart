@@ -130,6 +130,11 @@ class AiNativeSymbols {
             'volward_ai_next_tail_coverage_page_json',
           )
           ?.asFunction(),
+      nextScopeCoveragePageJson = library
+          .tryLookup<NativeFunction<VolwardAiNextScopeCoveragePageJsonNative>>(
+            'volward_ai_next_scope_coverage_page_json',
+          )
+          ?.asFunction(),
       expandTreeNodeJson = library
           .tryLookup<NativeFunction<VolwardAiExpandTreeNodeJsonNative>>(
             'volward_ai_expand_tree_node_json',
@@ -171,6 +176,7 @@ class AiNativeSymbols {
   final VolwardAiBuildTreeCoveragePlanJson? buildTreeCoveragePlanJson;
   final VolwardAiNextTreeCoveragePageJson? nextTreeCoveragePageJson;
   final VolwardAiNextTailCoveragePageJson? nextTailCoveragePageJson;
+  final VolwardAiNextScopeCoveragePageJson? nextScopeCoveragePageJson;
   final VolwardAiExpandTreeNodeJson? expandTreeNodeJson;
   final VolwardAiApplyDirVerdictJson? applyDirVerdictJson;
   final VolwardAiApplyDirVerdictToFile? applyDirVerdictToFile;

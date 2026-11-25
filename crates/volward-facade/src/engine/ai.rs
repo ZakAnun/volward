@@ -629,6 +629,46 @@ impl VolwardEngine {
             .unwrap_or_else(|error| format!("error:serialize tail page: {error}"))
     }
 
+    pub fn next_ai_scope_coverage_page_json(
+        &self,
+        snapshot_id: &str,
+        plan_version: u64,
+        cursor: u64,
+        page_size: u32,
+    ) -> String {
+        let page_size = page_size.max(1) as usize;
+        let guard = match self.ai_tree_coverage_plan.lock() {
+            Ok(guard) => guard,
+            Err(_) => return "error:lock".to_string(),
+        };
+        let Some(plan) = guard.as_ref() else {
+            return "error:tree coverage plan not built".to_string();
+        };
+        if plan.snapshot_id != snapshot_id || plan.plan_version != plan_version {
+            return "error:tree coverage plan mismatch".to_string();
+        }
+        drop(guard);
+
+        let kb = OsKnowledgeBase::for_current_platform();
+        let index = match self.index_for_ai(snapshot_id) {
+            Ok(index) => index,
+            Err(error) => return error,
+        };
+        let protected = self.platform.protected_prefixes();
+        let (funnel_map, _, base_ctx) =
+            self.local_coverage_funnel_cache_for(&index, &kb, protected);
+        let page = coverage_scope_page(
+            &index,
+            &kb,
+            base_ctx.as_ref(),
+            funnel_map.as_ref(),
+            cursor,
+            page_size,
+        );
+        serde_json::to_string(&page)
+            .unwrap_or_else(|error| format!("error:serialize scope page: {error}"))
+    }
+
     pub fn expand_ai_tree_node_json(&self, snapshot_id: &str, dir_path: &str) -> String {
         let kb = OsKnowledgeBase::for_current_platform();
         let index = match self.index_for_ai(snapshot_id) {

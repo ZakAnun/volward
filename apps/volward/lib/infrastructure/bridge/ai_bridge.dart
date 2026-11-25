@@ -65,6 +65,13 @@ abstract interface class AiBridge {
     int cursor, {
     int pageSize = 40,
   });
+  String? nextAiScopeCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  });
   String? expandAiTreeNodeJson(
     Pointer<Void> engine,
     String snapshotId,
@@ -157,6 +164,7 @@ class AiNativeBridge implements AiBridge {
       _symbols.buildTreeCoveragePlanJson != null &&
       _symbols.nextTreeCoveragePageJson != null &&
       _symbols.nextTailCoveragePageJson != null &&
+      _symbols.nextScopeCoveragePageJson != null &&
       _symbols.expandTreeNodeJson != null &&
       _symbols.applyDirVerdictJson != null &&
       _symbols.listLocalCoverageVerdictsJson != null;
@@ -296,6 +304,22 @@ class AiNativeBridge implements AiBridge {
     cursor,
     pageSize,
     _symbols.nextTailCoveragePageJson,
+  );
+
+  @override
+  String? nextAiScopeCoveragePageJson(
+    Pointer<Void> engine,
+    String snapshotId,
+    int planVersion,
+    int cursor, {
+    int pageSize = 1000,
+  }) => _callPage(
+    engine,
+    snapshotId,
+    planVersion,
+    cursor,
+    pageSize,
+    _symbols.nextScopeCoveragePageJson,
   );
 
   @override
@@ -550,6 +574,8 @@ class AiNativeBridge implements AiBridge {
         'volward_ai_next_tree_coverage_page_json',
       if (_symbols.nextTailCoveragePageJson == null)
         'volward_ai_next_tail_coverage_page_json',
+      if (_symbols.nextScopeCoveragePageJson == null)
+        'volward_ai_next_scope_coverage_page_json',
       if (_symbols.expandTreeNodeJson == null)
         'volward_ai_expand_tree_node_json',
       if (_symbols.applyDirVerdictJson == null)

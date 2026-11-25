@@ -23,8 +23,8 @@ use volward_core::SnapshotIndex;
 use volward_core::{
     ai_aggregate_path_from_delete_target, apply_dir_verdict, build_ai_coverage_plan,
     coverage_group_resolution, coverage_local_verdict_page, coverage_plan_page,
-    coverage_plan_summary, coverage_tail_page, coverage_tree_page, coverage_tree_summary,
-    write_dir_verdict_jsonl,
+    coverage_plan_summary, coverage_scope_page, coverage_tail_page, coverage_tree_page,
+    coverage_tree_summary, write_dir_verdict_jsonl,
     build_ai_tree_plan_from_coverage_cache,
     coverage_group_member_paths,
     expand_tree_drill_children_with_index, page_local_coverage_verdicts, CoverageFunnelContext, CoverageFunnelContextMap,
@@ -659,6 +659,9 @@ fn parse_capability_options(
 fn capability_error_json(error: &CapabilityAnalysisError) -> String {
     serde_json::json!({ "error": error }).to_string()
 }
+
+#[cfg(test)]
+pub(crate) static COVERAGE_CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -1433,6 +1436,9 @@ mod tests {
 
     #[test]
     fn coverage_plan_builds_from_index_and_pages_without_truncation() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::ScanStats;
 
@@ -1476,6 +1482,9 @@ mod tests {
 
     #[test]
     fn coverage_group_resolution_returns_all_members() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::ScanStats;
 
@@ -1548,6 +1557,9 @@ mod tests {
 
     #[test]
     fn local_coverage_verdicts_json_pages() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::{EntryCategory, RiskLevel, ScanStats, SourceType, StorageEntry};
 
@@ -1596,6 +1608,9 @@ mod tests {
 
     #[test]
     fn coverage_plan_summary_includes_funnel_stats() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::{EntryCategory, RiskLevel, ScanStats, SourceType, StorageEntry};
 
@@ -1645,6 +1660,9 @@ mod tests {
     #[test]
     #[cfg(debug_assertions)]
     fn concurrent_tree_plan_builds_unclassified_cache_once() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use std::sync::Arc;
         use std::thread;
         use volward_core::index::SnapshotIndexBuilder;
@@ -1682,6 +1700,9 @@ mod tests {
 
     #[test]
     fn coverage_sidecar_restores_cache_after_memory_clear() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::ScanStats;
 
@@ -1717,6 +1738,9 @@ mod tests {
 
     #[test]
     fn coverage_unified_cache_reused_for_second_tree_plan() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::ScanStats;
 
@@ -1741,6 +1765,9 @@ mod tests {
 
     #[test]
     fn coverage_tree_plan_builds_and_pages() {
+        let _cache_guard = crate::engine::COVERAGE_CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use volward_core::index::SnapshotIndexBuilder;
         use volward_core::model::ScanStats;
         use volward_core::AI_COVERAGE_TREE_PLAN_VERSION;
@@ -1801,6 +1828,25 @@ mod tests {
             tail_parsed["rows"][0]["path"].as_str(),
             Some("/root/proj/llm-output/out.md")
         );
+
+        let scope_page = engine.next_ai_scope_coverage_page_json(
+            "tree-coverage-snap",
+            AI_COVERAGE_TREE_PLAN_VERSION,
+            0,
+            1,
+        );
+        let scope_parsed: serde_json::Value = serde_json::from_str(&scope_page).unwrap();
+        assert_eq!(scope_parsed["snapshot_id"], "tree-coverage-snap");
+        assert_eq!(scope_parsed["rows"].as_array().unwrap().len(), 1);
+        assert!(scope_parsed["next_cursor"].as_u64().is_some());
+
+        let mismatch = engine.next_ai_scope_coverage_page_json(
+            "tree-coverage-snap",
+            AI_COVERAGE_TREE_PLAN_VERSION + 1,
+            0,
+            1,
+        );
+        assert_eq!(mismatch, "error:tree coverage plan mismatch");
     }
 
     #[test]
