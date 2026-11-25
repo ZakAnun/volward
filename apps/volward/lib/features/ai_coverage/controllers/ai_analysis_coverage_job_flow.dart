@@ -52,6 +52,8 @@ abstract interface class AiCoverageJobFlowHost {
   set pauseInFlight(bool value);
   bool get deferCoverageJobUiForScroll;
   set deferCoverageJobUiForScroll(bool value);
+  int get resultsLayoutGeneration;
+  set resultsLayoutGeneration(int value);
   bool get resultsUserScrolling;
   set resultsUserScrolling(bool value);
   bool get resultsLayoutPending;
@@ -94,10 +96,6 @@ abstract interface class AiCoverageJobFlowHost {
   Future<void> applyHeavyResultsPresentation({
     required List<AiVerdict> verdicts,
     required bool preserveUiState,
-    required Map<String, WorkspaceReviewDecision>? savedReview,
-    required Set<String>? savedSelected,
-    required Set<String>? savedExpandedGroups,
-    required Set<String>? savedExpandedReviews,
   });
   Future<void> refreshVerdictsFromStore({required bool incremental});
   Future<void> maybeRunConclusionNarrative({required bool fresh});
@@ -324,18 +322,8 @@ Future<void> coverageJobApplyVerdictRows(
   bool preserveUiState = false,
 }) async {
   if (host.lightweightAnalyzingUi) return;
-  final savedReview = preserveUiState
-      ? Map<String, WorkspaceReviewDecision>.from(host.reviewDecisions)
-      : null;
-  final savedSelected = preserveUiState
-      ? Set<String>.from(host.selected)
-      : null;
-  final savedExpandedGroups = preserveUiState
-      ? Set<String>.from(host.expandedGroupPaths)
-      : null;
-  final savedExpandedReviews = preserveUiState
-      ? Set<String>.from(host.expandedReviewPaths)
-      : null;
+  host.resultsLayoutGeneration++;
+  host.pendingVerdictRowsAfterScroll = null;
   final savedPresentation = preserveUiState
       ? (
           query: host.resultsQuery,
@@ -370,13 +358,21 @@ Future<void> coverageJobApplyVerdictRows(
     await host.applyHeavyResultsPresentation(
       verdicts: verdicts,
       preserveUiState: preserveUiState,
-      savedReview: savedReview,
-      savedSelected: savedSelected,
-      savedExpandedGroups: savedExpandedGroups,
-      savedExpandedReviews: savedExpandedReviews,
     );
     return;
   }
+  final savedReview = preserveUiState
+      ? Map<String, WorkspaceReviewDecision>.from(host.reviewDecisions)
+      : null;
+  final savedSelected = preserveUiState
+      ? Set<String>.from(host.selected)
+      : null;
+  final savedExpandedGroups = preserveUiState
+      ? Set<String>.from(host.expandedGroupPaths)
+      : null;
+  final savedExpandedReviews = preserveUiState
+      ? Set<String>.from(host.expandedReviewPaths)
+      : null;
   if (host.disposed) return;
   host.mutate(() {
     host.coverageController.verdictRows = coverageVerdicts;

@@ -100,6 +100,7 @@ class AiAnalysisCoverageController extends ChangeNotifier {
   bool coverageCapBelowEstimate = false;
   int verdictPageCount = 2;
   int verdictByteOffset = 0;
+  int _refreshSequence = 0;
   List<CoverageVerdict> verdictRows = const [];
   bool verdictPageLoadInFlight = false;
   DateTime? lastVerdictRefreshAt;
@@ -502,11 +503,13 @@ class AiAnalysisCoverageController extends ChangeNotifier {
     required Future<int> Function(String snapshotId, String directory)
     backfillLocalVerdicts,
   }) async {
+    final sequence = ++_refreshSequence;
     if (lightweightAnalyzingUi) return verdictRows;
     final jobs = _jobs;
     final owner = _coverageOwner;
     final snapshotId = _snapshotId;
     bool isCurrent() =>
+        sequence == _refreshSequence &&
         !_disposed &&
         identical(jobs, _jobs) &&
         identical(owner, _coverageOwner) &&
@@ -529,18 +532,15 @@ class AiAnalysisCoverageController extends ChangeNotifier {
         heavyThreshold: heavyResultsLayoutThreshold,
       );
     } else {
-      if (preferReadAll && await store.fitsInlineReadBudget(snapshotId)) {
-        coverageVerdicts = await store.readAll(snapshotId);
-      } else {
-        coverageVerdicts = await store.readPages(
-          snapshotId,
-          pageCount: verdictPageCount,
-          pageSize: verdictPageSize,
-        );
-      }
-      final byteOffset = await store.fileByteLength(snapshotId);
+      final snapshot = await store.readSnapshot(
+        snapshotId,
+        pageCount: verdictPageCount,
+        pageSize: verdictPageSize,
+        preferAll: preferReadAll,
+      );
       if (!isCurrent()) return verdictRows;
-      verdictByteOffset = byteOffset;
+      coverageVerdicts = snapshot.rows;
+      verdictByteOffset = snapshot.end;
       if (coverageVerdicts.isEmpty) {
         if (verdictByteOffset > 0) {
           return verdictRows;
@@ -565,14 +565,15 @@ class AiAnalysisCoverageController extends ChangeNotifier {
           );
           if (!isCurrent()) return verdictRows;
           if (written > 0) {
-            coverageVerdicts = await store.readPages(
+            final backfilled = await store.readSnapshot(
               snapshotId,
               pageCount: verdictPageCount,
               pageSize: verdictPageSize,
+              preferAll: false,
             );
-            final byteOffset = await store.fileByteLength(snapshotId);
             if (!isCurrent()) return verdictRows;
-            verdictByteOffset = byteOffset;
+            coverageVerdicts = backfilled.rows;
+            verdictByteOffset = backfilled.end;
           }
         }
       }

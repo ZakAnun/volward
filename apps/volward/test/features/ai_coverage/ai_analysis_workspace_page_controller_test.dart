@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:volward/snapshot_cache.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volward/l10n/generated/app_localizations.dart';
@@ -16,6 +20,9 @@ import 'package:volward/features/ai_coverage/ai_analysis_workspace_config.dart';
 import 'package:volward/features/ai_coverage/controllers/ai_analysis_workspace_controller.dart';
 import 'package:volward/features/ai_coverage/controllers/ai_analysis_workspace_page_controller.dart';
 import 'package:volward/features/ai_coverage/ports/workspace_ports.dart';
+
+import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_presenter.dart';
+import 'package:volward/features/ai_coverage/views/ai_analysis_workspace_view_state.dart';
 
 void main() {
   testWidgets('page controller owns candidate bootstrap and display state', (
@@ -246,6 +253,265 @@ void main() {
       controller.dispose();
     },
   );
+
+  testWidgets(
+    'view state bounds pending preview, reuses it across progress, and hands off terminal results after scrolling',
+    (tester) async {
+      final presenter = _FramePresenter();
+      final jobs = _FakeRaiseCoverageJobs();
+      final gateway = _FakeGateway()
+        ..mode = AiMode.platform
+        ..provider = _FakePlatformProvider()
+        ..candidatesJson = jsonEncode({
+          'pre_classified': [],
+          'unknown_candidates': List.generate(
+            180,
+            (i) => {'path': '/tmp/$i', 'size_bytes': 1, 'is_dir': false},
+          ),
+          'estimated_input_tokens': 0,
+        });
+      final controller = AiAnalysisWorkspacePageController(
+        AiAnalysisWorkspaceConfig(
+          snapshotId: 'snapshot-1',
+          targetLabel: 'Downloads',
+          onExit: () {},
+          onOpenSettings: () {},
+          onDeletingChanged: (_) {},
+          onDeleteCompleted: () {},
+          gateway: gateway,
+          presenter: presenter,
+          ports: AiWorkspacePorts.fromCoverageJobs(coverageJobs: jobs),
+        ),
+      )..initialize(bootstrap: false);
+      await tester.runAsync(controller.bootstrapForTest);
+      controller.useFullCoverage = true;
+      controller.coverageUserEngagedFullRun = true;
+      const running = CoverageJobState(
+        snapshotId: 'snapshot-1',
+        rootPath: '/tmp',
+        planVersion: 3,
+        cursor: 0,
+        totalUnclassified: 3000000,
+        analyzedFiles: 0,
+        preClassifiedCount: 0,
+        status: CoverageJobStatus.running,
+        usedTokens: 0,
+        usedCredits: 0,
+        budgetTokens: 0,
+        budgetCredits: 100,
+        updatedAtMs: 1,
+      );
+      controller.coverageController.jobState = running;
+      final first = controller.buildViewState().results;
+      List<AiVerdict> pending(AiWorkspaceResultsState state) => state.groups
+          .expand((g) => g.items)
+          .where((v) => v.verdict == 'unanalyzed')
+          .toList();
+      expect(pending(first), hasLength(129));
+      final paths = controller.resultsController.verdictPaths;
+      controller.coverageController.jobState = running.copyWith(updatedAtMs: 2);
+      final unchanged = controller.buildViewState().results;
+      expect(identical(first.groups.first, unchanged.groups.first), isTrue);
+      controller.coverageController.jobState = running.copyWith(
+        analyzedFiles: 1,
+      );
+      expect(
+        pending(controller.buildViewState().results).map((v) => v.path),
+        contains('coverage://pending/2999871'),
+      );
+      expect(
+        identical(paths, controller.resultsController.verdictPaths),
+        isTrue,
+      );
+      controller.resultsController.replaceVerdicts(const [
+        AiVerdict(
+          path: '/tmp/0',
+          verdict: 'keep',
+          confidence: 'high',
+          reason: '',
+        ),
+      ]);
+      final updated = pending(
+        controller.buildViewState().results,
+      ).map((v) => v.path);
+      expect(updated, isNot(contains('/tmp/0')));
+      expect(updated, contains('coverage://pending/2999872'));
+      await tester.runAsync(() async {
+        final directory = await Directory.systemTemp.createTemp(
+          'terminal-scroll-',
+        );
+        final previous = SnapshotCache.cacheDirForTest;
+        SnapshotCache.cacheDirForTest = directory;
+        try {
+          await CoverageVerdictStore(directory).appendAll('snapshot-1', const [
+            CoverageVerdict(
+              path: '/tmp/terminal',
+              verdict: 'keep',
+              confidence: 'high',
+              reason: 'done',
+              coverageSource: 'file',
+              sizeBytes: 10,
+            ),
+          ]);
+          controller.phase = AiWorkspaceDisplayState.analyzing;
+          controller.analyzing = true;
+          controller.onResultsScrollStart();
+          jobs.emit(
+            running.copyWith(
+              status: CoverageJobStatus.completed,
+              analyzedFiles: 3000000,
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          final terminal = controller.buildViewState();
+          expect(terminal.activity.job?.status, CoverageJobStatus.completed);
+          expect(terminal.results.verdicts.single.path, '/tmp/0');
+          final finished = Completer<void>();
+          controller.addListener(() {
+            if (!finished.isCompleted &&
+                controller.verdicts.any((v) => v.path == '/tmp/terminal')) {
+              finished.complete();
+            }
+          });
+          controller.onResultsScrollEnd();
+          presenter.flush();
+          await finished.future.timeout(const Duration(seconds: 5));
+          final settled = controller.buildViewState().results;
+          expect(settled.verdicts.single.path, '/tmp/terminal');
+          expect(pending(settled), isEmpty);
+        } finally {
+          SnapshotCache.cacheDirForTest = previous;
+          await directory.delete(recursive: true);
+        }
+      });
+      controller.dispose();
+    },
+  );
+
+  testWidgets('scrolling defers asynchronously refreshed coverage verdicts', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()
+      ..candidatesJson =
+          '{"pre_classified":[],"unknown_candidates":[],'
+          '"estimated_input_tokens":0}';
+    final presenter = _FramePresenter();
+    late AiAnalysisWorkspacePageController controller;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(
+          builder: (context) {
+            controller = AiAnalysisWorkspacePageController(
+              AiAnalysisWorkspaceConfig(
+                snapshotId: 'snapshot-1',
+                targetLabel: 'Downloads',
+                onExit: () {},
+                onOpenSettings: () {},
+                onDeletingChanged: (_) {},
+                onDeleteCompleted: () {},
+                gateway: gateway,
+                presenter: presenter,
+              ),
+            )..initialize(bootstrap: false);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.runAsync(controller.bootstrapForTest);
+
+    await tester.runAsync(() async {
+      controller.resultsController.setSelectedPaths(['/tmp/prepared']);
+      final preparing = controller.applyHeavyResultsPresentation(
+        verdicts: const [
+          AiVerdict(
+            path: '/tmp/prepared',
+            verdict: 'review_needed',
+            confidence: 'high',
+            reason: 'test',
+          ),
+        ],
+        preserveUiState: true,
+      );
+      controller.onResultsScrollStart();
+      controller.resultsController.toggleSelection('/tmp/prepared', false);
+      controller.resultsController.setReviewDecision(
+        '/tmp/prepared',
+        WorkspaceReviewDecision.keep,
+      );
+      await preparing;
+    });
+    expect(controller.verdicts, isEmpty);
+    controller.onResultsScrollEnd();
+    presenter.flush();
+    expect(controller.verdicts.single.path, '/tmp/prepared');
+    expect(controller.selected, isEmpty);
+    expect(
+      controller.reviewDecisions['/tmp/prepared'],
+      WorkspaceReviewDecision.keep,
+    );
+    final preparedCache = controller.resultsController.normalizedGroupsCache;
+    expect(
+      identical(controller.resultsProjection.normalizedGroups, preparedCache),
+      isTrue,
+    );
+    await tester.runAsync(() async {
+      final directory = await Directory.systemTemp.createTemp(
+        'coverage-scroll-',
+      );
+      final previous = SnapshotCache.cacheDirForTest;
+      SnapshotCache.cacheDirForTest = directory;
+      try {
+        await CoverageVerdictStore(directory).appendAll('snapshot-1', const [
+          CoverageVerdict(
+            path: '/tmp/deferred-during-scroll',
+            verdict: 'safe_to_remove',
+            confidence: 'high',
+            reason: 'cache',
+            coverageSource: 'local_rule',
+            sizeBytes: 42,
+          ),
+        ]);
+        final reading = controller.refreshVerdictsInternal();
+        controller.onResultsScrollStart();
+        await reading;
+        expect(
+          controller.pendingVerdictRowsAfterScroll!.single.path,
+          '/tmp/deferred-during-scroll',
+        );
+      } finally {
+        SnapshotCache.cacheDirForTest = previous;
+        await directory.delete(recursive: true);
+      }
+    });
+    expect(controller.verdicts.single.path, '/tmp/prepared');
+    expect(
+      controller.sizeByPath,
+      isNot(contains('/tmp/deferred-during-scroll')),
+    );
+
+    controller.onResultsScrollEnd();
+    controller.onResultsScrollStart();
+    presenter.flush();
+    expect(controller.verdicts.single.path, '/tmp/prepared');
+    await controller.applyCoverageVerdictRowsAsync(const [
+      CoverageVerdict(
+        path: '/tmp/latest',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'keep',
+        coverageSource: 'local_rule',
+        sizeBytes: 84,
+      ),
+    ]);
+    controller.onResultsScrollEnd();
+    presenter.flush();
+    expect(controller.verdicts.single.path, '/tmp/latest');
+    controller.dispose();
+  });
 }
 
 class _FakeGateway implements AiAnalysisGateway {
@@ -391,5 +657,18 @@ class _FakeRaiseCoverageJobs implements AiCoverageJobs {
     lastRaiseBudgetCredits = budgetCredits;
     lastRaiseBudgetTokens = budgetTokens;
     return true;
+  }
+}
+
+class _FramePresenter extends Fake implements AiAnalysisWorkspacePresenter {
+  final callbacks = <void Function()>[];
+  @override
+  void schedulePostFrame(void Function() callback) => callbacks.add(callback);
+  void flush() {
+    final current = callbacks.toList();
+    callbacks.clear();
+    for (final callback in current) {
+      callback();
+    }
   }
 }

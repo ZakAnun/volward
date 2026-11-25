@@ -230,6 +230,106 @@ void main() {
     expect(projection.safeBytes, 30);
   });
 
+  test(
+    'projection reuses merged groups when progress refreshes without result changes',
+    () {
+      final results = AiAnalysisResultsController.forTest();
+      const input = AiResultsProjectionInput(
+        verdicts: [
+          AiVerdict(
+            path: '/tmp/provider.cache',
+            verdict: 'safe_to_remove',
+            confidence: 'high',
+            reason: 'provider',
+          ),
+        ],
+        selected: {},
+        reviewDecisions: {},
+        expandedGroupPaths: {},
+        expandedGroupItemLimits: {},
+        expandedReviewPaths: {},
+        sizeByPath: {'/tmp/provider.cache': 10, '/tmp/local.cache': 20},
+        searchTextByPath: {
+          '/tmp/provider.cache': '/tmp/provider.cache provider',
+          '/tmp/local.cache': '/tmp/local.cache local',
+        },
+        preClassified: [
+          {'path': '/tmp/local.cache', 'deletable': true},
+        ],
+        unanalyzedVerdicts: [
+          AiVerdict(
+            path: '/tmp/queued',
+            verdict: 'unanalyzed',
+            confidence: '',
+            reason: '',
+          ),
+        ],
+        rootPath: '/tmp',
+        targetLabel: 'tmp',
+        useFullCoverage: true,
+        truncated: false,
+        filter: WorkspaceResultFilter.all,
+        sort: WorkspaceResultSort.size,
+        query: '',
+        directoryFilter: null,
+        showsFilteredItems: false,
+        heavyResultsLayoutThreshold: 200,
+        aiResultGroupDisplayItemCap: 512,
+        firstLevelDirectoryPaths: {'/tmp'},
+        directoryPathsForGrouping: {'/tmp'},
+        coverageResultsLoadTruncated: false,
+        analyzedItemCountOverride: null,
+      );
+
+      results.buildProjection(input);
+      final classified = results.normalizedGroupsCache!;
+      final afterProgressRefresh = results.buildProjection(input);
+      expect(identical(classified, results.normalizedGroupsCache), isTrue);
+      expect(
+        afterProgressRefresh.normalizedGroups
+            .expand((g) => g.items)
+            .where((v) => v.verdict == 'unanalyzed'),
+        hasLength(1),
+      );
+      expect(afterProgressRefresh.safeBytes, 30);
+    },
+  );
+
+  test('projection recalculates merged groups when a result size changes', () {
+    final results = AiAnalysisResultsController.forTest();
+    final initial = results.buildProjection(
+      _fullCoverageInputWithLocalSize(20),
+    );
+    final resized = results.buildProjection(
+      _fullCoverageInputWithLocalSize(30),
+    );
+
+    expect(resized.safeBytes, 40);
+    expect(
+      identical(resized.normalizedGroups, initial.normalizedGroups),
+      isFalse,
+    );
+  });
+
+  test('directory structure alone invalidates classified groups', () {
+    final results = AiAnalysisResultsController.forTest();
+    const sizes = {'/tmp/provider.cache': 10, '/tmp/local.cache': 20};
+    final first = results.buildProjection(
+      _fullCoverageInputWithLocalSize(20, sizes: sizes),
+    );
+    final changed = results.buildProjection(
+      _fullCoverageInputWithLocalSize(
+        20,
+        sizes: sizes,
+        directories: {'/tmp/sub'},
+      ),
+    );
+    expect(
+      first.normalizedGroups.map((g) => g.path),
+      isNot(contains('/tmp/sub')),
+    );
+    expect(changed.normalizedGroups.map((g) => g.path), contains('/tmp/sub'));
+  });
   test('keep filter only exposes retained verdicts', () {
     final results = AiAnalysisResultsController.forTest();
     const safe = AiVerdict(
@@ -281,4 +381,51 @@ void main() {
       '/tmp/keep.db',
     ]);
   });
+}
+
+AiResultsProjectionInput _fullCoverageInputWithLocalSize(
+  int localSize, {
+  Set<String> directories = const {'/tmp'},
+  Map<String, int>? sizes,
+}) {
+  return AiResultsProjectionInput(
+    verdicts: const [
+      AiVerdict(
+        path: '/tmp/provider.cache',
+        verdict: 'safe_to_remove',
+        confidence: 'high',
+        reason: 'provider',
+      ),
+    ],
+    selected: const {},
+    reviewDecisions: const {},
+    expandedGroupPaths: const {},
+    expandedGroupItemLimits: const {},
+    expandedReviewPaths: const {},
+    sizeByPath:
+        sizes ?? {'/tmp/provider.cache': 10, '/tmp/local.cache': localSize},
+    searchTextByPath: const {
+      '/tmp/provider.cache': '/tmp/provider.cache provider',
+      '/tmp/local.cache': '/tmp/local.cache local',
+    },
+    preClassified: const [
+      {'path': '/tmp/local.cache', 'deletable': true},
+    ],
+    unanalyzedVerdicts: const [],
+    rootPath: '/tmp',
+    targetLabel: 'tmp',
+    useFullCoverage: true,
+    truncated: false,
+    filter: WorkspaceResultFilter.all,
+    sort: WorkspaceResultSort.size,
+    query: '',
+    directoryFilter: null,
+    showsFilteredItems: false,
+    heavyResultsLayoutThreshold: 200,
+    aiResultGroupDisplayItemCap: 512,
+    firstLevelDirectoryPaths: directories,
+    directoryPathsForGrouping: const {'/tmp'},
+    coverageResultsLoadTruncated: false,
+    analyzedItemCountOverride: null,
+  );
 }

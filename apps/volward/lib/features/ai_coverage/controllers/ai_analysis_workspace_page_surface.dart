@@ -189,10 +189,6 @@ abstract interface class AiAnalysisWorkspacePageSurface {
   Future<void> applyHeavyResultsPresentation({
     required List<AiVerdict> verdicts,
     required bool preserveUiState,
-    required Map<String, WorkspaceReviewDecision>? savedReview,
-    required Set<String>? savedSelected,
-    required Set<String>? savedExpandedGroups,
-    required Set<String>? savedExpandedReviews,
   });
   Future<void> refreshVerdictsInternal({
     bool incremental,

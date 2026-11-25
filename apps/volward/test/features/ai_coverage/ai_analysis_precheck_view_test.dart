@@ -173,6 +173,41 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
 
+  testWidgets('running local coverage shows an active loading indicator', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AiAnalysisPrecheckView(
+          precheck: const AiWorkspacePrecheckState(
+            mode: AiMode.byok,
+            hasProvider: true,
+            useFullCoverage: true,
+          ),
+          coverage: AiWorkspaceCoverageState(),
+          runPresentation: const CoverageRunPresentation(
+            localPhase: CoverageLocalPhase.running,
+            localResolvedFiles: 4,
+            localPlannedFiles: 20,
+            localProgressFraction: 0.2,
+            aiPhase: ClassificationAiPhase.notStarted,
+            aiResolvedFiles: 0,
+            aiPlannedFiles: 10,
+            aiProgressFraction: null,
+          ),
+          actions: _NoopActions(),
+          onOpenSettings: _noop,
+        ),
+      ),
+    );
+
+    expect(find.text('4 / 20 items classified locally'), findsOneWidget);
+    expect(find.byType(AiAnalysisActivityInlineSpinner), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+  });
+
   testWidgets('discovery and partial coverage keep their progress separate', (
     tester,
   ) async {

@@ -10,12 +10,13 @@ const _isolateDecodeThresholdBytes = 1024 * 1024;
 Future<List<CoverageVerdict>> _decodeVerdictFile(
   String path, {
   int byteOffset = 0,
+  required int end,
   bool sortByPath = false,
 }) async {
   final byPath = <String, CoverageVerdict>{};
   await for (final line
       in File(path)
-          .openRead(byteOffset)
+          .openRead(byteOffset, end)
           .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())) {
     if (line.trim().isEmpty) continue;
@@ -34,9 +35,10 @@ Future<List<CoverageVerdict>> _decodeVerdictFile(
 Future<List<CoverageVerdict>> Function() _sortedPrefixTask(
   String path,
   int limit,
+  int end,
 ) {
   return () async {
-    final merged = await _decodeVerdictFile(path, sortByPath: true);
+    final merged = await _decodeVerdictFile(path, end: end, sortByPath: true);
     return merged.length <= limit ? merged : merged.sublist(0, limit);
   };
 }
@@ -51,6 +53,7 @@ Future<List<CoverageVerdict>> _decodeVerdictFileOffUi(
     return _decodeVerdictFile(
       path,
       byteOffset: byteOffset,
+      end: byteOffset + bytesToRead,
       sortByPath: sortByPath,
     );
   }
@@ -58,6 +61,7 @@ Future<List<CoverageVerdict>> _decodeVerdictFileOffUi(
     () => _decodeVerdictFile(
       path,
       byteOffset: byteOffset,
+      end: byteOffset + bytesToRead,
       sortByPath: sortByPath,
     ),
     debugName: 'volward-verdict-decode',
@@ -235,13 +239,54 @@ class CoverageVerdictStore {
         _mergedCache != null;
     if (!cached && fileLength > _isolateDecodeThresholdBytes) {
       return Isolate.run(
-        _sortedPrefixTask(_fileFor(snapshotId).path, pageCount * pageSize),
+        _sortedPrefixTask(
+          _fileFor(snapshotId).path,
+          pageCount * pageSize,
+          fileLength,
+        ),
         debugName: 'volward-verdict-pages',
       );
     }
     final merged = await readMergedSorted(snapshotId);
     final end = (pageCount * pageSize).clamp(0, merged.length);
     return merged.sublist(0, end);
+  }
+
+  /// Returns rows and the exact complete-line boundary used to decode them.
+  Future<({List<CoverageVerdict> rows, int end})> readSnapshot(
+    String snapshotId, {
+    required int pageCount,
+    required int pageSize,
+    required bool preferAll,
+  }) async {
+    final end = await _completeLineEnd(snapshotId);
+    if (end == 0) return (rows: <CoverageVerdict>[], end: 0);
+    final path = _fileFor(snapshotId).path;
+    final all = preferAll && end <= inlineReadBudgetBytes;
+    final rows = all
+        ? await _decodeVerdictFileOffUi(path, bytesToRead: end)
+        : await Isolate.run(_sortedPrefixTask(path, pageCount * pageSize, end));
+    return (rows: rows, end: end);
+  }
+
+  Future<int> _completeLineEnd(String snapshotId) async {
+    final file = _fileFor(snapshotId);
+    if (!await file.exists()) return 0;
+    final reader = await file.open();
+    try {
+      var end = await reader.length();
+      while (end > 0) {
+        final start = (end - 4096).clamp(0, end);
+        await reader.setPosition(start);
+        final buffer = await reader.read(end - start);
+        final newline = buffer.lastIndexOf(10);
+        if (newline >= 0) return start + newline + 1;
+        end = start;
+      }
+      return 0;
+    } finally {
+      await reader.close();
+    }
   }
 
   /// Reads verdict lines appended after [byteOffset] and returns merged rows
@@ -254,7 +299,7 @@ class CoverageVerdictStore {
     if (!await file.exists()) {
       return (appended: const <CoverageVerdict>[], fileLength: 0);
     }
-    final length = await file.length();
+    final length = await _completeLineEnd(snapshotId);
     if (byteOffset >= length) {
       return (appended: const <CoverageVerdict>[], fileLength: length);
     }

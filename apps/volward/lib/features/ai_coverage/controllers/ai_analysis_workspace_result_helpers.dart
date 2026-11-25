@@ -63,6 +63,7 @@ List<AiVerdict> preClassifiedVerdicts(
         verdict: deletable ? 'safe_to_remove' : 'keep',
         confidence: entry['confidence']?.toString() ?? 'high',
         reason: entry['reason']?.toString() ?? '',
+        classificationSource: 'local:bootstrap',
       ),
     );
   }
@@ -230,6 +231,7 @@ AiVerdict withCandidateMeta(
     verdict: verdict.verdict,
     confidence: verdict.confidence,
     reason: verdict.reason,
+    classificationSource: verdict.classificationSource,
     cleanupSource: verdict.cleanupSource ?? candidate.cleanupSource,
     cleanupHint: verdict.cleanupHint ?? candidate.cleanupHint,
     retentionDays: verdict.retentionDays ?? candidate.retentionDays,

@@ -113,6 +113,7 @@ List<AiVerdict> buildLoadedVerdicts(LoadedVerdictsBuildInput input) {
           verdict: entry['verdict']?.toString() ?? '',
           confidence: entry['confidence']?.toString() ?? '',
           reason: entry['reason']?.toString() ?? '',
+          classificationSource: entry['classification_source'] as String?,
           cleanupSource:
               entry['cleanup_source'] as String? ?? meta?.cleanupSource,
           cleanupHint: entry['cleanup_hint'] as String? ?? meta?.cleanupHint,
@@ -150,11 +151,13 @@ class ResultsPresentationPrepInput {
 
 class ResultsPresentationPrepOutput {
   const ResultsPresentationPrepOutput({
+    required this.verdictPaths,
     required this.normalizedGroups,
     required this.expandedGroupPaths,
     required this.selectedPaths,
   });
 
+  final Set<String> verdictPaths;
   final List<AiResultGroup> normalizedGroups;
   final Set<String> expandedGroupPaths;
   final Set<String> selectedPaths;
@@ -201,7 +204,7 @@ ResultsPresentationPrepOutput prepareResultsPresentationIsolate(
   ResultsPresentationPrepInput input,
 ) {
   var groups = groupAiResults(
-    input.verdicts,
+    classifiedVerdictsForGroups(input.verdicts, input.preClassified),
     input.sizeByPath,
     rootPath: input.rootPath,
     directoryPaths: input.directoryPaths.toSet(),
@@ -218,6 +221,7 @@ ResultsPresentationPrepOutput prepareResultsPresentationIsolate(
     maxAutoExpandedRows: input.maxAutoExpandedRows,
   );
   return ResultsPresentationPrepOutput(
+    verdictPaths: Set.unmodifiable(input.verdicts.map((v) => v.path)),
     normalizedGroups: groups,
     expandedGroupPaths: expanded,
     selectedPaths: selectedPathsForVerdictsIsolate(

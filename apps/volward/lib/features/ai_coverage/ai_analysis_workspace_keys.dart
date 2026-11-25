@@ -36,6 +36,9 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const classificationLocalPreparing = Key(
     'ai-analysis-classification-local-preparing',
   );
+  static const classificationLocalLoading = Key(
+    'ai-analysis-classification-local-loading',
+  );
   static const coveragePlanDetails = Key('ai-analysis-coverage-plan-details');
   static const analysisProgressCard = Key('ai-analysis-progress-card');
   static const analysisPlanCard = Key('ai-analysis-plan-card');
@@ -59,6 +62,7 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const resultsHero = Key('ai-analysis-results-hero');
   static const cleanupDashboard = Key('ai-analysis-cleanup-dashboard');
   static const cleanupReclaimRing = Key('ai-analysis-cleanup-reclaim-ring');
+  static const cleanupLocalProgress = Key('ai-analysis-cleanup-local-progress');
   static const resultsMetricSafe = Key('ai-analysis-results-metric-safe');
   static const resultsMetricReview = Key('ai-analysis-results-metric-review');
   static const resultsMetricKeep = Key('ai-analysis-results-metric-keep');
@@ -105,6 +109,7 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const classificationAiProgressKey = classificationAiProgress;
   static const classificationLocalProgressKey = classificationLocalProgress;
   static const classificationLocalPreparingKey = classificationLocalPreparing;
+  static const classificationLocalLoadingKey = classificationLocalLoading;
   static const coveragePlanDetailsKey = coveragePlanDetails;
   static const analysisProgressCardKey = analysisProgressCard;
   static const analysisPlanCardKey = analysisPlanCard;
@@ -128,6 +133,7 @@ abstract final class AiAnalysisWorkspaceKeys {
   static const resultsHeroKey = resultsHero;
   static const cleanupDashboardKey = cleanupDashboard;
   static const cleanupReclaimRingKey = cleanupReclaimRing;
+  static const cleanupLocalProgressKey = cleanupLocalProgress;
   static const resultsMetricSafeKey = resultsMetricSafe;
   static const resultsMetricReviewKey = resultsMetricReview;
   static const resultsMetricKeepKey = resultsMetricKeep;

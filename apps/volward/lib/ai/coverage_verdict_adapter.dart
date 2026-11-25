@@ -6,6 +6,7 @@ AiVerdict coverageVerdictToAiVerdict(CoverageVerdict verdict) => AiVerdict(
   verdict: verdict.verdict,
   confidence: verdict.confidence,
   reason: verdict.reason,
+  classificationSource: verdict.coverageSource,
 );
 
 List<AiVerdict> coverageVerdictsToAiVerdicts(

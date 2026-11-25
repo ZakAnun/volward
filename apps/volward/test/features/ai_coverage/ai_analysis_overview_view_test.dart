@@ -87,6 +87,90 @@ void main() {
     expect(find.textContaining('14.6%'), findsNothing);
   });
 
+  testWidgets('dashboard keeps local-rule progress visible while it runs', (
+    tester,
+  ) async {
+    final state = AiAnalysisWorkspaceViewState(
+      results: AiWorkspaceResultsState(
+        overview: _dashboardOverview(),
+        coverageRunPresentation: const CoverageRunPresentation(
+          localPhase: CoverageLocalPhase.running,
+          localResolvedFiles: 4,
+          localPlannedFiles: 20,
+          localProgressFraction: 0.2,
+          aiPhase: ClassificationAiPhase.notStarted,
+          aiResolvedFiles: 0,
+          aiPlannedFiles: 10,
+          aiProgressFraction: null,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: AiAnalysisOverviewView(
+            state: state,
+            hasVerdicts: true,
+            safeCount: 30,
+            analyzing: true,
+            canGenerateNarrative: false,
+            showNarrativeCreditHint: false,
+            emptyState: const SizedBox.shrink(),
+            onOpenDetailList: (_, {directoryPath}) {},
+            onOpenReviewQueue: () {},
+            onDirectoryTypeFilterChanged: (_) {},
+            onGenerateNarrative: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.cleanupLocalProgressKey),
+      findsOneWidget,
+    );
+    expect(find.text('4 / 20 items classified locally'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
+  });
+
+  testWidgets('does not label local keep outcomes as AI decisions', (
+    tester,
+  ) async {
+    final state = AiAnalysisWorkspaceViewState(
+      results: AiWorkspaceResultsState(
+        overview: _dashboardOverview(localKeepCount: 2470),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: AiAnalysisOverviewView(
+            state: state,
+            hasVerdicts: true,
+            safeCount: 30,
+            analyzing: true,
+            canGenerateNarrative: false,
+            showNarrativeCreditHint: false,
+            emptyState: const SizedBox.shrink(),
+            onOpenDetailList: (_, {directoryPath}) {},
+            onOpenReviewQueue: () {},
+            onDirectoryTypeFilterChanged: (_) {},
+            onGenerateNarrative: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Local rule kept'), findsOneWidget);
+    expect(find.text('AI kept'), findsNothing);
+  });
+
   testWidgets('overview view renders conclusions and directory summaries', (
     tester,
   ) async {
@@ -283,6 +367,58 @@ void main() {
     );
   });
 
+  testWidgets('shows active loading affordance while local rules run', (
+    tester,
+  ) async {
+    final state = AiAnalysisWorkspaceViewState(
+      results: AiWorkspaceResultsState(
+        overview: _overview(),
+        classificationProvenance: const ClassificationProvenanceSummary(
+          bootstrapLocalCount: 3,
+          localRuleCount: 4,
+          aiResolvedCount: 0,
+          aiPlannedCount: 20,
+          phase: ClassificationAiPhase.notStarted,
+          localPlannedCount: 20,
+          localPhase: CoverageLocalPhase.running,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: AiAnalysisOverviewView(
+              state: state,
+              hasVerdicts: true,
+              safeCount: 1,
+              analyzing: true,
+              canGenerateNarrative: false,
+              showNarrativeCreditHint: false,
+              emptyState: const SizedBox.shrink(),
+              onOpenDetailList: (_, {directoryPath}) {},
+              onOpenReviewQueue: () {},
+              onDirectoryTypeFilterChanged: (_) {},
+              onGenerateNarrative: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.classificationLocalLoadingKey),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(AiAnalysisWorkspaceKeys.classificationAiProgressKey),
+      findsNothing,
+    );
+  });
+
   testWidgets('does not present an unknown local-rule total as zero percent', (
     tester,
   ) async {
@@ -454,6 +590,7 @@ AiAnalysisConclusionOverview _overview() {
 
 AiAnalysisConclusionOverview _dashboardOverview({
   double? shareOfRootPct = 14.6,
+  int localKeepCount = 0,
 }) {
   return AiAnalysisConclusionOverview(
     targetLabel: 'testDir',
@@ -468,5 +605,6 @@ AiAnalysisConclusionOverview _dashboardOverview({
     truncated: false,
     fullCoverage: true,
     directories: const [],
+    localKeepCount: localKeepCount,
   );
 }

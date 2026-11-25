@@ -17,6 +17,43 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test(
+    'terminal snapshot and incremental reads advance only over complete rows',
+    () async {
+      const row = CoverageVerdict(
+        path: '/a',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: 'test',
+        coverageSource: 'file',
+        sizeBytes: 1,
+      );
+      final line = jsonEncode(row.toJson());
+      final second = line.replaceAll('/a', '/b');
+      final file = File('${dir.path}/ai_coverage_verdicts_s.jsonl');
+      await file.writeAsString('$line\n${second.substring(0, 10)}');
+      for (final preferAll in [false, true]) {
+        final snapshot = await store.readSnapshot(
+          's',
+          pageCount: 1,
+          pageSize: 100,
+          preferAll: preferAll,
+        );
+        expect(snapshot.rows.single.path, '/a');
+        expect(snapshot.end, utf8.encode('$line\n').length);
+        final pending = await store.readAppendedSince('s', snapshot.end);
+        expect(pending.fileLength, snapshot.end);
+        await file.writeAsString(
+          '${second.substring(10)}\n',
+          mode: FileMode.append,
+        );
+        final appended = await store.readAppendedSince('s', snapshot.end);
+        expect(appended.appended.single.path, '/b');
+        await file.writeAsString('$line\n${second.substring(0, 10)}');
+      }
+    },
+  );
+
   test('fitsInlineReadBudget rejects large verdict files', () async {
     final file = File('${dir.path}/ai_coverage_verdicts_big.jsonl');
     await file.writeAsBytes(List.filled(3 * 1024 * 1024, 0x7a));

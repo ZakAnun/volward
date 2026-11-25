@@ -14,6 +14,37 @@ import 'package:volward/features/ai_coverage/controllers/ai_analysis_workspace_c
 import 'package:volward/features/ai_coverage/ports/workspace_ports.dart';
 
 void main() {
+  test(
+    'terminal full refresh overtakes an older incremental read without cursor rollback',
+    () async {
+      final store = _OverlappingVerdictStore();
+      final coverage = AiAnalysisCoverageController(
+        jobs: _FakeCoverageJobs(),
+        settings: _FakeSettings(),
+        owner: AiAnalysisWorkspaceController(ownerId: 'owner-a'),
+        snapshotId: 'snapshot-a',
+        coverageOwner: 'owner-a',
+        verdictStoreFactory: () => store,
+      );
+      Future<List<CoverageVerdict>> refresh(bool incremental) =>
+          coverage.refreshVerdictsFromStore(
+            generation: 0,
+            incremental: incremental,
+            allowNativeLocalBackfill: false,
+            preferReadAll: !incremental,
+            lightweightAnalyzingUi: false,
+            displayPreClassifiedCount: 0,
+            heavyResultsLayoutThreshold: 200,
+            backfillLocalVerdicts: (_, _) async => 0,
+          );
+      final old = refresh(true);
+      final terminal = await refresh(false);
+      coverage.verdictRows = terminal;
+      store.appended.complete((appended: <CoverageVerdict>[], fileLength: 3));
+      expect((await old).single.path, '/terminal');
+      expect(coverage.verdictByteOffset, 25);
+    },
+  );
   test('hydrate precheck owns plan summary, budget and credits', () async {
     final jobs = _FakeCoverageJobs()
       ..planSummaryResult = _summary(planVersion: 3, apiCalls: 8);
@@ -464,4 +495,33 @@ class _FakeSettings implements WorkspaceSettingsPort {
 class _FakeProvider implements AiProvider {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _OverlappingVerdictStore extends Fake implements CoverageVerdictStore {
+  final appended =
+      Completer<({List<CoverageVerdict> appended, int fileLength})>();
+  @override
+  Future<({List<CoverageVerdict> appended, int fileLength})> readAppendedSince(
+    String snapshotId,
+    int offset,
+  ) => appended.future;
+  @override
+  Future<({List<CoverageVerdict> rows, int end})> readSnapshot(
+    String snapshotId, {
+    required int pageCount,
+    required int pageSize,
+    required bool preferAll,
+  }) async => (
+    rows: const [
+      CoverageVerdict(
+        path: '/terminal',
+        verdict: 'keep',
+        confidence: 'high',
+        reason: '',
+        coverageSource: 'file',
+        sizeBytes: 1,
+      ),
+    ],
+    end: 25,
+  );
 }

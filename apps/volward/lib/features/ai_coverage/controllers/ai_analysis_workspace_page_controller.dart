@@ -152,6 +152,9 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
   Timer? jobStateCoalesceTimer;
   bool resultsLayoutPending = false;
   int resultsLayoutGeneration = 0;
+  int _refreshSequence = 0;
+  int _scrollSequence = 0;
+  void Function()? _pendingPreparedLayout;
   bool resultsUserScrolling = false;
   List<CoverageVerdict>? pendingVerdictRowsAfterScroll;
   bool pendingVerdictRowsPreserveUi = true;
@@ -442,72 +445,78 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
   Future<void> applyHeavyResultsPresentation({
     required List<AiVerdict> verdicts,
     required bool preserveUiState,
-    Map<String, WorkspaceReviewDecision>? savedReview,
-    Set<String>? savedSelected,
-    Set<String>? savedExpandedGroups,
-    Set<String>? savedExpandedReviews,
+
     void Function()? resetPresentation,
   }) async {
     final layoutGeneration = ++resultsLayoutGeneration;
     if (!disposed) {
       mutate(() => resultsLayoutPending = true);
     }
+    final sizes = sizeByPath;
+    final local = preClassified;
+    final root = rootPath;
+    final full = useFullCoverage;
+    final directories = computeDirectoryPathsForGrouping().toSet();
+    final firstLevel = scanRootFirstLevelDirectoryPaths(
+      rootPath: root,
+      unknown: unknown,
+      preClassified: local,
+      coverageVerdictRows: coverageController.verdictRows,
+      verdicts: verdicts,
+    );
     final prep = await compute(
       prepareResultsPresentationIsolate,
       ResultsPresentationPrepInput(
         verdicts: verdicts,
-        sizeByPath: Map<String, int>.from(sizeByPath),
-        rootPath: rootPath,
-        directoryPaths: computeDirectoryPathsForGrouping(),
+        sizeByPath: sizes,
+        rootPath: root,
+        directoryPaths: directories.toList(),
         maxAutoExpandedRows: maxDefaultExpandedResultRows,
-        preClassified: List<Map<String, dynamic>>.from(preClassified),
-        firstLevelDirectoryPaths: scanRootDirectories().toList(),
-        fullCoverageLayout: useFullCoverage,
+        preClassified: local,
+        firstLevelDirectoryPaths: firstLevel.toList(),
+        fullCoverageLayout: full,
       ),
     );
     if (disposed || layoutGeneration != resultsLayoutGeneration) return;
-    mutate(() {
-      resultsController.setNormalizedGroupsCache(prep.normalizedGroups);
-      resultsLayoutPending = false;
-      if (!preserveUiState) resetPresentation?.call();
-      final review = <String, WorkspaceReviewDecision>{};
-      if (preserveUiState && savedReview != null) {
-        review.addAll(savedReview);
-        for (final verdict in verdicts) {
-          if (verdict.verdict == 'review_needed' &&
-              !review.containsKey(verdict.path)) {
-            review[verdict.path] = WorkspaceReviewDecision.pending;
-          }
-        }
-      } else {
-        for (final verdict in verdicts) {
-          if (verdict.verdict == 'review_needed') {
-            review[verdict.path] = WorkspaceReviewDecision.pending;
-          }
-        }
-      }
-      final selectedPaths = preserveUiState && savedSelected != null
-          ? savedSelected
-          : prep.selectedPaths;
-      final expandedGroups = preserveUiState && savedExpandedGroups != null
-          ? savedExpandedGroups
-          : prep.expandedGroupPaths;
-      final expandedReviews = preserveUiState && savedExpandedReviews != null
-          ? savedExpandedReviews
-          : const <String>{};
-      resultsController.applyVerdicts(
-        verdicts,
-        selectedPaths: selectedPaths,
-        reviewDecisions: review,
-        expandedGroupPaths: expandedGroups,
-        expandedReviewPaths: expandedReviews,
-      );
-      if (preserveUiState && savedSelected != null) {
-        syncSelectedToKnownPaths();
-      }
-      invalidateVisibleGroups();
-      bootstrapController.markExistingResult(verdicts.isNotEmpty);
-    });
+    void applyPreparedLayout() {
+      if (disposed || layoutGeneration != resultsLayoutGeneration) return;
+      mutate(() {
+        resultsLayoutPending = false;
+        if (!preserveUiState) resetPresentation?.call();
+        resultsController.applyVerdicts(
+          verdicts,
+          preparedVerdictPaths: prep.verdictPaths,
+          selectedPaths: preserveUiState
+              ? Set.of(selected)
+              : prep.selectedPaths,
+          reviewDecisions: preserveUiState ? Map.of(reviewDecisions) : null,
+          expandedGroupPaths: preserveUiState
+              ? Set.of(expandedGroupPaths)
+              : prep.expandedGroupPaths,
+          expandedReviewPaths: preserveUiState
+              ? Set.of(expandedReviewPaths)
+              : null,
+        );
+        resultsController.cachePreparedGroups(
+          prep.normalizedGroups,
+          preClassified: local,
+          sizeByPath: sizes,
+          rootPath: root,
+          fullCoverage: full,
+          firstLevelDirectories: firstLevel,
+          directories: directories,
+        );
+        if (preserveUiState) syncSelectedToKnownPaths();
+        invalidateVisibleGroups();
+        bootstrapController.markExistingResult(verdicts.isNotEmpty);
+      });
+    }
+
+    if (resultsUserScrolling) {
+      _pendingPreparedLayout = applyPreparedLayout;
+    } else {
+      applyPreparedLayout();
+    }
   }
 
   void initialize({bool bootstrap = true}) {
@@ -643,11 +652,18 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
     List<CoverageVerdict> rows, {
     required bool preserveUiState,
   }) {
+    resultsLayoutGeneration++;
+    _pendingPreparedLayout = null;
+    coverageController.verdictRows = rows;
     pendingVerdictRowsAfterScroll = rows;
     pendingVerdictRowsPreserveUi = preserveUiState;
   }
 
   void flushPendingCoverageVerdictRowsAfterScroll() {
+    if (resultsUserScrolling) return;
+    final prepared = _pendingPreparedLayout;
+    _pendingPreparedLayout = null;
+    prepared?.call();
     final pending = pendingVerdictRowsAfterScroll;
     if (pending == null) return;
     pendingVerdictRowsAfterScroll = null;
@@ -733,9 +749,8 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
   }
 
   void onResultsScrollStart() {
-    if (runtimePhase == _Phase.results || runtimePhase == _Phase.deleting) {
-      resultsUserScrolling = true;
-    }
+    _scrollSequence++;
+    resultsUserScrolling = true;
     if (_shouldDeferCoverageJobUiDuringScroll()) {
       deferCoverageJobUiForScroll = true;
     }
@@ -746,10 +761,13 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
       deferCoverageJobUiForScroll = false;
       flushPendingCoverageJobStateAfterScroll();
     }
-    if (runtimePhase == _Phase.results || runtimePhase == _Phase.deleting) {
+    if (resultsUserScrolling) {
       resultsUserScrolling = false;
+      final sequence = _scrollSequence;
       page.presenter?.schedulePostFrame(() {
-        if (disposed) return;
+        if (disposed || sequence != _scrollSequence || resultsUserScrolling) {
+          return;
+        }
         flushPendingCoverageVerdictRowsAfterScroll();
         maybeLoadMoreCoverageVerdicts(
           pixels: pixels,
@@ -848,6 +866,7 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
     bool preferReadAll = false,
   }) async {
     final generation = workspaceController.operationGeneration;
+    final sequence = ++_refreshSequence;
     final rows = await coverageController.refreshVerdictsFromStore(
       generation: generation,
       incremental: incremental,
@@ -858,7 +877,9 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
       heavyResultsLayoutThreshold: heavyResultsLayoutThresholdValue,
       backfillLocalVerdicts: coverageAccess.backfillLocalVerdicts,
     );
-    if (!isCurrent(generation) || disposed) return;
+    if (!isCurrent(generation) || disposed || sequence != _refreshSequence) {
+      return;
+    }
     await applyCoverageVerdictRowsAsync(rows, preserveUiState: incremental);
     if (resultsLayoutPending && verdicts.isEmpty) {
       mutate(() => resultsLayoutPending = false);
@@ -869,9 +890,7 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
     List<CoverageVerdict> coverageVerdicts, {
     bool preserveUiState = false,
   }) {
-    if (resultsUserScrolling &&
-        preserveUiState &&
-        (runtimePhase == _Phase.results || runtimePhase == _Phase.deleting)) {
+    if (resultsUserScrolling) {
       queueCoverageVerdictRowsUntilScrollIdle(
         coverageVerdicts,
         preserveUiState: preserveUiState,
@@ -891,6 +910,13 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
     List<CoverageVerdict> coverageVerdicts, {
     bool preserveUiState = false,
   }) async {
+    if (resultsUserScrolling) {
+      queueCoverageVerdictRowsUntilScrollIdle(
+        coverageVerdicts,
+        preserveUiState: preserveUiState,
+      );
+      return;
+    }
     await coverageJobApplyVerdictRows(
       this,
       coverageVerdicts,
@@ -913,12 +939,13 @@ class AiAnalysisWorkspacePageController extends ChangeNotifier
     return coverageJobBillingModeMismatchBannerMessage(this, job);
   }
 
+  final _pendingPreview = reporting_flow.PendingVerdictPreview();
   List<AiVerdict> unanalyzedVerdicts() {
-    return reporting_flow.unanalyzedVerdicts(
+    return _pendingPreview.build(
       useFullCoverage: useFullCoverage,
       jobState: coverageController.jobState,
       unknown: unknown,
-      verdicts: verdicts,
+      verdictPaths: resultsController.verdictPaths,
       l10n: messages.l10n,
     );
   }

@@ -305,10 +305,6 @@ Future<bool> quickApplyLoadedResult(
       await host.applyHeavyResultsPresentation(
         verdicts: verdicts,
         preserveUiState: false,
-        savedReview: null,
-        savedSelected: null,
-        savedExpandedGroups: null,
-        savedExpandedReviews: null,
       );
       if (!host.isCurrent(generation)) return false;
       unawaited(host.maybeRunConclusionNarrative(fresh: false));

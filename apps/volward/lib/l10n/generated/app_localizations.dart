@@ -2542,11 +2542,47 @@ abstract class AppLocalizations {
   /// **'Pending'**
   String get aiResultsMetricReviewSubtitle;
 
-  /// No description provided for @aiResultsMetricKeepSubtitle.
+  /// No description provided for @aiResultsMetricSafeLocalSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local rule confirmed'**
+  String get aiResultsMetricSafeLocalSubtitle;
+
+  /// No description provided for @aiResultsMetricSafeAiSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI confirmed'**
+  String get aiResultsMetricSafeAiSubtitle;
+
+  /// No description provided for @aiResultsMetricSafeCombinedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local + AI confirmed'**
+  String get aiResultsMetricSafeCombinedSubtitle;
+
+  /// No description provided for @aiResultsMetricKeepLocalSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local rule kept'**
+  String get aiResultsMetricKeepLocalSubtitle;
+
+  /// No description provided for @aiResultsMetricKeepAiSubtitle.
   ///
   /// In en, this message translates to:
   /// **'AI kept'**
-  String get aiResultsMetricKeepSubtitle;
+  String get aiResultsMetricKeepAiSubtitle;
+
+  /// No description provided for @aiResultsMetricKeepCombinedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local + AI kept'**
+  String get aiResultsMetricKeepCombinedSubtitle;
+
+  /// No description provided for @aiResultsMetricKeepUnknownSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed kept'**
+  String get aiResultsMetricKeepUnknownSubtitle;
 
   /// No description provided for @aiResultsPreviewSafeTitle.
   ///

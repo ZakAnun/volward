@@ -83,23 +83,38 @@ String localizedAiError(Object error, AppLocalizations l10n) {
   };
 }
 
-List<AiVerdict> unanalyzedVerdicts({
-  required bool useFullCoverage,
-  required CoverageJobState? jobState,
-  required List<AiCandidate> unknown,
-  required List<AiVerdict> verdicts,
-  required AppLocalizations l10n,
-}) {
-  if (!useFullCoverage || jobState == null) return const [];
-  if (jobState.status == CoverageJobStatus.completed) return const [];
-  final pending = jobState.totalUnclassified - jobState.analyzedFiles;
-  if (pending <= 0) return const [];
-  return buildUnanalyzedDisplayVerdicts(
-    pendingFileCount: pending,
-    previewCandidates: unknown,
-    verdictPaths: verdicts.map((verdict) => verdict.path).toSet(),
-    itemReason: l10n.aiCoverageUnanalyzedReason,
-    aggregateSummaryReason: (remaining) =>
-        l10n.aiCoverageUnanalyzedAggregate(remaining),
-  );
+class PendingVerdictPreview {
+  static const maxPreviewCandidates = 128;
+  (List<AiCandidate>, Set<String>, String, int)? _key;
+  List<AiVerdict> _rows = const [];
+  List<AiVerdict> build({
+    required bool useFullCoverage,
+    required CoverageJobState? jobState,
+    required List<AiCandidate> unknown,
+    required Set<String> verdictPaths,
+    required AppLocalizations l10n,
+  }) {
+    final pending = jobState == null
+        ? 0
+        : jobState.totalUnclassified - jobState.analyzedFiles;
+    if (!useFullCoverage ||
+        jobState?.status == CoverageJobStatus.completed ||
+        pending <= 0) {
+      _key = null;
+      return _rows = const [];
+    }
+    final key = (unknown, verdictPaths, l10n.localeName, pending);
+    if (_key == key) return _rows;
+    _key = key;
+    return _rows = List.unmodifiable(
+      buildUnanalyzedDisplayVerdicts(
+        pendingFileCount: pending,
+        previewCandidates: unknown.take(maxPreviewCandidates),
+        verdictPaths: verdictPaths,
+        itemReason: l10n.aiCoverageUnanalyzedReason,
+        aggregateSummaryReason: (remaining) =>
+            l10n.aiCoverageUnanalyzedAggregate(remaining),
+      ),
+    );
+  }
 }

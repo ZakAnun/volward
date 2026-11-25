@@ -219,6 +219,7 @@ class ClassificationProvenanceSummary {
     required this.phase,
     this.localPlannedCount,
     this.localPhaseComplete = false,
+    this.localPhase = CoverageLocalPhase.notStarted,
   });
 
   final int bootstrapLocalCount;
@@ -228,6 +229,7 @@ class ClassificationProvenanceSummary {
   final ClassificationAiPhase phase;
   final int? localPlannedCount;
   final bool localPhaseComplete;
+  final CoverageLocalPhase localPhase;
 }
 
 /// UI-ready AI progress facts derived from persisted classification counters.
@@ -274,6 +276,7 @@ ClassificationProvenanceSummary buildClassificationProvenanceSummary({
   required bool isLocalOnlyPlan,
 }) {
   final plannedAiFiles = _plannedAiFiles(plan);
+  final plannedLocalFiles = _plannedLocalFiles(plan);
   return ClassificationProvenanceSummary(
     bootstrapLocalCount: bootstrapPreclassifiedCount,
     localRuleCount: job?.localRuleFiles ?? 0,
@@ -284,8 +287,9 @@ ClassificationProvenanceSummary buildClassificationProvenanceSummary({
       hasProvider: hasProvider,
       isLocalOnlyPlan: isLocalOnlyPlan,
     ),
-    localPlannedCount: _plannedLocalFiles(plan),
+    localPlannedCount: plannedLocalFiles,
     localPhaseComplete: job?.localPhaseComplete ?? false,
+    localPhase: _coverageLocalPhase(job: job, plannedFiles: plannedLocalFiles),
   );
 }
 
@@ -400,7 +404,9 @@ List<AiVerdict> buildUnanalyzedDisplayVerdicts({
     reason: itemReason,
   );
   final remaining = pendingFileCount - preview.length;
-  if (remaining <= 0) return preview;
+  if (remaining <= 0) {
+    return preview.take(pendingFileCount).toList(growable: false);
+  }
   return [
     ...preview,
     AiVerdict(

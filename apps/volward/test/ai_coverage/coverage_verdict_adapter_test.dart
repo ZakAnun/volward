@@ -19,6 +19,7 @@ void main() {
     expect(ai.verdict, verdict.verdict);
     expect(ai.confidence, verdict.confidence);
     expect(ai.reason, verdict.reason);
+    expect(ai.classificationSource, verdict.coverageSource);
   });
 
   test('coverageVerdictsToAiVerdicts preserves order', () {

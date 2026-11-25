@@ -46,7 +46,14 @@ class AiAnalysisResultsController extends ChangeNotifier {
   String? _ownerId;
 
   List<AiVerdict> _verdicts = const [];
+  Set<String> _verdictPaths = const {};
+  Set<String> get verdictPaths => _verdictPaths;
+  List<AiVerdict>? _pendingRows;
+  List<AiResultGroup>? _combinedGroups;
+
   List<AiResultGroup>? _normalizedGroupsCache;
+  bool _normalizedGroupsCacheIncludesPreclassified = false;
+  _NormalizedGroupsCacheKey? _normalizedGroupsCacheKey;
   final Set<String> _selected = {};
   final Map<String, WorkspaceReviewDecision> _reviewDecisions = {};
   final Set<String> _expandedGroupPaths = {};
@@ -136,7 +143,9 @@ class AiAnalysisResultsController extends ChangeNotifier {
   }
 
   void reset() {
+    setNormalizedGroupsCache(null);
     _verdicts = const [];
+    _verdictPaths = const {};
     _selected.clear();
     _reviewDecisions.clear();
     _expandedGroupPaths.clear();
@@ -157,12 +166,15 @@ class AiAnalysisResultsController extends ChangeNotifier {
   /// for result application, so the page never mutates these fields directly.
   void applyVerdicts(
     List<AiVerdict> verdicts, {
+    Set<String>? preparedVerdictPaths,
     Set<String>? selectedPaths,
     Map<String, WorkspaceReviewDecision>? reviewDecisions,
     Set<String>? expandedGroupPaths,
     Set<String>? expandedReviewPaths,
   }) {
     _verdicts = List.unmodifiable(verdicts);
+    _verdictPaths =
+        preparedVerdictPaths ?? Set.unmodifiable(verdicts.map((v) => v.path));
     if (selectedPaths != null) {
       _selected
         ..clear()
@@ -213,6 +225,7 @@ class AiAnalysisResultsController extends ChangeNotifier {
   /// state intact. Used for metadata enrichment of an already-applied result.
   void replaceVerdicts(List<AiVerdict> verdicts) {
     _verdicts = List.unmodifiable(verdicts);
+    _verdictPaths = Set.unmodifiable(verdicts.map((v) => v.path));
     _touch();
   }
 
@@ -314,10 +327,39 @@ class AiAnalysisResultsController extends ChangeNotifier {
     _touch();
   }
 
-  void setNormalizedGroupsCache(List<AiResultGroup>? groups) {
+  void setNormalizedGroupsCache(
+    List<AiResultGroup>? groups, {
+    bool includesPreclassified = false,
+  }) {
+    _combinedGroups = null;
+    _pendingRows = null;
     _normalizedGroupsCache = groups == null
         ? null
         : List<AiResultGroup>.unmodifiable(groups);
+    _normalizedGroupsCacheIncludesPreclassified =
+        groups != null && includesPreclassified;
+    _normalizedGroupsCacheKey = null;
+  }
+
+  void cachePreparedGroups(
+    List<AiResultGroup> groups, {
+    required List<Map<String, dynamic>> preClassified,
+    required Map<String, int> sizeByPath,
+    required String rootPath,
+    required bool fullCoverage,
+    required Set<String> firstLevelDirectories,
+    required Set<String> directories,
+  }) {
+    setNormalizedGroupsCache(groups, includesPreclassified: true);
+    _normalizedGroupsCacheKey = _NormalizedGroupsCacheKey(
+      verdicts: _verdicts,
+      preClassified: preClassified,
+      sizeByPath: sizeByPath,
+      rootPath: rootPath,
+      useFullCoverage: fullCoverage,
+      firstLevelDirectoryPaths: firstLevelDirectories,
+      directoryPathsForGrouping: directories,
+    );
   }
 
   void setExpandedReview(String path, bool expanded) {
@@ -488,6 +530,51 @@ final class AiResultsProjectionInput {
   final int? analyzedItemCountOverride;
 }
 
+/// Identifies the stable inputs used to construct normalized result groups.
+/// Progress-only state is deliberately absent; it updates the overview while
+/// retaining the already merged classification groups.
+final class _NormalizedGroupsCacheKey {
+  _NormalizedGroupsCacheKey.fromInput(AiResultsProjectionInput input)
+    : verdicts = input.verdicts,
+      preClassified = input.preClassified,
+      sizeByPath = input.sizeByPath,
+      rootPath = input.rootPath,
+      useFullCoverage = input.useFullCoverage,
+      firstLevelDirectoryPaths = Set<String>.unmodifiable(
+        input.firstLevelDirectoryPaths,
+      ),
+      directoryPathsForGrouping = Set<String>.unmodifiable(
+        input.directoryPathsForGrouping,
+      );
+
+  _NormalizedGroupsCacheKey({
+    required this.verdicts,
+    required this.preClassified,
+    required this.sizeByPath,
+    required this.rootPath,
+    required this.useFullCoverage,
+    required this.firstLevelDirectoryPaths,
+    required this.directoryPathsForGrouping,
+  });
+  final List<AiVerdict> verdicts;
+  final List<Map<String, dynamic>> preClassified;
+  final Map<String, int> sizeByPath;
+  final String rootPath;
+  final bool useFullCoverage;
+  final Set<String> firstLevelDirectoryPaths;
+  final Set<String> directoryPathsForGrouping;
+
+  bool matches(AiResultsProjectionInput input) {
+    return identical(verdicts, input.verdicts) &&
+        identical(preClassified, input.preClassified) &&
+        identical(sizeByPath, input.sizeByPath) &&
+        rootPath == input.rootPath &&
+        useFullCoverage == input.useFullCoverage &&
+        setEquals(firstLevelDirectoryPaths, input.firstLevelDirectoryPaths) &&
+        setEquals(directoryPathsForGrouping, input.directoryPathsForGrouping);
+  }
+}
+
 /// Derived result presentation owned by [AiAnalysisResultsController].
 final class AiResultsProjection {
   const AiResultsProjection({
@@ -511,8 +598,28 @@ final class AiResultsProjection {
 
 extension AiAnalysisResultsProjection on AiAnalysisResultsController {
   AiResultsProjection buildProjection(AiResultsProjectionInput input) {
-    final normalizedGroups = _normalizedGroupsFor(input);
-    setNormalizedGroupsCache(normalizedGroups);
+    var normalizedGroups = _normalizedGroupsFor(input);
+    if (!identical(_normalizedGroupsCache, normalizedGroups)) {
+      setNormalizedGroupsCache(normalizedGroups, includesPreclassified: true);
+      _normalizedGroupsCacheKey = _NormalizedGroupsCacheKey.fromInput(input);
+      normalizedGroups = _normalizedGroupsCache!;
+    }
+    if (input.unanalyzedVerdicts.isNotEmpty) {
+      if (!identical(_pendingRows, input.unanalyzedVerdicts) ||
+          _combinedGroups == null) {
+        _pendingRows = input.unanalyzedVerdicts;
+        _combinedGroups = mergeUnanalyzedGroups(
+          normalizedGroups,
+          groupAiResults(
+            input.unanalyzedVerdicts,
+            input.sizeByPath,
+            rootPath: input.rootPath,
+            directoryPaths: input.directoryPathsForGrouping,
+          ),
+        );
+      }
+      normalizedGroups = _combinedGroups!;
+    }
     final visibleGroups = _visibleGroupsFor(input, normalizedGroups);
     final summary = _overallSummaryFor(input, normalizedGroups);
     final overview = _overviewFor(input, normalizedGroups);
@@ -548,23 +655,14 @@ extension AiAnalysisResultsProjection on AiAnalysisResultsController {
     // Presentation-prep caches group only provider verdicts. Local
     // preclassification is merged below, so bypass that cache whenever it is
     // present rather than undercounting the dashboard's safe total.
-    if (cached != null && input.preClassified.isEmpty) return cached;
-    final localSafe = _preClassifiedVerdicts(input.preClassified, true);
-    final localKeep = _preClassifiedVerdicts(input.preClassified, false);
-    final aiSafe = input.verdicts
-        .where((verdict) => verdict.verdict == 'safe_to_remove')
-        .toList();
-    final aiPaths = input.verdicts.map((verdict) => verdict.path).toSet();
-    final merged = [
-      ...localSafe.where((verdict) => !aiPaths.contains(verdict.path)),
-      ...aiSafe,
-      ...localKeep,
-      ...input.verdicts.where((verdict) => verdict.verdict == 'review_needed'),
-      ...input.verdicts.where((verdict) => verdict.verdict == 'keep'),
-      ...input.unanalyzedVerdicts,
-    ];
+    if (cached != null &&
+        (input.preClassified.isEmpty ||
+            _normalizedGroupsCacheIncludesPreclassified) &&
+        _normalizedGroupsCacheKey?.matches(input) == true) {
+      return cached;
+    }
     var groups = groupAiResults(
-      merged,
+      classifiedVerdictsForGroups(input.verdicts, input.preClassified),
       input.sizeByPath,
       rootPath: input.rootPath,
       directoryPaths: input.directoryPathsForGrouping,
@@ -875,27 +973,6 @@ extension AiAnalysisResultsProjection on AiAnalysisResultsController {
       'unanalyzed' => 5,
       _ => 6,
     };
-  }
-
-  List<AiVerdict> _preClassifiedVerdicts(
-    List<Map<String, dynamic>> preClassified,
-    bool deletable,
-  ) {
-    final items = <AiVerdict>[];
-    for (final entry in preClassified) {
-      if ((entry['deletable'] == true) != deletable) continue;
-      final path = entry['path'] as String? ?? '';
-      if (path.isEmpty) continue;
-      items.add(
-        AiVerdict(
-          path: path,
-          verdict: deletable ? 'safe_to_remove' : 'keep',
-          confidence: entry['confidence']?.toString() ?? 'high',
-          reason: entry['reason']?.toString() ?? '',
-        ),
-      );
-    }
-    return items;
   }
 }
 

@@ -425,6 +425,7 @@ class AiAnalysisPrecheckView extends StatelessWidget {
         progress: localFailed || localPaused
             ? null
             : presentation.localProgressFraction,
+        activity: presentation.localPhase == CoverageLocalPhase.running,
       ),
       const SizedBox(height: AppleSpacing.sm),
       _CoverageStageRow(

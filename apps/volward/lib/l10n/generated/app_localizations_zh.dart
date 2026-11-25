@@ -1494,7 +1494,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultsMetricReviewSubtitle => '待决定';
 
   @override
-  String get aiResultsMetricKeepSubtitle => 'AI 保留';
+  String get aiResultsMetricSafeLocalSubtitle => '本地规则已确认';
+
+  @override
+  String get aiResultsMetricSafeAiSubtitle => 'AI 已确认';
+
+  @override
+  String get aiResultsMetricSafeCombinedSubtitle => '本地 + AI 已确认';
+
+  @override
+  String get aiResultsMetricKeepLocalSubtitle => '本地规则保留';
+
+  @override
+  String get aiResultsMetricKeepAiSubtitle => 'AI 保留';
+
+  @override
+  String get aiResultsMetricKeepCombinedSubtitle => '本地 + AI 保留';
+
+  @override
+  String get aiResultsMetricKeepUnknownSubtitle => '已确认保留';
 
   @override
   String get aiResultsPreviewSafeTitle => '可安全清理';

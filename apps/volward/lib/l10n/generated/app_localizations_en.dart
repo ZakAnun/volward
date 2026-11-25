@@ -1573,7 +1573,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultsMetricReviewSubtitle => 'Pending';
 
   @override
-  String get aiResultsMetricKeepSubtitle => 'AI kept';
+  String get aiResultsMetricSafeLocalSubtitle => 'Local rule confirmed';
+
+  @override
+  String get aiResultsMetricSafeAiSubtitle => 'AI confirmed';
+
+  @override
+  String get aiResultsMetricSafeCombinedSubtitle => 'Local + AI confirmed';
+
+  @override
+  String get aiResultsMetricKeepLocalSubtitle => 'Local rule kept';
+
+  @override
+  String get aiResultsMetricKeepAiSubtitle => 'AI kept';
+
+  @override
+  String get aiResultsMetricKeepCombinedSubtitle => 'Local + AI kept';
+
+  @override
+  String get aiResultsMetricKeepUnknownSubtitle => 'Confirmed kept';
 
   @override
   String get aiResultsPreviewSafeTitle => 'Safe to remove';

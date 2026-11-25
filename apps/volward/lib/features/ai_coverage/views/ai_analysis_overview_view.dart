@@ -85,6 +85,7 @@ final class AiAnalysisOverviewView extends StatelessWidget {
             placeholder: !hasVerdicts,
             analyzing: analyzing,
             safeCount: safeCount,
+            coverageRun: state.results.coverageRunPresentation,
             onOpenDetailList: onOpenDetailList,
             onOpenReviewQueue: onOpenReviewQueue,
           ),
@@ -188,6 +189,7 @@ class _ClassificationProvenanceSection extends StatelessWidget {
     final localComplete =
         provenance.localPhaseComplete ||
         (localFraction != null && localFraction >= 1);
+    final localRunning = provenance.localPhase == CoverageLocalPhase.running;
     final aiStatusLine = localComplete
         ? _aiStatusLine(l10n, provenance)
         : l10n.aiClassificationAiWaitingForLocal;
@@ -210,12 +212,25 @@ class _ClassificationProvenanceSection extends StatelessWidget {
             ),
             _ClassificationMetric(
               key: AiAnalysisWorkspaceKeys.classificationLocalRulesKey,
-              icon: Icons.rule_folder_outlined,
+              icon: localRunning ? Icons.autorenew : Icons.rule_folder_outlined,
               value: '${provenance.localRuleCount}',
               label: l10n.aiClassificationCoverageLocal(
                 provenance.localRuleCount,
               ),
+              color: localRunning ? AppleColors.primary : null,
             ),
+            if (localRunning)
+              Semantics(
+                label: l10n.aiClassificationLocalRulesProgress(
+                  ((localFraction ?? 0) * 100).round(),
+                ),
+                child: const SizedBox(
+                  key: AiAnalysisWorkspaceKeys.classificationLocalLoadingKey,
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             _ClassificationMetric(
               key: AiAnalysisWorkspaceKeys.classificationAiMetricKey,
               icon: Icons.auto_awesome_outlined,
@@ -446,6 +461,7 @@ class _AiCleanupDashboardSummary extends StatelessWidget {
     required this.placeholder,
     required this.analyzing,
     required this.safeCount,
+    required this.coverageRun,
     required this.onOpenDetailList,
     required this.onOpenReviewQueue,
   });
@@ -455,6 +471,7 @@ class _AiCleanupDashboardSummary extends StatelessWidget {
   final bool placeholder;
   final bool analyzing;
   final int safeCount;
+  final CoverageRunPresentation coverageRun;
   final void Function(WorkspaceResultFilter filter, {String? directoryPath})
   onOpenDetailList;
   final VoidCallback onOpenReviewQueue;
@@ -503,6 +520,14 @@ class _AiCleanupDashboardSummary extends StatelessWidget {
                   ),
                 ],
               ),
+              if (coverageRun.localPhase == CoverageLocalPhase.running) ...[
+                const SizedBox(height: AppleSpacing.xs),
+                _LocalCoverageProgress(
+                  resolved: coverageRun.localResolvedFiles,
+                  planned: coverageRun.localPlannedFiles,
+                  fraction: coverageRun.localProgressFraction,
+                ),
+              ],
               const SizedBox(height: AppleSpacing.sm),
               _ResultsMetricCards(
                 overview: overview,
@@ -527,6 +552,56 @@ class _AiCleanupDashboardSummary extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LocalCoverageProgress extends StatelessWidget {
+  const _LocalCoverageProgress({
+    required this.resolved,
+    required this.planned,
+    required this.fraction,
+  });
+
+  final int resolved;
+  final int? planned;
+  final double? fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final detail = planned == null
+        ? l10n.aiAnalysisStageLocalPreparing
+        : l10n.aiAnalysisStageLocalProgress(resolved, planned!);
+    return Semantics(
+      label: detail,
+      child: Column(
+        key: AiAnalysisWorkspaceKeys.cleanupLocalProgressKey,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: AppleSpacing.xs),
+              Expanded(child: Text(detail, style: context.vwCaption)),
+            ],
+          ),
+          if (fraction case final value?) ...[
+            const SizedBox(height: AppleSpacing.xxs),
+            LinearProgressIndicator(
+              value: value,
+              minHeight: 4,
+              borderRadius: BorderRadius.circular(AppleRadius.pill),
+              color: AppleColors.primary,
+              backgroundColor: AppleColors.dividerSoft,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -559,7 +634,9 @@ class _ResultsMetricCards extends StatelessWidget {
         value: placeholder
             ? dash
             : AiAnalysisOverviewView._formatBytes(overview.safeBytes),
-        subtitle: placeholder ? dash : l10n.aiResultsMetricCountLine(safeCount),
+        subtitle: placeholder
+            ? dash
+            : _safeMetricSubtitle(l10n, overview, safeCount),
         onTap: placeholder
             ? null
             : () => onOpenDetailList(WorkspaceResultFilter.safeToRemove),
@@ -577,7 +654,7 @@ class _ResultsMetricCards extends StatelessWidget {
         cardKey: AiAnalysisWorkspaceKeys.resultsMetricKeepKey,
         title: l10n.aiResultsMetricKeepTitle,
         value: placeholder ? dash : '${overview.keepCount}',
-        subtitle: placeholder ? dash : l10n.aiResultsMetricKeepSubtitle,
+        subtitle: placeholder ? dash : _keepSourceLabel(l10n, overview),
         onTap: placeholder
             ? null
             : () => onOpenDetailList(WorkspaceResultFilter.keep),
@@ -605,6 +682,40 @@ class _ResultsMetricCards extends StatelessWidget {
         );
       },
     );
+  }
+
+  static String _safeMetricSubtitle(
+    AppLocalizations l10n,
+    AiAnalysisConclusionOverview overview,
+    int safeCount,
+  ) {
+    final count = l10n.aiResultsMetricCountLine(safeCount);
+    final source = _safeSourceLabel(l10n, overview);
+    return source == null ? count : '$count · $source';
+  }
+
+  static String? _safeSourceLabel(
+    AppLocalizations l10n,
+    AiAnalysisConclusionOverview overview,
+  ) {
+    final hasLocal = overview.localSafeCount > 0;
+    final hasAi = overview.aiSafeCount > 0;
+    if (hasLocal && hasAi) return l10n.aiResultsMetricSafeCombinedSubtitle;
+    if (hasLocal) return l10n.aiResultsMetricSafeLocalSubtitle;
+    if (hasAi) return l10n.aiResultsMetricSafeAiSubtitle;
+    return null;
+  }
+
+  static String _keepSourceLabel(
+    AppLocalizations l10n,
+    AiAnalysisConclusionOverview overview,
+  ) {
+    final hasLocal = overview.localKeepCount > 0;
+    final hasAi = overview.aiKeepCount > 0;
+    if (hasLocal && hasAi) return l10n.aiResultsMetricKeepCombinedSubtitle;
+    if (hasLocal) return l10n.aiResultsMetricKeepLocalSubtitle;
+    if (hasAi) return l10n.aiResultsMetricKeepAiSubtitle;
+    return l10n.aiResultsMetricKeepUnknownSubtitle;
   }
 }
 
