@@ -1650,6 +1650,66 @@ void main() {
     expect(scans, 0);
   });
 
+  testWidgets('common target paths render on every desktop platform', (
+    tester,
+  ) async {
+    final cases = [
+      (
+        name: 'macOS',
+        target: '/Users/me/Downloads',
+        path: '/Users/me/Downloads',
+        volumeRoot: '/',
+      ),
+      (
+        name: 'Linux',
+        target: '/home/me/Downloads',
+        path: '/home/me/Downloads',
+        volumeRoot: '/',
+      ),
+      (
+        name: 'Windows slash/backslash and drive case',
+        target: 'c:/USERS/me/downloads',
+        path: r'C:\Users\me\Downloads',
+        volumeRoot: 'C:/',
+      ),
+    ];
+
+    for (final testCase in cases) {
+      final location = StorageLocationInfo(
+        id: 'downloads',
+        name: 'Downloads',
+        path: testCase.path,
+        kind: StorageLocationKind.downloads,
+        volumeId: testCase.volumeRoot,
+      );
+      final platformVolume = StorageVolumeInfo(
+        id: testCase.volumeRoot,
+        name: 'Disk',
+        rootPath: testCase.volumeRoot,
+        totalBytes: 1000,
+        availableBytes: 400,
+        freshness: StorageDataFreshness.live,
+      );
+      final summary = StorageHomeSummary.fromInputs(
+        overview: StorageOverviewData(
+          selectedVolumeId: platformVolume.id,
+          volumes: [platformVolume],
+          locations: [location],
+        ),
+        targetPath: testCase.target,
+        scanning: false,
+        scanProgress: null,
+      );
+
+      await pumpOverview(tester, summary: summary);
+
+      final path = tester.widget<Text>(
+        find.byKey(StorageStewardHome.capacityPathKey),
+      );
+      expect(path.data, testCase.path, reason: testCase.name);
+    }
+  });
+
   testWidgets(
     'pinned custom target is available from one recent folders button',
     (tester) async {
@@ -1818,7 +1878,19 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Deep Archive'), findsWidgets);
-      expect(find.text(customPath), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(StorageStewardHome.targetsKey),
+          matching: find.text(customPath),
+        ),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(StorageStewardHome.capacityPathKey))
+            .data,
+        customPath,
+      );
       expect(find.byTooltip(customPath), findsNothing);
 
       final customData = tester
@@ -2321,8 +2393,8 @@ void main() {
         isFalse,
       );
       expect(capacity.getSemanticsData().flagsCollection.isButton, isFalse);
-      expect(capacity.getSemanticsData().value, '/');
-      expect(find.byTooltip('/'), findsNothing);
+      expect(capacity.getSemanticsData().value, home.path);
+      expect(find.byTooltip(home.path), findsNothing);
       expect(panel.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
       expect({target.id, choose.id, browse.id, scan.id, capacity.id}.length, 5);
     } finally {

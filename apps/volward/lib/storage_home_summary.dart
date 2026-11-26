@@ -155,10 +155,19 @@ class StorageHomeSummary {
     return (bytes / total).clamp(0, 1).toDouble();
   }
 
-  /// The path whose bytes are represented by [displayedUsedBytes].
-  String get displayedCapacityPath => usesScopedCapacity
-      ? selectedLocation?.path ?? ''
-      : selectedVolume?.rootPath ?? selectedLocation?.path ?? '';
+  /// The selected folder path shown by the capacity card.
+  ///
+  /// Directory selections keep their own path even before a scoped snapshot is
+  /// available; a volume selection continues to show the volume root.
+  String get displayedCapacityPath {
+    final location = selectedLocation;
+    if (location != null &&
+        location.kind != StorageLocationKind.volume &&
+        location.path.isNotEmpty) {
+      return location.path;
+    }
+    return selectedVolume?.rootPath ?? location?.path ?? '';
+  }
 
   /// Whether the primary action should offer to cancel.
   ///
