@@ -968,6 +968,7 @@ class _StatPanel extends StatelessWidget {
     final l10n = context.l10n;
     final volume = summary.selectedVolume;
     final usableVolume = summary.hasUsableCapacity ? volume : null;
+    final showCapacitySkeleton = summary.isCapacityLoading;
     final used = formatStorageBytes(summary.displayedUsedBytes);
     final total = formatStorageBytes(usableVolume?.totalBytes);
     final available = formatStorageBytes(usableVolume?.availableBytes);
@@ -975,7 +976,9 @@ class _StatPanel extends StatelessWidget {
     final capacityPath = rawCapacityPath.isEmpty ? '—' : rawCapacityPath;
 
     return Semantics(
-      label: l10n.homeCapacitySemantics(used, total, available),
+      label: showCapacitySkeleton
+          ? l10n.homeOverviewLoading
+          : l10n.homeCapacitySemantics(used, total, available),
       value: capacityPath,
       child: ExcludeSemantics(
         child: DecoratedBox(
@@ -1005,20 +1008,27 @@ class _StatPanel extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8), // Reduced from 10
-                      Text(
-                        used,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.vwDisplayLg.copyWith(
-                          color: dashboardOn(context),
-                          fontSize: compact ? 40 : 52,
-                          fontWeight: FontWeight.w700,
-                          height: 0.92,
+                      if (showCapacitySkeleton)
+                        SkeletonLoader(
+                          width: compact ? 144 : 220,
+                          height: compact ? 38 : 48,
+                          borderRadius: 8,
+                        )
+                      else
+                        Text(
+                          used,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.vwDisplayLg.copyWith(
+                            color: dashboardOn(context),
+                            fontSize: compact ? 40 : 52,
+                            fontWeight: FontWeight.w700,
+                            height: 0.92,
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 6),
                       Text(
-                        summary.usesScopedCapacity
+                        summary.usesScopedCapacity && !showCapacitySkeleton
                             ? l10n.homeScannedSize(used)
                             : l10n.homeCapacityUsed,
                         style: context.vwFinePrint.copyWith(
@@ -1033,6 +1043,7 @@ class _StatPanel extends StatelessWidget {
                             child: _CapacityMetric(
                               label: l10n.homeCapacityTotal,
                               value: total,
+                              loading: showCapacitySkeleton,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1040,6 +1051,7 @@ class _StatPanel extends StatelessWidget {
                             child: _CapacityMetric(
                               label: l10n.homeCapacityAvailable,
                               value: available,
+                              loading: showCapacitySkeleton,
                             ),
                           ),
                         ],
@@ -1063,22 +1075,30 @@ class _StatPanel extends StatelessWidget {
 }
 
 class _CapacityMetric extends StatelessWidget {
-  const _CapacityMetric({required this.label, required this.value});
+  const _CapacityMetric({
+    required this.label,
+    required this.value,
+    required this.loading,
+  });
 
   final String label;
   final String value;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: context.vwBodyStrong.copyWith(color: dashboardOn(context)),
-        ),
+        if (loading)
+          const SkeletonLoader(width: 72, height: 20, borderRadius: 4)
+        else
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.vwBodyStrong.copyWith(color: dashboardOn(context)),
+          ),
         const SizedBox(height: 4),
         Text(
           label,
@@ -1099,7 +1119,9 @@ class _HeroMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = summary.displayedCapacityFraction;
+    final progress = summary.isCapacityLoading
+        ? null
+        : summary.displayedCapacityFraction;
     return SizedBox(
       key: StorageStewardHome.capacityMeterKey,
       height: 12,
@@ -2070,10 +2092,9 @@ String localizedLocationLabel(
 
 String _overviewStatus(BuildContext context, StorageHomeSummary summary) {
   final l10n = context.l10n;
+  if (summary.isCapacityLoading) return l10n.homeOverviewLoading;
   if (!summary.hasUsableCapacity) {
-    return summary.overview.loading && summary.selectedVolume == null
-        ? l10n.homeOverviewLoading
-        : l10n.homeOverviewUnavailable;
+    return l10n.homeOverviewUnavailable;
   }
   return switch (summary.selectedVolume?.freshness) {
     StorageDataFreshness.live => l10n.homeOverviewLive,
@@ -2083,6 +2104,7 @@ String _overviewStatus(BuildContext context, StorageHomeSummary summary) {
 }
 
 _StatusChipTone _statusChipTone(StorageHomeSummary summary) {
+  if (summary.isCapacityLoading) return _StatusChipTone.neutral;
   if (!summary.hasUsableCapacity) return _StatusChipTone.neutral;
   return switch (summary.selectedVolume?.freshness) {
     StorageDataFreshness.live => _StatusChipTone.live,

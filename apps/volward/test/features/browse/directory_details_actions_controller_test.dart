@@ -163,6 +163,7 @@ void main() {
   test('homeSummary resolves the selected location from overview', () {
     state.storageOverview = _overview();
     state.homeTargetPath = '/home';
+    snapshot.targetPreviewLoading = true;
     snapshot.snapshot = _snapshot(
       ScanTreeNode(name: '/', path: '/', isDirectory: true),
     );
@@ -170,6 +171,8 @@ void main() {
     final summary = actions.homeSummary(const ScanProgressViewState());
 
     expect(summary.selectedLocation?.path, '/home');
+    expect(summary.targetPreviewLoading, isTrue);
+    expect(summary.isCapacityLoading, isTrue);
   });
 }
 

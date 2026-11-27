@@ -315,6 +315,7 @@ class DirectoryDetailsActionsController {
           : null,
       largestItemCandidates: query.largestItemsFor(target),
       scanning: session.scanning || session.restoringSnapshot,
+      targetPreviewLoading: session.targetPreviewLoading,
       restoringSnapshot: session.restoringSnapshot && !session.scanning,
       scanProgress: session.scanning ? progress.fraction : null,
       scanPhase: session.scanning ? progress.phase : null,

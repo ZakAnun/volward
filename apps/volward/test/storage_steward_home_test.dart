@@ -10,6 +10,7 @@ import 'package:volward/storage_overview.dart';
 import 'package:volward/theme/volward_theme.dart';
 import 'package:volward/theme/volward_tokens.dart';
 import 'package:volward/widgets/home/largest_items_panel.dart';
+import 'package:volward/widgets/home/skeleton_loader.dart';
 import 'package:volward/widgets/storage_steward_home.dart';
 import 'package:volward/widgets/volward_logo.dart';
 
@@ -89,6 +90,7 @@ final completedSummary = StorageHomeSummary(
   selectedVolume: readySummary.selectedVolume,
   scanning: false,
   hasCompletedScan: true,
+  scannedBytes: 600,
   reclaimableBytes: 256,
   lastScannedAtMs: 1723766400000,
 );
@@ -442,6 +444,11 @@ Finder targetTiles() => find.byWidgetPredicate((widget) {
 Finder capacityMeterFill() => find.descendant(
   of: find.byKey(StorageStewardHome.capacityMeterKey),
   matching: find.byType(FractionallySizedBox),
+);
+
+Finder capacitySkeletons() => find.descendant(
+  of: find.byKey(StorageStewardHome.capacityKey),
+  matching: find.byType(SkeletonLoader),
 );
 
 ({Rect targets, Rect capacity, Rect scan}) homeGeometry(WidgetTester tester) {
@@ -889,7 +896,7 @@ void main() {
   testWidgets('valid capacity meter fill matches used fraction', (
     tester,
   ) async {
-    await pumpOverview(tester);
+    await pumpOverview(tester, summary: completedSummary);
 
     expect(capacityMeterFill(), findsOneWidget);
     expect(
@@ -2245,16 +2252,92 @@ void main() {
     await pumpOverview(tester, summary: loadingSummary);
     expect(find.text('Reading disk…'), findsOneWidget);
     expect(find.text('0 B'), findsNothing);
-    expect(find.text('—'), findsNWidgets(3));
+    expect(capacitySkeletons(), findsNWidgets(3));
     expect(capacityMeterFill(), findsNothing);
 
     await pumpOverview(tester, summary: unavailableSummary);
     expect(find.text('Disk capacity unavailable'), findsOneWidget);
     expect(find.text('0 B'), findsNothing);
+    expect(capacitySkeletons(), findsNothing);
     expect(capacityMeterFill(), findsNothing);
     expect(find.byKey(StorageStewardHome.capacityMeterKey), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'overview loading replaces stale capacity values with skeletons',
+    (tester) async {
+      await pumpOverview(
+        tester,
+        summary: const StorageHomeSummary(
+          overview: StorageOverviewData.loading(),
+          selectedLocation: home,
+          selectedVolume: cachedVolume,
+          scanning: false,
+          hasCompletedScan: true,
+          scannedBytes: 50,
+        ),
+      );
+
+      expect(find.text('768 B'), findsNothing);
+      expect(find.text('1 KB'), findsNothing);
+      expect(find.text('256 B'), findsNothing);
+      expect(find.text('50 B scanned'), findsNothing);
+      expect(capacitySkeletons(), findsNWidgets(3));
+    },
+  );
+
+  testWidgets('selected directory keeps capacity skeletons while scanning', (
+    tester,
+  ) async {
+    await pumpOverview(tester, summary: scanningSummary);
+
+    expect(find.text('600 B'), findsNothing);
+    expect(find.text('1000 B'), findsNothing);
+    expect(find.text('400 B'), findsNothing);
+    expect(capacitySkeletons(), findsNWidgets(3));
+  });
+
+  testWidgets('target preview loading keeps capacity skeletons', (
+    tester,
+  ) async {
+    await pumpOverview(
+      tester,
+      summary: StorageHomeSummary(
+        overview: readySummary.overview,
+        selectedLocation: home,
+        selectedVolume: volume,
+        scanning: false,
+        hasCompletedScan: false,
+        targetPreviewLoading: true,
+      ),
+    );
+
+    expect(find.text('600 B'), findsNothing);
+    expect(find.text('1000 B'), findsNothing);
+    expect(find.text('400 B'), findsNothing);
+    expect(capacitySkeletons(), findsNWidgets(3));
+  });
+
+  testWidgets(
+    'selected directory without a snapshot does not show disk usage',
+    (tester) async {
+      await pumpOverview(
+        tester,
+        summary: StorageHomeSummary(
+          overview: readySummary.overview,
+          selectedLocation: home,
+          selectedVolume: volume,
+          scanning: false,
+          hasCompletedScan: false,
+        ),
+      );
+
+      expect(find.text('600 B'), findsNothing);
+      expect(find.text('—'), findsOneWidget);
+      expect(capacityMeterFill(), findsNothing);
+    },
+  );
 
   testWidgets('missing root stays neutral without an empty target tile', (
     tester,
@@ -2272,13 +2355,10 @@ void main() {
 
   testWidgets('capacity status follows usable data provenance', (tester) async {
     await pumpOverview(tester, summary: cachedWhileLoadingSummary);
-    expect(find.text('Cached disk data'), findsOneWidget);
-    expect(find.text('Reading disk…'), findsNothing);
-    expect(capacityMeterFill(), findsOneWidget);
-    expect(
-      tester.widget<FractionallySizedBox>(capacityMeterFill()).widthFactor,
-      closeTo(0.75, 0.001),
-    );
+    expect(find.text('Reading disk…'), findsOneWidget);
+    expect(find.text('Cached disk data'), findsNothing);
+    expect(capacitySkeletons(), findsNWidgets(3));
+    expect(capacityMeterFill(), findsNothing);
 
     await pumpOverview(tester, summary: invalidLiveSummary);
     expect(find.text('Disk capacity unavailable'), findsOneWidget);
@@ -2311,7 +2391,7 @@ void main() {
       await pumpOverview(tester, summary: completedSummary, onScan: () {});
 
       expect(find.text('Live disk data'), findsOneWidget);
-      expect(find.text('Used'), findsOneWidget);
+      expect(find.text('600 B scanned'), findsOneWidget);
       expect(find.text('Total capacity'), findsOneWidget);
       expect(find.text('Available'), findsOneWidget);
       expect(find.text('Scan range'), findsNothing);
@@ -2333,7 +2413,7 @@ void main() {
       );
 
       expect(find.text('实时磁盘数据'), findsOneWidget);
-      expect(find.text('已使用'), findsOneWidget);
+      expect(find.text('目录占用 600 B'), findsOneWidget);
       expect(find.text('总容量'), findsOneWidget);
       expect(find.text('可用'), findsOneWidget);
       expect(find.text('扫描范围'), findsNothing);
@@ -2377,7 +2457,7 @@ void main() {
       final browse = tester.getSemantics(find.bySemanticsLabel('Browse Files'));
       final scan = tester.getSemantics(find.bySemanticsLabel('Start Scan'));
       final capacity = tester.getSemantics(
-        find.bySemanticsLabel('600 B used of 1000 B, 400 B available'),
+        find.byKey(StorageStewardHome.capacityKey),
       );
       final panel = tester.getSemantics(
         find.byKey(StorageStewardHome.panelKey),
@@ -2388,6 +2468,10 @@ void main() {
       expectButtonSemantics(choose, enabled: true);
       expectButtonSemantics(browse, enabled: true);
       expectButtonSemantics(scan, enabled: true);
+      expect(
+        capacity.getSemanticsData().label,
+        '— used of 1000 B, 400 B available',
+      );
       expect(
         capacity.getSemanticsData().hasAction(SemanticsAction.tap),
         isFalse,

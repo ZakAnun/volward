@@ -112,6 +112,71 @@ void main() {
     expect(summary.displayedCapacityFraction, closeTo(0.025, 0.0001));
   });
 
+  test('completed known folder uses its scanned bytes as directory usage', () {
+    final summary = StorageHomeSummary.fromInputs(
+      overview: liveOverview,
+      targetPath: '/Users/me',
+      matchingSnapshot: snapshot(sizeBytes: 50),
+      scanning: false,
+      scanProgress: null,
+    );
+
+    expect(summary.selectedLocation?.kind, StorageLocationKind.home);
+    expect(summary.usesScopedCapacity, isTrue);
+    expect(summary.displayedUsedBytes, 50);
+    expect(summary.displayedCapacityFraction, closeTo(0.025, 0.0001));
+  });
+
+  test('volume root without a volume location keeps disk capacity', () {
+    final overview = StorageOverviewData(
+      selectedVolumeId: 'D:',
+      volumes: const [
+        StorageVolumeInfo(
+          id: 'D:',
+          name: 'Data',
+          rootPath: 'D:/',
+          totalBytes: 1000,
+          availableBytes: 400,
+          freshness: StorageDataFreshness.live,
+        ),
+      ],
+      locations: const [],
+    );
+
+    final summary = StorageHomeSummary.fromInputs(
+      overview: overview,
+      targetPath: 'D:/',
+      matchingSnapshot: snapshot(rootPath: 'D:/', sizeBytes: 50),
+      scanning: false,
+      scanProgress: null,
+    );
+
+    expect(summary.isDirectorySelection, isFalse);
+    expect(summary.usesScopedCapacity, isFalse);
+    expect(summary.displayedUsedBytes, 600);
+    expect(summary.displayedCapacityFraction, closeTo(0.6, 0.0001));
+    expect(summary.displayedCapacityPath, 'D:/');
+  });
+
+  test(
+    'selected directory without a matching snapshot does not use disk usage',
+    () {
+      final summary = StorageHomeSummary.fromInputs(
+        overview: liveOverview,
+        targetPath: '/Users/me/Work/client',
+        scanning: false,
+        scanProgress: null,
+      );
+
+      expect(summary.isDirectorySelection, isTrue);
+      expect(summary.isCapacityLoading, isFalse);
+      expect(summary.selectedVolume?.usedBytes, 1500);
+      expect(summary.displayedUsedBytes, isNull);
+      expect(summary.displayedCapacityFraction, isNull);
+      expect(summary.displayedCapacityPath, '/Users/me/Work/client');
+    },
+  );
+
   test('known location volume id wins for a symlink-style path', () {
     final overview = StorageOverviewData(
       selectedVolumeId: 'system',
@@ -466,6 +531,24 @@ void main() {
     expect(summary.reclaimableBytes, isNull);
     expect(summary.lastScannedAtMs, isNull);
     expect(summary.hasCompletedScan, isFalse);
+  });
+
+  test('unrelated snapshot keeps selected directory capacity loading', () {
+    final summary = StorageHomeSummary.fromInputs(
+      overview: liveOverview,
+      targetPath: '/Users/me/Work/client',
+      matchingSnapshot: snapshot(),
+      targetPreviewLoading: true,
+      scanning: false,
+      scanProgress: null,
+    );
+
+    expect(summary.selectedLocation?.path, '/Users/me/Work/client');
+    expect(summary.scannedBytes, isNull);
+    expect(summary.usesScopedCapacity, isFalse);
+    expect(summary.isCapacityLoading, isTrue);
+    expect(summary.reclaimableBytes, isNull);
+    expect(summary.lastScannedAtMs, isNull);
   });
 
   test('custom target is retained with its complete path', () {

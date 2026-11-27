@@ -93,6 +93,7 @@ class StorageHomeSummary {
     required this.selectedVolume,
     required this.scanning,
     required this.hasCompletedScan,
+    this.targetPreviewLoading = false,
     this.restoringSnapshot = false,
     this.reclaimableBytes,
     this.lastScannedAtMs,
@@ -110,6 +111,7 @@ class StorageHomeSummary {
   final StorageVolumeInfo? selectedVolume;
   final bool scanning;
   final bool hasCompletedScan;
+  final bool targetPreviewLoading;
 
   /// True while a cached snapshot is being read back from disk.
   ///
@@ -128,26 +130,46 @@ class StorageHomeSummary {
 
   bool get hasUsableCapacity => _hasUsableCapacity(selectedVolume);
 
-  /// A completed scan of a folder explicitly chosen by the user has an
-  /// authoritative subtree total. Show that value as the primary capacity
-  /// metric instead of the unchanged usage of the containing disk.
+  bool get isDirectorySelection {
+    final location = selectedLocation;
+    if (location == null ||
+        location.kind == StorageLocationKind.volume ||
+        location.path.isEmpty) {
+      return false;
+    }
+    return !overview.volumes.any(
+      (volume) => _sameFsPath(volume.rootPath, location.path),
+    );
+  }
+
+  /// A completed scan of a selected folder has an authoritative subtree total.
+  /// Show that value as the primary capacity metric instead of the unchanged
+  /// usage of the containing disk.
   bool get usesScopedCapacity =>
-      selectedLocation?.kind == StorageLocationKind.custom &&
+      isDirectorySelection &&
       hasCompletedScan &&
       scannedBytes != null &&
       hasUsableCapacity;
 
+  /// True while directory capacity still needs a snapshot for this target.
+  bool get isCapacityLoading =>
+      overview.loading ||
+      (isDirectorySelection &&
+          !usesScopedCapacity &&
+          (scanning || targetPreviewLoading));
+
   /// The primary usage value displayed by the home capacity card.
-  int? get displayedUsedBytes => usesScopedCapacity
-      ? scannedBytes
-      : hasUsableCapacity
-      ? selectedVolume?.usedBytes
-      : null;
+  int? get displayedUsedBytes {
+    if (usesScopedCapacity) return scannedBytes;
+    if (isDirectorySelection) return null;
+    return hasUsableCapacity ? selectedVolume?.usedBytes : null;
+  }
 
   /// The capacity-card meter fraction. For an explicitly selected folder it
   /// represents that folder's physical usage as a portion of its disk.
   double? get displayedCapacityFraction {
     if (!hasUsableCapacity) return null;
+    if (isDirectorySelection && !usesScopedCapacity) return null;
     if (!usesScopedCapacity) return selectedVolume?.usedFraction;
     final bytes = scannedBytes;
     final total = selectedVolume?.totalBytes;
@@ -181,6 +203,7 @@ class StorageHomeSummary {
     required String targetPath,
     required bool scanning,
     required double? scanProgress,
+    bool targetPreviewLoading = false,
     bool restoringSnapshot = false,
     String? scanPhase,
     ScanSnapshotState? matchingSnapshot,
@@ -323,6 +346,7 @@ class StorageHomeSummary {
       selectedLocation: selectedLocation,
       selectedVolume: selectedVolume,
       scanning: scanning,
+      targetPreviewLoading: targetPreviewLoading,
       restoringSnapshot: restoringSnapshot,
       hasCompletedScan: completedScan,
       reclaimableBytes: reclaimableBytes,
